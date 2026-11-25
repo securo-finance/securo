@@ -1,3 +1,4 @@
+import { addDays, addYears, format, max, parseISO, subMonths, subYears } from 'date-fns'
 import type { Goal } from '@/types'
 
 export interface AmountPoint {
@@ -106,4 +107,20 @@ export function cleanHistory(points: AmountPoint[], from: string, to: string): A
   return [...byDate]
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([date, amount]) => ({ date, amount }))
+}
+
+/**
+ * Starts history one month before creation, capped at the API's ten-year limit.
+ *
+ * @param {Goal} goal - Goal with its UTC creation timestamp.
+ * @param {string} today - Workspace date in YYYY-MM-DD format.
+ * @returns {string} Inclusive start date shared by history requests and the x-axis.
+ */
+export function goalHistoryStart(goal: Goal, today: string): string {
+  const end = parseISO(today)
+  const tenYearsAgo = subYears(end, 10)
+  // On February 29, use March 1 if clamping back ten years loses a day.
+  const limit = addYears(tenYearsAgo, 10) < end ? addDays(tenYearsAgo, 1) : tenYearsAgo
+  const beforeCreation = subMonths(parseISO(goal.created_at.slice(0, 10)), 1)
+  return format(max([beforeCreation, limit]), 'yyyy-MM-dd')
 }

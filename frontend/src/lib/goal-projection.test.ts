@@ -1,3 +1,4 @@
+import { goalHistoryStart } from './goal-projection'
 import { describe, expect, it } from 'vitest'
 import { goal } from '@/test/goal-fixtures'
 import { calendarMonthAfter, cleanHistory, projectGoal } from './goal-projection'
@@ -65,4 +66,11 @@ describe('goal projection', () => {
       ),
     ).toEqual([{ date: today, amount: 11 }])
   })
+})
+
+it.each([
+  { today: '2026-11-21', expected: '2016-11-21' },
+  { today: '2024-02-29', expected: '2014-03-01' },
+])('caps history at ten years on $today', ({ today, expected }) => {
+  expect(goalHistoryStart(goal({ created_at: '1995-01-01T00:00:00Z' }, today), today)).toBe(expected)
 })

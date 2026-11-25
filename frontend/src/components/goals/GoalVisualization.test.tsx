@@ -87,7 +87,7 @@ beforeEach(() => {
   }
   mocks.history.mockResolvedValue({
     points: [
-      { date: '2020-01-01', amount: 500 },
+      { date: '2026-03-01', amount: 500 },
       { date: today, amount: 2700 },
     ],
     notes: [],
@@ -222,5 +222,19 @@ it.each([
   await waitFor(() => {
     expect(region.querySelector('path.recharts-line-curve')).toBeTruthy()
     expect(within(region).getByText(top)).toBeVisible()
+  })
+})
+
+it('anchors the x-axis one month before creation even when history starts later', async () => {
+  mocks.goals.list.mockResolvedValue([
+    { ...fixtures()[0], created_at: '2026-03-15T12:00:00Z' },
+  ])
+  renderWithProviders(<GoalsPage />)
+  const region = await screen.findByRole('region', { name: 'Progress for Server Fund' })
+  await waitFor(() => {
+    const path = region.querySelector('path.recharts-line-curve:not([stroke-dasharray])')
+    const firstX = Number(path?.getAttribute('d')?.match(/^M([\d.]+)/)?.[1])
+    // The first March snapshot sits to the right of the February start (plot x = 72).
+    expect(firstX).toBeGreaterThan(73)
   })
 })

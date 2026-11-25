@@ -1,6 +1,6 @@
-import { accounts, assets, reports, transactions } from '@/lib/api'
+import { accounts, assets, reports } from '@/lib/api'
 import type { Goal } from '@/types'
-import { cleanHistory, firstOfMonthAfter, type AmountPoint } from './goal-projection'
+import { cleanHistory, goalHistoryStart, type AmountPoint } from './goal-projection'
 
 export type HistoryNote =
   'manual' | 'currency' | 'missing' | 'wallet' | 'reconstructed' | 'netWorth' | 'partial'
@@ -12,9 +12,8 @@ export interface GoalHistory {
 
 /**
  * Loads a goal's history through the existing account, asset, and report APIs.
- * Account and asset histories retain all available dates through today. Wallet
- * history uses weekly wallet-filtered net-worth reports. Net-worth history starts three calendar
- * months back, or at its first positive snapshot if that is more recent.
+ * Histories start one month before goal creation, capped at ten years. Wallet history
+ * uses weekly wallet-filtered net-worth reports; net worth uses weekly unfiltered reports.
  * Manual goals have no history; currency mismatches and missing data return
  * explanatory notes instead of invented balances.
  *
@@ -24,6 +23,8 @@ export interface GoalHistory {
  * @throws {Error} Propagates API failures so the chart can offer a retry.
  */
 export async function loadGoalHistory(goal: Goal, today: string): Promise<GoalHistory> {
+  const earliest = goalHistoryStart(goal, today)
+
   /**
    * Cleans history through today and adds a missing-data note when no points remain.
    *
@@ -32,7 +33,7 @@ export async function loadGoalHistory(goal: Goal, today: string): Promise<GoalHi
    * @returns {GoalHistory} Cleaned history with any missing-data note.
    */
   const result = (points: AmountPoint[], notes: HistoryNote[] = []): GoalHistory => {
-    const clean = cleanHistory(points, '0001-01-01', today)
+    const clean = cleanHistory(points, earliest, today)
     return { points: clean, notes: [...notes, ...(clean.length === 0 ? ['missing' as const] : [])] }
   }
 
@@ -47,23 +48,7 @@ export async function loadGoalHistory(goal: Goal, today: string): Promise<GoalHi
       return { points: [], notes: ['currency'] }
     }
 
-    // first date is usually the first transaction date.
-    const first = await transactions.list({
-      account_id: goal.account_id,
-      sort_by: 'transaction_date',
-      sort_dir: 'asc',
-      limit: 1,
-      include_opening_balance: true,
-    })
-    const from = first.items[0]?.date ?? today
-
-    // get balance history per day from the first date
-    // if there are no transactions use the today as the first date
-    const points = await accounts.balanceHistory(
-      goal.account_id,
-      from > today ? today : from,
-      today,
-    )
+    const points = await accounts.balanceHistory(goal.account_id, earliest, today)
     return result(
       points.map(p => ({ date: p.date, amount: p.balance })),
       ['reconstructed'],
@@ -79,8 +64,7 @@ export async function loadGoalHistory(goal: Goal, today: string): Promise<GoalHi
     return result(await assets.valueTrend(goal.asset_id), ['reconstructed'])
   }
 
-  // The report computes wallet totals, including historical FX and sold assets.
-  // A wallet-only filter excludes bank accounts on the backend.
+  // historical wallet totals are computed using the net worth report limited to that wallet.
   if (goal.tracking_type === 'asset_group' && goal.asset_group_id) {
     const members = (await assets.list()).filter(
       asset => asset.group_id === goal.asset_group_id && !asset.is_archived,
@@ -89,107 +73,32 @@ export async function loadGoalHistory(goal: Goal, today: string): Promise<GoalHi
       return { points: [], notes: ['missing'] }
     }
 
-    // Discover the full available range independently of the goal's creation date.
-    // Value trends can predate a purchase date or exist without one. These values
-    // determine only the range; all plotted totals come from the report API.
-    const histories = await Promise.all(members.map(asset => assets.valueTrend(asset.id)))
-    let earliest = today
-    for (const asset of members) {
-      if (asset.purchase_date && asset.purchase_date < earliest) {
-        earliest = asset.purchase_date
-      }
+    const report = await reports.netWorth(
+      undefined, 'weekly', undefined, [goal.asset_group_id], undefined, earliest, today,
+    )
+    if (report.meta.currency !== goal.currency) {
+      return { points: [], notes: ['currency'] }
     }
-    for (const history of histories) {
-      for (const point of history) {
-        if (point.date < earliest) {
-          earliest = point.date
-        }
-      }
-    }
-
-    // using a 'weekly' report is arbitrary, but probably reasonable for this chart.
-    const points: AmountPoint[] = []
-    for (const [from, to] of reportHistoryWindows(earliest, today)) {
-      const report = await reports.netWorth(
-        12,
-        'weekly',
-        undefined,
-        [goal.asset_group_id],
-        undefined,
-        from,
-        to,
-      )
-      if (report.meta.currency !== goal.currency) {
-        return { points: [], notes: ['currency'] }
-      }
-      points.push(
-        ...report.trend.map(point => ({
-          date: weeklySnapshotDate(point.date, from, to),
-          amount: point.value,
-        })),
-      )
-    }
+    const points = report.trend.map(point => ({
+      date: weeklySnapshotDate(point.date, earliest, today),
+      amount: point.value,
+    }))
     return result(points, ['wallet'])
   }
 
-  // for net worth we use the net worth report to establish the previous values.
+  // historical net worth values are computed from the net worth report.
   if (goal.tracking_type === 'net_worth') {
-    const [first, range, members] = await Promise.all([
-      transactions.list({
-        sort_by: 'transaction_date',
-        sort_dir: 'asc',
-        limit: 1,
-        include_opening_balance: true,
-      }),
-      reports.dataRange(),
-      assets.list(true),
-    ])
-    const histories = await Promise.all(members.map(asset => assets.valueTrend(asset.id)))
-    // find the earliest date where net worth would appear
-    const dates = [
-      today,
-      first.items[0]?.date,
-      range.min_date,
-      ...members.map(a => a.purchase_date),
-      ...histories.flatMap(points => points.map(p => p.date)),
-    ]
-      .filter((date): date is string => !!date && date <= today)
-      .sort()
-    const points: AmountPoint[] = []
-
-    // Fetch adjoining custom ranges of up to ten years, using monthly snapshots.
-    // Explicit start/end dates override the default 12-month window; the backend
-    // caps each custom range at ten years.
-    for (const [from, to] of reportHistoryWindows(dates[0], today)) {
-      const report = await reports.netWorth(
-        12,
-        'monthly',
-        undefined,
-        undefined,
-        undefined,
-        from,
-        to,
-      )
-      if (report.meta.currency !== goal.currency) {
-        return { points: [], notes: ['currency'] }
-      }
-      points.push(
-        ...report.trend.map(p => ({ date: monthlySnapshotDate(p.date, to), amount: p.value })),
-      )
-    }
-
-    const history = cleanHistory(points, '0001-01-01', today)
-    const firstPositive = history.find(point => point.amount > 0)?.date
-    const threeMonthsAgo = firstOfMonthAfter(today, -3)
-
-    // special: use either the first positive value in the date, or use three months ago as the start of the
-    // graph.
-    const start = firstPositive && firstPositive > threeMonthsAgo ? firstPositive : threeMonthsAgo
-    // Keep later dips below zero; only trim the beginning of the series.
-    return result(
-      history.filter(point => point.date >= start),
-      ['netWorth'],
+    const report = await reports.netWorth(
+      undefined, 'weekly', undefined, undefined, undefined, earliest, today,
     )
+    if (report.meta.currency !== goal.currency) {
+      return { points: [], notes: ['currency'] }
+    }
+    const points = report.trend.map(point => ({
+      date: weeklySnapshotDate(point.date, earliest, today),
+      amount: point.value,
+    }))
+    return result(points, ['netWorth'])
   }
   return { points: [], notes: ['missing'] }
 }
@@ -221,45 +130,4 @@ function weeklySnapshotDate(label: string, from: string, to: string): string {
   }
   const weekday = (new Date(from + 'T00:00:00Z').getUTCDay() + 6) % 7
   return new Date(monday + weekday * dayMs).toISOString().slice(0, 10)
-}
-
-/**
- * Restores the date represented by a monthly report's YYYY-MM label.
- * Snapshots fall on month end, capped at the requested range end, matching the
- * backend's monthly snapshot convention. Other label formats pass through.
- *
- * @param {string} label - Report date label, normally YYYY-MM.
- * @param {string} end - Inclusive report range end in YYYY-MM-DD format.
- * @returns {string} The snapshot date in YYYY-MM-DD format, or the unchanged label.
- */
-function monthlySnapshotDate(label: string, end: string): string {
-  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(label)) {
-    return label
-  }
-  const [year, month] = label.split('-').map(Number)
-  // The report labels month-end snapshots YYYY-MM; the final month is
-  // capped at the requested end date, matching the backend's _date_points.
-  const monthEnd = new Date(Date.UTC(year, month, 0)).toISOString().slice(0, 10)
-  return monthEnd > end ? end : monthEnd
-}
-
-/**
- * Splits an inclusive date range into adjoining report requests of at most ten
- * calendar years. Windows after the first begin on January 1 to avoid splitting
- * monthly snapshots across requests; the final window ends on today.
- *
- * @param {string} from - Earliest history date in YYYY-MM-DD format.
- * @param {string} today - Inclusive upper date bound in YYYY-MM-DD format.
- * @returns {Array<[string, string]>} Inclusive start/end pairs, or an empty array when from is after today.
- */
-export function reportHistoryWindows(from: string, today: string): [string, string][] {
-  const windows: [string, string][] = []
-  let start = from
-  while (start <= today) {
-    const next = `${String(Number(start.slice(0, 4)) + 10).padStart(4, '0')}-01-01`
-    const end = next > today ? today : `${Number(next.slice(0, 4)) - 1}-12-31`
-    windows.push([start, end])
-    start = next
-  }
-  return windows
 }

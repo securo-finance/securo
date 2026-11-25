@@ -14,7 +14,7 @@ import {
 import { ChevronDown, ChevronUp } from 'lucide-react'
 
 import { loadGoalHistory } from '@/lib/goal-history'
-import { calendarMonthAfter, firstOfMonthAfter, projectGoal } from '@/lib/goal-projection'
+import { calendarMonthAfter, firstOfMonthAfter, goalHistoryStart, projectGoal } from '@/lib/goal-projection'
 import { todayInTimezone } from '@/lib/date-utils'
 import { useWorkspace } from '@/contexts/workspace-context'
 import { useDisplayLocale } from '@/hooks/use-display-locale'
@@ -51,6 +51,7 @@ export function GoalVisualization({ goal }: { goal: Goal }) {
   const id = useId()
   const [expanded, setExpanded] = useState(Boolean(goal.target_date))
   const today = todayInTimezone(current?.timezone)
+  const historyStart = goalHistoryStart(goal, today)
 
   // React Query loads and caches history for this goal and workspace. The key
   // identifies the cached result; rendering again does not by itself fetch again.
@@ -67,7 +68,7 @@ export function GoalVisualization({ goal }: { goal: Goal }) {
       goal.asset_id,
       goal.asset_group_id,
       goal.currency,
-      'all-history',
+      historyStart,
       today,
     ],
     queryFn: () => loadGoalHistory(goal, today),
@@ -105,6 +106,9 @@ export function GoalVisualization({ goal }: { goal: Goal }) {
   // Until history arrives, the historical series is empty.
   const rows = new Map<number, { time: number; actual?: number; projected?: number }>()
   for (const point of history.data?.points ?? []) {
+    if (point.date < historyStart) {
+      continue
+    }
     rows.set(timestamp(point.date), { time: timestamp(point.date), actual: point.amount })
   }
 
@@ -118,7 +122,8 @@ export function GoalVisualization({ goal }: { goal: Goal }) {
   // Sort left to right and choose the visible date range. A future deadline gets
   // one month of space after it; the chart always extends at least to next month.
   const chart = [...rows.values()].sort((a, b) => a.time - b.time)
-  const start = chart[0]?.time ?? timestamp(today)
+  // Keep the axis anchored even when the first available snapshot is later.
+  const start = timestamp(historyStart)
   const deadlineEnd =
     goal.target_date && goal.target_date > today
       ? timestamp(calendarMonthAfter(goal.target_date))

@@ -1,6 +1,7 @@
+import { format, parseISO } from 'date-fns'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { goal } from '@/test/goal-fixtures'
-import { loadGoalHistory, reportHistoryWindows } from './goal-history'
+import { loadGoalHistory } from './goal-history'
 
 const api = vi.hoisted(() => ({
   accounts: { get: vi.fn(), balanceHistory: vi.fn() },
@@ -34,45 +35,29 @@ beforeEach(() => {
   api.reports.netWorth.mockImplementation(
     async (_months, _interval, _accounts, _groups, _assets, _from, to) => ({
       meta: { currency: 'USD' },
-      trend: [{ date: to.slice(0, 7), value: 25700 }],
+      trend: [{ date: format(parseISO(to), "RRRR-'W'II"), value: 25700 }],
     }),
   )
 })
 
 describe('existing history APIs', () => {
-  it('requests all account history from its earliest bank date, including opening balances', async () => {
+  it('requests account history from one month before goal creation', async () => {
     const result = await loadGoalHistory(accountGoal(), today)
-    expect(result.points).toEqual([
-      { date: '2020-01-01', amount: 500 },
-      { date: today, amount: 2700 },
-    ])
-    expect(api.transactions.list).toHaveBeenCalledWith({
-      account_id: 'server',
-      sort_by: 'transaction_date',
-      sort_dir: 'asc',
-      limit: 1,
-      include_opening_balance: true,
-    })
-    expect(api.accounts.balanceHistory).toHaveBeenCalledWith('server', '2020-01-01', today)
+    expect(result.points).toEqual([{ date: today, amount: 2700 }])
+    expect(api.accounts.balanceHistory).toHaveBeenCalledWith('server', '2026-02-01', today)
+    expect(api.transactions.list).not.toHaveBeenCalled()
   })
 
-  it('uses today when the account has no transactions', async () => {
-    api.transactions.list.mockResolvedValue({ items: [] })
-    await loadGoalHistory(accountGoal(), today)
-    expect(api.accounts.balanceHistory).toHaveBeenCalledWith('server', today, today)
-  })
-
-  it('keeps older asset history without imposing a rolling window', async () => {
+  it('filters asset history to one month before goal creation', async () => {
     const result = await loadGoalHistory(
       goal({ tracking_type: 'asset', asset_id: 'studio' }, today),
       today,
     )
-    expect(result.points[0]).toEqual({ date: '2020-01-01', amount: 100 })
-    expect(result.points.at(-1)?.amount).toBe(8000)
+    expect(result.points).toEqual([{ date: today, amount: 8000 }])
     expect(api.assets.valueTrend).toHaveBeenCalledWith('studio')
   })
 
-  it('uses weekly report totals for only the selected wallet, preserving its full history', async () => {
+  it('uses weekly report totals for only the selected wallet, starting at an older goal creation date', async () => {
     api.assets.list.mockResolvedValue([
       { id: 'fund', group_id: 'wallet', currency: 'EUR', purchase_date: null },
       { id: 'other', group_id: 'other', currency: 'USD' },
@@ -88,7 +73,14 @@ describe('existing history APIs', () => {
       ],
     })
     const result = await loadGoalHistory(
-      goal({ tracking_type: 'asset_group', asset_group_id: 'wallet' }, today),
+      goal(
+        {
+          tracking_type: 'asset_group',
+          asset_group_id: 'wallet',
+          created_at: '2020-02-01T12:00:00Z',
+        },
+        today,
+      ),
       today,
     )
     expect(result.points).toEqual([
@@ -96,9 +88,9 @@ describe('existing history APIs', () => {
       { date: '2020-01-08', amount: 130 },
       { date: today, amount: 16000 },
     ])
-    expect(api.assets.valueTrend.mock.calls).toEqual([['fund']])
+    expect(api.assets.valueTrend).not.toHaveBeenCalled()
     expect(api.reports.netWorth).toHaveBeenCalledWith(
-      12,
+      undefined,
       'weekly',
       undefined,
       ['wallet'],
@@ -125,7 +117,14 @@ describe('existing history APIs', () => {
         ],
       })
       const result = await loadGoalHistory(
-        goal({ tracking_type: 'asset_group', asset_group_id: 'wallet' }, end),
+        goal(
+          {
+            tracking_type: 'asset_group',
+            asset_group_id: 'wallet',
+            created_at: '2020-01-27T12:00:00Z',
+          },
+          end,
+        ),
         end,
       )
       expect(result.points).toEqual(
@@ -143,19 +142,23 @@ describe('existing history APIs', () => {
     },
   )
 
-  it('fetches adjacent ranges for wallets with more than ten years of history', async () => {
+  it('caps old wallet history at ten years in one request', async () => {
     api.assets.list.mockResolvedValue([
       { id: 'fund', group_id: 'wallet', purchase_date: '1995-07-19' },
     ])
     await loadGoalHistory(
-      goal({ tracking_type: 'asset_group', asset_group_id: 'wallet' }, today),
+      goal(
+        {
+          tracking_type: 'asset_group',
+          asset_group_id: 'wallet',
+          created_at: '1995-08-19T12:00:00Z',
+        },
+        today,
+      ),
       today,
     )
     expect(api.reports.netWorth.mock.calls.map(call => call.slice(5))).toEqual([
-      ['1995-07-19', '2004-12-31'],
-      ['2005-01-01', '2014-12-31'],
-      ['2015-01-01', '2024-12-31'],
-      ['2025-01-01', today],
+      ['2016-11-21', today],
     ])
     expect(
       api.reports.netWorth.mock.calls.every(
@@ -164,15 +167,49 @@ describe('existing history APIs', () => {
     ).toBe(true)
   })
 
-  it('loads net worth in adjacent ranges, including asset history before transactions', async () => {
-    api.assets.list.mockResolvedValue([{ id: 'old-asset', purchase_date: '1995-07-19' }])
-    const result = await loadGoalHistory(goal({ tracking_type: 'net_worth' }, today), today)
+  it.each([
+    { end: '2026-11-21', created: '2026-10-01T12:00:00Z', start: '2026-09-01' },
+    { end: '2026-11-21', created: '2022-04-10T12:00:00Z', start: '2022-03-10' },
+    { end: '2026-11-21', created: '2026-11-21T12:00:00Z', start: '2026-10-21' },
+    { end: '2024-02-29', created: '2024-02-01T12:00:00Z', start: '2024-01-01' },
+    { end: '2024-03-31', created: '2024-03-31T12:00:00Z', start: '2024-02-29' },
+  ])('uses $start for a wallet goal created at $created', async ({ end, created, start }) => {
+    api.assets.list.mockResolvedValue([
+      { id: 'fund', group_id: 'wallet', purchase_date: '1990-01-01' },
+    ])
+    const wallet = goal(
+      {
+        tracking_type: 'asset_group',
+        asset_group_id: 'wallet',
+        created_at: created,
+      },
+      end,
+    )
+    await loadGoalHistory(wallet, end)
+    expect(api.reports.netWorth).toHaveBeenCalledWith(
+      undefined,
+      'weekly',
+      undefined,
+      ['wallet'],
+      undefined,
+      start,
+      end,
+    )
+    expect(api.assets.valueTrend).not.toHaveBeenCalled()
+    expect(api.transactions.list).not.toHaveBeenCalled()
+  })
+
+  it('caps old net-worth history at ten years in one request', async () => {
+    const result = await loadGoalHistory(
+      goal({ tracking_type: 'net_worth', created_at: '1995-08-19T00:00:00Z' }, today),
+      today,
+    )
+    expect(api.assets.valueTrend).not.toHaveBeenCalled()
+    expect(api.assets.list).not.toHaveBeenCalled()
+    expect(api.transactions.list).not.toHaveBeenCalled()
     expect(result.points.at(-1)?.amount).toBe(25700)
     expect(api.reports.netWorth.mock.calls.map(call => call.slice(5))).toEqual([
-      ['1995-07-19', '2004-12-31'],
-      ['2005-01-01', '2014-12-31'],
-      ['2015-01-01', '2024-12-31'],
-      ['2025-01-01', today],
+      ['2016-11-21', today],
     ])
   })
 
@@ -181,80 +218,137 @@ describe('existing history APIs', () => {
     expect(api.transactions.list).not.toHaveBeenCalled()
   })
 
-  it('uses month-end snapshots for the last three months and today for the current month', async () => {
+  it('uses weekly snapshots anchored to the start weekday and today for the final week', async () => {
     api.reports.netWorth.mockResolvedValue({
       meta: { currency: 'USD' },
       trend: [
-        { date: '2026-07', value: 35200 },
-        { date: '2026-08', value: 38300 },
-        { date: '2026-09', value: 41300 },
-        { date: '2026-10', value: 43800 },
-        { date: '2026-11', value: 46900 },
+        { date: '2026-W44', value: 35200 },
+        { date: '2026-W45', value: 38300 },
+        { date: '2026-W46', value: 41300 },
+        { date: '2026-W47', value: 46900 },
       ],
     })
     expect(await loadGoalHistory(goal({ tracking_type: 'net_worth' }, today), today)).toEqual({
       points: [
-        { date: '2026-08-31', amount: 38300 },
-        { date: '2026-09-30', amount: 41300 },
-        { date: '2026-10-31', amount: 43800 },
+        { date: '2026-11-01', amount: 35200 },
+        { date: '2026-11-08', amount: 38300 },
+        { date: '2026-11-15', amount: 41300 },
         { date: today, amount: 46900 },
       ],
       notes: ['netWorth'],
     })
+    expect(api.reports.netWorth).toHaveBeenCalledExactlyOnceWith(
+      undefined,
+      'weekly',
+      undefined,
+      undefined,
+      undefined,
+      '2026-02-01',
+      today,
+    )
   })
 
-  it('starts at a more recent first positive month without hiding subsequent losses', async () => {
+  it('filters weekly snapshots before the goal history window and retains losses', async () => {
     api.reports.netWorth.mockResolvedValue({
       meta: { currency: 'USD' },
       trend: [
-        { date: '2026-08', value: -100 },
-        { date: '2026-09', value: 0 },
-        { date: '2026-10', value: 100 },
-        { date: '2026-11', value: -50 },
+        { date: '2026-W42', value: -100 },
+        { date: '2026-W43', value: 0 },
+        { date: '2026-W44', value: 100 },
+        { date: '2026-W47', value: -50 },
       ],
     })
-    expect(
-      (await loadGoalHistory(goal({ tracking_type: 'net_worth' }, today), today)).points,
-    ).toEqual([
-      { date: '2026-10-31', amount: 100 },
+    const result = await loadGoalHistory(
+      goal({ tracking_type: 'net_worth', created_at: today + 'T00:00:00Z' }, today),
+      today,
+    )
+    expect(result.points).toEqual([
+      { date: '2026-10-21', amount: 0 },
+      { date: '2026-10-28', amount: 100 },
       { date: today, amount: -50 },
     ])
   })
 
-  it('retains recent history when net worth has never been positive', async () => {
+  it('retains weekly history when net worth has never been positive', async () => {
     api.reports.netWorth.mockResolvedValue({
       meta: { currency: 'USD' },
       trend: [
-        { date: '2026-07', value: -300 },
-        { date: '2026-08', value: -200 },
-        { date: '2026-11', value: 0 },
+        { date: '2026-W44', value: -300 },
+        { date: '2026-W45', value: -200 },
+        { date: '2026-W47', value: 0 },
       ],
     })
-    expect(
-      (await loadGoalHistory(goal({ tracking_type: 'net_worth' }, today), today)).points,
-    ).toEqual([
-      { date: '2026-08-31', amount: -200 },
+    const result = await loadGoalHistory(goal({ tracking_type: 'net_worth' }, today), today)
+    expect(result.points).toEqual([
+      { date: '2026-11-01', amount: -300 },
+      { date: '2026-11-08', amount: -200 },
       { date: today, amount: 0 },
     ])
   })
 
-  it('handles year boundaries, leap years and empty net-worth history', async () => {
+  it.each([
+    { created: '2026-11-20', start: '2026-10-20', first: '2026-10-27' },
+    { created: '2026-08-01', start: '2026-07-01', first: '2026-10-28' },
+    { created: '2024-01-01', start: '2023-12-01', first: '2026-10-30' },
+  ])('anchors weekly net worth to goal creation: $created', async ({ created, start, first }) => {
     api.reports.netWorth.mockResolvedValue({
       meta: { currency: 'USD' },
-      trend: [
-        { date: '2023-12', value: 50 },
-        { date: '2024-02', value: 100 },
-        { date: '2024-03', value: 200 },
-      ],
+      trend: [{ date: '2026-W44', value: -50 }],
     })
-    expect(
-      (await loadGoalHistory(goal({ tracking_type: 'net_worth' }, '2024-03-15'), '2024-03-15'))
-        .points,
-    ).toEqual([
-      { date: '2023-12-31', amount: 50 },
-      { date: '2024-02-29', amount: 100 },
-      { date: '2024-03-15', amount: 200 },
-    ])
+    const result = await loadGoalHistory(
+      goal({ tracking_type: 'net_worth', created_at: created + 'T00:00:00Z' }, today),
+      today,
+    )
+    expect(result.points).toEqual([{ date: first, amount: -50 }])
+    expect(api.reports.netWorth).toHaveBeenCalledExactlyOnceWith(
+      undefined,
+      'weekly',
+      undefined,
+      undefined,
+      undefined,
+      start,
+      today,
+    )
+  })
+
+  it.each([
+    {
+      created: '2021-01-25',
+      end: '2021-01-04',
+      trend: [
+        { date: '2020-W53', value: 100 },
+        { date: '2021-W01', value: 200 },
+      ],
+      expected: [
+        { date: '2021-01-01', amount: 100 },
+        { date: '2021-01-04', amount: 200 },
+      ],
+    },
+    {
+      created: '2024-03-29',
+      end: '2024-03-08',
+      trend: [
+        { date: '2024-W09', value: 100 },
+        { date: '2024-W10', value: 200 },
+      ],
+      expected: [
+        { date: '2024-02-29', amount: 100 },
+        { date: '2024-03-08', amount: 200 },
+      ],
+    },
+  ])(
+    'restores weekly year and leap-day boundaries ending $end',
+    async ({ created, end, trend, expected }) => {
+      api.reports.netWorth.mockResolvedValue({ meta: { currency: 'USD' }, trend })
+      const result = await loadGoalHistory(
+        goal({ tracking_type: 'net_worth', created_at: created + 'T00:00:00Z' }, end),
+        end,
+      )
+      expect(result.points).toEqual(expected)
+    },
+  )
+
+  it('reports missing net-worth history for an empty weekly report', async () => {
     api.reports.netWorth.mockResolvedValue({ meta: { currency: 'USD' }, trend: [] })
     expect(await loadGoalHistory(goal({ tracking_type: 'net_worth' }, today), today)).toEqual({
       points: [],
@@ -313,13 +407,4 @@ describe('existing history APIs', () => {
     api.accounts.balanceHistory.mockRejectedValue(new Error('offline'))
     await expect(loadGoalHistory(accountGoal(), today)).rejects.toThrow('offline')
   })
-})
-
-it('splits long net-worth history into complete API-compatible ranges', () => {
-  expect(reportHistoryWindows('1995-07-19', today)).toEqual([
-    ['1995-07-19', '2004-12-31'],
-    ['2005-01-01', '2014-12-31'],
-    ['2015-01-01', '2024-12-31'],
-    ['2025-01-01', today],
-  ])
 })
