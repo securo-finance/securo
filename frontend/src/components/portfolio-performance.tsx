@@ -1189,7 +1189,7 @@ export function PortfolioPerformance({
                         axisLine={false}
                         tickLine={false}
                         tickMargin={12}
-                        minTickGap={40}
+                        minTickGap={8}
                         tickFormatter={(value: number) =>
                           new Date(value).toLocaleDateString(dateLocale, {
                             timeZone: 'UTC',
