@@ -12,8 +12,9 @@ import uuid
 
 import bcrypt
 import pytest
+import pytest_asyncio
 from httpx import AsyncClient
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import get_jwt_strategy
@@ -24,6 +25,34 @@ pytestmark = pytest.mark.asyncio
 REASON = "Support asked for the address on the ticket"
 ADDRESS = "pair@example.com"
 OTHER_CASE = "Pair@example.com"
+
+# The addresses this file writes as a pair, in both cases.
+_PAIR_ADDRESSES = "('pair@example.com', 'wasfree@example.com')"
+
+
+@pytest_asyncio.fixture(autouse=True)
+async def legacy_pair_allowed(session: AsyncSession):
+    """Write the state an older release could leave: two rows for one address.
+
+    Migration 134 adds a unique index on ``lower(email)``, and the models build
+    it in the test schema too, so the pair could not be written at all. The
+    index is taken down for the length of the test and rebuilt afterwards with
+    the pair rows removed again: the tests here are about the release that ran
+    before the index existed, not about weakening every other test's schema.
+    """
+    await session.execute(text("DROP INDEX IF EXISTS uq_users_lower_email"))
+    await session.commit()
+    yield
+    await session.execute(
+        text(f"DELETE FROM users WHERE lower(email) IN {_PAIR_ADDRESSES}")
+    )
+    await session.execute(
+        text(
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_users_lower_email"
+            " ON users (lower(email))"
+        )
+    )
+    await session.commit()
 
 
 async def _add_account(
