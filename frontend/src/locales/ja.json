@@ -763,6 +763,8 @@
     "changePassword": "パスワード変更",
     "newPassword": "新しいパスワード",
     "passwordTooShort": "パスワードは8文字以上にしてください",
+    "passwordTooLong": "パスワードは72文字以内にしてください",
+    "resetPassword": "パスワードを再設定",
     "currentPassword": "現在のパスワード",
     "currentPasswordWrong": "現在のパスワードが正しくありません",
     "passwordChanged": "パスワードを変更しました",

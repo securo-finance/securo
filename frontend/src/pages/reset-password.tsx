@@ -35,6 +35,12 @@ export default function ResetPasswordPage() {
       setError(t('auth.passwordTooShort'))
       return
     }
+    // The backend refuses more than 72 characters (the bcrypt limit), so say
+    // it here instead of letting the round trip come back as "not accepted".
+    if (password.length > 72) {
+      setError(t('auth.passwordTooLong'))
+      return
+    }
 
     setIsLoading(true)
     try {

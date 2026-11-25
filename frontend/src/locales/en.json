@@ -763,6 +763,8 @@
     "changePassword": "Change password",
     "newPassword": "New password",
     "passwordTooShort": "Password must be at least 8 characters",
+    "passwordTooLong": "Password must be at most 72 characters",
+    "resetPassword": "Reset password",
     "currentPassword": "Current password",
     "currentPasswordWrong": "Current password is incorrect",
     "passwordChanged": "Password changed successfully",

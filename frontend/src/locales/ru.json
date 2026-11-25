@@ -771,6 +771,8 @@
     "changePassword": "Изменить пароль",
     "newPassword": "Новый пароль",
     "passwordTooShort": "Пароль должен содержать не менее 8 символов",
+    "passwordTooLong": "Пароль должен содержать не более 72 символов",
+    "resetPassword": "Сбросить пароль",
     "currentPassword": "Текущий пароль",
     "currentPasswordWrong": "Неверный текущий пароль",
     "passwordChanged": "Пароль успешно изменён",

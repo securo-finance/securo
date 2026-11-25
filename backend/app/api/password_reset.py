@@ -9,13 +9,14 @@ tells anyone which addresses have an account.
 
 import logging
 
-from fastapi import APIRouter, Body, Depends, HTTPException, Request, status
+from fastapi import APIRouter, BackgroundTasks, Body, Depends, HTTPException, Request, status
 from fastapi_users import exceptions
 from fastapi_users.router.common import ErrorCode
 from pydantic import EmailStr
 
 from app.core.auth import UserManager, get_user_manager
 from app.core.config import get_settings
+from app.services import email_service
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +48,7 @@ def _invalid_password(reason: str) -> HTTPException:
 )
 async def forgot_password(
     request: Request,
+    background_tasks: BackgroundTasks,
     email: EmailStr = Body(..., embed=True),
     user_manager: UserManager = Depends(get_user_manager),
 ):
@@ -64,6 +66,13 @@ async def forgot_password(
         await user_manager.forgot_password(user, request)
     except exceptions.UserInactive:
         pass
+
+    # The hook left the composed message on the request instead of waiting on
+    # the relay: an unknown address has nothing to send, and both answers go
+    # out without the relay's timing telling them apart.
+    pending = getattr(request.state, "password_reset_message", None)
+    if pending is not None:
+        background_tasks.add_task(email_service.deliver, *pending)
 
     return None
 
