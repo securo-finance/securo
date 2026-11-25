@@ -35,6 +35,13 @@ from app.services.viewer_currency import viewer_currency
 
 router = APIRouter(prefix="/api/transactions", tags=["transactions"])
 
+# The month grid builds its edges with date arithmetic and, for a future
+# month, carries every recurring occurrence since today. The farther the
+# requested month, the longer one worker stays on the request, and a month at
+# the ends of the supported calendar overflows the date math. Fifty years past
+# today is beyond any planning horizon and keeps that walk short (#598).
+_MAX_CALENDAR_MONTH_YEARS = 50
+
 # Text columns go through `_csv_safe` (app.services.csv_safety): a spreadsheet
 # evaluates any cell that starts with a formula leader, so a description like
 # "=HYPERLINK(...)" runs as live content when the export is opened (CSV
@@ -341,6 +348,19 @@ async def transaction_calendar(
     ctx: WorkspaceContext = Depends(current_workspace),
     session: AsyncSession = Depends(get_async_session),
 ):
+    if month is not None:
+        # Refuse before any date math or occurrence walk: a month at the ends
+        # of the calendar used to overflow into a 500, and a far future month
+        # kept the worker counting for minutes. Compared by year, since the
+        # grid ignores the day (#598).
+        today = app_today()
+        if abs(month.year - today.year) > _MAX_CALENDAR_MONTH_YEARS:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"month must be within {_MAX_CALENDAR_MONTH_YEARS} years of today"
+                ),
+            )
     return await get_transaction_calendar(
         session,
         ctx.workspace.id,
