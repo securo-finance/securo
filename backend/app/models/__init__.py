@@ -25,6 +25,7 @@ from app.models.asset_value import AssetValue
 from app.models.fx_rate import FxRate
 from app.models.transaction_attachment import TransactionAttachment
 from app.models.document_extraction import DocumentExtraction, WorkspaceDocumentAiSettings
+from app.models.notification import Notification, NotificationDelivery, NotificationPreference
 from app.models.payee import Payee, PayeeMapping, PayeeTaxId
 from app.models.app_settings import AppSetting
 from app.models.goal import Goal
@@ -60,6 +61,9 @@ from app.core import workspace_autostamp  # noqa: F401, E402
 
 __all__ = [
     "DocumentExtraction",
+    "Notification",
+    "NotificationDelivery",
+    "NotificationPreference",
     "WorkspaceDocumentAiSettings",
     "AccessToken",
     "User",

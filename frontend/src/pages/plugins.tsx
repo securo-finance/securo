@@ -180,7 +180,7 @@ export default function PluginsPage() {
 
       <div className="grid gap-x-10 gap-y-6 lg:grid-cols-[13rem_minmax(0,1fr)]">
         <aside className="hidden lg:block">
-          <div className="sticky top-6 space-y-7">
+          <div className="sticky top-22 space-y-7">
             {facets.map((facet) => (facet.options.length ? <FacetList key={facet.key} facet={facet} value={filters[facet.key]} onChoose={choose} /> : null))}
             {facetsActive && (
               <Button variant="ghost" size="sm" className="h-8 px-2 text-muted-foreground" onClick={clearFacets}>

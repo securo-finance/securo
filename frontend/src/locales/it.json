@@ -3296,8 +3296,8 @@
     "defaultBadge": "Predefinito",
     "defaultLabel": "Predefinito",
     "globalChat": {
-      "title": "Chat",
-      "openHint": "Apri chat",
+      "title": "Agente",
+      "openHint": "Apri agente",
       "history": "Conversazioni recenti",
       "selectAgent": "Seleziona agente",
       "openSettings": "Impostazioni agente",
@@ -4211,5 +4211,104 @@
       "turnedOff": "Lettura documenti disattivata"
     },
     "unreadPages": "Pagine non lette (scansioni, e il modello non legge immagini): {{pages}}. Le loro righe mancano da questa revisione."
+  },
+  "notifications": {
+    "title": "Notifiche",
+    "unread": "Non letta",
+    "unreadLabel": "Notifiche, {{number}} non lette",
+    "markAllRead": "Segna tutte come lette",
+    "empty": "Nulla richiede la tua attenzione.",
+    "loadError": "Impossibile caricare le notifiche.",
+    "connection": {
+      "title": "{{name}} ha smesso di sincronizzarsi",
+      "rateLimited": "La banca continua a raggiungere il limite giornaliero."
+    },
+    "recurring": {
+      "title": "{{name}} non è stata generata",
+      "detail": "Scadeva il {{date}}. Controlla il conto e le impostazioni."
+    },
+    "budget": {
+      "close": "{{name}}: {{percent}}% del budget usato",
+      "reached": "{{name}}: budget esaurito",
+      "detail": "{{actual}} di {{budget}}"
+    },
+    "backup": {
+      "title": "Backup pianificato non riuscito",
+      "detail": "Ultimo tentativo il {{date}}. Securo riproverà."
+    },
+    "seeAll": "Vedi tutte le notifiche",
+    "markRead": "Segna come letta",
+    "loadMore": "Carica altre",
+    "filter": {
+      "all": "Tutte",
+      "unread": "Non lette"
+    },
+    "emptyFilter": {
+      "all": "Ancora nessuna notifica.",
+      "unread": "Niente altro da leggere."
+    },
+    "flag": {
+      "title": "Promemoria scaduti: {{number}}",
+      "detail": "Transazioni contrassegnate con promemoria passato."
+    },
+    "match": {
+      "title": "Corrispondenze da verificare: {{number}}",
+      "detail": "Securo ha trovato possibili corrispondenze e attende la tua risposta."
+    },
+    "invoice": {
+      "title": "{{name}}: fattura scaduta",
+      "detail": "{{amount}}, scadeva il {{date}}."
+    },
+    "preferences": {
+      "title": "Preferenze",
+      "hint": "Scegli su cosa vuoi essere avvisato in questo spazio. Gli altri membri mantengono le proprie scelte.",
+      "saveError": "Impossibile salvare la tua scelta.",
+      "loadError": "Impossibile caricare le tue preferenze."
+    },
+    "kind": {
+      "connection_error": {
+        "label": "Connessioni",
+        "hint": "Una banca o un plugin ha smesso di sincronizzarsi."
+      },
+      "budget_threshold": {
+        "label": "Budget",
+        "hint": "Un budget ha raggiunto l’80% o il 100%."
+      },
+      "recurring_failed": {
+        "label": "Ricorrenti",
+        "hint": "Una transazione ricorrente non è stata generata."
+      },
+      "flag_overdue": {
+        "label": "Promemoria",
+        "hint": "Una transazione contrassegnata ha superato la data del promemoria."
+      },
+      "reconciliation_pending": {
+        "label": "Corrispondenze da verificare",
+        "hint": "Securo ha trovato possibili corrispondenze e attende la tua risposta."
+      },
+      "invoice_overdue": {
+        "label": "Fatture",
+        "hint": "Una fattura a un cliente è scaduta."
+      },
+      "group_expense": {
+        "label": "Spese condivise",
+        "hint": "Qualcuno aggiunge o modifica una spesa condivisa con te in un gruppo."
+      },
+      "group_settlement": {
+        "label": "Pagamenti nei gruppi",
+        "hint": "Qualcuno registra un pagamento tuo o per te in un gruppo."
+      },
+      "backup_failed": {
+        "label": "Backup",
+        "hint": "Un backup pianificato non è riuscito."
+      }
+    },
+    "group": {
+      "added": "{{actor}} ha aggiunto {{name}}",
+      "changed": "{{actor}} ha modificato {{name}}",
+      "batch": "{{actor}} ha aggiunto spese condivise: {{number}}",
+      "share": "La tua quota in {{group}}: {{amount}}",
+      "paid": "{{actor}} ha registrato un pagamento"
+    }
   }
 }

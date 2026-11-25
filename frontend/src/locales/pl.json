@@ -3421,8 +3421,8 @@
     "defaultBadge": "Domyślny",
     "defaultLabel": "Domyślny",
     "globalChat": {
-      "title": "Czat",
-      "openHint": "Otwórz czat",
+      "title": "Agent",
+      "openHint": "Otwórz agenta",
       "history": "Ostatnie rozmowy",
       "selectAgent": "Wybierz agenta",
       "openSettings": "Ustawienia agenta",
@@ -4358,5 +4358,104 @@
       "turnedOff": "Wyłączono odczyt dokumentów"
     },
     "unreadPages": "Nieodczytane strony (skany, a model nie czyta obrazów): {{pages}}. Ich wierszy brakuje w tym przeglądzie."
+  },
+  "notifications": {
+    "title": "Powiadomienia",
+    "unread": "Nieprzeczytane",
+    "unreadLabel": "Powiadomienia, nieprzeczytane: {{number}}",
+    "markAllRead": "Oznacz wszystkie jako przeczytane",
+    "empty": "Nic nie wymaga Twojej uwagi.",
+    "loadError": "Nie udało się wczytać powiadomień.",
+    "connection": {
+      "title": "Synchronizacja przerwana: {{name}}",
+      "rateLimited": "Bank wciąż osiąga dzienny limit."
+    },
+    "recurring": {
+      "title": "Nie wygenerowano: {{name}}",
+      "detail": "Termin minął {{date}}. Sprawdź konto i ustawienia."
+    },
+    "budget": {
+      "close": "{{name}}: wykorzystano {{percent}}% budżetu",
+      "reached": "{{name}}: budżet wyczerpany",
+      "detail": "{{actual}} z {{budget}}"
+    },
+    "backup": {
+      "title": "Zaplanowana kopia zapasowa nie powiodła się",
+      "detail": "Ostatnia próba: {{date}}. Securo spróbuje ponownie."
+    },
+    "seeAll": "Zobacz wszystkie powiadomienia",
+    "markRead": "Oznacz jako przeczytane",
+    "loadMore": "Wczytaj więcej",
+    "filter": {
+      "all": "Wszystkie",
+      "unread": "Nieprzeczytane"
+    },
+    "emptyFilter": {
+      "all": "Brak powiadomień.",
+      "unread": "Nie ma nic do przeczytania."
+    },
+    "flag": {
+      "title": "Zaległe przypomnienia: {{number}}",
+      "detail": "Oznaczone transakcje po terminie przypomnienia."
+    },
+    "match": {
+      "title": "Dopasowania do sprawdzenia: {{number}}",
+      "detail": "Securo znalazło możliwe dopasowania i czeka na odpowiedź."
+    },
+    "invoice": {
+      "title": "{{name}}: faktura po terminie",
+      "detail": "{{amount}}, termin minął {{date}}."
+    },
+    "preferences": {
+      "title": "Preferencje",
+      "hint": "Wybierz, o czym chcesz wiedzieć w tym obszarze. Inni członkowie zachowują własne ustawienia.",
+      "saveError": "Nie udało się zapisać wyboru.",
+      "loadError": "Nie udało się wczytać preferencji."
+    },
+    "kind": {
+      "connection_error": {
+        "label": "Połączenia",
+        "hint": "Bank lub wtyczka przestały się synchronizować."
+      },
+      "budget_threshold": {
+        "label": "Budżety",
+        "hint": "Budżet osiągnął 80% lub 100%."
+      },
+      "recurring_failed": {
+        "label": "Cykliczne",
+        "hint": "Transakcja cykliczna nie została wygenerowana."
+      },
+      "flag_overdue": {
+        "label": "Przypomnienia",
+        "hint": "Minęła data przypomnienia oznaczonej transakcji."
+      },
+      "reconciliation_pending": {
+        "label": "Dopasowania do sprawdzenia",
+        "hint": "Securo znalazło możliwe dopasowania i czeka na odpowiedź."
+      },
+      "invoice_overdue": {
+        "label": "Faktury",
+        "hint": "Faktura dla klienta jest po terminie."
+      },
+      "group_expense": {
+        "label": "Wspólne wydatki",
+        "hint": "Ktoś dodaje lub zmienia wydatek dzielony z Tobą w grupie."
+      },
+      "group_settlement": {
+        "label": "Płatności w grupach",
+        "hint": "Ktoś zapisuje w grupie płatność od Ciebie lub dla Ciebie."
+      },
+      "backup_failed": {
+        "label": "Kopie zapasowe",
+        "hint": "Zaplanowana kopia zapasowa nie powiodła się."
+      }
+    },
+    "group": {
+      "added": "{{actor}}: dodano {{name}}",
+      "changed": "{{actor}}: zmieniono {{name}}",
+      "batch": "{{actor}}: dodano wspólne wydatki: {{number}}",
+      "share": "Twoja część w {{group}}: {{amount}}",
+      "paid": "{{actor}}: zapisano płatność"
+    }
   }
 }

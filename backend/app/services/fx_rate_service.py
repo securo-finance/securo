@@ -1,5 +1,8 @@
 import logging
 import uuid
+from collections.abc import Generator
+from contextlib import contextmanager
+from contextvars import ContextVar
 from datetime import date
 from decimal import Decimal
 from typing import NamedTuple, Optional
@@ -20,6 +23,21 @@ from app.providers.openexchangerates import FxProviderNotConfigured, OpenExchang
 from app.services.provider_settings import resolve_settings
 
 logger = logging.getLogger(__name__)
+
+_stored_only: ContextVar[bool] = ContextVar("fx_stored_rates_only", default=False)
+
+
+@contextmanager
+def stored_rates_only() -> Generator[None]:
+    """Convert with the rates already stored, whatever the callee asks for.
+
+    For unattended reads through services that fetch on demand: nobody asked
+    for a rate, so no call leaves the instance (ADR 0016)."""
+    token = _stored_only.set(True)
+    try:
+        yield
+    finally:
+        _stored_only.reset(token)
 
 
 def _code(currency: str) -> str:
@@ -123,7 +141,7 @@ async def _resolve_rate(
     usd_to_target = await _get_exact_date_rate(session, to_currency, target)
 
     # Step 2: If missing, fetch from provider for exact date
-    if allow_fetch and (usd_to_source is None or usd_to_target is None):
+    if allow_fetch and not _stored_only.get() and (usd_to_source is None or usd_to_target is None):
         try:
             synced = await sync_rates(session, target)
             if synced > 0:

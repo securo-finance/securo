@@ -104,6 +104,9 @@ ALLOWLIST: dict[tuple[str, str], str] = {
     # own tokens unless the member is an owner.
     ("POST", "/api/access-tokens"): "the requester's own token, scopes capped by their role",
     ("DELETE", "/api/access-tokens/{token_id}"): "the requester's own token, or any as owner",
+    ("POST", "/api/notifications/{notification_id}/read"): "per-user read state, any member",
+    ("PUT", "/api/notifications/preferences/{kind}/{channel}"): "the requester's own preference, any member",
+    ("POST", "/api/notifications/read-all"): "per-user read state, any member",
     # How a member arranged their own view of the workspace (dashboard
     # widgets, listed reports), keyed by their user id. Workspace data is
     # untouched, so a viewer may arrange their view too.
