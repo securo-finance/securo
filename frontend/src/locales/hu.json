@@ -3003,7 +3003,7 @@
       "updated": "Felhasználó frissítve",
       "deleted": "Felhasználó törölve",
       "confirmDeleteTitle": "Törlöd a felhasználót?",
-      "confirmDeleteDesc": "Ezzel véglegesen törlöd a(z) {{email}} felhasználót és az összes adatát. Ez a művelet nem vonható vissza.",
+      "confirmDeleteDesc": "Ezzel véglegesen törlöd a(z) {{email}} felhasználót és azokat a munkaterületeket, amelyekhez csak ő fér hozzá. Amit mások munkaterületeihez adott hozzá, megmarad. Ez a művelet nem vonható vissza.",
       "resetPassword": "Jelszó visszaállítása",
       "resetPasswordPlaceholder": "Hagyd üresen a jelenlegi megtartásához",
       "addDesc": "Új felhasználói fiók létrehozása, amely hozzáfér az alkalmazáshoz.",

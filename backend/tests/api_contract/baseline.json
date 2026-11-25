@@ -486,7 +486,7 @@
   "DELETE /api/access-tokens/{token_id}": 404,
   "DELETE /api/accounts/{account_id}": 204,
   "DELETE /api/admin/settings/{key}": 204,
-  "DELETE /api/admin/users/{user_id}": 204,
+  "DELETE /api/admin/users/{user_id}": 400,
   "DELETE /api/agents/connections/{conn_id}": 204,
   "DELETE /api/agents/conversations/{conversation_id}": 204,
   "DELETE /api/agents/{agent_id}": 204,

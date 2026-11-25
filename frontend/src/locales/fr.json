@@ -3018,7 +3018,7 @@
       "updated": "Utilisateur mis à jour",
       "deleted": "Utilisateur supprimé",
       "confirmDeleteTitle": "Supprimer l'utilisateur ?",
-      "confirmDeleteDesc": "Cela supprimera définitivement l'utilisateur {{email}} et toutes ses données. Cette action est irréversible.",
+      "confirmDeleteDesc": "Cela supprimera définitivement l'utilisateur {{email}} et les espaces de travail auxquels lui seul a accès. Ce qu'il a ajouté aux espaces de travail d'autres personnes est conservé. Cette action est irréversible.",
       "resetPassword": "Réinitialiser le mot de passe",
       "resetPasswordPlaceholder": "Laissez vide pour conserver l'actuel",
       "addDesc": "Créez un nouveau compte utilisateur avec accès à l'application.",

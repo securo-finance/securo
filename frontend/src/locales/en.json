@@ -3003,7 +3003,7 @@
       "updated": "User updated",
       "deleted": "User deleted",
       "confirmDeleteTitle": "Delete user?",
-      "confirmDeleteDesc": "This will permanently delete the user {{email}} and all their data. This action cannot be undone.",
+      "confirmDeleteDesc": "This will permanently delete the user {{email}} and the workspaces only they have access to. What they added to other people's workspaces is kept. This action cannot be undone.",
       "resetPassword": "Reset password",
       "resetPasswordPlaceholder": "Leave blank to keep current",
       "addDesc": "Create a new user account with access to the application.",

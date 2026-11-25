@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 from alembic.migration import MigrationContext
 from alembic.operations import Operations
-from sqlalchemy import inspect, select, text, update
+from sqlalchemy import delete, inspect, select, text, update
 
 from app.models.invoice import Invoice
 from app.models.invoice_attachment import InvoiceAttachment
@@ -119,19 +119,20 @@ async def test_deleting_a_schedule_author_preserves_and_continues_billing(
 
         assert await admin_service.delete_user(session, author_id, admin.id)
         await session.refresh(schedule)
-        assert await session.get(User, author_id) is None
-        assert schedule.user_id is None
+        await _assert_author_gone(session, author_id, closed=with_client)
+        kept_author = author_id if with_client else None
+        assert schedule.user_id == kept_author
         assert schedule.status == "active"
         [invoice] = await schedules.generate_due(session, schedule, today=date(2026, 10, 5))
         await session.commit()
-        assert invoice.user_id is None
+        assert invoice.user_id == kept_author
         assert invoice.workspace_id == workspace.id
         assert invoice.status == "open"
         assert invoice.sequence == 1 and invoice.total == 100
         assert schedule.next_sequence == 2
         assert invoice.payee_id == schedule.payee_id
         if with_client:
-            await _assert_client_survives(session, schedule.payee_id, workspace.id)
+            await _assert_client_survives(session, schedule.payee_id, workspace.id, author_id)
 
 
 @pytest.mark.parametrize("migrate_existing", [False, True], ids=["model", "migration"])
@@ -159,26 +160,38 @@ async def test_deleting_the_author_of_a_billed_agreement_keeps_what_it_issued(
 
         assert await admin_service.delete_user(session, author_id, admin.id)
         session.expunge_all()
-        assert await session.get(User, author_id) is None
+        await _assert_author_gone(session, author_id, closed=with_client)
+        kept_author = author_id if with_client else None
         survivor = await session.get(InvoiceSchedule, schedule.id)
-        assert survivor is not None and survivor.user_id is None
+        assert survivor is not None and survivor.user_id == kept_author
         invoice = await session.get(Invoice, invoice_id)
-        assert invoice is not None and invoice.user_id is None
+        assert invoice is not None and invoice.user_id == kept_author
         assert invoice.schedule_id == schedule.id and invoice.status == "open"
         attachment = await session.get(InvoiceAttachment, filed.id)
-        assert attachment is not None and attachment.user_id is None
+        assert attachment is not None and attachment.user_id == kept_author
         assert invoice.payee_id == survivor.payee_id
         if with_client:
-            await _assert_client_survives(session, survivor.payee_id, workspace.id)
+            await _assert_client_survives(session, survivor.payee_id, workspace.id, author_id)
 
 
-async def _assert_client_survives(session, payee_id, workspace_id):
+async def _assert_author_gone(session, author_id, closed=False):
+    """Deleted, or closed when a kept payee mapping still names them."""
+    assert await admin_service.get_user(session, author_id) is None
+    row = await session.get(User, author_id, populate_existing=True)
+    if not closed:
+        assert row is None
+        return
+    assert row is not None and not row.is_active
+    assert "author@" not in row.email
+
+
+async def _assert_client_survives(session, payee_id, workspace_id, author_id=None):
     client = await payee_service.get_payee(session, payee_id, workspace_id)
     assert client is not None
     await session.refresh(client, attribute_names=["user_id", "tax_ids"])
-    assert client.user_id is None and client.workspace_id == workspace_id
+    assert client.user_id == author_id and client.workspace_id == workspace_id
     payload = PayeeRead.model_validate(client, from_attributes=True).model_dump()
-    assert payload["user_id"] is None and payload["id"] == payee_id
+    assert payload["user_id"] == author_id and payload["id"] == payee_id
     assert payload["name"] == "Retained client" and payload["notes"] == "Keep client notes"
     assert payload["email"] == "client@example.invalid"
     assert payload["source"] == "manual"
@@ -186,7 +199,7 @@ async def _assert_client_survives(session, payee_id, workspace_id):
 
 
 @pytest.mark.parametrize("migrate_existing", [False, True], ids=["model", "migration"])
-async def test_deleting_a_client_creator_keeps_other_authors_invoices_and_unrelated_cleanup(
+async def test_deleting_a_client_creator_keeps_the_workspaces_clients_and_invoices(
     postgres_sessions, migrate_existing,
 ):
     async with postgres_sessions() as session:
@@ -198,9 +211,8 @@ async def test_deleting_a_client_creator_keeps_other_authors_invoices_and_unrela
             user_id=admin.id, workspace_id=workspace.id, target_id=client_id,
         )
         session.add(other_mapping)
-        # No schedule references this client, and the surviving invoice was
-        # written by somebody else. Client retention follows the reference,
-        # not the creator of the billing record.
+        # Clients belong to the workspace: one is kept whether or not a
+        # billing record references it.
         invoice = await invoice_service.create_invoice(
             session, workspace.id, admin.id,
             {"payee_id": client_id, "total": Decimal("100"), "issue_date": date(2026, 10, 5)},
@@ -212,17 +224,21 @@ async def test_deleting_a_client_creator_keeps_other_authors_invoices_and_unrela
         assert await admin_service.delete_user(session, author_id, admin.id)
         await session.refresh(invoice)
         assert invoice.payee_id == client_id and invoice.user_id == admin.id
-        assert await session.get(Payee, unused_id, populate_existing=True) is None
-        assert await session.scalar(select(PayeeMapping.id).where(
+        survivor = await session.get(Payee, unused_id, populate_existing=True)
+        assert survivor is not None and survivor.workspace_id == workspace.id
+        await _assert_author_gone(session, author_id, closed=True)
+        assert (await session.scalars(select(PayeeMapping.target_id).where(
             PayeeMapping.user_id == author_id,
-        )) is None
+        ))).all()
         assert await session.get(PayeeMapping, other_mapping.id) is not None
-        await _assert_client_survives(session, client_id, workspace.id)
+        await _assert_client_survives(session, client_id, workspace.id, author_id)
 
 
 async def test_downgrade_refuses_to_invent_a_retained_client_creator(postgres_sessions):
     async with postgres_sessions() as session:
         admin, author, workspace, schedule = await _agreement(session, with_client=True)
+        # A mapping would keep the author's row; this is about a creator that is gone.
+        await session.execute(delete(PayeeMapping).where(PayeeMapping.user_id == author.id))
         assert await admin_service.delete_user(session, author.id, admin.id)
         migration = _migration()
         connection = await session.connection()

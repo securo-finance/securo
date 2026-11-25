@@ -3005,7 +3005,7 @@
       "updated": "Gebruiker bijgewerkt",
       "deleted": "Gebruiker verwijderd",
       "confirmDeleteTitle": "Gebruiker verwijderen?",
-      "confirmDeleteDesc": "Hierdoor wordt de gebruiker {{email}} en al zijn gegevens permanent verwijderd. Deze actie kan niet ongedaan worden gemaakt.",
+      "confirmDeleteDesc": "Hierdoor worden de gebruiker {{email}} en de workspaces waartoe alleen die gebruiker toegang heeft permanent verwijderd. Wat de gebruiker aan workspaces van anderen heeft toegevoegd, blijft behouden. Deze actie kan niet ongedaan worden gemaakt.",
       "resetPassword": "Wachtwoord opnieuw instellen",
       "resetPasswordPlaceholder": "Laat dit leeg om actueel te blijven",
       "addDesc": "Maak een nieuw gebruikersaccount aan met toegang tot de applicatie.",

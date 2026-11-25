@@ -3003,7 +3003,7 @@
       "updated": "ユーザーを更新しました",
       "deleted": "ユーザーを削除しました",
       "confirmDeleteTitle": "ユーザーを削除しますか?",
-      "confirmDeleteDesc": "{{email}}とそのすべてのデータを完全に削除します。この操作は取り消せません。",
+      "confirmDeleteDesc": "{{email}}と、このユーザーだけがアクセスできるワークスペースを完全に削除します。他の人のワークスペースに追加した内容は残ります。この操作は取り消せません。",
       "resetPassword": "パスワードをリセット",
       "resetPasswordPlaceholder": "空欄で現在のパスワードを保持",
       "addDesc": "アプリケーションにアクセスできる新しいユーザーアカウントを作成します。",

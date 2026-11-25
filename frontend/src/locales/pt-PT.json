@@ -3017,7 +3017,7 @@
       "updated": "Utilizador atualizado",
       "deleted": "Utilizador eliminado",
       "confirmDeleteTitle": "Eliminar utilizador?",
-      "confirmDeleteDesc": "Isto eliminará permanentemente o utilizador {{email}} e todos os respetivos dados. Esta ação não pode ser desfeita.",
+      "confirmDeleteDesc": "Isto eliminará permanentemente o utilizador {{email}} e os espaços de trabalho a que só ele tem acesso. O que adicionou a espaços de trabalho de outras pessoas é mantido. Esta ação não pode ser desfeita.",
       "resetPassword": "Redefinir palavra-passe",
       "resetPasswordPlaceholder": "Deixa em branco para manter a atual",
       "addDesc": "Criar uma nova conta de utilizador com acesso ao aplicação.",

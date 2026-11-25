@@ -3004,7 +3004,7 @@
       "updated": "Benutzer aktualisiert",
       "deleted": "Benutzer gelöscht",
       "confirmDeleteTitle": "Benutzer löschen?",
-      "confirmDeleteDesc": "Dadurch wird der Benutzer {{email}} und all seine Daten dauerhaft gelöscht. Diese Aktion kann nicht rückgängig gemacht werden.",
+      "confirmDeleteDesc": "Dadurch werden der Benutzer {{email}} und die Workspaces, auf die nur er Zugriff hat, dauerhaft gelöscht. Was er in Workspaces anderer Personen hinzugefügt hat, bleibt erhalten. Diese Aktion kann nicht rückgängig gemacht werden.",
       "resetPassword": "Passwort zurücksetzen",
       "resetPasswordPlaceholder": "Leer lassen, um aktuelles zu behalten",
       "addDesc": "Erstelle ein neues Benutzerkonto mit Zugriff auf die Anwendung.",

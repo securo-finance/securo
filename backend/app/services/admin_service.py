@@ -4,7 +4,7 @@ import uuid
 from typing import Optional
 
 from fastapi_users.exceptions import UserAlreadyExists
-from sqlalchemy import delete, func, select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import UserManager
@@ -12,7 +12,7 @@ from app.core.config import get_settings
 from app.models.app_settings import AppSetting
 from app.models.user import User
 from app.schemas.admin import AdminUserCreate, AdminUserUpdate
-from app.services import email_service
+from app.services import email_service, user_removal_service
 
 logger = logging.getLogger(__name__)
 
@@ -23,8 +23,10 @@ async def list_users(
     page: int = 1,
     limit: int = 50,
 ) -> tuple[list[User], int]:
-    query = select(User)
-    count_query = select(func.count()).select_from(User)
+    query = select(User).where(user_removal_service.not_removed())
+    count_query = (
+        select(func.count()).select_from(User).where(user_removal_service.not_removed())
+    )
 
     if search:
         query = query.where(User.email.ilike(f"%{search}%"))
@@ -40,7 +42,9 @@ async def list_users(
 
 
 async def get_user(session: AsyncSession, user_id: uuid.UUID) -> Optional[User]:
-    result = await session.execute(select(User).where(User.id == user_id))
+    result = await session.execute(
+        select(User).where(User.id == user_id, user_removal_service.not_removed())
+    )
     return result.scalar_one_or_none()
 
 
@@ -172,64 +176,7 @@ async def delete_user(
         if superuser_count <= 1:
             raise ValueError("Cannot delete the last admin user")
 
-    # Cascade delete user data in correct order
-    from app.models.transaction_attachment import TransactionAttachment
-    from app.models.transaction import Transaction
-    from app.models.budget import Budget
-    from app.models.recurring_transaction import RecurringTransaction
-    from app.models.import_log import ImportLog
-    from app.models.rule import Rule
-    from app.models.asset_value import AssetValue
-    from app.models.asset import Asset
-    from app.models.payee import PayeeMapping, Payee
-    from app.models.account import Account
-    from app.models.category import Category
-    from app.models.category_group import CategoryGroup
-    from app.models.bank_connection import BankConnection
-    from app.models.invoice import Invoice
-    from app.models.invoice_schedule import InvoiceSchedule
-
-    # Delete attachments for user's transactions
-    tx_ids_query = select(Transaction.id).where(Transaction.user_id == user_id)
-    await session.execute(
-        delete(TransactionAttachment).where(
-            TransactionAttachment.transaction_id.in_(tx_ids_query)
-        )
-    )
-
-    # Delete in dependency order
-    await session.execute(delete(Transaction).where(Transaction.user_id == user_id))
-    await session.execute(delete(Budget).where(Budget.user_id == user_id))
-    await session.execute(delete(RecurringTransaction).where(RecurringTransaction.user_id == user_id))
-    await session.execute(delete(ImportLog).where(ImportLog.user_id == user_id))
-    await session.execute(delete(Rule).where(Rule.user_id == user_id))
-
-    # Asset values depend on assets
-    asset_ids_query = select(Asset.id).where(Asset.user_id == user_id)
-    await session.execute(
-        delete(AssetValue).where(AssetValue.asset_id.in_(asset_ids_query))
-    )
-    await session.execute(delete(Asset).where(Asset.user_id == user_id))
-
-    await session.execute(delete(PayeeMapping).where(PayeeMapping.user_id == user_id))
-    # Billing records belong to the workspace and RESTRICT client deletion.
-    # Keep their clients and let the creator FK clear when the user is deleted;
-    # unrelated user payees retain the existing cleanup behavior.
-    await session.execute(
-        delete(Payee).where(
-            Payee.user_id == user_id,
-            ~select(Invoice.id).where(Invoice.payee_id == Payee.id).exists(),
-            ~select(InvoiceSchedule.id).where(InvoiceSchedule.payee_id == Payee.id).exists(),
-        )
-    )
-    await session.execute(delete(Account).where(Account.user_id == user_id))
-    await session.execute(delete(Category).where(Category.user_id == user_id))
-    await session.execute(delete(CategoryGroup).where(CategoryGroup.user_id == user_id))
-    await session.execute(delete(BankConnection).where(BankConnection.user_id == user_id))
-
-    # Delete the user
-    await session.delete(user)
-    await session.commit()
+    await user_removal_service.remove_user(session, user)
     return True
 
 

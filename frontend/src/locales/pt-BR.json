@@ -3018,7 +3018,7 @@
       "updated": "Usuário atualizado",
       "deleted": "Usuário excluído",
       "confirmDeleteTitle": "Excluir usuário?",
-      "confirmDeleteDesc": "Isso excluirá permanentemente o usuário {{email}} e todos os seus dados. Esta ação não pode ser desfeita.",
+      "confirmDeleteDesc": "Isso excluirá permanentemente o usuário {{email}} e os workspaces aos quais só ele tem acesso. O que ele adicionou a workspaces de outras pessoas será mantido. Esta ação não pode ser desfeita.",
       "resetPassword": "Redefinir senha",
       "resetPasswordPlaceholder": "Deixe em branco para manter a atual",
       "addDesc": "Criar uma nova conta de usuário com acesso ao aplicativo.",

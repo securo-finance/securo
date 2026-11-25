@@ -3137,7 +3137,7 @@
       "updated": "Zaktualizowano użytkownika",
       "deleted": "Usunięto użytkownika",
       "confirmDeleteTitle": "Usunąć użytkownika?",
-      "confirmDeleteDesc": "Spowoduje to trwałe usunięcie użytkownika {{email}} oraz wszystkich jego danych. Tej operacji nie można cofnąć.",
+      "confirmDeleteDesc": "Spowoduje to trwałe usunięcie użytkownika {{email}} oraz obszarów roboczych, do których tylko on ma dostęp. To, co dodał do obszarów roboczych innych osób, zostanie zachowane. Tej operacji nie można cofnąć.",
       "resetPassword": "Zresetuj hasło",
       "resetPasswordPlaceholder": "Zostaw puste, aby zachować obecne",
       "addDesc": "Utwórz nowe konto użytkownika z dostępem do aplikacji.",

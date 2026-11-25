@@ -3185,7 +3185,7 @@
       "updated": "Uživatel aktualizován",
       "deleted": "Uživatel smazán",
       "confirmDeleteTitle": "Smazat uživatele?",
-      "confirmDeleteDesc": "Uživatel {{email}} a všechna jeho data budou trvale smazána. Tuto akci nelze vrátit zpět.",
+      "confirmDeleteDesc": "Uživatel {{email}} a pracovní prostory, ke kterým má přístup jen on, budou trvale smazány. To, co přidal do pracovních prostorů jiných lidí, zůstane zachováno. Tuto akci nelze vrátit zpět.",
       "resetPassword": "Resetovat heslo",
       "resetPasswordPlaceholder": "Ponechat prázdné pro zachování aktuálního hesla",
       "addDesc": "Vytvořit nový uživatelský účet s přístupem do aplikace.",
