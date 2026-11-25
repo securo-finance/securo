@@ -1,4 +1,4 @@
-"""Outbound email: the provider behind the switch, and the admin's template (#554).
+"""Outbound email: the provider behind the switch, and the admin's template (#1885).
 
 The relay and the API are mocked, so nothing leaves the test process. What is
 checked is the request each provider builds, that the one switch keeps both
@@ -15,7 +15,7 @@ from pydantic import SecretStr, ValidationError
 
 from app.core.config import Settings, get_settings
 from app.models.user import User
-from app.services import email_service
+from app.services import admin_service, email_service
 
 TOKEN_IN_LINK = re.compile(r"reset-password\?token=([A-Za-z0-9._~-]+)")
 
@@ -239,6 +239,39 @@ def test_the_provider_is_one_of_the_two():
         _settings(email_provider="carrier-pigeon")
 
 
+def test_a_refused_setup_never_prints_the_secrets():
+    """The error is what a container that failed to boot logs.
+
+    A model-level validator reports the input it refused, and that input is
+    every field the instance was built from: the email key and SECRET_KEY were
+    printed there, truncated but legible.
+    """
+    key = "re_live_0123456789ABCDEFGHIJKLMNOP"
+    secret = "0123456789abcdef0123456789abcdef"
+    cases = {
+        "no sender": {"email_from": ""},
+        "no address": {"email_from": "no-reply@example.com", "resend_api_url": ""},
+        "address in the clear": {
+            "email_from": "no-reply@example.com",
+            "resend_api_url": "http://api.example.com",
+        },
+    }
+    for name, extra in cases.items():
+        with pytest.raises(ValidationError) as caught:
+            _settings(
+                email_enabled=True,
+                email_provider="resend",
+                resend_api_key=SecretStr(key),
+                secret_key=secret,
+                **extra,
+            )
+        message = str(caught.value)
+        assert key not in message, name
+        assert key[-8:] not in message, name
+        assert secret[:8] not in message, name
+        assert secret[-8:] not in message, name
+
+
 # The templates: what is allowed, what falls back
 
 
@@ -280,6 +313,47 @@ def test_a_language_the_email_is_not_written_in_is_refused():
 def test_templates_that_are_not_json_are_refused():
     with pytest.raises(email_service.TemplateError):
         email_service.parse_templates("{not json")
+
+
+@pytest.mark.parametrize(
+    "line_break",
+    ["\v", "\f", "\x1c", "\x1d", "\x1e", "\x85", "\u2028", "\u2029"],
+    ids=["VT", "FF", "FS", "GS", "RS", "NEL", "LS", "PS"],
+)
+def test_every_line_break_python_knows_is_refused_in_a_subject(line_break):
+    """\\n and \\r are not the only ones: the SMTP library refuses the rest too,
+    after the admin has already saved them."""
+    with pytest.raises(email_service.TemplateError, match="single line"):
+        email_service.validate_templates(
+            {"en": {"subject": f"Reset{line_break}password", "body": "Open {link}."}}
+        )
+
+
+def test_an_unpaired_surrogate_is_refused():
+    """JSON may hold one, but neither the response nor the database can encode
+    it; accepted here, it answers 500 after the switch already said 202."""
+    template = json.loads(
+        '{"en": {"subject": "Reset", "body": "Open \\ud800 {link}."}}'
+    )
+
+    with pytest.raises(email_service.TemplateError, match="UTF-8"):
+        email_service.validate_templates(template)
+
+
+def test_an_unpaired_surrogate_in_a_language_is_refused_before_it_is_named():
+    """The message naming an unknown language cannot encode the language."""
+    template = json.loads('{"\\ud800": {"subject": "Reset", "body": "Open {link}."}}')
+
+    with pytest.raises(email_service.TemplateError, match="UTF-8"):
+        email_service.validate_templates(template)
+
+
+def test_templates_nested_past_the_parser_stack_are_a_bad_template():
+    """A row edited by hand must not turn a known address's answer into a 500."""
+    nested = "[" * 200_000 + "]" * 200_000
+
+    with pytest.raises(email_service.TemplateError):
+        email_service.parse_templates(nested)
 
 
 def test_a_language_without_a_template_keeps_the_built_in_text():
@@ -389,6 +463,76 @@ async def test_a_subject_with_a_line_break_answers_400(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "line_break",
+    ["\v", "\f", "\x1c", "\x1d", "\x1e", "\x85", "\u2028", "\u2029"],
+    ids=["VT", "FF", "FS", "GS", "RS", "NEL", "LS", "PS"],
+)
+async def test_a_subject_with_any_line_break_answers_400(
+    client: AsyncClient, admin_auth_headers, email_on, line_break
+):
+    response = await client.put(
+        "/api/admin/email",
+        json={
+            "templates": {
+                "en": {"subject": f"Reset{line_break}password", "body": "Open {link}."}
+            }
+        },
+        headers=admin_auth_headers,
+    )
+
+    assert response.status_code == 400
+    assert "single line" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_a_subject_with_an_unpaired_surrogate_answers_400(
+    client: AsyncClient, admin_auth_headers, email_on
+):
+    """It cannot be stored or echoed back; accepted, it answered 500."""
+    response = await client.put(
+        "/api/admin/email",
+        content='{"templates": {"en": {"subject": "Reset", "body": "Open \\ud800 {link}."}}}',
+        headers={**admin_auth_headers, "Content-Type": "application/json"},
+    )
+
+    assert response.status_code == 400
+    assert "UTF-8" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_a_body_nested_past_the_parser_stack_answers_400(
+    client: AsyncClient, admin_auth_headers, email_on
+):
+    response = await client.put(
+        "/api/admin/email",
+        content=b"[" * 200_000 + b"]" * 200_000,
+        headers={**admin_auth_headers, "Content-Type": "application/json"},
+    )
+
+    assert response.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_an_empty_object_answers_400_instead_of_clearing(
+    client: AsyncClient, admin_auth_headers, email_on
+):
+    """Clearing is {"templates": {}}; {} forgot the field and must not wipe
+    the templates that are in use."""
+    await client.put(
+        "/api/admin/email",
+        json={"templates": {"en": {"subject": "Mine", "body": "Open {link}."}}},
+        headers=admin_auth_headers,
+    )
+
+    empty = await client.put("/api/admin/email", json={}, headers=admin_auth_headers)
+
+    assert empty.status_code == 400
+    state = await client.get("/api/admin/email", headers=admin_auth_headers)
+    assert state.json()["templates"]["en"]["subject"] == "Mine"
+
+
+@pytest.mark.asyncio
 async def test_clearing_the_templates_returns_to_the_built_in_text(
     client: AsyncClient, admin_auth_headers, email_on
 ):
@@ -402,6 +546,38 @@ async def test_clearing_the_templates_returns_to_the_built_in_text(
     )
     assert cleared.status_code == 200
     assert cleared.json()["templates"] == email_service.DEFAULT_TEMPLATES
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "stored",
+    [
+        '{"en": {"subject": "Reset\\u2028password", "body": "Open {link}."}}',
+        '{"en": {"subject": "Reset", "body": "Open \\ud800 {link}."}}',
+        "[" * 200_000 + "]" * 200_000,
+    ],
+    ids=["hidden-line-break", "unpaired-surrogate", "nested-too-deep"],
+)
+async def test_a_template_edited_by_hand_falls_back_instead_of_breaking_the_send(
+    stored, client: AsyncClient, test_user: User, session, sent
+):
+    """A row edited straight in the database must not make a known address
+    answer 202 and receive nothing."""
+    await admin_service.set_app_setting(
+        session, admin_service.EMAIL_TEMPLATES_KEY, stored
+    )
+    try:
+        response = await client.post(
+            "/api/auth/forgot-password", json={"email": "test@example.com"}
+        )
+
+        assert response.status_code == 202
+        assert len(sent) == 1
+        assert sent[0].subject == email_service.DEFAULT_TEMPLATES["pt"]["subject"].format(
+            app_name="Securo"
+        )
+    finally:
+        await admin_service.delete_app_setting(session, admin_service.EMAIL_TEMPLATES_KEY)
 
 
 @pytest.mark.asyncio

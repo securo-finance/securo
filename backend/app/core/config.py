@@ -418,10 +418,16 @@ class Settings(BaseSettings):
     # the process environment are ignored by pydantic-settings anyway; without
     # this, the very same key written into the .env file aborted startup with
     # "Extra inputs are not permitted".
+    #
+    # hide_input_in_errors: a validator that refuses the settings prints the
+    # input it refused, and that input is every field the instance was built
+    # from — including the email API key and SECRET_KEY, truncated but legible,
+    # in the log of a container that failed to boot.
     model_config = SettingsConfigDict(
         env_file=(".env", Path(__file__).resolve().parents[2] / ".env"),
         secrets_dir=CREDENTIALS_DIRECTORY,
         extra="ignore",
+        hide_input_in_errors=True,
     )
 
 

@@ -262,18 +262,23 @@ async def update_email_state(
     """
     try:
         body = json.loads(await request.body())
-    except ValueError:
+    except (ValueError, RecursionError):
+        # RecursionError too: JSON nested past the parser's stack is a broken
+        # body, and letting it escape answers 500 instead of saying so.
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="The body must be a JSON object",
         )
-    if not isinstance(body, dict) or set(body) - {"templates"}:
+    # The field is required, even when empty: {} is a body that forgot it, and
+    # clearing is explicit ({"templates": {}}), so an empty object must not
+    # wipe the templates in use by accident.
+    if not isinstance(body, dict) or "templates" not in body or set(body) - {"templates"}:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="The body takes one field, templates, keyed by language",
         )
     try:
-        templates = email_service.validate_templates(body.get("templates", {}))
+        templates = email_service.validate_templates(body["templates"])
     except email_service.TemplateError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
     await admin_service.save_email_templates(session, templates)

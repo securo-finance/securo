@@ -14,6 +14,7 @@ import logging
 import smtplib
 import ssl
 import string
+import unicodedata
 from dataclasses import dataclass
 from email.message import EmailMessage
 from urllib.parse import quote
@@ -39,6 +40,14 @@ TEMPLATE_FIELDS = frozenset({"app_name", "link", "minutes"})
 
 SUBJECT_MAX_LENGTH = 200
 BODY_MAX_LENGTH = 4000
+
+# The Unicode categories that carry a line break, whatever the language: a
+# control character (Cc: \n, \r, \v, \f, U+001C..U+001E, U+0085) or a
+# separator (Zl: U+2028, Zp: U+2029). Only \n and \r are obvious enough to
+# check by hand; a subject holding any of the others is accepted by the admin
+# and then refused by the SMTP library while composing the message, which the
+# reader sees as a recovery email that never arrives.
+LINE_BREAK_CATEGORIES = frozenset({"Cc", "Zl", "Zp"})
 
 
 class EmailDisabled(RuntimeError):
@@ -113,12 +122,46 @@ def _fields_in(text: str) -> set[str]:
     return fields
 
 
+def has_line_break(text: str) -> bool:
+    """Whether the text holds any character that ends or separates a line."""
+    return any(unicodedata.category(character) in LINE_BREAK_CATEGORIES for character in text)
+
+
+def _reject_unstorable_text(data: object) -> None:
+    """Refuse a lone surrogate before it is saved or put in an error message.
+
+    JSON may hold an unpaired surrogate (``"\\ud800"``), and Python keeps it in
+    the string, but nothing downstream does: the JSON response cannot encode
+    it and neither can the database, so the request would end as a 500. It is
+    checked here, over every string in the payload, so the language, the field
+    names and the placeholders are covered as well as the text.
+
+    The walk keeps its own stack: a payload nested deeper than the interpreter
+    allows must be answered as a bad template, not crash the request.
+    """
+    pending = [data]
+    while pending:
+        item = pending.pop()
+        if isinstance(item, str):
+            try:
+                item.encode("utf-8")
+            except UnicodeEncodeError as exc:
+                raise TemplateError("Email templates must be valid UTF-8 text") from exc
+        elif isinstance(item, dict):
+            for key, value in item.items():
+                pending.append(key)
+                pending.append(value)
+        elif isinstance(item, (list, tuple)):
+            pending.extend(item)
+
+
 def validate_templates(data: object) -> dict[str, dict[str, str]]:
     """Check a set of templates and return it, or raise TemplateError.
 
     A language may be left out (it keeps the built-in text), but what is sent
     for a language must be complete and safe to format.
     """
+    _reject_unstorable_text(data)
     if not isinstance(data, dict):
         raise TemplateError("Email templates must be an object keyed by language")
     for language in data:
@@ -142,7 +185,7 @@ def validate_templates(data: object) -> dict[str, dict[str, str]]:
         if not isinstance(subject, str) or not subject.strip():
             raise TemplateError(f"The {language} template needs a subject")
         # The subject becomes a header: a line break there makes every send fail.
-        if "\n" in subject or "\r" in subject:
+        if has_line_break(subject):
             raise TemplateError(f"The {language} subject must be a single line")
         if not isinstance(body, str) or not body.strip():
             raise TemplateError(f"The {language} template needs a body")
@@ -162,10 +205,15 @@ def validate_templates(data: object) -> dict[str, dict[str, str]]:
 
 
 def parse_templates(raw: str) -> dict[str, dict[str, str]]:
-    """Read the stored JSON, or raise TemplateError."""
+    """Read the stored JSON, or raise TemplateError.
+
+    A value edited by hand may nest deeper than the parser's stack; that is a
+    bad template like any other, not an error that reaches the reader, which
+    would make a known address answer differently from an unknown one.
+    """
     try:
         data = json.loads(raw)
-    except (TypeError, ValueError) as exc:
+    except (TypeError, ValueError, RecursionError) as exc:
         raise TemplateError("Email templates are not valid JSON") from exc
     return validate_templates(data)
 
