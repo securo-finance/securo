@@ -148,6 +148,30 @@ async def test_an_account_of_another_workspace_is_not_read(session, data):
     assert rows["Foreign"]["open_bill_total"] == 9999
 
 
+async def test_account_ids_in_scope(session, data):
+    home = data["home"].id
+    scope = account_service._account_ids_in_scope
+    assert set(await scope(session, home)) == {
+        data["checking"].id, data["card"].id, data["linked"].id,
+    }
+    assert await scope(session, home, account_id=data["linked"].id) == [data["linked"].id]
+    assert await scope(session, home, account_id=data["foreign"].id) == []
+
+    data["checking"].is_closed = True
+    data["linked"].is_closed = True
+    await session.commit()
+    assert await scope(session, home, include_closed=False) == [data["card"].id]
+    names = {row["name"] for row in await account_service.get_accounts(session, home)}
+    assert names == {"Card"}
+    names = {row["name"] for row in await account_service.get_accounts(session, home, True)}
+    assert names == {"Checking", "Card", "Linked"}
+
+
+async def test_a_workspace_without_accounts_lists_none(session, data):
+    _, empty = await _user_and_workspace(session, "empty")
+    assert await account_service.get_accounts(session, empty.id) == []
+
+
 @pytest.mark.parametrize("single", [False, True])
 async def test_balance_subqueries_read_only_the_accounts_in_scope(session, data, single):
     """Counts what each subquery returns: the totals alone would hide the extra accounts."""
@@ -155,7 +179,10 @@ async def test_balance_subqueries_read_only_the_accounts_in_scope(session, data,
     expected = {data["card"].id} if single else {
         data["checking"].id, data["card"].id, data["linked"].id,
     }
-    subqueries = account_service._balance_subqueries(app_today(), data["home"].id, account_id)
+    ids = await account_service._account_ids_in_scope(
+        session, data["home"].id, account_id=account_id
+    )
+    subqueries = account_service._balance_subqueries(app_today(), ids)
     read = [
         {row.account_id for row in (await session.execute(sq.select())).all()}
         for sq in subqueries
