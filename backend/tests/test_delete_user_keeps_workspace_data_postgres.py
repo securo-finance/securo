@@ -31,6 +31,7 @@ from app.models.transaction import Transaction
 from app.models.transaction_split import TransactionSplit
 from app.models.user import User
 from app.models.workspace import Workspace, WorkspaceMember
+from app.schemas.admin import AdminUserUpdate
 from app.services import admin_service, user_removal_service, workspace_service
 
 DAY = date(2026, 10, 5)
@@ -170,6 +171,31 @@ async def test_deleting_an_editor_keeps_what_they_added(postgres_sessions):
         assert not row.is_active and row.hashed_password != "unused"
         assert row.preferences == {"currency_display": "BRL"}
         await _add(session, _user("editor"))
+
+
+async def test_a_deleted_account_cannot_be_edited_back(postgres_sessions):
+    """The closed row is not an account: an edit finds nothing and changes nothing."""
+    async with postgres_sessions() as session:
+        admin, owner, editor = await _people(session, "owner", "editor")
+        admin_id, editor_id = admin.id, editor.id
+        shared = await _workspace(session, "Household", owner=owner, editor=editor)
+        await _fill(session, shared, editor)
+        await session.commit()
+        assert await admin_service.delete_user(session, editor_id, admin_id, reason=REASON)
+        session.expunge_all()
+
+        edit = AdminUserUpdate(
+            reason=REASON, is_active=True, is_superuser=True,
+            email="back@example.com",
+        )
+        assert await admin_service.update_user(session, editor_id, edit, admin_id) is None
+        await session.rollback()
+        session.expunge_all()
+
+        row = await session.get_one(User, editor_id)
+        assert not row.is_active and not row.is_superuser
+        assert row.pending_email is None
+        assert not await admin_service.delete_user(session, editor_id, admin_id, reason=REASON)
 
 
 async def test_personal_rows_go_with_the_editor(postgres_sessions):

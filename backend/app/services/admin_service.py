@@ -124,9 +124,13 @@ async def update_user(
     # this read and the record this call writes, and the record's foreign key
     # then fails with a 500 (#567). Taking the row first makes the two queue;
     # if the deletion went first, this read finds nothing and the route
-    # answers 404.
+    # answers 404. A deletion that kept the row as a closed shell counts as
+    # gone too: editing it would bring the account back.
     locked = await session.execute(
-        select(User).where(User.id == user_id).with_for_update()
+        select(User)
+        .where(User.id == user_id, user_removal_service.not_removed())
+        .with_for_update()
+        .execution_options(populate_existing=True)
     )
     user = locked.scalar_one_or_none()
     if not user:
