@@ -326,6 +326,26 @@ async def _link_pair(
     return pair_id
 
 
+async def _pair_ids(
+    session: AsyncSession, workspace_id: uuid.UUID, ids: set[uuid.UUID]
+) -> dict[uuid.UUID, Optional[uuid.UUID]]:
+    """The pair each of these rows belongs to, as the database has it.
+
+    The pool behind `decisions` was read before any concurrent scan
+    committed, so a leg another request linked in the meantime still looks
+    free here. Naming the rows again is the only way to tell.
+    """
+    if not ids:
+        return {}
+    result = await session.execute(
+        select(Transaction.id, Transaction.transfer_pair_id).where(
+            Transaction.workspace_id == workspace_id,
+            Transaction.id.in_(ids),
+        )
+    )
+    return {row.id: row.transfer_pair_id for row in result.all()}
+
+
 async def detect_transfer_pairs(
     session: AsyncSession,
     workspace_id: uuid.UUID,
@@ -496,7 +516,8 @@ async def detect_transfer_pairs(
 
         if await _link_pair(session, workspace_id, tx, other_tx) is None:
             # Another request claimed a leg between our decision and this
-            # write. Pass two turns the claim into a question instead.
+            # write. Pass two asks about the pair only while the database
+            # still shows both legs free.
             continue
         paired.update({tx_id, other_id})
         pairs_created += 1
@@ -505,6 +526,7 @@ async def detect_transfer_pairs(
     # Keyed on the unordered pair, because the same two rows reach here
     # from both ends and a person should be asked once.
     asked: set[frozenset[uuid.UUID]] = set()
+    questions: list[tuple[uuid.UUID, uuid.UUID, Decision, Movement]] = []
     for tx_id, (decision, movement, _tx) in decisions.items():
         expectation = decision.expectation
         if tx_id in paired or expectation is None:
@@ -516,7 +538,28 @@ async def detect_transfer_pairs(
         if key in asked:
             continue
         asked.add(key)
+        questions.append((tx_id, other_id, decision, movement))
 
+    # Another request can link the very pair this one is about, between its
+    # read of the pool and this point. Pass one learns nothing about that:
+    # `_link_pair` returns None on a lost race and leaves `paired` alone.
+    # Asking anyway puts a settled pair in the queue, where accepting it
+    # answers `already_paired`, so the links are read again.
+    #
+    # Only a pair the database already holds whole is dropped. A leg that
+    # went to somebody else keeps its question, which is what leaves the
+    # losing row visible for review instead of silently pairing or
+    # vanishing.
+    links = await _pair_ids(
+        session,
+        workspace_id,
+        {leg for tx_id, other_id, _decision, _movement in questions for leg in (tx_id, other_id)},
+    )
+
+    for tx_id, other_id, decision, movement in questions:
+        pair = links.get(tx_id)
+        if pair is not None and pair == links.get(other_id):
+            continue
         if decision.port == "linked":
             # Wanted to link and could not: the other leg named somebody
             # else, or never answered. Asking is what is left, and it is
