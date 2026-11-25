@@ -1,5 +1,8 @@
 import logging
 import uuid
+from collections.abc import Generator
+from contextlib import contextmanager
+from contextvars import ContextVar
 from datetime import date
 from decimal import Decimal
 from typing import NamedTuple, Optional
@@ -20,6 +23,21 @@ from app.providers.openexchangerates import FxProviderNotConfigured, OpenExchang
 from app.services.provider_settings import resolve_settings
 
 logger = logging.getLogger(__name__)
+
+_stored_only: ContextVar[bool] = ContextVar("fx_stored_rates_only", default=False)
+
+
+@contextmanager
+def stored_rates_only() -> Generator[None]:
+    """Convert with the rates already stored, whatever the callee asks for.
+
+    For unattended reads through services that fetch on demand: nobody asked
+    for a rate, so no call leaves the instance (ADR 0016)."""
+    token = _stored_only.set(True)
+    try:
+        yield
+    finally:
+        _stored_only.reset(token)
 
 
 def _code(currency: str) -> str:
@@ -123,7 +141,7 @@ async def _resolve_rate(
     usd_to_target = await _get_exact_date_rate(session, to_currency, target)
 
     # Step 2: If missing, fetch from provider for exact date
-    if allow_fetch and (usd_to_source is None or usd_to_target is None):
+    if allow_fetch and not _stored_only.get() and (usd_to_source is None or usd_to_target is None):
         try:
             synced = await sync_rates(session, target)
             if synced > 0:
@@ -310,6 +328,58 @@ async def convert(
     )
     converted = amount * rate
     return converted.quantize(Decimal(1).scaleb(-decimals)), rate
+
+
+class RateBook:
+    """Today's rates for one read, resolved once per currency pair.
+
+    A chart that converts many rows at the same date used to resolve the same
+    rate again for each row: two ``fx_rates`` lookups and one ``app_settings``
+    read every time, plus an on-demand provider attempt. The book resolves a
+    pair once and answers the rest from memory, so the request costs one
+    lookup per currency instead of one per row (issue #582).
+
+    For reads only, where every row shares the target date and the
+    ``allow_fetch`` setting. A write that stamps rows keeps calling
+    :func:`convert` directly.
+    """
+
+    def __init__(
+        self,
+        session: AsyncSession,
+        target_date: Optional[date] = None,
+        *,
+        allow_fetch: bool = True,
+    ) -> None:
+        self._session = session
+        self._target_date = target_date
+        self._allow_fetch = allow_fetch
+        self._rates: dict[tuple[str, str], Decimal] = {}
+
+    async def rate(self, from_currency: str, to_currency: str) -> Decimal:
+        key = (_code(from_currency), _code(to_currency))
+        if key not in self._rates:
+            self._rates[key] = await get_rate(
+                self._session,
+                key[0],
+                key[1],
+                self._target_date,
+                allow_fetch=self._allow_fetch,
+            )
+        return self._rates[key]
+
+    async def convert(
+        self,
+        amount: Decimal,
+        from_currency: str,
+        to_currency: str,
+        *,
+        decimals: int = 2,
+    ) -> tuple[Decimal, Decimal]:
+        if from_currency == to_currency:
+            return amount, Decimal("1")
+        rate = await self.rate(from_currency, to_currency)
+        return (amount * rate).quantize(Decimal(1).scaleb(-decimals)), rate
 
 
 async def stamp_primary_amount(

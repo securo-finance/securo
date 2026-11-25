@@ -745,6 +745,16 @@
     "email": "E-mail",
     "password": "Mot de passe",
     "forgotPassword": "Mot de passe oublié ?",
+    "forgotPasswordDescription": "Saisissez l'adresse e-mail de votre compte et nous vous enverrons un lien pour choisir un nouveau mot de passe.",
+    "sendResetLink": "Envoyer le lien de récupération",
+    "resetSentTitle": "Vérifiez votre boîte de réception",
+    "resetSentBody": "Si un compte existe pour {{email}}, un lien de récupération est en route. Il expire bientôt.",
+    "resetUnavailable": "La récupération de mot de passe par e-mail n'est pas activée sur cette instance. Contactez l'administrateur.",
+    "resetRequestError": "Impossible d'envoyer le lien de récupération. Réessayez.",
+    "resetPasswordDescription": "Choisissez un nouveau mot de passe pour votre compte.",
+    "resetPasswordRejected": "Le nouveau mot de passe a été refusé. Utilisez au moins 8 caractères et réessayez.",
+    "resetTokenMissing": "Ce lien est incomplet. Rouvrez le lien de l'e-mail de récupération ou demandez-en un nouveau.",
+    "resetTokenInvalid": "Ce lien de récupération est invalide ou a expiré. Demandez-en un nouveau.",
     "loginDescription": "Connectez-vous pour accéder à votre compte",
     "invalidCredentials": "E-mail ou mot de passe invalide",
     "serverError": "Impossible de se connecter au serveur. Vérifiez votre connexion ou que le backend est en cours d'exécution, puis réessayez.",
@@ -755,6 +765,8 @@
     "changePassword": "Changer le mot de passe",
     "newPassword": "Nouveau mot de passe",
     "passwordTooShort": "Le mot de passe doit comporter au moins 8 caractères",
+    "passwordTooLong": "Le mot de passe doit comporter au maximum 72 caractères",
+    "resetPassword": "Réinitialiser le mot de passe",
     "currentPassword": "Mot de passe actuel",
     "currentPasswordWrong": "Le mot de passe actuel est incorrect",
     "passwordChanged": "Mot de passe modifié avec succès",
@@ -2965,6 +2977,33 @@
     "menuItem": "Vérifier les mises à jour"
   },
   "admin": {
+    "email": {
+      "title": "E-mail",
+      "enabled": "E-mail activé",
+      "disabled": "E-mail désactivé",
+      "description": "Comment partent les e-mails de récupération de mot de passe. Le fournisseur et l'expéditeur viennent de la configuration du serveur.",
+      "disabledNote": "Activez EMAIL_ENABLED sur le serveur pour envoyer des liens de récupération.",
+      "provider": "Fournisseur",
+      "providerSmtp": "Serveur SMTP",
+      "providerResend": "Resend",
+      "sender": "Expéditeur",
+      "senderMissing": "Non défini",
+      "templatesTitle": "Message de récupération",
+      "templatesDescription": "Ce que la personne lit. Variables : {app_name}, {link} et {minutes} ; {link} doit être seul sur sa propre ligne, et rien d'autre ne peut être un lien.",
+      "subject": "Objet",
+      "body": "Corps",
+      "linkRequired": "Le corps doit contenir {link}.",
+      "linkInSubject": "L'objet ne peut pas contenir {link} ni une adresse.",
+      "linkOnce": "Le corps doit contenir {link} exactement une fois.",
+      "linkAlone": "La variable {link} doit être seule sur sa propre ligne.",
+      "otherLink": "Le message ne peut mener nulle part ailleurs qu'à {link}.",
+      "restoreDefault": "Rétablir le texte par défaut",
+      "save": "Enregistrer les modèles",
+      "saved": "Modèles enregistrés",
+      "saveFailed": "Impossible d'enregistrer les modèles",
+      "languageEn": "Anglais",
+      "languagePt": "Portugais"
+    },
     "users": {
       "title": "Gestion des utilisateurs",
       "searchPlaceholder": "Rechercher des utilisateurs...",
@@ -2984,12 +3023,16 @@
       "deleted": "Utilisateur supprimé",
       "confirmDeleteTitle": "Supprimer l'utilisateur ?",
       "confirmDeleteDesc": "Cela supprimera définitivement l'utilisateur {{email}} et toutes ses données. Cette action est irréversible.",
-      "resetPassword": "Réinitialiser le mot de passe",
-      "resetPasswordPlaceholder": "Laissez vide pour conserver l'actuel",
+      "reason": "Motif",
+      "reasonPlaceholder": "Pourquoi ce changement est-il fait ?",
+      "reasonHint": "Consigné dans le journal d'accès et visible par le compte concerné.",
       "addDesc": "Créez un nouveau compte utilisateur avec accès à l'application.",
       "adminRole": "Privilèges d'administrateur",
       "enabled": "Activé",
-      "disabled": "Désactivé"
+      "disabled": "Désactivé",
+      "pending": "En attente",
+      "pendingEmail": "Demandée : {{email}}, en attente du titulaire",
+      "emailPendingHint": "L'adresse ne change qu'après confirmation par son titulaire."
     },
     "settings": {
       "title": "Paramètres d'administration",
@@ -3109,8 +3152,8 @@
       "chat": "Discuter"
     },
     "globalChat": {
-      "title": "Discussion",
-      "openHint": "Ouvrir la discussion",
+      "title": "Agent",
+      "openHint": "Ouvrir l'agent",
       "history": "Conversations récentes",
       "selectAgent": "Sélectionner un agent",
       "openSettings": "Paramètres de l'agent",
@@ -4211,5 +4254,132 @@
       "turnedOff": "Lecture de documents désactivée"
     },
     "unreadPages": "Pages non lues (numérisées, et le modèle ne lit pas les images) : {{pages}}. Leurs lignes manquent dans cette vérification."
+  },
+  "notifications": {
+    "title": "Notifications",
+    "unread": "Non lue",
+    "unreadLabel": "Notifications, {{number}} non lues",
+    "markAllRead": "Tout marquer comme lu",
+    "empty": "Rien ne requiert votre attention.",
+    "loadError": "Impossible de charger les notifications.",
+    "connection": {
+      "title": "{{name}} a cessé de se synchroniser",
+      "rateLimited": "La banque continue d’atteindre sa limite quotidienne."
+    },
+    "recurring": {
+      "title": "{{name}} n’a pas été générée",
+      "detail": "Échéance le {{date}}. Vérifiez son compte et ses paramètres."
+    },
+    "budget": {
+      "close": "{{name}} : {{percent}} % du budget utilisé",
+      "reached": "{{name}} : budget épuisé",
+      "detail": "{{actual}} sur {{budget}}"
+    },
+    "backup": {
+      "title": "La sauvegarde planifiée a échoué",
+      "detail": "Dernière tentative le {{date}}. Securo va réessayer."
+    },
+    "seeAll": "Voir toutes les notifications",
+    "markRead": "Marquer comme lue",
+    "loadMore": "Charger plus",
+    "filter": {
+      "all": "Toutes",
+      "unread": "Non lues"
+    },
+    "emptyFilter": {
+      "all": "Aucune notification pour le moment.",
+      "unread": "Plus rien à lire."
+    },
+    "flag": {
+      "title": "Rappels dépassés : {{number}}",
+      "detail": "Transactions signalées dont le rappel est passé."
+    },
+    "match": {
+      "title": "Correspondances à vérifier : {{number}}",
+      "detail": "Securo a trouvé des correspondances possibles et attend votre réponse."
+    },
+    "invoice": {
+      "title": "{{name}} : facture en retard",
+      "detail": "{{amount}}, échéance le {{date}}."
+    },
+    "preferences": {
+      "title": "Préférences",
+      "hint": "Choisissez ce dont vous voulez être averti dans cet espace. Les autres membres gardent leurs choix.",
+      "saveError": "Impossible d’enregistrer votre choix.",
+      "loadError": "Impossible de charger vos préférences."
+    },
+    "kind": {
+      "connection_error": {
+        "label": "Connexions",
+        "hint": "Une banque ou un plugin a cessé de se synchroniser."
+      },
+      "budget_threshold": {
+        "label": "Budgets",
+        "hint": "Un budget a atteint 80 % ou 100 %."
+      },
+      "recurring_failed": {
+        "label": "Récurrentes",
+        "hint": "Une transaction récurrente n’a pas été générée."
+      },
+      "flag_overdue": {
+        "label": "Rappels",
+        "hint": "Une transaction signalée a dépassé la date de son rappel."
+      },
+      "reconciliation_pending": {
+        "label": "Correspondances à vérifier",
+        "hint": "Securo a trouvé des correspondances possibles et attend votre réponse."
+      },
+      "invoice_overdue": {
+        "label": "Factures",
+        "hint": "Une facture client est en retard."
+      },
+      "group_expense": {
+        "label": "Dépenses partagées",
+        "hint": "Quelqu’un ajoute ou modifie une dépense partagée avec vous dans un groupe."
+      },
+      "group_settlement": {
+        "label": "Paiements de groupe",
+        "hint": "Quelqu’un enregistre un paiement de votre part ou pour vous dans un groupe."
+      },
+      "backup_failed": {
+        "label": "Sauvegardes",
+        "hint": "Une sauvegarde planifiée a échoué."
+      }
+    },
+    "group": {
+      "added": "{{actor}} a ajouté {{name}}",
+      "changed": "{{actor}} a modifié {{name}}",
+      "batch": "{{actor}} a ajouté des dépenses partagées : {{number}}",
+      "share": "Votre part dans {{group}} : {{amount}}",
+      "paid": "{{actor}} a enregistré un paiement"
+    }
+  },
+  "accessLog": {
+    "title": "Journal d'accès",
+    "description": "Toutes les actions administratives sur votre compte et sur les membres des espaces de travail que vous possédez.",
+    "empty": "Aucune action administrative enregistrée.",
+    "actionUpdate": "Compte modifié",
+    "actionDelete": "Compte supprimé",
+    "actionOther": "Compte modifié",
+    "by": "Par {{email}}",
+    "target": "Compte {{email}}",
+    "ip": "IP {{ip}}",
+    "loadMore": "Charger plus",
+    "loadError": "Impossible de charger le journal d'accès.",
+    "emailChange": "Adresse {{from}} → {{to}}",
+    "emailPending": "en attente de la confirmation du titulaire du compte",
+    "otherChanges": "Également modifié : {{fields}}"
+  },
+  "emailChange": {
+    "title": "Changement d'adresse e-mail",
+    "description": "Un administrateur a demandé de remplacer l'adresse de votre compte par {{email}}. Tant que vous ne confirmez pas, votre compte conserve son adresse actuelle.",
+    "accept": "Accepter la nouvelle adresse",
+    "decline": "Conserver mon adresse actuelle",
+    "accepted": "Votre compte utilise désormais {{email}}",
+    "declined": "Votre compte conserve son adresse actuelle",
+    "unavailable": "Cette adresse n'est plus disponible",
+    "failed": "Impossible d'enregistrer votre décision",
+    "replaced": "L'administrateur a envoyé une nouvelle demande. Vérifiez la nouvelle adresse avant d'accepter",
+    "withdrawn": "La demande a été retirée. Votre compte conserve son adresse actuelle"
   }
 }

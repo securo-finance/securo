@@ -76,9 +76,26 @@ vi.mock('@/hooks/use-feature-flags', () => ({
   }),
 }))
 
-vi.mock('next-themes', () => ({
-  useTheme: () => ({ resolvedTheme: state.mode }),
-}))
+vi.mock('next-themes', async () => {
+  const { useSyncExternalStore } = await import('react')
+  const subscribe = (notify: () => void) => {
+    state.listeners.add(notify)
+    return () => state.listeners.delete(notify)
+  }
+  return {
+    useTheme: () => {
+      const theme = useSyncExternalStore(subscribe, () => state.mode)
+      return {
+        theme,
+        resolvedTheme: theme,
+        setTheme: (next: typeof state.mode) => {
+          state.mode = next
+          state.listeners.forEach((notify) => notify())
+        },
+      }
+    },
+  }
+})
 
 beforeEach(() => {
   vi.clearAllMocks()
@@ -246,6 +263,21 @@ describe('LibraryDialog', () => {
     const { user } = open('reports')
     await user.click(await screen.findByRole('button', { name: t('library.removeFrom.reports', { name: t('reports.incomeExpenses') }) }))
     await waitFor(() => expect(state.saves.at(-1)?.ids).toEqual(['net_worth', 'plugin:maria/casa:pets']))
+  })
+
+  it('picks light, dark or system (#1203)', async () => {
+    const { user } = open('themes')
+    const mode = within(screen.getByRole('group', { name: t('library.appearance') }))
+    const pressed = () =>
+      mode.getAllByRole('button').filter((b) => b.getAttribute('aria-pressed') === 'true').map((b) => b.textContent)
+    try {
+      for (const key of ['themeSystem', 'themeLight', 'themeDark']) {
+        await user.click(mode.getByRole('button', { name: t(`settings.${key}`) }))
+        expect(pressed()).toEqual([t(`settings.${key}`)])
+      }
+    } finally {
+      state.mode = 'light'
+    }
   })
 
   it('applies a theme and saves it for the person', async () => {

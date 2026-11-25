@@ -743,6 +743,16 @@
     "email": "メールアドレス",
     "password": "パスワード",
     "forgotPassword": "パスワードをお忘れですか?",
+    "forgotPasswordDescription": "アカウントのメールアドレスを入力すると、新しいパスワードを選ぶためのリンクをお送りします。",
+    "sendResetLink": "回復リンクを送信",
+    "resetSentTitle": "メールをご確認ください",
+    "resetSentBody": "{{email}} のアカウントがある場合、回復リンクを送信しました。有効期限はまもなく切れます。",
+    "resetUnavailable": "このインスタンスではメールによるパスワード回復が有効になっていません。管理者にご確認ください。",
+    "resetRequestError": "回復リンクを送信できませんでした。もう一度お試しください。",
+    "resetPasswordDescription": "アカウントの新しいパスワードを選んでください。",
+    "resetPasswordRejected": "新しいパスワードが受け付けられませんでした。8文字以上で、もう一度お試しください。",
+    "resetTokenMissing": "このリンクは不完全です。回復メールのリンクをもう一度開くか、新しいリンクを請求してください。",
+    "resetTokenInvalid": "この回復リンクは無効か、有効期限が切れています。新しいリンクを請求してください。",
     "loginDescription": "サインインしてアカウントにアクセス",
     "invalidCredentials": "メールアドレスまたはパスワードが正しくありません",
     "serverError": "サーバーに接続できませんでした。接続を確認するか、バックエンドが起動していることを確認して、もう一度お試しください。",
@@ -753,6 +763,8 @@
     "changePassword": "パスワード変更",
     "newPassword": "新しいパスワード",
     "passwordTooShort": "パスワードは8文字以上にしてください",
+    "passwordTooLong": "パスワードは72文字以内にしてください",
+    "resetPassword": "パスワードを再設定",
     "currentPassword": "現在のパスワード",
     "currentPasswordWrong": "現在のパスワードが正しくありません",
     "passwordChanged": "パスワードを変更しました",
@@ -2950,6 +2962,33 @@
     "menuItem": "更新を確認"
   },
   "admin": {
+    "email": {
+      "title": "メール",
+      "enabled": "メールは有効です",
+      "disabled": "メールは無効です",
+      "description": "パスワード再設定メールの送信方法です。プロバイダーと送信者はサーバー設定から読み取ります。",
+      "disabledNote": "再設定リンクを送るには、サーバーで EMAIL_ENABLED を有効にしてください。",
+      "provider": "プロバイダー",
+      "providerSmtp": "SMTP サーバー",
+      "providerResend": "Resend",
+      "sender": "送信者",
+      "senderMissing": "未設定",
+      "templatesTitle": "再設定メッセージ",
+      "templatesDescription": "相手が読む内容です。変数: {app_name}、{link}、{minutes}。{link} は独立した行に単独で置き、それ以外はリンクにできません。",
+      "subject": "件名",
+      "body": "本文",
+      "linkRequired": "本文に {link} が必要です。",
+      "linkInSubject": "件名には {link} もアドレスも含められません。",
+      "linkOnce": "本文には {link} をちょうど 1 回だけ含めてください。",
+      "linkAlone": "{link} は独立した行に単独で置いてください。",
+      "otherLink": "メッセージは {link} 以外のどこにも誘導できません。",
+      "restoreDefault": "既定の文面に戻す",
+      "save": "テンプレートを保存",
+      "saved": "テンプレートを保存しました",
+      "saveFailed": "テンプレートを保存できませんでした",
+      "languageEn": "英語",
+      "languagePt": "ポルトガル語"
+    },
     "users": {
       "title": "ユーザー管理",
       "searchPlaceholder": "ユーザーを検索...",
@@ -2969,12 +3008,16 @@
       "deleted": "ユーザーを削除しました",
       "confirmDeleteTitle": "ユーザーを削除しますか?",
       "confirmDeleteDesc": "{{email}}とそのすべてのデータを完全に削除します。この操作は取り消せません。",
-      "resetPassword": "パスワードをリセット",
-      "resetPasswordPlaceholder": "空欄で現在のパスワードを保持",
+      "reason": "理由",
+      "reasonPlaceholder": "この変更を行う理由は何ですか?",
+      "reasonHint": "アクセスログに記録され、対象アカウントに表示されます。",
       "addDesc": "アプリケーションにアクセスできる新しいユーザーアカウントを作成します。",
       "adminRole": "管理者権限",
       "enabled": "オン",
-      "disabled": "オフ"
+      "disabled": "オフ",
+      "pending": "確認待ち",
+      "pendingEmail": "{{email}} を申請済み、所有者の確認待ち",
+      "emailPendingHint": "アドレスは所有者が確認した後にのみ変更されます。"
     },
     "settings": {
       "title": "管理者設定",
@@ -3094,8 +3137,8 @@
       "chat": "チャット"
     },
     "globalChat": {
-      "title": "チャット",
-      "openHint": "チャットを開く",
+      "title": "エージェント",
+      "openHint": "エージェントを開く",
       "history": "最近の会話",
       "selectAgent": "エージェントを選択",
       "openSettings": "エージェント設定",
@@ -4196,5 +4239,132 @@
       "turnedOff": "ドキュメントの読み取りをオフにしました"
     },
     "unreadPages": "読み取れなかったページ (スキャンで、モデルが画像を読めません): {{pages}}。これらの行はこの確認に含まれていません。"
+  },
+  "notifications": {
+    "title": "通知",
+    "unread": "未読",
+    "unreadLabel": "通知、未読{{number}}件",
+    "markAllRead": "すべて既読にする",
+    "empty": "対応が必要なものはありません。",
+    "loadError": "通知を読み込めませんでした。",
+    "connection": {
+      "title": "{{name}}の同期が停止しました",
+      "rateLimited": "銀行の1日の上限に達する状態が続いています。"
+    },
+    "recurring": {
+      "title": "{{name}}が作成されませんでした",
+      "detail": "期日は{{date}}でした。口座と設定を確認してください。"
+    },
+    "budget": {
+      "close": "{{name}}：予算の{{percent}}%を使用",
+      "reached": "{{name}}：予算を使い切りました",
+      "detail": "{{budget}}のうち{{actual}}"
+    },
+    "backup": {
+      "title": "スケジュールされたバックアップに失敗しました",
+      "detail": "最後の試行は{{date}}です。Securoが再試行します。"
+    },
+    "seeAll": "すべての通知を見る",
+    "markRead": "既読にする",
+    "loadMore": "さらに読み込む",
+    "filter": {
+      "all": "すべて",
+      "unread": "未読"
+    },
+    "emptyFilter": {
+      "all": "通知はまだありません。",
+      "unread": "未読の通知はありません。"
+    },
+    "flag": {
+      "title": "期限切れのリマインダー：{{number}}",
+      "detail": "リマインダーの日付を過ぎたフラグ付き取引があります。"
+    },
+    "match": {
+      "title": "確認待ちの照合：{{number}}",
+      "detail": "照合の候補が見つかりました。回答が必要です。"
+    },
+    "invoice": {
+      "title": "{{name}}：請求書の期限切れ",
+      "detail": "{{amount}}、期日は{{date}}でした。"
+    },
+    "preferences": {
+      "title": "設定",
+      "hint": "このワークスペースで受け取る通知を選びます。他のメンバーの選択には影響しません。",
+      "saveError": "選択を保存できませんでした。",
+      "loadError": "設定を読み込めませんでした。"
+    },
+    "kind": {
+      "connection_error": {
+        "label": "接続",
+        "hint": "銀行またはプラグインの同期が停止したとき。"
+      },
+      "budget_threshold": {
+        "label": "予算",
+        "hint": "予算が80%または100%に達したとき。"
+      },
+      "recurring_failed": {
+        "label": "定期取引",
+        "hint": "定期取引が作成されなかったとき。"
+      },
+      "flag_overdue": {
+        "label": "リマインダー",
+        "hint": "フラグ付き取引がリマインダーの日付を過ぎたとき。"
+      },
+      "reconciliation_pending": {
+        "label": "確認待ちの照合",
+        "hint": "照合の候補が見つかりました。回答が必要です。"
+      },
+      "invoice_overdue": {
+        "label": "請求書",
+        "hint": "顧客への請求書が期限を過ぎたとき。"
+      },
+      "group_expense": {
+        "label": "共有支出",
+        "hint": "グループであなたと分担する支出が追加または変更されたとき。"
+      },
+      "group_settlement": {
+        "label": "グループの支払い",
+        "hint": "グループであなた宛て、またはあなたからの支払いが記録されたとき。"
+      },
+      "backup_failed": {
+        "label": "バックアップ",
+        "hint": "スケジュールされたバックアップに失敗したとき。"
+      }
+    },
+    "group": {
+      "added": "{{actor}}が{{name}}を追加しました",
+      "changed": "{{actor}}が{{name}}を変更しました",
+      "batch": "{{actor}}が共有支出を追加しました：{{number}}件",
+      "share": "{{group}}でのあなたの負担：{{amount}}",
+      "paid": "{{actor}}が支払いを記録しました"
+    }
+  },
+  "accessLog": {
+    "title": "アクセスログ",
+    "description": "あなたのアカウントと、あなたが所有するワークスペースのメンバーに対するすべての管理者操作。",
+    "empty": "管理者操作は記録されていません。",
+    "actionUpdate": "アカウントを更新しました",
+    "actionDelete": "アカウントを削除しました",
+    "actionOther": "アカウントを更新しました",
+    "by": "実行者: {{email}}",
+    "target": "アカウント: {{email}}",
+    "ip": "IP {{ip}}",
+    "loadMore": "さらに読み込む",
+    "loadError": "アクセスログを読み込めませんでした。",
+    "emailChange": "アドレス {{from}} → {{to}}",
+    "emailPending": "アカウント所有者の確認待ち",
+    "otherChanges": "ほかの変更: {{fields}}"
+  },
+  "emailChange": {
+    "title": "メールアドレスの変更",
+    "description": "管理者がアカウントのアドレスを {{email}} に変更するよう申請しました。確認するまで、アカウントは現在のアドレスを保持します。",
+    "accept": "新しいアドレスを承認",
+    "decline": "現在のアドレスを保持",
+    "accepted": "アカウントは {{email}} を使用するようになりました",
+    "declined": "アカウントは現在のアドレスを保持します",
+    "unavailable": "そのアドレスは利用できなくなりました",
+    "failed": "決定を記録できませんでした",
+    "replaced": "管理者が新しいリクエストを送信しました。承諾する前に新しいアドレスを確認してください",
+    "withdrawn": "リクエストは取り下げられました。アカウントは現在のアドレスを維持します"
   }
 }

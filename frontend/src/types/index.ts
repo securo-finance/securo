@@ -8,11 +8,19 @@ export interface User {
   preferences: UserPreferences
   /** The theme picked from the library; null is Securo's own look. */
   theme?: string | null
+  /**
+   * An address an administrator asked to put on this account, waiting for the
+   * person whose account it is to accept it (#556). The login address stays
+   * `email` until then.
+   */
+  pending_email?: string | null
 }
 
 export interface AdminUser {
   id: string
   email: string
+  /** An address an administrator asked for and its owner has not accepted yet. */
+  pending_email?: string | null
   is_active: boolean
   is_superuser: boolean
   is_verified: boolean
@@ -21,6 +29,35 @@ export interface AdminUser {
 
 export interface AdminUserList {
   items: AdminUser[]
+  total: number
+}
+
+/** One field an administrative action touched, with its old and new value. */
+export interface AccessLogFieldChange {
+  from?: string | boolean | null
+  to?: string | boolean | null
+  /** An address change the owner has not accepted yet (#556). */
+  pending?: boolean
+  /** A value too large to keep twice in the record (preferences). */
+  changed?: boolean
+}
+
+/** One administrative action on an account, with the reason given (ADR 0042). */
+export interface AdminAccessLogEntry {
+  id: string
+  actor_email: string
+  target_email: string
+  target_user_id: string | null
+  action: string
+  /** Every field the action changed, keyed by field name (#556). */
+  changes?: Record<string, AccessLogFieldChange> | null
+  reason: string
+  ip: string | null
+  created_at: string
+}
+
+export interface AdminAccessLogList {
+  items: AdminAccessLogEntry[]
   total: number
 }
 
@@ -2674,4 +2711,85 @@ export interface LoanSchedule {
   projected_payoff_date: string | null
   paid_off: boolean
   installments: LoanInstallment[]
+}
+
+export type AppNotificationKind =
+  | 'connection_error'
+  | 'recurring_failed'
+  | 'budget_threshold'
+  | 'flag_overdue'
+  | 'reconciliation_pending'
+  | 'invoice_overdue'
+  | 'group_expense'
+  | 'group_settlement'
+  | 'backup_failed'
+
+export interface NotificationPreference {
+  kind: AppNotificationKind
+  /** Each channel that reaches the person: `in_app`, and any other set up. */
+  channels: Record<string, boolean>
+}
+
+/** A notification of the current workspace: facts, the text is the client's. */
+export type AppNotification = {
+  id: string
+  notified_at: string
+  read_at: string | null
+  resolved_at: string | null
+} & (
+  | {
+      kind: 'connection_error'
+      data: {
+        name: string
+        connection_id: string
+        plugin_id?: string
+        code: 'consent_expired' | 'psu_present_required' | 'reauthorize_at_provider' | 'provider_error' | 'rate_limited'
+      }
+    }
+  | { kind: 'recurring_failed'; data: { recurring_id: string; name: string; date: string } }
+  | {
+      kind: 'budget_threshold'
+      data: {
+        category_id: string
+        name: string
+        month: string
+        threshold: number
+        actual: string
+        budget: string
+        currency: string
+      }
+    }
+  | { kind: 'flag_overdue'; data: { count: number } }
+  | { kind: 'reconciliation_pending'; data: { count: number } }
+  | {
+      kind: 'invoice_overdue'
+      data: { invoice_id: string; name: string; date: string; amount: string; currency: string }
+    }
+  | {
+      kind: 'group_expense'
+      data: { group_id: string; group: string; actor: string } & (
+        | { count: number }
+        | { transaction_id: string; name: string; share: string; currency: string; changed: boolean }
+      )
+    }
+  | {
+      kind: 'group_settlement'
+      data: {
+        settlement_id: string
+        group_id: string
+        group: string
+        actor: string
+        payer: string
+        receiver: string
+        amount: string
+        currency: string
+      }
+    }
+  | { kind: 'backup_failed'; data: { failed_at: string } }
+)
+
+export interface AppNotificationList {
+  items: AppNotification[]
+  total: number
+  unread_count: number
 }

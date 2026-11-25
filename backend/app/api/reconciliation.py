@@ -629,29 +629,6 @@ async def decline_suggestion(
     return await _with_label(session, row)
 
 
-async def _invoice_name(session: AsyncSession, invoice: Invoice) -> Optional[str]:
-    """The number as the client would recognise it.
-
-    Mirrors what every invoice screen shows, and for the same reason: the
-    snapshot taken at issue is authoritative: including when it recorded
-    *no* prefix, which is an answer rather than a gap. An invoice issued
-    as "2" must keep reading as "2" after somebody sets a prefix, or the
-    queue would name a document differently from the copy the client is
-    holding. An imported document keeps the name it arrived with; ours
-    would rename a supplier's reference.
-    """
-    if invoice.origin == "imported":
-        return invoice.external_number
-    if invoice.number is None:
-        return None
-    if invoice.snapshot is not None:
-        prefix = invoice.snapshot.get("number_prefix") or ""
-    else:
-        settings = await invoice_service.get_settings(session, invoice.workspace_id)
-        prefix = settings.number_prefix or ""
-    return f"{prefix}{invoice.number}"
-
-
 async def _with_label(session: AsyncSession, row) -> SuggestionRead:
     """Name the promises a suggestion points at.
 
@@ -689,7 +666,7 @@ async def _name_of(session: AsyncSession, row) -> Optional[str]:
         return account.name if account else leg.description
     if row.expectation_kind == "invoice":
         invoice = await session.get(Invoice, row.expectation_id)
-        return await _invoice_name(session, invoice) if invoice else None
+        return await invoice_service.display_number(session, invoice) if invoice else None
     bill = await session.get(RecurringTransaction, row.expectation_id)
     return bill.description if bill else None
 

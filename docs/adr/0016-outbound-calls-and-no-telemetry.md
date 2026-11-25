@@ -20,6 +20,7 @@ Securo's promise is that a person's financial data stays on their own infrastruc
 | BrasilAPI bank lookup | `providers/pluggy.py` | `BRASILAPI_INSTITUTION_LOOKUP_ENABLED` |
 | Yahoo Finance | `providers/market_price.py`, `api/assets.py` | someone searches a symbol or previews a quote in the asset form; daily for assets valued at market price |
 | Tesouro Transparente | `providers/tesouro_direto.py` | `TESOURO_DIRETO_ENABLED` and a bond search; startup warm only if a workspace uses BRL; daily for existing `TD:` holdings, **even with the flag off** (known gap, to fix) |
+| Email relay (SMTP) or hosted email API | `services/email_service.py` | `EMAIL_ENABLED`, and `EMAIL_PROVIDER` picks the path |
 | OIDC provider | `api/oidc_auth.py` | `OIDC_ENABLED` |
 | LLM providers, external MCP servers, embedding model download | `app/agents/` | `AGENTS_ENABLED` and a configured connection |
 | Plugin index and manifests | `app/plugins/index.py` | `PLUGINS_ENABLED` and the catalog is opened |
@@ -30,6 +31,7 @@ Securo's promise is that a person's financial data stays on their own infrastruc
 - Extended by [0021](0021-plugin-icons.md), which adds plugin icons, fetched from the plugin catalog's host when a browser asks Securo for one.
 - Extended by [0037](0037-document-reading.md), which sends an uploaded document to the provider of the agents LLM connection a workspace picked for reading, when someone uploads one.
 - Extended by [0026](0026-plugin-icons-outside-the-catalog.md), which also fetches the plugin index when Connect Bank or Accounts shows an installed plugin's avatar.
+- Extended by [0046](0046-email-provider-and-templates.md), which adds the hosted email API as the second path behind `EMAIL_ENABLED`, next to the instance's SMTP relay.
 - The browser makes three requests of its own: the GitHub releases API to show the update banner (every 6 hours, can be turned off per browser), Google Fonts from `frontend/index.html`, and institution favicons from Google (the backend only builds the URL).
 
 ## Consequences
