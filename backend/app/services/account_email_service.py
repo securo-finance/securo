@@ -6,11 +6,12 @@ address it has and every credential tied to it, password recovery included —
 which is what makes the request useless as a way into the account.
 """
 
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.user import User
+from app.services import account_lookup_service
 
 STALE_REQUEST = (
     "The address waiting for you is no longer the one you were shown"
@@ -46,13 +47,12 @@ async def confirm_pending_email(
     # The address may have been taken between the request and this moment.
     # Compared without regard to case: sign-in resolves the address that way,
     # so `Taken@example.com` and `taken@example.com` are the same account
-    # (#556, ADR 0042).
-    taken = await session.execute(
-        select(User.id).where(
-            func.lower(User.email) == requested.lower(), User.id != user.id
-        )
+    # (#556, ADR 0042). An instance that still holds two rows for the address
+    # (#568) answers with one of them here instead of raising.
+    taken = await account_lookup_service.find_account_by_email(
+        session, requested, exclude_user_id=user.id
     )
-    if taken.scalar_one_or_none():
+    if taken is not None:
         raise ValueError("That address belongs to another account now")
 
     user.email = requested

@@ -2,7 +2,7 @@ import uuid
 from decimal import Decimal
 from typing import Optional, cast
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from fastapi import Depends, Request
 from fastapi_users import BaseUserManager, FastAPIUsers, UUIDIDMixin, schemas
 from fastapi_users.authentication import (
@@ -23,10 +23,31 @@ settings = get_settings()
 
 
 async def get_user_db(session: AsyncSession = Depends(get_async_session)):
-    yield SQLAlchemyUserDatabase(session, User)
+    yield _AccountLookupUserDatabase(session, User)
 
 
-class _FlushingUserDatabase(SQLAlchemyUserDatabase):
+class _AccountLookupUserDatabase(SQLAlchemyUserDatabase):
+    """The SQLAlchemy adapter, resolving an address that names two rows."""
+
+    async def get_by_email(self, email: str) -> Optional[User]:
+        """The account the address names, also when two rows answer to it.
+
+        An instance can already hold two accounts for one mailbox in different
+        case (#568): the column's unique index is case-sensitive. The adapter
+        raised ``MultipleResultsFound``, so sign-in and recovery answered 500
+        for both accounts. Taking the lowest id makes the same account the
+        answer on every attempt instead of depending on row order.
+        """
+        statement = (
+            select(self.user_table)
+            .where(func.lower(self.user_table.email) == func.lower(email))
+            .order_by(self.user_table.id)
+            .limit(1)
+        )
+        return await self._get_user(statement)
+
+
+class _FlushingUserDatabase(_AccountLookupUserDatabase):
     """The SQLAlchemy adapter, with an `update` that flushes and leaves the
     commit to the caller."""
 

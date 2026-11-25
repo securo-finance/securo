@@ -12,6 +12,7 @@ from app.models.admin_access_log import AdminAccessLog, AdminAccessLogViewer
 from app.models.app_settings import AppSetting
 from app.models.user import User
 from app.schemas.admin import AdminUserCreate, AdminUserUpdate
+from app.services import account_lookup_service
 
 
 async def list_users(
@@ -111,7 +112,15 @@ async def update_user(
     *,
     ip: Optional[str] = None,
 ) -> Optional[User]:
-    user = await get_user(session, user_id)
+    # Locked, not just read: a deletion of the same account can commit between
+    # this read and the record this call writes, and the record's foreign key
+    # then fails with a 500 (#567). Taking the row first makes the two queue;
+    # if the deletion went first, this read finds nothing and the route
+    # answers 404.
+    locked = await session.execute(
+        select(User).where(User.id == user_id).with_for_update()
+    )
+    user = locked.scalar_one_or_none()
     if not user:
         return None
 
@@ -133,20 +142,23 @@ async def update_user(
         # resolves them: `Taken@example.com` and `taken@example.com` reach the
         # same mailbox, so they must name the same account here too (#556).
         if requested.lower() != user.email.lower():
-            taken = await session.execute(
-                select(User.id).where(
-                    func.lower(User.email) == requested.lower(), User.id != user_id
-                )
+            # One address, one account, also when the instance still holds two
+            # rows for it in different case (#568): asking whether it is taken
+            # answers 400, never a 500 out of a lookup that found two.
+            taken = await account_lookup_service.find_account_by_email(
+                session, requested, exclude_user_id=user_id
             )
-            if taken.scalar_one_or_none():
+            if taken is not None:
                 raise ValueError("A user with this email already exists")
             waiting = await session.execute(
-                select(User.id).where(
+                select(User.id)
+                .where(
                     func.lower(User.pending_email) == requested.lower(),
                     User.id != user_id,
                 )
+                .limit(1)
             )
-            if waiting.scalar_one_or_none():
+            if waiting.first() is not None:
                 raise ValueError("Another account is already waiting to confirm this address")
             # The address is a recovery credential, so the administrator asks
             # and the owner decides: the login address does not move until the
