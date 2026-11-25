@@ -1,4 +1,4 @@
-import { useId, useState } from 'react'
+import { useId } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import {
@@ -14,8 +14,14 @@ import {
 import { ChevronDown, ChevronUp } from 'lucide-react'
 
 import { loadGoalHistory } from '@/lib/goal-history'
-import { calendarMonthAfter, firstOfMonthAfter, goalHistoryStart, projectGoal } from '@/lib/goal-projection'
+import {
+  calendarMonthAfter,
+  firstOfMonthAfter,
+  goalHistoryStart,
+  projectGoal,
+} from '@/lib/goal-projection'
 import { todayInTimezone } from '@/lib/date-utils'
+import { useGoalChartState } from '@/contexts/goal-chart-state'
 import { useWorkspace } from '@/contexts/workspace-context'
 import { useDisplayLocale } from '@/hooks/use-display-locale'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
@@ -45,11 +51,8 @@ export function GoalVisualization({ goal }: { goal: Goal }) {
   const { current } = useWorkspace()
   const locale = useDisplayLocale()
   const { mask, privacyMode } = usePrivacyMode()
-  // Undated goals start collapsed; the user can expand them to load history.
-  // Local UI state controls whether the chart is expanded. The unique id connects
-  // the toggle button to its content for assistive technology.
   const id = useId()
-  const [expanded, setExpanded] = useState(Boolean(goal.target_date))
+  const { expanded, toggleExpanded } = useGoalChartState(goal)
   const today = todayInTimezone(current?.timezone)
   const historyStart = goalHistoryStart(goal, today)
 
@@ -142,7 +145,6 @@ export function GoalVisualization({ goal }: { goal: Goal }) {
   )
   const ceiling = Number(goal.target_amount) <= 90 ? 100 : peak * 1.1
 
-
   // y-min = 10% below the target, current amount, or lowest historical value
   // whichever is lowest
   // Use -100 for [-90, 0), and zero for [0, 90].
@@ -165,7 +167,7 @@ export function GoalVisualization({ goal }: { goal: Goal }) {
       {/* Clicking the header updates local state and shows or hides the chart body. */}
       <button
         type="button"
-        onClick={() => setExpanded(!expanded)}
+        onClick={toggleExpanded}
         aria-expanded={expanded}
         aria-controls={id}
         className="flex w-full items-center justify-between gap-3 text-sm font-medium"

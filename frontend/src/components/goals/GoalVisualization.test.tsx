@@ -77,6 +77,7 @@ const fixtures = () => [
 ]
 beforeEach(() => {
   vi.resetAllMocks()
+  localStorage.clear()
   vi.useFakeTimers({ toFake: ['Date'] })
   vi.setSystemTime(new Date(today + 'T18:00:00Z'))
   mocks.writable = true
@@ -93,7 +94,10 @@ beforeEach(() => {
     notes: [],
   })
 })
-afterEach(() => vi.useRealTimers())
+afterEach(() => {
+  vi.useRealTimers()
+  vi.restoreAllMocks()
+})
 
 it('keeps native stats and shows charts only for nonmanual goals', async () => {
   const { container } = renderWithProviders(<GoalsPage />)
@@ -293,9 +297,7 @@ it.each([
 )
 
 it('uses the padded ceiling when the target is just above 90', async () => {
-  mocks.goals.list.mockResolvedValue([
-    { ...fixtures()[0], target_amount: 91, current_amount: 50 },
-  ])
+  mocks.goals.list.mockResolvedValue([{ ...fixtures()[0], target_amount: 91, current_amount: 50 }])
   mocks.history.mockResolvedValue({
     points: [
       { date: '2026-09-30', amount: 30 },
