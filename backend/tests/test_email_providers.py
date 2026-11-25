@@ -347,6 +347,14 @@ FOREIGN_LINK_TEMPLATES = [
         "other than",
         id="an-address-assembled-from-the-values",
     ),
+    pytest.param(
+        {
+            "subject": "Reset",
+            "body": "{link}\n\nhttps://securo.example/reset-password?token=check",
+        },
+        "other than",
+        id="a-sample-address-typed-into-the-body",
+    ),
 ]
 
 

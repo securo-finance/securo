@@ -38,12 +38,15 @@ function linkFields(text: string): number {
   return text.replace(/\{\{/g, '').replace(/\}\}/g, '').split(LINK).length - 1
 }
 
-function asSent(text: string): string {
+// `link` is what `{link}` stands for while the text is read. The body passes
+// nothing, so the recovery link is not read as an address while one typed into
+// the text by hand still is.
+function asSent(text: string, link: string = SAMPLE_LINK): string {
   return text
     .replace(/\{\{/g, '\u0000')
     .replace(/\}\}/g, '\u0001')
     .split(LINK)
-    .join(SAMPLE_LINK)
+    .join(link)
     .split('{minutes}')
     .join('60')
     .split('{app_name}')
@@ -65,7 +68,7 @@ function templateProblem(template: EmailTemplate | undefined): TemplateProblem |
   if (links === 0) return 'linkRequired'
   if (links > 1) return 'linkOnce'
   if (body.split(/\r?\n/).filter((line) => line.trim() === LINK).length !== 1) return 'linkAlone'
-  if (URL_PATTERN.test(asSent(body).split(SAMPLE_LINK).join(''))) return 'otherLink'
+  if (URL_PATTERN.test(asSent(body, ''))) return 'otherLink'
   return null
 }
 

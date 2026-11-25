@@ -140,6 +140,23 @@ describe('email settings', () => {
     expect(admin.updateEmailTemplates).not.toHaveBeenCalled()
   })
 
+  it('refuses an address typed into the body beside the placeholder', async () => {
+    renderWithProviders(<EmailSettings />)
+    const region = await screen.findByRole('region', { name: 'Email' })
+    const english = await within(region).findByRole('group', { name: 'English' })
+
+    // The address the check itself puts in place of {link}: written out by
+    // hand it is a second link the reader is sent to, so it is not the
+    // placeholder and must be refused.
+    fireEvent.change(within(english).getByLabelText('Body'), {
+      target: { value: '{link}\n\nhttps://securo.example/reset-password?token=check' },
+    })
+
+    expect(within(english).getByRole('alert')).toHaveTextContent('cannot lead anywhere but')
+    expect(within(region).getByRole('button', { name: 'Save templates' })).toBeDisabled()
+    expect(admin.updateEmailTemplates).not.toHaveBeenCalled()
+  })
+
   it('restores the built-in text by saving no template', async () => {
     const builtIn: EmailState = {
       ...state,

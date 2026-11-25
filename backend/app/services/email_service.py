@@ -164,9 +164,15 @@ def _link_is_alone_on_its_line(body: str) -> bool:
     return sum(1 for line in body.splitlines() if line.strip() == "{link}") == 1
 
 
-def _as_sent(text: str) -> str:
-    """The text with the placeholders filled in, as the reader would get it."""
-    return text.format(**CHECK_VALUES)
+def _as_sent(text: str, link: str = CHECK_LINK) -> str:
+    """The text with the placeholders filled in, as the reader would get it.
+
+    `link` is what `{link}` stands for while the text is read, so a check that
+    must not see the recovery address itself passes an empty one: only then is
+    an address written into the text by hand found rather than taken for the
+    placeholder.
+    """
+    return text.format(**{**CHECK_VALUES, "link": link})
 
 
 def has_line_break(text: str) -> bool:
@@ -261,8 +267,9 @@ def validate_templates(data: object) -> dict[str, dict[str, str]]:
                 f"In the {language} body, {{link}} must be alone on its own line"
             )
         # The recovery link itself is the only address the message may carry,
-        # so it comes out before the text is read.
-        if has_url(_as_sent(body).replace(CHECK_LINK, "")):
+        # so the placeholder stands for nothing while the rest is read: an
+        # address typed into the text by hand is still there to be found.
+        if has_url(_as_sent(body, link="")):
             raise TemplateError(
                 f"The {language} body must not contain a link other than {{link}}"
             )
