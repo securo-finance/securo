@@ -42,6 +42,7 @@ from app.api.invoices import router as invoices_router
 from app.api.mortgage_payments import router as mortgage_payments_router
 from app.api.products import router as products_router
 from app.api.public_invoices import router as public_invoices_router
+from app.api.notifications import router as notifications_router
 from app.api.payees import router as payees_router
 from app.api.settings import router as settings_router
 from app.api.timezones import router as timezones_router
@@ -228,6 +229,7 @@ app.include_router(export_router)
 app.include_router(backups_router)
 app.include_router(attachments_router)
 app.include_router(fiscal_router)
+app.include_router(notifications_router)
 app.include_router(payees_router)
 app.include_router(invoices_router)
 app.include_router(invoice_attachments_router)

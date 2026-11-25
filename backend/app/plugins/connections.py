@@ -43,7 +43,7 @@ from app.plugins import logos, runner, vault
 from app.plugins.contract import PayloadError, parse_payload
 from app.plugins.manifest import FormField, Integration, Manifest, localized, parse_manifest
 from app.plugins.provider import PluginPayloadProvider, provider_name
-from app.services import access_token_service, oauth_state
+from app.services import access_token_service, notification_service, oauth_state
 
 logger = logging.getLogger(__name__)
 
@@ -671,6 +671,7 @@ def rate_limited(connection: PluginConnection) -> bool:
 
 async def _mirror_status(session: AsyncSession, connection: PluginConnection) -> None:
     """The bank connection shows the plugin connection's health (its last sync is the pipeline's)."""
+    await notification_service.connection_changed(session, connection)
     if connection.bank_connection_id is None:
         return
     bank = await session.get(BankConnection, connection.bank_connection_id)
@@ -875,6 +876,7 @@ async def delete(session: AsyncSession, connection: PluginConnection) -> None:
     await _drop_bank(session, connection, keep_records=False)
     await _revoke_token(session, connection)
     await _drop_routines(session, connection)
+    await notification_service.connection_changed(session, connection, removed=True)
     await session.delete(connection)
     await session.commit()
 
@@ -891,6 +893,7 @@ async def delete_all(session: AsyncSession, workspace_id: uuid.UUID, plugin_id: 
         await _drop_bank(session, connection, keep_records=True)
         await _revoke_token(session, connection)
         await _drop_routines(session, connection)
+        await notification_service.connection_changed(session, connection, removed=True)
         await session.delete(connection)
         count += 1
     return count
@@ -920,6 +923,7 @@ async def follow_manifest(session: AsyncSession, workspace_id: uuid.UUID, manife
             await _drop_bank(session, connection, keep_records=True)
             await _revoke_token(session, connection)
             await _drop_routines(session, connection)
+            await notification_service.connection_changed(session, connection, removed=True)
             await session.delete(connection)
             continue
         if integration.is_provider and connection.bank_connection_id is None and connection.created_by is not None:

@@ -16,6 +16,7 @@ from app.schemas.group_settlement import (
     GroupSettlementUpdate,
 )
 from app.schemas.transaction import TransactionPaybackInput
+from app.services import notification_service
 
 
 async def _ensure_group_visible(
@@ -367,8 +368,9 @@ async def create_settlement(
         group_id=group_id, workspace_id=workspace_id, **payload
     )
     session.add(settlement)
+    await session.flush()
+    await notification_service.settlement_recorded(session, user_id, settlement)
     if not commit:
-        await session.flush()
         return settlement
     await session.commit()
     await session.refresh(settlement)

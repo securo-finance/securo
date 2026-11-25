@@ -52,6 +52,8 @@ STATIC_PARAMS = {
     "provider": "pluggy",
     "key": "registration_enabled",
     "surface": "dashboard",
+    "kind": "budget_threshold",
+    "channel": "in_app",
 }
 
 # Parameters that identify a row, so the unknown_id variant swaps them out.

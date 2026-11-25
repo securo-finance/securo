@@ -257,6 +257,34 @@ async def count_open(session: AsyncSession, workspace_id: uuid.UUID) -> int:
     return int(result.scalar_one() or 0)
 
 
+async def waiting(
+    session: AsyncSession, workspace_id: uuid.UUID
+) -> tuple[int, Optional[datetime]]:
+    """How many questions wait for an answer, and when the newest was asked.
+
+    Questions, not rows: a payment offered against several invoices asks one.
+    Those past `STALE_AFTER_DAYS` are left out; opening the queue expires them."""
+    from sqlalchemy import func
+
+    question = func.coalesce(
+        ReconciliationSuggestion.group_id, ReconciliationSuggestion.id
+    )
+    cutoff = datetime.now(timezone.utc) - timedelta(days=STALE_AFTER_DAYS)
+    row = (
+        await session.execute(
+            select(
+                func.count(question.distinct()),
+                func.max(ReconciliationSuggestion.created_at),
+            ).where(
+                ReconciliationSuggestion.workspace_id == workspace_id,
+                ReconciliationSuggestion.status == "pending",
+                ReconciliationSuggestion.created_at >= cutoff,
+            )
+        )
+    ).one()
+    return row[0], row[1]
+
+
 async def get(
     session: AsyncSession, workspace_id: uuid.UUID, suggestion_id: uuid.UUID
 ) -> Optional[ReconciliationSuggestion]:
