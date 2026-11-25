@@ -5,6 +5,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.routing import APIRoute
 
 from app.api.accounts import router as accounts_router
 from app.api.budgets import router as budgets_router
@@ -190,14 +191,22 @@ app.include_router(
     tags=["auth"],
     dependencies=[Depends(require_local_auth_enabled), Depends(password_reset_rate_limit)],
 )
-# user_lookup must precede the fastapi-users router below so the
-# `/api/users/lookup` path isn't captured by the catch-all `/{id}`
-# route fastapi-users mounts.
 app.include_router(user_lookup_router)
-# Ahead of the users router for the same reason: these paths sit under `/me`.
 app.include_router(account_email_router)
+# fastapi-users mounts superuser-only `GET`, `PATCH` and `DELETE /{id}` beside
+# `/me`. Through `PATCH /{id}` an administrator could set another account's
+# address, password or flags in one request, with no reason and no entry in the
+# access log: the second door around ADR 0042 (#556). Only the `/me` routes are
+# kept; every administrative change goes through `/api/admin/users/{id}`, which
+# asks for a reason and records it.
+users_router = fastapi_users.get_users_router(UserRead, UserUpdate)
+users_router.routes = [
+    route
+    for route in users_router.routes
+    if isinstance(route, APIRoute) and route.path == "/me"
+]
 app.include_router(
-    fastapi_users.get_users_router(UserRead, UserUpdate),
+    users_router,
     prefix="/api/users",
     tags=["users"],
 )

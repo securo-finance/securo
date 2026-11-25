@@ -57,8 +57,6 @@ ALLOWLIST: dict[tuple[str, str], str] = {
     ("POST", "/register"): "unauthenticated by definition",
     ("POST", "/forgot-password"): "unauthenticated by definition",
     ("POST", "/reset-password"): "unauthenticated by definition",
-    ("PATCH", "/{id}"): "fastapi-users' own user router, superuser-gated",
-    ("DELETE", "/{id}"): "fastapi-users' own user router, superuser-gated",
     ("POST", "/api/setup/create-admin"): "first-run bootstrap, refuses once a user exists",
     # Instance administration: gated by `current_superuser`, not by workspace.
     ("POST", "/api/admin/users"): "superuser-gated instance administration",

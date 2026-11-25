@@ -80,6 +80,45 @@ async def test_admin_cannot_set_a_password(
     assert hijack_login.status_code != 200
 
 
+async def test_the_users_router_cannot_reach_another_account(
+    client: AsyncClient, admin_auth_headers: dict, test_user: User, session: AsyncSession
+):
+    """The fastapi-users superuser `/{id}` routes were the second door in ADR 0042.
+
+    `PATCH /api/users/{id}` set another account's address, password or flags in
+    one request, with no reason and no entry in the access log. Only the `/me`
+    routes stay mounted.
+    """
+    target = f"/api/users/{test_user.id}"
+    read = await client.get(target, headers=admin_auth_headers)
+    moved = await client.patch(
+        target, json={"email": "planted@example.com"}, headers=admin_auth_headers
+    )
+    changed = await client.patch(
+        target, json={"password": "hijack12345"}, headers=admin_auth_headers
+    )
+    deleted = await client.delete(target, headers=admin_auth_headers)
+
+    assert [r.status_code for r in (read, moved, changed, deleted)] == [404, 404, 404, 404]
+
+    # Nothing moved: the owner's address and password still sign in, and the
+    # attempts left no trace because they never reached a handler.
+    still_theirs = await client.post(
+        "/api/auth/login",
+        data={"username": "test@example.com", "password": "testpass123"},
+    )
+    assert still_theirs.status_code == 200
+    planted = await client.post(
+        "/api/auth/login",
+        data={"username": "planted@example.com", "password": "hijack12345"},
+    )
+    assert planted.status_code != 200
+    assert await _log_entries(session) == []
+
+    # The caller's own routes are still there.
+    assert (await client.get("/api/users/me", headers=admin_auth_headers)).status_code == 200
+
+
 async def test_update_without_a_reason_is_refused(
     client: AsyncClient, admin_auth_headers: dict, test_user: User, session: AsyncSession
 ):
