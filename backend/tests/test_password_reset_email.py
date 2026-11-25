@@ -222,7 +222,9 @@ async def test_preferences_that_are_not_an_object_do_not_break_the_request(
     client: AsyncClient, test_user: User, sent_emails, session
 ):
     sent, _settings = sent_emails
-    test_user.preferences = ["pt"]
+    # The column is free-form JSON; the type says object, the row can hold a
+    # list, and that is the case this test is about.
+    setattr(test_user, "preferences", ["pt"])
     session.add(test_user)
     await session.commit()
 
