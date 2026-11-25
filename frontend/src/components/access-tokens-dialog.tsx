@@ -5,6 +5,8 @@ import { ArrowLeft, Check, Copy, KeySquare, Loader2, Plus, TriangleAlert, X } fr
 import { accessTokens, workspaces } from '@/lib/api'
 import { useAuth } from '@/contexts/auth-context'
 import { useWorkspace } from '@/contexts/workspace-context'
+import { useDateLocale } from '@/hooks/use-display-locale'
+import { formatDate } from '@/lib/date-range-format'
 import type { AccessToken, AccessTokenCreated } from '@/types'
 import {
   Dialog,
@@ -68,6 +70,7 @@ function AccessTokensSession({ open, onClose }: AccessTokensDialogProps) {
   const { t, i18n } = useTranslation()
   const { user } = useAuth()
   const { current, canWrite } = useWorkspace()
+  const dateLocale = useDateLocale()
   // The dialog shows the token list, or the form for a new token in its place.
   const [view, setView] = useState<'list' | 'create'>('list')
   const [tokens, setTokens] = useState<AccessToken[]>([])
@@ -116,9 +119,6 @@ function AccessTokensSession({ open, onClose }: AccessTokensDialogProps) {
   useEffect(() => {
     if (open) void load()
   }, [open, load])
-
-  const formatDate = (value: string) =>
-    new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(new Date(value))
 
   const resourceLabel = (resource: string) =>
     t(`plugins.code.resource.${resource}`, { defaultValue: resource })
@@ -465,11 +465,11 @@ function AccessTokensSession({ open, onClose }: AccessTokensDialogProps) {
                     <dl className="flex flex-wrap gap-x-4 text-xs text-muted-foreground">
                       <div className="flex gap-1">
                         <dt>{t('accessTokens.lastUsed')}:</dt>
-                        <dd>{token.last_used_at ? formatDate(token.last_used_at) : t('accessTokens.neverUsed')}</dd>
+                        <dd>{token.last_used_at ? formatDate(token.last_used_at, dateLocale) : t('accessTokens.neverUsed')}</dd>
                       </div>
                       <div className="flex gap-1">
                         <dt>{t('accessTokens.expires')}:</dt>
-                        <dd>{token.expires_at ? formatDate(token.expires_at) : t('accessTokens.expiryNever')}</dd>
+                        <dd>{token.expires_at ? formatDate(token.expires_at, dateLocale) : t('accessTokens.expiryNever')}</dd>
                       </div>
                     </dl>
                     {creator && (
@@ -531,7 +531,9 @@ function AccessTokensSession({ open, onClose }: AccessTokensDialogProps) {
   )
 
   return (
-    <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
+    // Closing while a token is being created would drop the only response
+    // that carries its plaintext, so the dialog stays open until it settles.
+    <Dialog open={open} onOpenChange={(v) => !v && !saving && onClose()}>
       <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
         {view === 'create' ? createView : listView}
       </DialogContent>

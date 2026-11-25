@@ -4,7 +4,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { AccessTokensDialog } from '@/components/access-tokens-dialog'
 import { accessTokens, workspaces } from '@/lib/api'
 import { renderWithProviders, t } from '@/test/utils'
-import type { AccessToken, WorkspaceMember } from '@/types'
+import type { AccessToken, AccessTokenCreated, WorkspaceMember } from '@/types'
 
 const workspace = vi.hoisted(() => ({ canWrite: true }))
 
@@ -15,6 +15,8 @@ vi.mock('@/contexts/workspace-context', () => ({
 vi.mock('@/contexts/auth-context', () => ({
   useAuth: () => ({ user: { id: 'user-1' } }),
 }))
+
+vi.mock('@/hooks/use-display-locale', () => ({ useDateLocale: () => 'pt-BR' }))
 
 const SCOPES = ['accounts:read', 'accounts:write', 'transactions:read', 'transactions:write', 'reports:read']
 
@@ -165,4 +167,39 @@ it('revokes a token after confirmation and keeps it listed as revoked', async ()
   expect(revoke).toHaveBeenCalledWith(existing.id)
   expect(within(row).getByText(t('accessTokens.revokedBadge'))).toBeInTheDocument()
   expect(within(row).queryByRole('button', { name: t('accessTokens.revoke') })).not.toBeInTheDocument()
+})
+
+it('formats token dates in the display locale', async () => {
+  vi.spyOn(accessTokens, 'list').mockResolvedValue([existing])
+  renderWithProviders(<AccessTokensDialog open onClose={vi.fn()} />)
+
+  await screen.findByText(existing.name)
+  expect(within(rowOf(existing.name)).getByText('01 de jan. de 2020')).toBeInTheDocument()
+})
+
+it('stays open while a token is being created', async () => {
+  vi.spyOn(accessTokens, 'list').mockResolvedValue([])
+  let finish: (token: AccessTokenCreated) => void = () => {}
+  vi.spyOn(accessTokens, 'create').mockReturnValue(
+    new Promise<AccessTokenCreated>((resolve) => {
+      finish = resolve
+    }),
+  )
+  const onClose = vi.fn()
+  const { user } = renderWithProviders(<AccessTokensDialog open onClose={onClose} />)
+
+  await screen.findByText(t('accessTokens.empty'))
+  await user.click(screen.getByRole('button', { name: t('accessTokens.newToken') }))
+  await user.type(screen.getByLabelText(t('accessTokens.name')), 'CI')
+  await user.click(scopeBox('accounts', 'scopeRead'))
+  await user.click(screen.getByRole('button', { name: t('accessTokens.create') }))
+
+  await user.keyboard('{Escape}')
+  expect(onClose).not.toHaveBeenCalled()
+
+  finish({ ...existing, id: 'tok-3', name: 'CI', expires_at: null, token: 'sct_kept' })
+  expect(await screen.findByDisplayValue('sct_kept')).toBeInTheDocument()
+
+  await user.keyboard('{Escape}')
+  expect(onClose).toHaveBeenCalled()
 })
