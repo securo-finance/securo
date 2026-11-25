@@ -16,6 +16,7 @@ from app.core.app_clock import (
 )
 from app.worker import celery_app
 from app.core.config import get_settings
+from app.core.row_security import workspace_makers
 from app.models.asset import Asset
 from app.models.asset_value import AssetValue
 from app.services.asset_service import refresh_all_market_prices
@@ -54,96 +55,102 @@ async def _apply_growth_rules() -> int:
     """Apply growth rules for all assets that have valuation_method='growth_rule'."""
     engine, session_maker = _make_session_maker()
     try:
-        total = 0
-
-        async with session_maker() as session:
-            operation_timezone = await get_timezone(session, fresh=True)
-            result = await session.execute(
-                select(Asset).where(
-                    Asset.valuation_method == "growth_rule",
-                    Asset.growth_type.isnot(None),
-                    Asset.growth_rate.isnot(None),
-                    Asset.growth_frequency.isnot(None),
-                    Asset.is_archived == False,
-                    Asset.sell_date.is_(None),
-                )
-            )
-            assets = list(result.scalars().all())
-
-        # Each workspace keeps its own calendar, so "today" is resolved per
-        # workspace and remembered for the rest of this run.
-        todays: dict[uuid.UUID, date] = {}
-        with use_resolved_timezone(operation_timezone):
-            for asset in assets:
-                try:
-                    async with session_maker() as session:
-                        if asset.workspace_id not in todays:
-                            todays[asset.workspace_id] = today_in(
-                                await get_workspace_timezone(session, asset.workspace_id)
-                            )
-                        today = todays[asset.workspace_id]
-                        # Get latest value
-                        val_result = await session.execute(
-                            select(AssetValue)
-                            .where(AssetValue.asset_id == asset.id)
-                            .order_by(AssetValue.date.desc(), AssetValue.id.desc())
-                            .limit(1)
-                        )
-                        latest = val_result.scalar_one_or_none()
-                        if not latest:
-                            continue
-
-                        # Check if growth should start
-                        if asset.growth_start_date and today < asset.growth_start_date:
-                            continue
-
-                        # Generate all missed periods in a loop. A value recorded
-                        # before the growth start accrues nothing until that date,
-                        # matching the backfill in _generate_growth_values.
-                        current_date = latest.date
-                        if asset.growth_start_date and current_date < asset.growth_start_date:
-                            current_date = asset.growth_start_date
-                        current_amount = float(latest.amount)
-                        created = 0
-
-                        while True:
-                            next_due = _next_due_date(current_date, asset.growth_frequency)
-                            if next_due > today:
-                                break
-
-                            if asset.growth_type == "percentage":
-                                current_amount = current_amount * (1 + float(asset.growth_rate) / 100)
-                            elif asset.growth_type == "absolute":
-                                current_amount = current_amount + float(asset.growth_rate)
-                            else:
-                                break
-
-                            new_value = AssetValue(
-                                asset_id=asset.id,
-                                amount=Decimal(str(round(current_amount, 6))),
-                                date=next_due,
-                                source="rule",
-                            )
-                            session.add(new_value)
-                            current_date = next_due
-                            created += 1
-
-                            # Safety limit to avoid infinite loops
-                            if created >= 1000:
-                                break
-
-                        if created > 0:
-                            await session.commit()
-                            total += created
-                            logger.info(
-                                "Growth rule applied for asset %s: %d values created, latest=%.2f",
-                                asset.id, created, current_amount,
-                            )
-                except Exception:
-                    logger.exception("Failed to apply growth rule for asset %s", asset.id)
-
+        return sum([
+            await _apply_growth_rules_in(maker) for maker in await workspace_makers(session_maker)
+        ])
     finally:
         await engine.dispose()
+
+
+async def _apply_growth_rules_in(session_maker) -> int:
+    total = 0
+
+    async with session_maker() as session:
+        operation_timezone = await get_timezone(session, fresh=True)
+        result = await session.execute(
+            select(Asset).where(
+                Asset.valuation_method == "growth_rule",
+                Asset.growth_type.isnot(None),
+                Asset.growth_rate.isnot(None),
+                Asset.growth_frequency.isnot(None),
+                Asset.is_archived == False,
+                Asset.sell_date.is_(None),
+            )
+        )
+        assets = list(result.scalars().all())
+
+    # Each workspace keeps its own calendar, so "today" is resolved per
+    # workspace and remembered for the rest of this run.
+    todays: dict[uuid.UUID, date] = {}
+    with use_resolved_timezone(operation_timezone):
+        for asset in assets:
+            try:
+                async with session_maker() as session:
+                    if asset.workspace_id not in todays:
+                        todays[asset.workspace_id] = today_in(
+                            await get_workspace_timezone(session, asset.workspace_id)
+                        )
+                    today = todays[asset.workspace_id]
+                    # Get latest value
+                    val_result = await session.execute(
+                        select(AssetValue)
+                        .where(AssetValue.asset_id == asset.id)
+                        .order_by(AssetValue.date.desc(), AssetValue.id.desc())
+                        .limit(1)
+                    )
+                    latest = val_result.scalar_one_or_none()
+                    if not latest:
+                        continue
+
+                    # Check if growth should start
+                    if asset.growth_start_date and today < asset.growth_start_date:
+                        continue
+
+                    # Generate all missed periods in a loop. A value recorded
+                    # before the growth start accrues nothing until that date,
+                    # matching the backfill in _generate_growth_values.
+                    current_date = latest.date
+                    if asset.growth_start_date and current_date < asset.growth_start_date:
+                        current_date = asset.growth_start_date
+                    current_amount = float(latest.amount)
+                    created = 0
+
+                    while True:
+                        next_due = _next_due_date(current_date, asset.growth_frequency)
+                        if next_due > today:
+                            break
+
+                        if asset.growth_type == "percentage":
+                            current_amount = current_amount * (1 + float(asset.growth_rate) / 100)
+                        elif asset.growth_type == "absolute":
+                            current_amount = current_amount + float(asset.growth_rate)
+                        else:
+                            break
+
+                        new_value = AssetValue(
+                            asset_id=asset.id,
+                            amount=Decimal(str(round(current_amount, 6))),
+                            date=next_due,
+                            source="rule",
+                        )
+                        session.add(new_value)
+                        current_date = next_due
+                        created += 1
+
+                        # Safety limit to avoid infinite loops
+                        if created >= 1000:
+                            break
+
+                    if created > 0:
+                        await session.commit()
+                        total += created
+                        logger.info(
+                            "Growth rule applied for asset %s: %d values created, latest=%.2f",
+                            asset.id, created, current_amount,
+                        )
+            except Exception:
+                logger.exception("Failed to apply growth rule for asset %s", asset.id)
+
     return total
 
 
@@ -163,8 +170,15 @@ async def _refresh_market_prices() -> dict[str, int]:
     """
     engine, session_maker = _make_session_maker()
     try:
-        async with session_maker() as session, use_timezone(session, fresh=True):
-            return await refresh_all_market_prices(session)
+        total: dict[str, int] = {}
+        for maker in await workspace_makers(session_maker):
+            async with maker() as session, use_timezone(session, fresh=True):
+                done = await refresh_all_market_prices(session)
+            for key, count in done.items():
+                total[key] = total.get(key, 0) + count
+            if done.get("rate_limited"):
+                break  # the provider is throttling: the next run picks up the rest
+        return total
     finally:
         await engine.dispose()
 

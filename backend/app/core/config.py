@@ -139,6 +139,10 @@ class Settings(BaseSettings):
     storage_s3_allow_insecure_http: bool = False  # development only: permits http:// endpoints
     storage_s3_addressing_style: str = "auto"  # auto|path|virtual; checked only when S3 is selected
 
+    # Let Postgres hold the workspace boundary too (ADR 0043). DATABASE_URL must
+    # then name a restricted role set up with `app.cli apply-row-security`.
+    row_security_enabled: bool = False
+
     # Registration
     registration_enabled: bool = True
 

@@ -16,6 +16,7 @@ from app.core.app_clock import is_valid_timezone
 from app.core.auth import current_active_user, get_user_manager, UserManager
 from app.core.auth_policy import local_auth_enabled, require_local_auth_enabled
 from app.core.database import get_async_session
+from app.core.row_security import bind_workspace
 from app.core.workspace_context import WorkspaceContext, current_workspace
 from app.models.user import User
 from app.models.workspace import Workspace, WorkspaceMember
@@ -322,6 +323,7 @@ async def workspace_stats(
 ):
     """KPIs surfaced on the settings page (members / accounts / transactions)."""
     await workspace_service.require_membership(session, workspace_id, user.id)
+    await bind_workspace(session, workspace_id, user.id)
     return await workspace_service.get_workspace_stats(session, workspace_id)
 
 
