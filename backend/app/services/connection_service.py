@@ -42,7 +42,9 @@ from app.plugins.contract import SYNCED_TEXT, column_amount
 from app.plugins.provider import is_plugin_provider
 from app.providers import get_provider
 from app.providers.enable_banking import (
+    MAX_VALUE_DATE_LEAD,
     SKIPPED_TRANSACTION_STATUSES,
+    booking_date,
     entry_date,
     is_account_txn_id,
 )
@@ -2935,7 +2937,7 @@ async def _find_settled_eb_hold(
             Transaction.date >= txn_data.date - timedelta(days=_EB_HOLD_SETTLE_DAYS),
             # A hold stored before the provider read the value date keeps the
             # later booking date; its payload date is checked below.
-            Transaction.date <= txn_data.date + timedelta(days=_EB_HOLD_SETTLE_DAYS),
+            Transaction.date <= txn_data.date + MAX_VALUE_DATE_LEAD,
             Transaction.external_id != txn_data.external_id,
         )
     )
@@ -3054,6 +3056,24 @@ def _eb_purchase_date(raw: dict, booked_on: date) -> Optional[date]:
     return None
 
 
+def _eb_same_entry_day(stored: Transaction, txn_data) -> bool:
+    """Whether a stored Enable Banking row and an incoming entry fall on the
+    same day, though their dates differ.
+
+    A row stored before the provider read the value date keeps the later
+    booking date, while its payload gives the entry's date now. And one
+    payload of an entry can carry only the booking date while the other
+    also carries the earlier value date; both then name the same booking
+    date.
+    """
+    stored_raw = stored.raw_data if isinstance(stored.raw_data, dict) else {}
+    if entry_date(stored_raw) == txn_data.date:
+        return True
+    incoming_raw = txn_data.raw_data if isinstance(txn_data.raw_data, dict) else {}
+    booked_on = booking_date(stored_raw)
+    return booked_on is not None and booked_on == booking_date(incoming_raw)
+
+
 async def _find_synced_duplicate(
     session: AsyncSession,
     account_id: uuid.UUID,
@@ -3126,13 +3146,13 @@ async def _find_synced_duplicate(
     # the residual false positive of two different merchants charging the
     # same amount the same day where one is pending and one is posted.
     #
-    # On Enable Banking a row stored before the provider read the value date
-    # keeps the later booking date; it is the twin when the date its payload
-    # gives the entry is this one's.
+    # On Enable Banking two payloads of one entry can be dated apart, by up to
+    # how far a value date may precede its booking date: see
+    # `_eb_same_entry_day`.
     same_date = Transaction.date == txn_data.date
     if eb_payload_dates:
         same_date = Transaction.date.between(
-            txn_data.date, txn_data.date + timedelta(days=_EB_HOLD_SETTLE_DAYS),
+            txn_data.date - MAX_VALUE_DATE_LEAD, txn_data.date + MAX_VALUE_DATE_LEAD,
         )
     result = await session.execute(
         select(Transaction).where(
@@ -3148,9 +3168,12 @@ async def _find_synced_duplicate(
     for candidate in result.scalars():
         if candidate.external_id and candidate.external_id.startswith("bill_charge:"):
             continue
+        # A row the provider still returns, cancelled ones included, is an
+        # entry of its own, so only a row that left the feed is matched by
+        # its payload dates. A fetch cut short can't tell, so it is matched.
         if candidate.date != txn_data.date and not (
-            isinstance(candidate.raw_data, dict)
-            and entry_date(candidate.raw_data) == txn_data.date
+            (live_external_ids is None or candidate.external_id not in live_external_ids)
+            and _eb_same_entry_day(candidate, txn_data)
         ):
             continue
         if token_overlap(

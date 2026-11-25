@@ -266,7 +266,7 @@ def _parse_iso_date(value: Any) -> Optional[date]:
 # day of the entry. A card purchase books a few working days later; a value
 # date further back is a back-valued correction or a bad payload, and the
 # booking date stays.
-_MAX_VALUE_DATE_LEAD = timedelta(days=7)
+MAX_VALUE_DATE_LEAD = timedelta(days=7)
 
 
 def _plausible_date(value: Any) -> Optional[date]:
@@ -277,6 +277,11 @@ def _plausible_date(value: Any) -> Optional[date]:
     return parsed if parsed is not None and parsed.year > 1970 else None
 
 
+def booking_date(raw: dict) -> Optional[date]:
+    """The booking date a payload carries, unless missing or a placeholder."""
+    return _plausible_date(raw.get("booking_date"))
+
+
 def entry_date(raw: dict) -> Optional[date]:
     """The day an entry happened, from the dates its payload carries.
 
@@ -285,16 +290,16 @@ def entry_date(raw: dict) -> Optional[date]:
     that day: a card purchase made on Saturday has Saturday's value date and
     is booked on Monday, while a bank that sets a later value date (interest
     on a card statement, a forward-dated credit) still keeps the booking date.
-    A value date more than `_MAX_VALUE_DATE_LEAD` before the booking date
+    A value date more than `MAX_VALUE_DATE_LEAD` before the booking date
     does not win either.
     """
     txn_date = _plausible_date(raw.get("transaction_date"))
     if txn_date:
         return txn_date
     value = _plausible_date(raw.get("value_date"))
-    booking = _plausible_date(raw.get("booking_date"))
+    booking = booking_date(raw)
     if value and booking:
-        if booking - _MAX_VALUE_DATE_LEAD <= value < booking:
+        if booking - MAX_VALUE_DATE_LEAD <= value < booking:
             return value
         return booking
     return value or booking
