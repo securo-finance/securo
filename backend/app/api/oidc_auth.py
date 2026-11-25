@@ -15,7 +15,8 @@ from fastapi_users import schemas
 from fastapi_users.exceptions import UserAlreadyExists
 from jose import JWTError, jwt
 from pydantic import BaseModel, EmailStr
-from sqlalchemy import select, update as sql_update
+from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import UserManager, get_jwt_strategy, get_user_manager
@@ -448,6 +449,20 @@ async def _link_existing_account(
     return user
 
 
+class _OIDCUserCreate(schemas.BaseUserCreate):
+    """The account row the OIDC sign-up inserts, identity and all.
+
+    The identity and the preferences travel with the insert so the row is never
+    visible without them: a concurrent sign-in that read the account between
+    the insert and a later update would find it unlinked, and would either
+    refuse it (the default link mode) or claim it as its own.
+    """
+
+    preferences: dict[str, Any] | None = None
+    oidc_issuer: str | None = None
+    oidc_subject: str | None = None
+
+
 async def _get_or_create_oidc_user(
     claims: dict[str, Any],
     userinfo: dict[str, Any],
@@ -523,25 +538,36 @@ async def _get_or_create_oidc_user(
     }
     provider_roles = _claim_values(merged, settings.oidc_roles_claim)
     admin_roles = {role.strip() for role in settings.oidc_admin_roles.split(",") if role.strip()}
-    user_create = schemas.BaseUserCreate(
+    user_create = _OIDCUserCreate(
         email=email.lower(),
         password=secrets.token_urlsafe(32),
         is_verified=True,
         is_superuser=bool(settings.oidc_sync_roles and admin_roles and provider_roles & admin_roles),
+        preferences=preferences,
+        oidc_issuer=issuer,
+        oidc_subject=subject,
     )
     try:
         user = await user_manager.create(user_create, safe=True, request=None)
-    except UserAlreadyExists:
+    except (UserAlreadyExists, IntegrityError) as conflict:
         # A concurrent request created the account between the lookup above and
-        # this insert, so it is an existing account now. It is found through the
-        # same resolver that read the address before (#568), and the same checks
-        # apply instead of claiming it, overwriting its preferences and
-        # provisioning a second workspace and wallet for it (#572).
-        user = await account_lookup_service.find_account_by_email(session, email)
-        if user is None:
-            raise HTTPException(status_code=500, detail="OIDC account could not be created")
+        # this insert, so it is an existing account now. The failed insert left
+        # the session unusable, so roll it back and look the row up again — by
+        # the identity first, since the winner may carry another address, then
+        # by the address through the same resolver that read it before (#568).
+        # Apply the same checks instead of claiming it, overwriting its
+        # preferences and provisioning a second workspace and wallet for it
+        # (#572).
+        await session.rollback()
+        winner = (
+            await session.execute(select(User).where(User.oidc_issuer == issuer, User.oidc_subject == subject))
+        ).scalar_one_or_none()
+        if winner is None:
+            winner = await account_lookup_service.find_account_by_email(session, email)
+        if winner is None:
+            raise conflict
         return await _link_existing_account(
-            user,
+            winner,
             issuer=issuer,
             subject=subject,
             email_verified=email_verified,
@@ -551,12 +577,6 @@ async def _get_or_create_oidc_user(
         )
 
     db_session = user_manager.db_session
-    await db_session.execute(
-        sql_update(User)
-        .where(User.id == user.id)
-        .values(preferences=preferences, oidc_issuer=issuer, oidc_subject=str(merged.get("sub")))
-    )
-    await db_session.refresh(user)
     workspace = await create_personal_workspace_for_user(db_session, user)
     wallet = Account(
         user_id=user.id,
