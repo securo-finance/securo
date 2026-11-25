@@ -3,7 +3,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Optional
 
 from fastapi_users.db import SQLAlchemyBaseUserTableUUID
-from sqlalchemy import JSON, Boolean, DateTime, Index, String, UniqueConstraint, func
+from sqlalchemy import JSON, Boolean, DateTime, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -88,10 +88,3 @@ class User(SQLAlchemyBaseUserTableUUID, Base):
         """Return the user's configured primary currency."""
         from app.core.config import get_settings
         return (self.preferences or {}).get("currency_display", get_settings().default_currency)
-
-
-# An address names one mailbox, whatever its case (#568). Sign-in, the invite
-# and every screen that resolves an account by address already compare
-# lowered; this keeps a second row from being written for the same one, also
-# when two requests race past the checks in the services.
-Index("uq_users_lower_email", func.lower(User.email), unique=True)
