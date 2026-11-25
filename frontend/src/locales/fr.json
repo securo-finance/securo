@@ -3112,8 +3112,8 @@
       "chat": "Discuter"
     },
     "globalChat": {
-      "title": "Discussion",
-      "openHint": "Ouvrir la discussion",
+      "title": "Agent",
+      "openHint": "Ouvrir l'agent",
       "history": "Conversations récentes",
       "selectAgent": "Sélectionner un agent",
       "openSettings": "Paramètres de l'agent",
@@ -4214,5 +4214,104 @@
       "turnedOff": "Lecture de documents désactivée"
     },
     "unreadPages": "Pages non lues (numérisées, et le modèle ne lit pas les images) : {{pages}}. Leurs lignes manquent dans cette vérification."
+  },
+  "notifications": {
+    "title": "Notifications",
+    "unread": "Non lue",
+    "unreadLabel": "Notifications, {{number}} non lues",
+    "markAllRead": "Tout marquer comme lu",
+    "empty": "Rien ne requiert votre attention.",
+    "loadError": "Impossible de charger les notifications.",
+    "connection": {
+      "title": "{{name}} a cessé de se synchroniser",
+      "rateLimited": "La banque continue d’atteindre sa limite quotidienne."
+    },
+    "recurring": {
+      "title": "{{name}} n’a pas été générée",
+      "detail": "Échéance le {{date}}. Vérifiez son compte et ses paramètres."
+    },
+    "budget": {
+      "close": "{{name}} : {{percent}} % du budget utilisé",
+      "reached": "{{name}} : budget épuisé",
+      "detail": "{{actual}} sur {{budget}}"
+    },
+    "backup": {
+      "title": "La sauvegarde planifiée a échoué",
+      "detail": "Dernière tentative le {{date}}. Securo va réessayer."
+    },
+    "seeAll": "Voir toutes les notifications",
+    "markRead": "Marquer comme lue",
+    "loadMore": "Charger plus",
+    "filter": {
+      "all": "Toutes",
+      "unread": "Non lues"
+    },
+    "emptyFilter": {
+      "all": "Aucune notification pour le moment.",
+      "unread": "Plus rien à lire."
+    },
+    "flag": {
+      "title": "Rappels dépassés : {{number}}",
+      "detail": "Transactions signalées dont le rappel est passé."
+    },
+    "match": {
+      "title": "Correspondances à vérifier : {{number}}",
+      "detail": "Securo a trouvé des correspondances possibles et attend votre réponse."
+    },
+    "invoice": {
+      "title": "{{name}} : facture en retard",
+      "detail": "{{amount}}, échéance le {{date}}."
+    },
+    "preferences": {
+      "title": "Préférences",
+      "hint": "Choisissez ce dont vous voulez être averti dans cet espace. Les autres membres gardent leurs choix.",
+      "saveError": "Impossible d’enregistrer votre choix.",
+      "loadError": "Impossible de charger vos préférences."
+    },
+    "kind": {
+      "connection_error": {
+        "label": "Connexions",
+        "hint": "Une banque ou un plugin a cessé de se synchroniser."
+      },
+      "budget_threshold": {
+        "label": "Budgets",
+        "hint": "Un budget a atteint 80 % ou 100 %."
+      },
+      "recurring_failed": {
+        "label": "Récurrentes",
+        "hint": "Une transaction récurrente n’a pas été générée."
+      },
+      "flag_overdue": {
+        "label": "Rappels",
+        "hint": "Une transaction signalée a dépassé la date de son rappel."
+      },
+      "reconciliation_pending": {
+        "label": "Correspondances à vérifier",
+        "hint": "Securo a trouvé des correspondances possibles et attend votre réponse."
+      },
+      "invoice_overdue": {
+        "label": "Factures",
+        "hint": "Une facture client est en retard."
+      },
+      "group_expense": {
+        "label": "Dépenses partagées",
+        "hint": "Quelqu’un ajoute ou modifie une dépense partagée avec vous dans un groupe."
+      },
+      "group_settlement": {
+        "label": "Paiements de groupe",
+        "hint": "Quelqu’un enregistre un paiement de votre part ou pour vous dans un groupe."
+      },
+      "backup_failed": {
+        "label": "Sauvegardes",
+        "hint": "Une sauvegarde planifiée a échoué."
+      }
+    },
+    "group": {
+      "added": "{{actor}} a ajouté {{name}}",
+      "changed": "{{actor}} a modifié {{name}}",
+      "batch": "{{actor}} a ajouté des dépenses partagées : {{number}}",
+      "share": "Votre part dans {{group}} : {{amount}}",
+      "paid": "{{actor}} a enregistré un paiement"
+    }
   }
 }

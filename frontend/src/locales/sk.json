@@ -3263,8 +3263,8 @@
       "chat": "Chat"
     },
     "globalChat": {
-      "title": "Chat",
-      "openHint": "Otvoriť chat",
+      "title": "Agent",
+      "openHint": "Otvoriť agenta",
       "history": "Nedávne konverzácie",
       "selectAgent": "Vybrať agenta",
       "openSettings": "Nastavenia agenta",
@@ -4395,5 +4395,104 @@
       "turnedOff": "Čítanie dokumentov vypnuté"
     },
     "unreadPages": "Neprečítané strany (skeny, a model nečíta obrázky): {{pages}}. Ich riadky v tejto kontrole chýbajú."
+  },
+  "notifications": {
+    "title": "Oznámenia",
+    "unread": "Neprečítané",
+    "unreadLabel": "Oznámenia, neprečítaných: {{number}}",
+    "markAllRead": "Označiť všetko ako prečítané",
+    "empty": "Nič nevyžaduje vašu pozornosť.",
+    "loadError": "Oznámenia sa nepodarilo načítať.",
+    "connection": {
+      "title": "Synchronizácia sa zastavila: {{name}}",
+      "rateLimited": "Banka opakovane dosahuje denný limit."
+    },
+    "recurring": {
+      "title": "Nevytvorené: {{name}}",
+      "detail": "Splatnosť bola {{date}}. Skontrolujte účet a nastavenia."
+    },
+    "budget": {
+      "close": "{{name}}: využitých {{percent}} % rozpočtu",
+      "reached": "{{name}}: rozpočet vyčerpaný",
+      "detail": "{{actual}} z {{budget}}"
+    },
+    "backup": {
+      "title": "Plánovaná záloha zlyhala",
+      "detail": "Posledný pokus bol {{date}}. Securo to skúsi znova."
+    },
+    "seeAll": "Zobraziť všetky oznámenia",
+    "markRead": "Označiť ako prečítané",
+    "loadMore": "Načítať ďalšie",
+    "filter": {
+      "all": "Všetky",
+      "unread": "Neprečítané"
+    },
+    "emptyFilter": {
+      "all": "Zatiaľ žiadne oznámenia.",
+      "unread": "Nie je čo čítať."
+    },
+    "flag": {
+      "title": "Zmeškané pripomienky: {{number}}",
+      "detail": "Označené transakcie po dátume pripomienky."
+    },
+    "match": {
+      "title": "Zhody na kontrolu: {{number}}",
+      "detail": "Securo našlo možné zhody a potrebuje vašu odpoveď."
+    },
+    "invoice": {
+      "title": "{{name}}: faktúra po splatnosti",
+      "detail": "{{amount}}, splatnosť {{date}}."
+    },
+    "preferences": {
+      "title": "Predvoľby",
+      "hint": "Vyberte, o čom chcete v tomto priestore vedieť. Ostatní členovia si ponechajú vlastné voľby.",
+      "saveError": "Voľbu sa nepodarilo uložiť.",
+      "loadError": "Predvoľby sa nepodarilo načítať."
+    },
+    "kind": {
+      "connection_error": {
+        "label": "Pripojenia",
+        "hint": "Banka alebo plugin sa prestali synchronizovať."
+      },
+      "budget_threshold": {
+        "label": "Rozpočty",
+        "hint": "Rozpočet dosiahol 80 % alebo 100 %."
+      },
+      "recurring_failed": {
+        "label": "Opakované",
+        "hint": "Opakovaná transakcia nebola vytvorená."
+      },
+      "flag_overdue": {
+        "label": "Pripomienky",
+        "hint": "Označená transakcia prekročila dátum pripomienky."
+      },
+      "reconciliation_pending": {
+        "label": "Zhody na kontrolu",
+        "hint": "Securo našlo možné zhody a potrebuje vašu odpoveď."
+      },
+      "invoice_overdue": {
+        "label": "Faktúry",
+        "hint": "Faktúra klientovi je po splatnosti."
+      },
+      "group_expense": {
+        "label": "Zdieľané výdavky",
+        "hint": "Niekto pridá alebo zmení výdavok zdieľaný s vami v skupine."
+      },
+      "group_settlement": {
+        "label": "Platby v skupinách",
+        "hint": "Niekto v skupine zaznamená platbu vám alebo od vás."
+      },
+      "backup_failed": {
+        "label": "Zálohy",
+        "hint": "Plánovaná záloha zlyhala."
+      }
+    },
+    "group": {
+      "added": "{{actor}}: pridané {{name}}",
+      "changed": "{{actor}}: zmenené {{name}}",
+      "batch": "{{actor}}: pridané zdieľané výdavky: {{number}}",
+      "share": "Váš podiel v skupine {{group}}: {{amount}}",
+      "paid": "{{actor}}: zaznamenaná platba"
+    }
   }
 }

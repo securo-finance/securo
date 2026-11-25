@@ -3097,8 +3097,8 @@
       "chat": "Chat"
     },
     "globalChat": {
-      "title": "Chat",
-      "openHint": "Open chat",
+      "title": "Agent",
+      "openHint": "Open agent",
       "history": "Recent conversations",
       "selectAgent": "Select agent",
       "openSettings": "Agent settings",
@@ -4199,5 +4199,104 @@
       "turnedOff": "Document reading turned off"
     },
     "unreadPages": "Pages not read (scans, and the model does not read images): {{pages}}. Their lines are missing from this review."
+  },
+  "notifications": {
+    "title": "Notifications",
+    "unread": "Unread",
+    "unreadLabel": "Notifications, {{number}} unread",
+    "markAllRead": "Mark all as read",
+    "empty": "Nothing needs your attention.",
+    "loadError": "Could not load notifications.",
+    "connection": {
+      "title": "{{name}} stopped syncing",
+      "rateLimited": "The bank keeps reaching its daily limit."
+    },
+    "recurring": {
+      "title": "{{name}} was not generated",
+      "detail": "It was due on {{date}}. Check its account and settings."
+    },
+    "budget": {
+      "close": "{{name}}: {{percent}}% of the budget used",
+      "reached": "{{name}}: budget used up",
+      "detail": "{{actual}} of {{budget}}"
+    },
+    "backup": {
+      "title": "Scheduled backup failed",
+      "detail": "The last attempt was on {{date}}. Securo will try again."
+    },
+    "seeAll": "See all notifications",
+    "markRead": "Mark as read",
+    "loadMore": "Load more",
+    "filter": {
+      "all": "All",
+      "unread": "Unread"
+    },
+    "emptyFilter": {
+      "all": "No notifications yet.",
+      "unread": "Nothing left to read."
+    },
+    "flag": {
+      "title": "Overdue reminders: {{number}}",
+      "detail": "Flagged transactions past their reminder date."
+    },
+    "match": {
+      "title": "Matches to review: {{number}}",
+      "detail": "Securo found possible matches and needs your answer."
+    },
+    "invoice": {
+      "title": "{{name}}: invoice overdue",
+      "detail": "{{amount}}, due on {{date}}."
+    },
+    "preferences": {
+      "title": "Preferences",
+      "hint": "Choose what you want to hear about in this workspace. Other members keep their own choices.",
+      "saveError": "Could not save your choice.",
+      "loadError": "Could not load your preferences."
+    },
+    "kind": {
+      "connection_error": {
+        "label": "Connections",
+        "hint": "A bank or plugin stopped syncing."
+      },
+      "budget_threshold": {
+        "label": "Budgets",
+        "hint": "A budget reached 80% or 100%."
+      },
+      "recurring_failed": {
+        "label": "Recurring",
+        "hint": "A recurring transaction was not generated."
+      },
+      "flag_overdue": {
+        "label": "Reminders",
+        "hint": "A flagged transaction is past its reminder date."
+      },
+      "reconciliation_pending": {
+        "label": "Matches to review",
+        "hint": "Securo found possible matches and needs your answer."
+      },
+      "invoice_overdue": {
+        "label": "Invoices",
+        "hint": "An invoice to a client is overdue."
+      },
+      "group_expense": {
+        "label": "Shared expenses",
+        "hint": "Someone adds or changes an expense they share with you in a group."
+      },
+      "group_settlement": {
+        "label": "Group payments",
+        "hint": "Someone records a payment to you or from you in a group."
+      },
+      "backup_failed": {
+        "label": "Backups",
+        "hint": "A scheduled backup failed."
+      }
+    },
+    "group": {
+      "added": "{{actor}} added {{name}}",
+      "changed": "{{actor}} changed {{name}}",
+      "batch": "{{actor}} added shared expenses: {{number}}",
+      "share": "Your share in {{group}}: {{amount}}",
+      "paid": "{{actor}} recorded a payment"
+    }
   }
 }

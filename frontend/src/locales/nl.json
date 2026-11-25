@@ -3099,8 +3099,8 @@
       "chat": "Chatten"
     },
     "globalChat": {
-      "title": "Chatten",
-      "openHint": "Chat openen",
+      "title": "Agent",
+      "openHint": "Agent openen",
       "history": "Recente gesprekken",
       "selectAgent": "Selecteer agent",
       "openSettings": "Agent-instellingen",
@@ -4201,5 +4201,104 @@
       "turnedOff": "Documenten lezen uitgeschakeld"
     },
     "unreadPages": "Niet gelezen pagina's (scans, en het model leest geen afbeeldingen): {{pages}}. Hun regels ontbreken in deze controle."
+  },
+  "notifications": {
+    "title": "Meldingen",
+    "unread": "Ongelezen",
+    "unreadLabel": "Meldingen, {{number}} ongelezen",
+    "markAllRead": "Alles als gelezen markeren",
+    "empty": "Niets vraagt je aandacht.",
+    "loadError": "Meldingen konden niet worden geladen.",
+    "connection": {
+      "title": "{{name}} is gestopt met synchroniseren",
+      "rateLimited": "De bank bereikt steeds de daglimiet."
+    },
+    "recurring": {
+      "title": "{{name}} is niet aangemaakt",
+      "detail": "Vervaldatum was {{date}}. Controleer de rekening en instellingen."
+    },
+    "budget": {
+      "close": "{{name}}: {{percent}}% van het budget gebruikt",
+      "reached": "{{name}}: budget opgebruikt",
+      "detail": "{{actual}} van {{budget}}"
+    },
+    "backup": {
+      "title": "Geplande back-up mislukt",
+      "detail": "De laatste poging was op {{date}}. Securo probeert het opnieuw."
+    },
+    "seeAll": "Alle meldingen bekijken",
+    "markRead": "Als gelezen markeren",
+    "loadMore": "Meer laden",
+    "filter": {
+      "all": "Alle",
+      "unread": "Ongelezen"
+    },
+    "emptyFilter": {
+      "all": "Nog geen meldingen.",
+      "unread": "Niets meer te lezen."
+    },
+    "flag": {
+      "title": "Verlopen herinneringen: {{number}}",
+      "detail": "Gemarkeerde transacties waarvan de herinnering voorbij is."
+    },
+    "match": {
+      "title": "Koppelingen om te controleren: {{number}}",
+      "detail": "Securo vond mogelijke koppelingen en heeft je antwoord nodig."
+    },
+    "invoice": {
+      "title": "{{name}}: factuur te laat",
+      "detail": "{{amount}}, vervallen op {{date}}."
+    },
+    "preferences": {
+      "title": "Voorkeuren",
+      "hint": "Kies waarover je bericht wilt in deze werkruimte. Andere leden houden hun eigen keuzes.",
+      "saveError": "Je keuze kon niet worden opgeslagen.",
+      "loadError": "Je voorkeuren konden niet worden geladen."
+    },
+    "kind": {
+      "connection_error": {
+        "label": "Verbindingen",
+        "hint": "Een bank of plugin synchroniseert niet meer."
+      },
+      "budget_threshold": {
+        "label": "Budgetten",
+        "hint": "Een budget bereikte 80% of 100%."
+      },
+      "recurring_failed": {
+        "label": "Terugkerend",
+        "hint": "Een terugkerende transactie is niet aangemaakt."
+      },
+      "flag_overdue": {
+        "label": "Herinneringen",
+        "hint": "De herinneringsdatum van een gemarkeerde transactie is voorbij."
+      },
+      "reconciliation_pending": {
+        "label": "Koppelingen om te controleren",
+        "hint": "Securo vond mogelijke koppelingen en heeft je antwoord nodig."
+      },
+      "invoice_overdue": {
+        "label": "Facturen",
+        "hint": "Een factuur aan een klant is te laat."
+      },
+      "group_expense": {
+        "label": "Gedeelde uitgaven",
+        "hint": "Iemand voegt een uitgave toe die met jou in een groep wordt gedeeld, of wijzigt die."
+      },
+      "group_settlement": {
+        "label": "Groepsbetalingen",
+        "hint": "Iemand legt in een groep een betaling aan jou of van jou vast."
+      },
+      "backup_failed": {
+        "label": "Back-ups",
+        "hint": "Een geplande back-up is mislukt."
+      }
+    },
+    "group": {
+      "added": "{{actor}} heeft {{name}} toegevoegd",
+      "changed": "{{actor}} heeft {{name}} gewijzigd",
+      "batch": "{{actor}} heeft gedeelde uitgaven toegevoegd: {{number}}",
+      "share": "Jouw deel in {{group}}: {{amount}}",
+      "paid": "{{actor}} heeft een betaling vastgelegd"
+    }
   }
 }

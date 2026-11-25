@@ -512,6 +512,47 @@ async def facets(
     return {"years": years, "counts": counts}
 
 
+async def display_number(session: AsyncSession, invoice: Invoice) -> Optional[str]:
+    """The number as the client would recognise it.
+
+    Mirrors what every invoice screen shows, and for the same reason: the
+    snapshot taken at issue is authoritative: including when it recorded
+    *no* prefix, which is an answer rather than a gap. An invoice issued
+    as "2" must keep reading as "2" after somebody sets a prefix, or the
+    queue would name a document differently from the copy the client is
+    holding. An imported document keeps the name it arrived with; ours
+    would rename a supplier's reference.
+    """
+    if invoice.origin == "imported":
+        return invoice.external_number
+    if invoice.number is None:
+        return None
+    if invoice.snapshot is not None:
+        prefix = invoice.snapshot.get("number_prefix") or ""
+    else:
+        settings = await get_settings(session, invoice.workspace_id)
+        prefix = settings.number_prefix or ""
+    return f"{prefix}{invoice.number}"
+
+
+async def overdue_invoices(
+    session: AsyncSession, workspace_id: uuid.UUID
+) -> list[tuple[Invoice, _date]]:
+    """Issued invoices with money late, each with the date it is late since."""
+    result = await session.execute(
+        _base_query(DEFAULT_DIRECTION).where(
+            Invoice.workspace_id == workspace_id,
+            Invoice.document_type == "invoice",
+            Invoice.status == "open",
+        )
+    )
+    return [
+        (invoice, due)
+        for invoice in result.unique().scalars().all()
+        if derive_state(invoice) == "overdue" and (due := first_unpaid_due(invoice))
+    ]
+
+
 async def aging_summary(
     session: AsyncSession,
     workspace_id: uuid.UUID,

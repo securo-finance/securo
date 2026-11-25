@@ -2675,3 +2675,84 @@ export interface LoanSchedule {
   paid_off: boolean
   installments: LoanInstallment[]
 }
+
+export type AppNotificationKind =
+  | 'connection_error'
+  | 'recurring_failed'
+  | 'budget_threshold'
+  | 'flag_overdue'
+  | 'reconciliation_pending'
+  | 'invoice_overdue'
+  | 'group_expense'
+  | 'group_settlement'
+  | 'backup_failed'
+
+export interface NotificationPreference {
+  kind: AppNotificationKind
+  /** Each channel that reaches the person: `in_app`, and any other set up. */
+  channels: Record<string, boolean>
+}
+
+/** A notification of the current workspace: facts, the text is the client's. */
+export type AppNotification = {
+  id: string
+  notified_at: string
+  read_at: string | null
+  resolved_at: string | null
+} & (
+  | {
+      kind: 'connection_error'
+      data: {
+        name: string
+        connection_id: string
+        plugin_id?: string
+        code: 'consent_expired' | 'psu_present_required' | 'reauthorize_at_provider' | 'provider_error' | 'rate_limited'
+      }
+    }
+  | { kind: 'recurring_failed'; data: { recurring_id: string; name: string; date: string } }
+  | {
+      kind: 'budget_threshold'
+      data: {
+        category_id: string
+        name: string
+        month: string
+        threshold: number
+        actual: string
+        budget: string
+        currency: string
+      }
+    }
+  | { kind: 'flag_overdue'; data: { count: number } }
+  | { kind: 'reconciliation_pending'; data: { count: number } }
+  | {
+      kind: 'invoice_overdue'
+      data: { invoice_id: string; name: string; date: string; amount: string; currency: string }
+    }
+  | {
+      kind: 'group_expense'
+      data: { group_id: string; group: string; actor: string } & (
+        | { count: number }
+        | { transaction_id: string; name: string; share: string; currency: string; changed: boolean }
+      )
+    }
+  | {
+      kind: 'group_settlement'
+      data: {
+        settlement_id: string
+        group_id: string
+        group: string
+        actor: string
+        payer: string
+        receiver: string
+        amount: string
+        currency: string
+      }
+    }
+  | { kind: 'backup_failed'; data: { failed_at: string } }
+)
+
+export interface AppNotificationList {
+  items: AppNotification[]
+  total: number
+  unread_count: number
+}

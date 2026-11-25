@@ -3298,8 +3298,8 @@
     "defaultBadge": "Padrão",
     "defaultLabel": "Padrão",
     "globalChat": {
-      "title": "Chat",
-      "openHint": "Abrir chat",
+      "title": "Agente",
+      "openHint": "Abrir agente",
       "history": "Conversas recentes",
       "selectAgent": "Selecionar agente",
       "openSettings": "Definições do agente",
@@ -4213,5 +4213,104 @@
       "turnedOff": "Leitura de documentos desligada"
     },
     "unreadPages": "Páginas não lidas (digitalizadas, e o modelo não lê imagens): {{pages}}. As linhas delas não estão nesta revisão."
+  },
+  "notifications": {
+    "title": "Notificações",
+    "unread": "Por ler",
+    "unreadLabel": "Notificações, {{number}} por ler",
+    "markAllRead": "Marcar todas como lidas",
+    "empty": "Nada precisa da sua atenção.",
+    "loadError": "Não foi possível carregar as notificações.",
+    "connection": {
+      "title": "{{name}} deixou de sincronizar",
+      "rateLimited": "O banco continua a atingir o limite diário."
+    },
+    "recurring": {
+      "title": "{{name}} não foi gerada",
+      "detail": "Vencia em {{date}}. Verifique a conta e as definições."
+    },
+    "budget": {
+      "close": "{{name}}: {{percent}}% do orçamento usado",
+      "reached": "{{name}}: orçamento esgotado",
+      "detail": "{{actual}} de {{budget}}"
+    },
+    "backup": {
+      "title": "A cópia de segurança agendada falhou",
+      "detail": "A última tentativa foi em {{date}}. O Securo vai tentar novamente."
+    },
+    "seeAll": "Ver todas as notificações",
+    "markRead": "Marcar como lida",
+    "loadMore": "Carregar mais",
+    "filter": {
+      "all": "Todas",
+      "unread": "Por ler"
+    },
+    "emptyFilter": {
+      "all": "Ainda não há notificações.",
+      "unread": "Nada mais para ler."
+    },
+    "flag": {
+      "title": "Lembretes vencidos: {{number}}",
+      "detail": "Transações marcadas cujo lembrete já passou."
+    },
+    "match": {
+      "title": "Correspondências para rever: {{number}}",
+      "detail": "O Securo encontrou possíveis correspondências e precisa da sua resposta."
+    },
+    "invoice": {
+      "title": "{{name}}: cobrança vencida",
+      "detail": "{{amount}}, venceu em {{date}}."
+    },
+    "preferences": {
+      "title": "Preferências",
+      "hint": "Escolha sobre o que quer ser avisado neste espaço. Os outros membros mantêm as suas escolhas.",
+      "saveError": "Não foi possível guardar a sua escolha.",
+      "loadError": "Não foi possível carregar as suas preferências."
+    },
+    "kind": {
+      "connection_error": {
+        "label": "Ligações",
+        "hint": "Um banco ou plugin deixou de sincronizar."
+      },
+      "budget_threshold": {
+        "label": "Orçamentos",
+        "hint": "Um orçamento chegou a 80% ou 100%."
+      },
+      "recurring_failed": {
+        "label": "Recorrentes",
+        "hint": "Uma transação recorrente não foi gerada."
+      },
+      "flag_overdue": {
+        "label": "Lembretes",
+        "hint": "Uma transação marcada passou da data do lembrete."
+      },
+      "reconciliation_pending": {
+        "label": "Correspondências para rever",
+        "hint": "O Securo encontrou possíveis correspondências e precisa da sua resposta."
+      },
+      "invoice_overdue": {
+        "label": "Cobranças",
+        "hint": "Uma cobrança a um cliente venceu."
+      },
+      "group_expense": {
+        "label": "Despesas partilhadas",
+        "hint": "Alguém adiciona ou altera uma despesa dividida consigo num grupo."
+      },
+      "group_settlement": {
+        "label": "Pagamentos em grupos",
+        "hint": "Alguém regista um pagamento para si ou seu num grupo."
+      },
+      "backup_failed": {
+        "label": "Cópias de segurança",
+        "hint": "Uma cópia de segurança agendada falhou."
+      }
+    },
+    "group": {
+      "added": "{{actor}} adicionou {{name}}",
+      "changed": "{{actor}} alterou {{name}}",
+      "batch": "{{actor}} adicionou despesas partilhadas: {{number}}",
+      "share": "A sua parte em {{group}}: {{amount}}",
+      "paid": "{{actor}} registou um pagamento"
+    }
   }
 }
