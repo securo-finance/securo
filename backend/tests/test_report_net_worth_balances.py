@@ -4,8 +4,8 @@ Issue #584: a 12-month net worth report over a handful of accounts ran the same
 per-account sum 56 times, once for every account and every snapshot.
 ``_account_balances_at`` answers all the (account, cutoff) pairs a report needs
 in a few grouped queries, and has to return exactly the number the
-single-account read returns — manual and connected accounts alike, before and
-after today.
+single-account read returns, for manual and connected accounts alike, before
+and after today.
 """
 import uuid
 from datetime import date, datetime, timedelta, timezone

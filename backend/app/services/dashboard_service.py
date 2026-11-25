@@ -1583,8 +1583,8 @@ async def _account_balances_at(
     ``_account_balance_at`` answers one account at one date, and a report with
     twelve snapshots asked it once per account per snapshot: a year-long net
     worth trend over five accounts ran the same per-account sums 56 times
-    (issue #584). This reads them together — one grouped query per currency for
-    the manual accounts, and one or two for the connected ones — and returns
+    (issue #584). This reads them together, one grouped query per currency for
+    the manual accounts and one or two for the connected ones, and returns
     exactly the number ``_account_balance_at`` returns for each pair.
 
     Manual cutoffs are capped at today, as there, so two cutoffs after today
