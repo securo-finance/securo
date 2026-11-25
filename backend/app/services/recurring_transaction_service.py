@@ -14,6 +14,7 @@ from app.models.account import Account
 from app.models.bank_connection import BankConnection
 from app.models.recurring_transaction import RecurringTransaction
 from app.models.transaction import Transaction
+from app.models.user import User
 from app.schemas.recurring_transaction import (
     RecurringMonthSummary,
     RecurringTransactionCreate,
@@ -21,7 +22,11 @@ from app.schemas.recurring_transaction import (
 )
 from app.services import category_line_service, recurring_match_service
 from app.services.credit_card_service import apply_effective_date
-from app.services.fx_rate_service import convert_or_none, stamp_primary_amount
+from app.services.fx_rate_service import (
+    convert_or_none,
+    resolve_primary_stamp,
+    stamp_primary_amount,
+)
 from app.services.rule_service import apply_rules_to_transaction
 
 
@@ -70,13 +75,37 @@ async def get_recurring_transactions(
 
 
 async def get_recurring_transaction(
-    session: AsyncSession, recurring_id: uuid.UUID, workspace_id: uuid.UUID
+    session: AsyncSession,
+    recurring_id: uuid.UUID,
+    workspace_id: uuid.UUID,
+    *,
+    for_update: bool = False,
 ) -> Optional[RecurringTransaction]:
-    result = await session.execute(
-        select(RecurringTransaction)
-        .where(RecurringTransaction.id == recurring_id, RecurringTransaction.workspace_id == workspace_id)
+    query = select(RecurringTransaction).where(
+        RecurringTransaction.id == recurring_id,
+        RecurringTransaction.workspace_id == workspace_id,
     )
-    return result.scalar_one_or_none()
+    if for_update:
+        query = query.with_for_update().execution_options(populate_existing=True)
+    return (await session.execute(query)).scalar_one_or_none()
+
+
+async def _fetch_rate_and_check_bounds(
+    session: AsyncSession,
+    user_id: uuid.UUID,
+    amount: Decimal,
+    currency: str,
+    start_date: Optional[date],
+) -> None:
+    """Make the bill's rate available, and refuse a conversion past the column.
+
+    An on-demand rate fetch commits the session. Call this before the bill is
+    written or locked: run later, the fetch would save an edit that is about to
+    be refused and release the lock. The stamp then reads stored rates only.
+    """
+    user = await session.get(User, user_id)
+    if user is not None:
+        await resolve_primary_stamp(session, user.primary_currency, amount, currency, start_date)
 
 
 async def _find_duplicate_recurring(
@@ -110,6 +139,9 @@ async def create_recurring_transaction(
     await _verify_account_in_workspace(session, workspace_id, data.account_id)
     if data.category_id and data.category_lines and data.category_lines.lines:
         raise ValueError("Choose either a category or a split across categories")
+    await _fetch_rate_and_check_bounds(
+        session, user_id, data.amount, data.currency, data.start_date
+    )
     source_transaction = None
     if data.source_transaction_id is not None:
         source_transaction = (
@@ -179,6 +211,7 @@ async def create_recurring_transaction(
     await stamp_primary_amount(
         session, user_id, recurring,
         date_field="start_date",
+        allow_fetch=False,
     )
     await session.commit()
     await session.refresh(recurring, ["category_lines"])
@@ -194,6 +227,20 @@ async def update_recurring_transaction(
         return None
 
     update_data = data.model_dump(exclude_unset=True)
+    new_amount = update_data.get("amount", recurring.amount)
+    new_currency = update_data.get("currency") or recurring.currency
+    if (new_amount, new_currency) != (recurring.amount, recurring.currency):
+        await _fetch_rate_and_check_bounds(
+            session, recurring.user_id, new_amount, new_currency,
+            update_data.get("start_date") or recurring.start_date,
+        )
+    # Two edits of one bill wait for each other here, so the second converts
+    # the amount and currency the first one committed.
+    recurring = await get_recurring_transaction(
+        session, recurring_id, workspace_id, for_update=True
+    )
+    if not recurring:
+        return None
     # Same payload rules as a transaction: absent keeps the parts, a list
     # replaces them, an empty list undoes the split.
     lines_payload = data.category_lines if "category_lines" in update_data else None
@@ -211,6 +258,7 @@ async def update_recurring_transaction(
         # category is what an undone split keeps.
         update_data.pop("category_id", None)
     old_amount = recurring.amount
+    old_currency = recurring.currency
 
     for required in ("weekend_adjustment", "start_date", "frequency"):
         if required in update_data and update_data[required] is None:
@@ -253,6 +301,18 @@ async def update_recurring_transaction(
             recurring.frequency,
             intended_day=recurring.day_of_month or recurring.start_date.day,
             floor=previous_next_occurrence,
+        )
+
+    if (recurring.amount, recurring.currency) != (old_amount, old_currency):
+        # Converted again as on creation, so it follows the edit and one past
+        # the column is refused here instead of when an occurrence is written.
+        # Cleared first: without a rate, reads fall back to the native amount
+        # instead of the conversion of the old figure.
+        recurring.amount_primary = None
+        recurring.fx_rate_used = None
+        await stamp_primary_amount(
+            session, recurring.user_id, recurring, date_field="start_date",
+            allow_fetch=False,
         )
 
     await session.commit()
