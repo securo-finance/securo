@@ -6,7 +6,9 @@ import { accessTokens, workspaces } from '@/lib/api'
 import { useAuth } from '@/contexts/auth-context'
 import { useWorkspace } from '@/contexts/workspace-context'
 import { useDateLocale } from '@/hooks/use-display-locale'
+import { useEffectiveTimezone } from '@/hooks/use-timezone'
 import { formatDate } from '@/lib/date-range-format'
+import { todayInTimezone } from '@/lib/date-utils'
 import type { AccessToken, AccessTokenCreated } from '@/types'
 import {
   Dialog,
@@ -71,6 +73,12 @@ function AccessTokensSession({ open, onClose }: AccessTokensDialogProps) {
   const { user } = useAuth()
   const { current, canWrite } = useWorkspace()
   const dateLocale = useDateLocale()
+  const timezone = useEffectiveTimezone()
+
+  // A timestamp is shown as the calendar day it falls on in the workspace's
+  // timezone, the same day the server would assign it.
+  const formatInstant = (value: string) =>
+    formatDate(todayInTimezone(timezone, new Date(value)), dateLocale)
   // The dialog shows the token list, or the form for a new token in its place.
   const [view, setView] = useState<'list' | 'create'>('list')
   const [tokens, setTokens] = useState<AccessToken[]>([])
@@ -465,11 +473,11 @@ function AccessTokensSession({ open, onClose }: AccessTokensDialogProps) {
                     <dl className="flex flex-wrap gap-x-4 text-xs text-muted-foreground">
                       <div className="flex gap-1">
                         <dt>{t('accessTokens.lastUsed')}:</dt>
-                        <dd>{token.last_used_at ? formatDate(token.last_used_at, dateLocale) : t('accessTokens.neverUsed')}</dd>
+                        <dd>{token.last_used_at ? formatInstant(token.last_used_at) : t('accessTokens.neverUsed')}</dd>
                       </div>
                       <div className="flex gap-1">
                         <dt>{t('accessTokens.expires')}:</dt>
-                        <dd>{token.expires_at ? formatDate(token.expires_at, dateLocale) : t('accessTokens.expiryNever')}</dd>
+                        <dd>{token.expires_at ? formatInstant(token.expires_at) : t('accessTokens.expiryNever')}</dd>
                       </div>
                     </dl>
                     {creator && (

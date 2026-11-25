@@ -17,6 +17,7 @@ vi.mock('@/contexts/auth-context', () => ({
 }))
 
 vi.mock('@/hooks/use-display-locale', () => ({ useDateLocale: () => 'pt-BR' }))
+vi.mock('@/hooks/use-timezone', () => ({ useEffectiveTimezone: () => 'America/Los_Angeles' }))
 
 const SCOPES = ['accounts:read', 'accounts:write', 'transactions:read', 'transactions:write', 'reports:read']
 
@@ -169,12 +170,16 @@ it('revokes a token after confirmation and keeps it listed as revoked', async ()
   expect(within(row).queryByRole('button', { name: t('accessTokens.revoke') })).not.toBeInTheDocument()
 })
 
-it('formats token dates in the display locale', async () => {
-  vi.spyOn(accessTokens, 'list').mockResolvedValue([existing])
+it("formats token dates in the display locale, on the workspace timezone's day", async () => {
+  // 01:00 UTC on the 25th is still the 24th in Los Angeles.
+  vi.spyOn(accessTokens, 'list').mockResolvedValue([
+    { ...existing, last_used_at: '2026-11-25T01:00:00Z' },
+  ])
   renderWithProviders(<AccessTokensDialog open onClose={vi.fn()} />)
 
   await screen.findByText(existing.name)
-  expect(within(rowOf(existing.name)).getByText('01 de jan. de 2020')).toBeInTheDocument()
+  expect(within(rowOf(existing.name)).getByText('24 de nov. de 2026')).toBeInTheDocument()
+  expect(within(rowOf(existing.name)).getByText('31 de dez. de 2019')).toBeInTheDocument()
 })
 
 it('stays open while a token is being created', async () => {
