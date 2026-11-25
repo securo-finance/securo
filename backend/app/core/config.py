@@ -142,7 +142,7 @@ class Settings(BaseSettings):
     # Registration
     registration_enabled: bool = True
 
-    # Password recovery by email (ADR 0041). One switch: while it is off no
+    # Password recovery by email (ADR 0044). One switch: while it is off no
     # message is sent and the forgot-password route answers 503 instead of
     # pretending a mail went out.
     email_enabled: bool = False

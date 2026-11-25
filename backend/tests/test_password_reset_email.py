@@ -1,4 +1,4 @@
-"""Password recovery by email (#540, ADR 0041).
+"""Password recovery by email (#540, ADR 0044).
 
 The relay is mocked: nothing leaves the test process. What is checked is what
 the person sees (503 with the switch off, the same answer for a known and an

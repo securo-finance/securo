@@ -115,7 +115,7 @@ x-backend-env: &backend-env
   # ollama/openai/openai_compatible for better quality.
   AGENTS_EMBEDDING_PROVIDER: ${AGENTS_EMBEDDING_PROVIDER:-native}
   AGENTS_EMBEDDING_MODEL: ${AGENTS_EMBEDDING_MODEL:-sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2}
-  # Password recovery by email (ADR 0041), off by default: with EMAIL_ENABLED
+  # Password recovery by email (ADR 0044), off by default: with EMAIL_ENABLED
   # unset nothing leaves the machine and the forgot-password route answers 503.
   EMAIL_ENABLED: ${EMAIL_ENABLED:-false}
   SMTP_HOST: ${SMTP_HOST:-}

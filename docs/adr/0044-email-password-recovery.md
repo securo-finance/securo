@@ -1,4 +1,4 @@
-# 0041. Password recovery is sent over the instance's own SMTP server, behind one switch
+# 0044. Password recovery is sent over the instance's own SMTP server, behind one switch
 
 - Status: Accepted
 - Date: 2026-11-25
