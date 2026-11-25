@@ -207,7 +207,8 @@ Securo uses:
 ALTER DATABASE securo SET jit = off;
 ```
 
-New connections pick it up. Leave it on for a dedicated analytical database
+`securo` is the database name from your `DATABASE_URL`; use yours. New
+connections pick it up. Leave it on for a dedicated analytical database
 that runs long scans on large tables.
 
 To mount a PersistentVolumeClaim you already have instead of letting the chart

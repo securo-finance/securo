@@ -25,7 +25,7 @@ spec:
           imagePullPolicy: {{ .Values.postgresql.image.pullPolicy }}
           args:
             - -c
-            - jit={{ .Values.postgresql.jit }}
+            - jit={{ .Values.postgresql.jit | default "off" }}
           ports:
             - name: tcp-postgresql
               containerPort: 5432
