@@ -778,7 +778,11 @@ async def test_split_is_refused_on_holdings_the_ledger_does_not_drive(
     session.add(asset)
     await session.commit()
     # Units are on record, so the refusal is about the holding, not the ledger.
-    await _buy(session, test_workspace, asset, "10", "20", date(2026, 1, 1))
+    session.add(AssetTransaction(
+        asset_id=asset.id, workspace_id=test_workspace.id, kind="buy",
+        quantity=Decimal("10"), price=Decimal("20"), fee=Decimal("0"), date=date(2026, 1, 1),
+    ))
+    await session.commit()
 
     with pytest.raises(HTTPException) as exc:
         await _add_split(session, test_workspace, asset, 1, 100, date(2026, 2, 1))

@@ -1519,7 +1519,8 @@ async def undo_import(
         left = await session.execute(
             select(AssetTransaction.id).where(AssetTransaction.asset_id == asset_id).limit(1)
         )
-        if left.scalar_one_or_none() is None:
+        # A synced holding is its provider's, whatever this import added to it.
+        if left.scalar_one_or_none() is None and asset.connection_id is None:
             await session.delete(asset)
         else:
             await asset_transaction_service.recompute_and_cache(session, asset)

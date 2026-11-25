@@ -351,8 +351,8 @@ def test_a_hand_split_leaves_only_the_stored_units_to_match():
 async def test_a_hand_trade_recorded_through_the_ledger_keeps_the_provider_replay(
     session: AsyncSession, bank_connection, test_user
 ):
-    """Recording a trade by hand recomputes the holding's units from the whole ledger (3 + 3 here), so they no longer
-    equal the provider's own trades until the next sync. The provider's trades still add up once the hand trades are
+    """A hand trade from before they were refused counted on top of the provider's own (3 + 3 here), so the stored units
+    don't equal the provider's trades until the next sync. The provider's trades still add up once the hand trades are
     taken out, so the chart keeps each of their dates."""
     from app.services.asset_transaction_service import recompute_and_cache
 
@@ -361,6 +361,7 @@ async def test_a_hand_trade_recorded_through_the_ledger_keeps_the_provider_repla
     asset = await _asset(session, bank_connection)
     session.add(AssetTransaction(asset_id=asset.id, workspace_id=asset.workspace_id, kind="buy", quantity=Decimal("3"),
                                  price=Decimal("10"), fee=Decimal("0"), date=date(2026, 11, 1), source="manual"))
+    asset.units = Decimal("6")
     await session.flush()
     await recompute_and_cache(session, asset)
     await session.commit()
