@@ -1571,6 +1571,134 @@ async def _account_balance_at(
         return float(result or 0)
 
 
+async def _account_balances_at(
+    session: AsyncSession,
+    accounts: list[Account],
+    cutoffs: list[date],
+    *,
+    include_pending: bool = False,
+) -> dict[tuple[uuid.UUID, date], float]:
+    """Balances of many accounts at many dates, from a handful of queries.
+
+    ``_account_balance_at`` answers one account at one date, and a report with
+    twelve snapshots asked it once per account per snapshot: a year-long net
+    worth trend over five accounts ran the same per-account sums 56 times
+    (issue #584). This reads them together — one grouped query per currency for
+    the manual accounts, and one or two for the connected ones — and returns
+    exactly the number ``_account_balance_at`` returns for each pair.
+
+    Manual cutoffs are capped at today, as there, so two cutoffs after today
+    share a column. Connected accounts are the same: from today on the provider
+    balance is returned verbatim, and before it the provider balance has the
+    activity after the cutoff (and, by default, the pending rows) taken off.
+    """
+    if not accounts or not cutoffs:
+        return {}
+
+    today = app_today()
+    wanted = sorted(set(cutoffs))
+    balances: dict[tuple[uuid.UUID, date], float] = {}
+
+    manual: dict[str, list[Account]] = {}
+    connected: dict[str, list[Account]] = {}
+    for account in accounts:
+        bucket = connected if account.connection_id else manual
+        bucket.setdefault(account.currency, []).append(account)
+
+    def _scope(account_ids):
+        # The same rows _account_balance_at counts: ignored transactions and
+        # rows in an ignored category stay out, whichever workspace wrote them.
+        return (
+            Transaction.account_id.in_(account_ids),
+            Transaction.is_ignored == False,
+            or_(
+                Transaction.category_id.is_(None),
+                Category.is_ignored == False,
+            ),
+        )
+
+    for currency, group in manual.items():
+        columns = sorted({min(cutoff, today) for cutoff in wanted})
+        column_index = {cutoff: i for i, cutoff in enumerate(columns)}
+        signed = signed_amount_expr(currency)
+        sums = [
+            func.coalesce(
+                func.sum(case((Transaction.date <= cutoff, signed), else_=0)), 0
+            ).label(f"b{i}")
+            for i, cutoff in enumerate(columns)
+        ]
+        status_filter = [] if include_pending else [Transaction.status == "posted"]
+        rows = await session.execute(
+            select(Transaction.account_id, *sums)
+            .outerjoin(Category, Transaction.category_id == Category.id)
+            .where(*_scope([a.id for a in group]), *status_filter)
+            .group_by(Transaction.account_id)
+        )
+        by_account = {row[0]: row for row in rows.all()}
+        for account in group:
+            row = by_account.get(account.id)
+            for cutoff in wanted:
+                i = column_index[min(cutoff, today)]
+                balances[(account.id, cutoff)] = float(row[i + 1] or 0) if row else 0.0
+
+    for currency, group in connected.items():
+        ids = [a.id for a in group]
+        before_today = sorted({cutoff for cutoff in wanted if cutoff < today})
+        before_index = {cutoff: i for i, cutoff in enumerate(before_today)}
+        signed = signed_amount_expr(currency)
+        status_filter = [] if include_pending else [Transaction.status == "posted"]
+        deltas: dict[uuid.UUID, list[float]] = {}
+        if before_today:
+            sums = [
+                func.coalesce(
+                    func.sum(case((Transaction.date > cutoff, signed), else_=0)), 0
+                ).label(f"d{i}")
+                for i, cutoff in enumerate(before_today)
+            ]
+            rows = await session.execute(
+                select(Transaction.account_id, *sums)
+                .outerjoin(Category, Transaction.category_id == Category.id)
+                .where(
+                    *_scope(ids),
+                    Transaction.date <= today,
+                    *status_filter,
+                )
+                .group_by(Transaction.account_id)
+            )
+            deltas = {row[0]: [float(value or 0) for value in row[1:]] for row in rows.all()}
+        pending: dict[uuid.UUID, float] = {}
+        if not include_pending:
+            rows = await session.execute(
+                select(
+                    Transaction.account_id,
+                    func.coalesce(func.sum(signed), 0),
+                )
+                .outerjoin(Category, Transaction.category_id == Category.id)
+                .where(
+                    *_scope(ids),
+                    Transaction.date <= today,
+                    Transaction.status == "pending",
+                )
+                .group_by(Transaction.account_id)
+            )
+            pending = {row[0]: float(row[1] or 0) for row in rows.all()}
+        for account in group:
+            current = float(account.balance)
+            if account.type in {"credit_card", "loan"}:
+                current = -current
+            row = deltas.get(account.id)
+            for cutoff in wanted:
+                if cutoff >= today:
+                    balances[(account.id, cutoff)] = current
+                    continue
+                value = current - (row[before_index[cutoff]] if row else 0.0)
+                if not include_pending:
+                    value -= pending.get(account.id, 0.0)
+                balances[(account.id, cutoff)] = value
+
+    return balances
+
+
 # Account types treated as spendable / near-liquid cash on the dashboard.
 # Investment brokerage accounts and credit cards are excluded on purpose.
 _CASH_ACCOUNT_TYPES = frozenset({"checking", "savings", "wallet"})
