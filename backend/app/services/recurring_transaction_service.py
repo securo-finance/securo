@@ -21,7 +21,7 @@ from app.schemas.recurring_transaction import (
     RecurringTransactionCreate,
     RecurringTransactionUpdate,
 )
-from app.services import category_line_service, recurring_match_service
+from app.services import category_line_service, category_service, recurring_match_service
 from app.services.credit_card_service import apply_effective_date
 from app.services.fx_rate_service import (
     convert_or_none,
@@ -64,18 +64,6 @@ async def _verify_account_in_workspace(
         raise ValueError("Account not found")
 
 
-async def _category_in_workspace(
-    session: AsyncSession, workspace_id: uuid.UUID, category_id: uuid.UUID
-) -> bool:
-    return (
-        await session.scalar(
-            select(Category.id).where(
-                Category.id == category_id, Category.workspace_id == workspace_id
-            )
-        )
-    ) is not None
-
-
 async def _verify_category_in_workspace(
     session: AsyncSession, workspace_id: uuid.UUID, category_id: Optional[uuid.UUID]
 ) -> None:
@@ -84,8 +72,8 @@ async def _verify_category_in_workspace(
     An unknown id and another workspace's id get the same answer, so the
     response never tells whether a category exists elsewhere.
     """
-    if category_id is not None and not await _category_in_workspace(
-        session, workspace_id, category_id
+    if category_id is not None and not await category_service.get_category(
+        session, category_id, workspace_id
     ):
         raise ValueError("Category not found")
 
@@ -740,6 +728,16 @@ async def generate_pending(
     )
     recurring_list = list(result.scalars().all())
 
+    # Paired with the workspace: a person may have bills in several, and a
+    # category of one of them is still foreign to a bill of another.
+    category_ids = {r.category_id for r in recurring_list if r.category_id is not None}
+    own_categories: set[tuple[uuid.UUID | None, uuid.UUID]] = set()
+    if category_ids:
+        rows = await session.execute(
+            select(Category.id, Category.workspace_id).where(Category.id.in_(category_ids))
+        )
+        own_categories = {(row.id, row.workspace_id) for row in rows}
+
     count = 0
     for recurring in recurring_list:
         # Legacy rows may exist with a null account_id from before account_id
@@ -756,9 +754,7 @@ async def generate_pending(
         # A bill stored with a category of another workspace generates
         # uncategorized, so that category never reaches a transaction here.
         category_id = recurring.category_id
-        if category_id is not None and not await _category_in_workspace(
-            session, recurring.workspace_id, category_id
-        ):
+        if (category_id, recurring.workspace_id) not in own_categories:
             category_id = None
         cutoff = up_to or cutoffs.get(recurring.workspace_id) or app_today()
         # Generate while the effective date is due. The nominal pointer remains

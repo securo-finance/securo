@@ -239,3 +239,37 @@ async def test_generation_keeps_an_own_category(
         select(Transaction.category_id).where(Transaction.recurring_transaction_id == bill.id)
     )
     assert generated == own
+
+
+@pytest.mark.asyncio
+async def test_generation_tells_apart_the_workspaces_of_one_person(
+    session, test_user, test_workspace, test_account
+):
+    """Both bills run together; the category is own for only one of them."""
+    second = Workspace(id=uuid.uuid4(), name="Second", created_by_user_id=test_user.id)
+    session.add(second)
+    await session.flush()
+    account = Account(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=second.id,
+        name="Second account",
+        type="checking",
+        balance=Decimal("0"),
+        currency="BRL",
+    )
+    category = Category(
+        id=uuid.uuid4(), user_id=test_user.id, workspace_id=second.id, name="Second only"
+    )
+    session.add_all([account, category])
+    await session.commit()
+    foreign = await _bill(session, test_user, test_workspace, test_account, category.id)
+    own = await _bill(session, test_user, second, account, category.id)
+
+    assert await generate_pending(session, test_user.id, up_to=date(2025, 1, 10)) == 2
+
+    rows = await session.execute(
+        select(Transaction.recurring_transaction_id, Transaction.category_id)
+    )
+    generated = {bill_id: category_id for bill_id, category_id in rows if bill_id}
+    assert generated == {foreign.id: None, own.id: category.id}
