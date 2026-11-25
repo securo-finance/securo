@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from typing import Any, Literal, Optional
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_validator
 
 NotificationKind = Literal[
     "connection_error",
@@ -30,6 +30,12 @@ class NotificationRead(BaseModel):
     read_at: Optional[datetime] = None
     # What it said stopped being true.
     resolved_at: Optional[datetime] = None
+
+    @field_validator("data")
+    @classmethod
+    def _only_what_is_shown(cls, data: dict[str, Any]) -> dict[str, Any]:
+        """Without what the server keeps for itself (a batch's ids, the newest one told)."""
+        return {key: value for key, value in data.items() if key not in ("transaction_ids", "newest")}
 
 
 class NotificationList(BaseModel):

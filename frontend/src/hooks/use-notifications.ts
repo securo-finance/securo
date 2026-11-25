@@ -1,18 +1,24 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
+import { toast } from 'sonner'
 import { useDateLocale, useDisplayLocale } from '@/hooks/use-display-locale'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
 import { notifications as notificationsApi } from '@/lib/api'
+import { extractApiError } from '@/lib/api-errors'
 import { formatCurrency } from '@/lib/format'
 import type { NotificationTextContext } from '@/lib/notification-text'
 
 /** Reading notifications, refreshing the bell and the page together. */
 export function useNotificationActions() {
   const queryClient = useQueryClient()
-  const onSettled = () => queryClient.invalidateQueries({ queryKey: ['notifications'] })
+  const { t } = useTranslation()
+  const outcome = {
+    onError: (error: unknown) => toast.error(extractApiError(error, t('common.error'))),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ['notifications'] }),
+  }
   return {
-    markRead: useMutation({ mutationFn: notificationsApi.markRead, onSettled }),
-    markAllRead: useMutation({ mutationFn: notificationsApi.markAllRead, onSettled }),
+    markRead: useMutation({ mutationFn: notificationsApi.markRead, ...outcome }),
+    markAllRead: useMutation({ mutationFn: notificationsApi.markAllRead, ...outcome }),
   }
 }
 

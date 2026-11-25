@@ -33,6 +33,9 @@ export function NotificationPreferences() {
       ),
     )
   const save = useMutation({
+    mutationKey: queryKey,
+    // One at a time and in order, so the last click is the last one saved.
+    scope: { id: 'notification-preferences' },
     mutationFn: notificationsApi.setPreference,
     // The switch answers at once, and goes back if it could not be saved.
     onMutate: async (change) => {
@@ -44,6 +47,10 @@ export function NotificationPreferences() {
       toast.error(t('notifications.preferences.saveError'))
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['notifications'] }),
+    // After the last of them, what is shown is what was saved.
+    onSettled: () => {
+      if (queryClient.isMutating({ mutationKey: queryKey }) === 1) return queryClient.invalidateQueries({ queryKey })
+    },
   })
 
   if (isError && !data) {

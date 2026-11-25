@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -28,6 +28,7 @@ logger = logging.getLogger(__name__)
 IN_APP = "in_app"
 #: Waits between tries; past the last one the delivery has failed.
 _RETRY_AFTER = (timedelta(minutes=1), timedelta(minutes=10), timedelta(hours=1), timedelta(hours=6))
+_MAX_ATTEMPTS = len(_RETRY_AFTER) + 1
 #: How long a try may take before another worker may take it over.
 _LEASE = timedelta(minutes=5)
 
@@ -199,60 +200,68 @@ async def deliver(session: AsyncSession, *, limit: int = 100) -> int:
 
 
 async def _claim(session: AsyncSession) -> Optional[NotificationDelivery]:
-    now = _now()
-    delivery = await session.scalar(
-        select(NotificationDelivery)
-        .where(
-            NotificationDelivery.status == "pending",
-            NotificationDelivery.next_attempt_at <= now,
-            NotificationDelivery.channel.in_(external()),
+    while True:
+        now = _now()
+        delivery = await session.scalar(
+            select(NotificationDelivery)
+            .where(
+                NotificationDelivery.status == "pending",
+                NotificationDelivery.next_attempt_at <= now,
+                NotificationDelivery.channel.in_(external()),
+            )
+            .order_by(NotificationDelivery.next_attempt_at, NotificationDelivery.id)
+            .limit(1)
+            .with_for_update(skip_locked=True)
+            .execution_options(populate_existing=True)
         )
-        .order_by(NotificationDelivery.next_attempt_at, NotificationDelivery.id)
-        .limit(1)
-        .with_for_update(skip_locked=True)
-    )
-    if delivery is None:
-        return None
-    # Taken before sending, so a worker that dies midway leaves it to another.
-    delivery.attempts += 1
-    delivery.next_attempt_at = now + _LEASE
-    await session.commit()
-    return delivery
+        if delivery is None:
+            return None
+        if delivery.attempts < _MAX_ATTEMPTS:
+            # Taken before sending, so a worker that dies midway leaves it to another.
+            delivery.attempts += 1
+            delivery.next_attempt_at = now + _LEASE
+            await session.commit()
+            return delivery
+        # Its last try was taken and never came back.
+        delivery.status, delivery.error = "failed", "abandoned"
+        await session.commit()
 
 
 async def _send(session: AsyncSession, delivery: NotificationDelivery) -> bool:
-    delivery_id = delivery.id
+    delivery_id, attempt = delivery.id, delivery.attempts
     channel = _CHANNELS[delivery.channel]
-    error: Optional[str] = None
+    outcome: dict[str, Any]
     try:
         message = await _message(session, delivery, channel)
         if message is None:
-            delivery.status = "skipped"
-            await session.commit()
-            return False
-        await channel.send(session, message)
+            outcome = {"status": "skipped"}
+        else:
+            await channel.send(session, message)
+            outcome = {"status": "sent", "sent_at": _now(), "error": None}
     except Refused as exc:
-        status, error = "failed", exc.code
+        outcome = {"status": "failed", "error": exc.code}
     except Exception as exc:
-        status, error = "pending", type(exc).__name__[:64]
+        error = type(exc).__name__[:64]
         logger.warning("Delivery %s through %s failed: %s", delivery_id, channel.name, error)
-    else:
-        status = "sent"
-    # Whatever the channel left half done in the session goes; the outcome stays.
+        if attempt >= _MAX_ATTEMPTS:
+            outcome = {"status": "failed", "error": error}
+        else:
+            outcome = {"error": error, "next_attempt_at": _now() + _RETRY_AFTER[attempt - 1]}
+    # Whatever the channel left half done in the session goes; the outcome stays,
+    # unless the lease ran out and the try belongs to another worker by now.
     await session.rollback()
-    row = await session.get(NotificationDelivery, delivery_id, populate_existing=True)
-    if row is None:
-        return status == "sent"
-    if status == "pending" and row.attempts > len(_RETRY_AFTER):
-        status = "failed"
-    row.status = status
-    row.error = error
-    if status == "sent":
-        row.sent_at = _now()
-    elif status == "pending":
-        row.next_attempt_at = _now() + _RETRY_AFTER[row.attempts - 1]
+    await session.execute(
+        update(NotificationDelivery)
+        .where(
+            NotificationDelivery.id == delivery_id,
+            NotificationDelivery.status == "pending",
+            NotificationDelivery.attempts == attempt,
+        )
+        .values(**outcome)
+        .execution_options(synchronize_session=False)
+    )
     await session.commit()
-    return status == "sent"
+    return outcome.get("status") == "sent"
 
 
 async def _message(

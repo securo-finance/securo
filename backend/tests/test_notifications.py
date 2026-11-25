@@ -2,11 +2,11 @@
 import uuid
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
-from unittest.mock import AsyncMock, patch
+from unittest.mock import ANY, AsyncMock, patch
 
 import pytest
 from httpx import AsyncClient
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.access_token_scopes import required_scope
@@ -29,6 +29,7 @@ from app.schemas.transaction import TransactionCreate
 from app.schemas.transaction_split import TransactionSplitsInput
 from app.services import (
     backup_service,
+    budget_service,
     connection_service,
     group_service,
     notification_service,
@@ -36,7 +37,6 @@ from app.services import (
     settlement_service,
     transaction_service,
 )
-from app.services.fx_rate_service import convert, stored_rates_only
 from app.services.module_service import resolve_modules
 
 pytestmark = pytest.mark.asyncio
@@ -267,12 +267,23 @@ async def test_budget_thresholds_follow_what_was_spent_not_the_projection(
     assert [row.data["threshold"] for row in rows] == [100]
 
 
-async def test_evaluating_never_fetches_exchange_rates(session: AsyncSession):
+async def test_evaluating_never_fetches_exchange_rates(
+    session: AsyncSession, test_user: User, test_workspace: Workspace, test_categories
+):
+    month = app_today().replace(day=1)
+    foreign = "JPY" if test_user.primary_currency != "JPY" else "EUR"
+    session.add(
+        Budget(
+            user_id=test_user.id, workspace_id=test_workspace.id, category_id=test_categories[0].id,
+            amount=Decimal("100"), month=month, currency=foreign,
+        )
+    )
+    await session.commit()
     with patch("app.services.fx_rate_service.sync_rates", AsyncMock(return_value=0)) as sync:
-        with stored_rates_only():
-            await convert(session, Decimal("1"), "EUR", "BRL")
+        await _evaluate(session, test_workspace)
         sync.assert_not_awaited()
-        await convert(session, Decimal("1"), "EUR", "BRL")
+        # The same read, asked for by someone, does fetch.
+        await budget_service.get_budget_vs_actual(session, test_workspace.id, test_user.id, month)
         sync.assert_awaited()
 
 
@@ -305,26 +316,34 @@ async def test_overdue_reminders_are_one_notification_told_again_as_dates_go_by(
     await session.commit()
     await _evaluate(session, test_workspace)
     [row] = await _open(session, "flag_overdue")
-    assert row.data == {"count": 2}
+    assert row.data["count"] == 2
     row.read_at = datetime.now(timezone.utc)
 
-    # One fewer of the same is no news; another date going by is.
-    flagged[0].is_flagged = False
+    # Fewer of the same is no news, whichever went; another date going by is.
+    flagged[1].is_flagged = False
     await session.commit()
     await _evaluate(session, test_workspace)
     [row] = await _open(session, "flag_overdue")
-    assert row.data == {"count": 1} and row.read_at is not None
+    assert row.data["count"] == 1 and row.read_at is not None
     others[0].flag_due_date = today - timedelta(days=1)
     await session.commit()
     await _evaluate(session, test_workspace)
     [row] = await _open(session, "flag_overdue")
-    assert row.data == {"count": 2} and row.read_at is None
+    assert row.data["count"] == 2 and row.read_at is None
+    row.read_at = datetime.now(timezone.utc)
 
     for tx in (*flagged, *others):
         tx.is_flagged = False
     await session.commit()
     await _evaluate(session, test_workspace)
     assert await _open(session) == []
+
+    # All dealt with, one late again is news, whatever its date.
+    flagged[0].is_flagged = True
+    await session.commit()
+    await _evaluate(session, test_workspace)
+    [row] = await _open(session, "flag_overdue")
+    assert row.read_at is None
 
 
 async def test_matches_waiting_count_questions_and_leave_out_the_stale(
@@ -355,7 +374,16 @@ async def test_matches_waiting_count_questions_and_leave_out_the_stale(
     await session.commit()
     await _evaluate(session, test_workspace)
     [row] = await _open(session, "reconciliation_pending")
-    assert row.data == {"count": 2}
+    assert row.data["count"] == 2
+    row.read_at = now
+
+    # Answering the newest leaves an older one waiting: no news.
+    asked[2].created_at = now - timedelta(days=3)
+    asked[0].status = asked[1].status = "accepted"
+    await session.commit()
+    await _evaluate(session, test_workspace)
+    [row] = await _open(session, "reconciliation_pending")
+    assert row.data["count"] == 1 and row.read_at is not None
 
     for suggestion in asked:
         suggestion.status = "accepted"
@@ -549,7 +577,20 @@ async def test_several_expenses_at_once_are_one_notification(
     )
     assert response.status_code == 200 and response.json()["updated"] == 3, response.text
     [row] = await trip.told()
-    assert row.data == {"group_id": trip.group["id"], "group": "Trip", "actor": "Me", "count": 3}
+    assert row.data == {
+        "group_id": trip.group["id"], "group": "Trip", "actor": "Me", "count": 3, "transaction_ids": ANY,
+    }
+    assert set(row.data["transaction_ids"]) == set(ids)
+
+    # There while any of them is still shared with her, over once none is.
+    for left, shown in ((ids[:2], 1), (ids[2:], 0)):
+        for tx_id in left:
+            response = await client.patch(
+                f"/api/transactions/{tx_id}", json={"splits": trip.split("Me", "Bob")}, headers=auth_headers
+            )
+            assert response.status_code == 200, response.text
+        await notification_service.evaluate_workspace(session, trip.ana_workspace.id)
+        assert len(await trip.told()) == shown
 
 
 async def test_a_member_of_the_workspace_hears_there(
@@ -731,6 +772,43 @@ async def test_a_failed_scheduled_backup_is_told_until_one_works(
     assert setting is not None and '"last_failure_at":null' in setting.value
 
 
+async def test_a_backup_outcome_keeps_what_was_saved_meanwhile(
+    session: AsyncSession, test_workspace: Workspace, tmp_path, monkeypatch
+):
+    """Both outcomes write the settings whole, so they start from the last ones."""
+    monkeypatch.setattr(backup_service, "_backup_storage_dir", lambda: tmp_path)
+    workspace_id = test_workspace.id
+    key = backup_service._config_key(workspace_id)
+    await backup_service.save_backup_config(session, workspace_id, {"scheduled_enabled": True, "retention_count": 5})
+
+    async def meanwhile(**values) -> None:
+        # Another process writing, behind this session's back.
+        config = await backup_service.get_backup_config(session, workspace_id)
+        value = config.model_copy(update=values).model_dump_json(exclude={"next_run_at", "storage_shared"})
+        await session.execute(
+            update(AppSetting).where(AppSetting.key == key).values(value=value)
+            .execution_options(synchronize_session=False)
+        )
+
+    async def changed_while_building(*_args, **_kwargs) -> bytes:
+        await meanwhile(retention_count=9)
+        return b"zip"
+
+    with patch.object(backup_service, "build_backup_zip", changed_while_building), \
+            patch.object(backup_service, "_item_from_path", lambda _path: object()), \
+            patch.object(backup_service, "_apply_retention", AsyncMock()):
+        await backup_service.create_stored_backup(session, test_workspace)
+    saved = await backup_service.get_backup_config(session, workspace_id)
+    assert saved.retention_count == 9 and saved.last_run_at is not None
+
+    # A failure that started before another backup worked is not recorded.
+    started = datetime.now(timezone.utc)
+    await meanwhile(last_run_at=started + timedelta(seconds=1))
+    await backup_service._record_scheduled_failure(session, workspace_id, started)
+    session.expire_all()
+    assert (await backup_service.get_backup_config(session, workspace_id)).last_failure_at is None
+
+
 # --- Who and where ----------------------------------------------------------
 
 
@@ -757,20 +835,27 @@ async def test_only_who_can_act_is_told_of_a_connection(
     assert {row.user_id for row in await _open(session)} == {test_user.id}
 
 
-async def test_one_failing_check_leaves_the_others_and_its_own_rows(
-    session: AsyncSession, test_workspace: Workspace, test_connection: BankConnection, monkeypatch
+async def test_one_failing_check_leaves_the_others_and_writes_nothing(
+    session: AsyncSession, test_user: User, test_workspace: Workspace, monkeypatch
 ):
-    test_connection.settings = _failure("consent_expired")
-    await session.commit()
-    await _evaluate(session, test_workspace)
-    broken = AsyncMock(side_effect=RuntimeError("boom"))
-    broken.__name__ = "broken"
-    after = AsyncMock()
-    after.__name__ = "after"
+    user_id, workspace_id = test_user.id, test_workspace.id
+
+    def row(key: str) -> Notification:
+        return Notification(
+            workspace_id=workspace_id, user_id=user_id, kind="backup_failed", dedup_key=key, data={}
+        )
+
+    async def broken(session: AsyncSession, _workspace: Workspace) -> None:
+        session.add(row("half"))
+        await session.flush()
+        raise RuntimeError("boom")
+
+    async def after(session: AsyncSession, _workspace: Workspace) -> None:
+        session.add(row("whole"))
+
     monkeypatch.setattr(notification_service, "_CHECKS", (broken, after))
-    await _evaluate(session, test_workspace)
-    after.assert_awaited_once()
-    assert len(await _open(session)) == 1
+    await notification_service.evaluate_workspace(session, workspace_id)
+    assert [found.dedup_key for found in await _open(session)] == ["whole"]
 
 
 async def test_resolved_notifications_are_pruned(session: AsyncSession, test_user: User, test_workspace: Workspace):

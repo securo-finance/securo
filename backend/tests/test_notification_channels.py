@@ -1,16 +1,15 @@
 """Channels outside the app (ADR 0041), with a made-up one: none is shipped yet."""
-import uuid
 from datetime import datetime, timedelta, timezone
 
 import pytest
 from httpx import AsyncClient
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.bank_connection import BankConnection
 from app.models.notification import Notification, NotificationDelivery
 from app.models.user import User
-from app.models.workspace import Workspace
+from app.models.workspace import Workspace, WorkspaceMember
 from app.services import notification_channels as channels
 from app.services import notification_service
 
@@ -137,6 +136,43 @@ async def test_a_failure_is_tried_again_and_then_given_up(
     assert await channels.deliver(session) == 0
 
 
+async def test_a_try_that_never_came_back_still_counts(
+    session: AsyncSession, test_user: User, test_workspace: Workspace, test_connection: BankConnection, pigeon: Pigeon
+):
+    """A worker that dies after taking it leaves it pending until the lease runs out."""
+    await _want(session, test_workspace, test_user)
+    await _break(session, test_workspace, test_connection)
+    for _ in range(5):
+        assert await channels._claim(session) is not None
+        await _due(session)
+    assert await channels.deliver(session) == 0 and pigeon.sent == []
+    [delivery] = await _deliveries(session)
+    assert (delivery.status, delivery.attempts, delivery.error) == ("failed", 5, "abandoned")
+
+
+@pytest.mark.parametrize("late", ["sent", "failed", "skipped"])
+async def test_a_late_outcome_does_not_overwrite_a_newer_try(
+    session: AsyncSession, test_user: User, test_workspace: Workspace, test_connection: BankConnection,
+    pigeon: Pigeon, late: str,
+):
+    await _want(session, test_workspace, test_user)
+    row = await _break(session, test_workspace, test_connection)
+    first = await channels._claim(session)
+    assert first is not None
+    session.expunge(first)
+    # Its lease ran out and another worker took the next try.
+    await _due(session)
+    assert await channels._claim(session) is not None
+    if late == "failed":
+        pigeon.fails = channels.Refused("gone")
+    elif late == "skipped":
+        row.read_at = datetime.now(timezone.utc)
+        await session.commit()
+    await channels._send(session, first)
+    [delivery] = await _deliveries(session)
+    assert (delivery.status, delivery.attempts, delivery.error) == ("pending", 2, None)
+
+
 async def test_one_that_recovers_is_sent(
     session: AsyncSession, test_user: User, test_workspace: Workspace, test_connection: BankConnection, pigeon: Pigeon
 ):
@@ -181,8 +217,11 @@ async def test_what_has_nothing_left_to_say_is_not_sent(
     elif why == "inactive":
         test_user.is_active = False
     elif why == "left":
-        row.workspace_id = (other := Workspace(id=uuid.uuid4(), name="Other", kind="personal")).id
-        session.add(other)
+        await session.execute(
+            delete(WorkspaceMember).where(
+                WorkspaceMember.workspace_id == test_workspace.id, WorkspaceMember.user_id == test_user.id
+            )
+        )
     elif why == "unreachable":
         pigeon.finds = False
     await session.commit()

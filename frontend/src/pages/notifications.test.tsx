@@ -1,4 +1,5 @@
 import { screen, waitFor, within } from '@testing-library/react'
+import { toast } from 'sonner'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 
 import NotificationsPage from '@/pages/notifications'
@@ -76,7 +77,8 @@ it('filters the unread ones', async () => {
   const { user } = renderWithProviders(<NotificationsPage />)
   await screen.findByText('Bank b stopped syncing')
   await user.click(screen.getByRole('tab', { name: new RegExp(`^${t('notifications.filter.unread')}`) }))
-  expect(await screen.findByText('Bank a stopped syncing')).toBeInTheDocument()
+  await waitFor(() => expect(screen.queryByText('Bank b stopped syncing')).not.toBeInTheDocument())
+  expect(screen.getByText('Bank a stopped syncing')).toBeInTheDocument()
   expect(api.list).toHaveBeenCalledWith({ status: 'unread', limit: 30, offset: 0 })
 })
 
@@ -106,18 +108,23 @@ it('offers a retry when they cannot be loaded', async () => {
 })
 
 it('turns a kind off and on, one switch each', async () => {
-  api.preferences.mockResolvedValue([
-    { kind: 'budget_threshold', channels: { in_app: true } },
-    { kind: 'flag_overdue', channels: { in_app: false } },
-  ])
-  api.setPreference.mockResolvedValue(undefined)
+  const saved = { budget_threshold: true, flag_overdue: false }
+  api.preferences.mockImplementation(async () =>
+    Object.entries(saved).map(([kind, enabled]) => ({ kind, channels: { in_app: enabled } })),
+  )
+  api.setPreference.mockImplementation(async ({ kind, enabled }: { kind: keyof typeof saved; enabled: boolean }) => {
+    saved[kind] = enabled
+  })
   const { user } = renderWithProviders(<NotificationsPage />, { route: '/notifications?tab=preferences' })
   const budgets = await screen.findByRole('switch', { name: t('notifications.kind.budget_threshold.label') })
+  const reminders = screen.getByRole('switch', { name: t('notifications.kind.flag_overdue.label') })
   expect(budgets).toBeChecked()
-  expect(screen.getByRole('switch', { name: t('notifications.kind.flag_overdue.label') })).not.toBeChecked()
+  expect(reminders).not.toBeChecked()
   await user.click(budgets)
   expect(api.setPreference.mock.calls[0][0]).toEqual({ kind: 'budget_threshold', channel: 'in_app', enabled: false })
-  expect(budgets).not.toBeChecked()
+  await waitFor(() => expect(budgets).not.toBeChecked())
+  expect(reminders).not.toBeChecked()
+  expect(saved).toEqual({ budget_threshold: false, flag_overdue: false })
 })
 
 it('puts a switch back when it could not be saved', async () => {
@@ -127,6 +134,42 @@ it('puts a switch back when it could not be saved', async () => {
   const budgets = await screen.findByRole('switch')
   await user.click(budgets)
   await waitFor(() => expect(budgets).toBeChecked())
+})
+
+it('saves clicks on a switch one at a time, so the last one stands', async () => {
+  const saved = { budget_threshold: true }
+  const releases: (() => void)[] = []
+  api.preferences.mockImplementation(async () => [
+    { kind: 'budget_threshold', channels: { in_app: saved.budget_threshold } },
+  ])
+  api.setPreference.mockImplementation(
+    ({ enabled }: { enabled: boolean }) =>
+      new Promise<void>((resolve) => {
+        releases.push(() => {
+          saved.budget_threshold = enabled
+          resolve()
+        })
+      }),
+  )
+  const { user } = renderWithProviders(<NotificationsPage />, { route: '/notifications?tab=preferences' })
+  const budgets = await screen.findByRole('switch')
+  await user.click(budgets)
+  await user.click(budgets)
+  expect(releases).toHaveLength(1)
+  releases[0]()
+  await waitFor(() => expect(releases).toHaveLength(2))
+  releases[1]()
+  await waitFor(() => expect(api.preferences).toHaveBeenCalledTimes(2))
+  expect(saved.budget_threshold).toBe(true)
+  expect(budgets).toBeChecked()
+})
+
+it('says when one could not be marked as read', async () => {
+  api.markRead.mockRejectedValue(new Error('down'))
+  const error = vi.spyOn(toast, 'error')
+  const { user } = renderWithProviders(<NotificationsPage />)
+  await user.click(await screen.findByRole('button', { name: t('notifications.markRead') }))
+  await waitFor(() => expect(error).toHaveBeenCalledWith(t('common.error')))
 })
 
 it('writes and links the kinds that count', async () => {

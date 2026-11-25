@@ -16,7 +16,7 @@ import logging
 import uuid
 from collections.abc import Iterable
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Any, NamedTuple, Optional
 
@@ -95,6 +95,9 @@ class _Wanted:
     user_id: uuid.UUID
     key: str
     data: dict[str, Any]
+    #: For one that stands for many: the newest of them, sortable. A newer one
+    #: asks again; fewer of what was already told does not.
+    newest: Optional[str] = None
 
 
 def _now() -> datetime:
@@ -258,6 +261,12 @@ async def _reconcile(
     now = _now()
     for item in wanted:
         row = rows.pop((item.user_id, item.key), None)
+        data, news = item.data, False
+        if item.newest is not None:
+            told = row.data.get("newest", "") if row is not None else ""
+            # Back after everything was dealt with, it is news whatever its date.
+            news = row is not None and (row.resolved_at is not None or item.newest > told)
+            data = {**data, "newest": item.newest if news or row is None else told}
         if row is None:
             try:
                 async with session.begin_nested():
@@ -266,7 +275,7 @@ async def _reconcile(
                         user_id=item.user_id,
                         kind=kind,
                         dedup_key=item.key,
-                        data=item.data,
+                        data=data,
                         created_at=now,
                     )
                     await _raise(session, row, now)
@@ -274,10 +283,10 @@ async def _reconcile(
                 # Another run told it first.
                 logger.debug("Notification %s already exists", item.key)
             continue
-        if row.data != item.data:
-            row.data = item.data
+        if row.data != data:
+            row.data = data
         row.resolved_at = None
-        if kind != BUDGET_THRESHOLD and now - _aware(row.notified_at) >= _REMIND_AFTER:
+        if news or kind != BUDGET_THRESHOLD and now - _aware(row.notified_at) >= _REMIND_AFTER:
             await _raise(session, row, now)
     for row in rows.values():
         if row.resolved_at is None:
@@ -486,37 +495,51 @@ async def _check_budgets(session: AsyncSession, workspace: Workspace) -> None:
 
 
 async def _tell(
-    session: AsyncSession, workspace: Workspace, kind: NotificationKind, found: list[tuple[str, dict[str, Any]]]
+    session: AsyncSession,
+    workspace: Workspace,
+    kind: NotificationKind,
+    found: list[tuple[str, dict[str, Any]]],
+    *,
+    newest: Optional[str] = None,
 ) -> None:
     """The same (key, data) to everyone `kind` is for; nothing found resolves what was told."""
     recipients = await _recipients(session, workspace.id, kind) if found else []
-    wanted = [_Wanted(user_id, f"{kind}:{key}", data) for key, data in found for user_id in recipients]
+    wanted = [
+        _Wanted(user_id, f"{kind}:{key}", data, newest) for key, data in found for user_id in recipients
+    ]
     await _reconcile(session, workspace.id, kind, wanted)
 
 
+async def _tell_total(
+    session: AsyncSession, workspace: Workspace, kind: NotificationKind, count: int, newest: Optional[date]
+) -> None:
+    """One notification for all there are, told again when a newer one arrives."""
+    if newest is None:
+        await _tell(session, workspace, kind, [])
+    else:
+        await _tell(session, workspace, kind, [("all", {"count": count})], newest=newest.isoformat())
+
+
 async def _check_flags(session: AsyncSession, workspace: Workspace) -> None:
-    """One for all of them, told again when another reminder's date goes by."""
+    """Told again when another reminder's date goes by."""
     from app.services import transaction_service
 
-    found = []
+    count, latest = 0, None
     if _has(workspace, FLAG_OVERDUE):
         count, latest = await transaction_service.overdue_flags(session, workspace.id)
-        if latest is not None:
-            found = [(latest.isoformat(), {"count": count})]
-    await _tell(session, workspace, FLAG_OVERDUE, found)
+    await _tell_total(session, workspace, FLAG_OVERDUE, count, latest)
 
 
 async def _check_reconciliation(session: AsyncSession, workspace: Workspace) -> None:
-    """One for the queue, told again on a day that brings new questions."""
+    """Told again on a day that brings new questions."""
     from app.services import reconciliation_suggestion_service
 
-    found = []
+    count, day = 0, None
     if _has(workspace, RECONCILIATION_PENDING):
         count, newest = await reconciliation_suggestion_service.waiting(session, workspace.id)
         if newest is not None:
             day = _aware(newest).astimezone(app_timezone()).date()
-            found = [(day.isoformat(), {"count": count})]
-    await _tell(session, workspace, RECONCILIATION_PENDING, found)
+    await _tell_total(session, workspace, RECONCILIATION_PENDING, count, day)
 
 
 async def _check_invoices(session: AsyncSession, workspace: Workspace) -> None:
@@ -727,7 +750,9 @@ async def _tell_expenses(
         }
         if len(mine) > 1:
             first = next(tx.id for tx in transactions if tx.id in mine)
-            told.append(_Told(person, group, f"{GROUP_EXPENSE}:batch:{first}", {**data, "count": len(mine)}))
+            ids = [str(tx.id) for tx in transactions if tx.id in mine]
+            data |= {"count": len(mine), "transaction_ids": ids}
+            told.append(_Told(person, group, f"{GROUP_EXPENSE}:batch:{first}", data))
             continue
         [(transaction_id, amount)] = mine.items()
         if before is not None and before.get(person) == amount:
@@ -789,10 +814,13 @@ async def _check_group_events(session: AsyncSession, workspace: Workspace) -> No
     for row in rows:
         if row.kind == GROUP_SETTLEMENT:
             there = await session.get(GroupSettlement, uuid.UUID(row.data["settlement_id"])) is not None
-        elif "transaction_id" in row.data:
-            there = row.user_id in await shares_of(session, uuid.UUID(row.data["transaction_id"]))
         else:
-            there = await session.get(Group, uuid.UUID(row.data["group_id"])) is not None
+            # One expense, or a batch: there while any of it is still shared with them in that group.
+            ids = row.data.get("transaction_ids") or [row.data["transaction_id"]]
+            there = any(
+                share.person == row.user_id and str(share.group.id) == row.data["group_id"]
+                for share in await _shares(session, [uuid.UUID(value) for value in ids])
+            )
         if not there:
             row.resolved_at = _now()
 
