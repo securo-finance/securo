@@ -30,26 +30,27 @@ interface RowState {
   percent: string
 }
 
-/** Reopens a payback as its payers, one row per member: equal parts stay
- *  blank so they follow the amount, other amounts come back as typed. */
-function paybackSeed(
-  settledBy: { from_member_id: string; amount: number | string }[],
-  amount: number,
-): TransactionSplitsInput {
+/** Reopens a payback as its payers, one row per member with what they paid. */
+function paybackSeed(settledBy: { from_member_id: string; amount: number | string }[]): TransactionSplitsInput {
   const byMember = new Map<string, number>()
   for (const s of settledBy) {
     byMember.set(s.from_member_id, (byMember.get(s.from_member_id) ?? 0) + Number(s.amount))
   }
-  const parts = [...byMember.values()]
-  const equal = Math.abs(parts.reduce((a, b) => a + b, 0) - Math.abs(amount)) < 0.005
-    && Math.max(...parts) - Math.min(...parts) < 0.015
   return {
     share_type: 'equal',
-    splits: [...byMember].map(([id, part]) => ({
-      group_member_id: id,
-      ...(equal ? {} : { share_amount: Math.round(part * 100) / 100 }),
-    })),
+    splits: [...byMember].map(([id, part]) => ({ group_member_id: id, share_amount: Math.round(part * 100) / 100 })),
   }
+}
+
+/** A reopened payback goes back to blank amounts, which follow the credit,
+ *  only when blank rows would split it into exactly the parts recorded. */
+function blankEqualParts(rows: RowState[], group: Group, amount: number): RowState[] {
+  const selfId = group.members.find((m) => m.is_self)?.id
+  const isPayer = (r: RowState) => r.selected && r.member_id !== selfId
+  const payers = rows.filter(isPayer)
+  const blank = paybackParts(payers.map((r) => ({ ...r, amount: '' })), amount)
+  const same = blank.every((part, i) => Math.abs(part - (parseFloat(payers[i].amount) || 0)) < 0.005)
+  return same ? rows.map((r) => (isPayer(r) ? { ...r, amount: '' } : r)) : rows
 }
 
 /** Each payer's part of a payback: the amounts typed stay, and what is left
@@ -120,8 +121,9 @@ export function TransactionSplitsSection({
   // first push-state-up cycle (which zeros the parent before the
   // group has finished loading).
   const seedRef = useRef<TransactionSplitsInput | null>(
-    value ?? (settledBy?.length ? paybackSeed(settledBy, amount) : null),
+    value ?? (settledBy?.length ? paybackSeed(settledBy) : null),
   )
+  const paybackSeededRef = useRef(!value && !!settledBy?.length)
   // Once rows have been hydrated for the seeded value, stop applying
   // it — further edits are user-driven.
   const hydratedRef = useRef(false)
@@ -242,7 +244,8 @@ export function TransactionSplitsSection({
     setRows((prevRows) => {
       // If first hydration or switched groups, rebuild completely
       if (rebuild) {
-        return buildRows(group, source)
+        const built = buildRows(group, source)
+        return source && paybackSeededRef.current ? blankEqualParts(built, group, amount) : built
       }
 
       // Otherwise, merge new group members into existing rows state to preserve user selections
@@ -260,7 +263,7 @@ export function TransactionSplitsSection({
     })
 
     hydratedRef.current = true
-  }, [group])
+  }, [group, amount])
 
   // The viewer's own member receives the payback; the others can pay it.
   const selfId = group?.members.find((m) => m.is_self)?.id

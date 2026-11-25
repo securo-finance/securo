@@ -646,6 +646,33 @@ it('reopens a payback with the amount each payer paid, and keeps it when saved u
   ])
 })
 
+it('reopens equal parts blank, and keeps a cent that went to a later payer', async () => {
+  // Equal parts, the leftover cent to the first payer: they reopen blank.
+  const equal = renderPayback({
+    settled_by: [
+      { id: 'set-1', group_id: 'g1', from_member_id: 'm-jara', amount: 33.01 },
+      { id: 'set-2', group_id: 'g1', from_member_id: 'm-alatz', amount: 33 },
+    ],
+  })
+  expect(await screen.findByRole('spinbutton', { name: 'Jara' })).toHaveValue(null)
+  expect(screen.getByRole('spinbutton', { name: 'Alatz' })).toHaveValue(null)
+  equal.unmount()
+
+  // Jara typed 10, Alatz took the rest with the extra cent: both come back as recorded.
+  const { user, onSave } = renderPayback({
+    amount: 20.01,
+    settled_by: [
+      { id: 'set-1', group_id: 'g1', from_member_id: 'm-jara', amount: 10 },
+      { id: 'set-2', group_id: 'g1', from_member_id: 'm-alatz', amount: 10.01 },
+    ],
+  })
+  expect(await screen.findByRole('spinbutton', { name: 'Jara' })).toHaveValue(10)
+  expect(screen.getByRole('spinbutton', { name: 'Alatz' })).toHaveValue(10.01)
+  await user.click(screen.getByRole('button', { name: t('common.save') }))
+  await vi.waitFor(() => expect(onSave).toHaveBeenCalled())
+  expect(onSave.mock.calls[0][0]).not.toHaveProperty('payback')
+})
+
 it('leaves the payback of a credit a settlement created alone when it is saved', async () => {
   vi.spyOn(currencies, 'list').mockResolvedValue([])
   vi.spyOn(payees, 'list').mockResolvedValue([])
