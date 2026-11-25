@@ -565,6 +565,20 @@ async def test_an_edit_tells_only_whose_share_it_changed(
     assert await trip.told() == []
 
 
+async def test_a_share_brought_to_zero_is_over(
+    client: AsyncClient, session: AsyncSession, auth_headers, test_workspace: Workspace
+):
+    trip = await _Trip(client, auth_headers, session).setup()
+    expense = await trip.expense(trip.split("Me", "Ana"))
+    assert len(await trip.told()) == 1
+    response = await client.patch(
+        f"/api/transactions/{expense['id']}", json={"splits": trip.split(Me="90.00", Ana="0.00")}, headers=auth_headers
+    )
+    assert response.status_code == 200, response.text
+    await notification_service.evaluate_workspace(session, trip.ana_workspace.id)
+    assert await trip.told() == []
+
+
 async def test_several_expenses_at_once_are_one_notification(
     client: AsyncClient, session: AsyncSession, auth_headers, test_workspace: Workspace
 ):
