@@ -421,6 +421,11 @@ def get_occurrences_in_range(
     Schedule advancement and end-date checks use nominal dates. The two-day
     scan margin captures nominal weekend occurrences that move across a range
     boundary; filtering happens only after calculating each effective date.
+
+    The requested range is what ends the scan, not a count: a caller that
+    reads a whole multi-year window (the income-expenses report, #584) gets
+    every occurrence in it. The step budget below only stops a schedule that
+    refuses to advance, so a wide range is never silently truncated (#1904).
     """
     day = intended_day if intended_day else start.day
     nominal_range_start = range_start - timedelta(days=2)
@@ -431,6 +436,10 @@ def get_occurrences_in_range(
         if end_date and current > end_date:
             return occurrences
         current = _advance_date(current, frequency, intended_day=day)
+    # A step advances the schedule by at least a week, so the window cannot
+    # hold more occurrences than it has days: the budget is an upper bound on
+    # the loop itself and never cuts a date inside the range.
+    steps_left = (nominal_range_end - nominal_range_start).days + 1
     while current < nominal_range_end:
         if end_date and current > end_date:
             break
@@ -438,7 +447,8 @@ def get_occurrences_in_range(
         if range_start <= effective_date < range_end:
             occurrences.append(effective_date)
         current = _advance_date(current, frequency, intended_day=day)
-        if len(occurrences) > 200:
+        steps_left -= 1
+        if steps_left <= 0:
             break
     return occurrences
 
