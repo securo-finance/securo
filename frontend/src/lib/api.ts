@@ -14,6 +14,8 @@ import type {
   AdminUserList,
   Passkey,
   PasskeyOptionsResponse,
+  AccessToken,
+  AccessTokenCreated,
   AppSetting,
   Category,
   CategoryRuleUsage,
@@ -415,6 +417,31 @@ export const accessLog = {
   mine: async (params?: { page?: number; limit?: number }): Promise<AdminAccessLogList> => {
     const { data } = await api.get('/access-log/mine', { params })
     return data
+  },
+}
+
+// Access tokens. Created, listed, and revoked in the active workspace (the
+// request's X-Workspace-Id). An owner's list includes every member's tokens.
+export const accessTokens = {
+  /** Every scope a token can carry, as `<resource>:read` or `<resource>:write`. */
+  scopes: async (): Promise<string[]> => {
+    const { data } = await api.get('/access-tokens/scopes')
+    return data.scopes
+  },
+  list: async (): Promise<AccessToken[]> => {
+    const { data } = await api.get('/access-tokens')
+    return data
+  },
+  create: async (body: {
+    name: string
+    scopes: string[]
+    expires_in_days: number | null
+  }): Promise<AccessTokenCreated> => {
+    const { data } = await api.post('/access-tokens', body)
+    return data
+  },
+  revoke: async (id: string): Promise<void> => {
+    await api.delete(`/access-tokens/${id}`)
   },
 }
 
