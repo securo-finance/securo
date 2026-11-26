@@ -280,6 +280,11 @@ class YFinanceProvider(MarketPriceProvider):
             refused = True
         for i in range(0, len(missing), self._BATCH_CHUNK_SIZE):
             chunk = missing[i : i + self._BATCH_CHUNK_SIZE]
+            if not await market_data_guard.take_call_slot():
+                # The instance is out of call slots: a batch must not go
+                # around the throttle every other caller waits on.
+                refused = True
+                break
             try:
                 chunk_prices, chunk_refused = await asyncio.to_thread(
                     self._download_closes_sync, chunk
@@ -504,8 +509,8 @@ class YFinanceProvider(MarketPriceProvider):
     ) -> tuple[dict[str, Optional[LatestClose]], bool]:
         """Run ``yf.download`` and extract the last close per symbol, with its day.
 
-        ``yf.download`` returns a pandas DataFrame: flat columns for a
-        single symbol, MultiIndex (symbol, field) for multiple. Period is
+        ``yf.download`` returns a pandas DataFrame with (symbol, field)
+        MultiIndex columns, one symbol or many. Period is
         ``"5d"`` so we span weekends and market holidays while still
         getting today's close once the market has ticked. Before the market
         opens, the last row is the previous trading day.
@@ -515,6 +520,7 @@ class YFinanceProvider(MarketPriceProvider):
         because the tickers this call did price are worth keeping, and only
         the caller knows how to stop there.
         """
+        import pandas as pd
         import yfinance as yf
 
         out: dict[str, Optional[LatestClose]] = {s: None for s in symbols}
@@ -555,11 +561,12 @@ class YFinanceProvider(MarketPriceProvider):
         if df is None or df.empty:
             return out, rate_limited
 
-        # Single-ticker downloads come back with flat columns — no MultiIndex.
-        # Multi-ticker downloads use group_by="ticker" → MultiIndex (sym, field).
-        if len(symbols) == 1:
-            close_series = df.get("Close") if "Close" in df.columns else None
-            out[symbols[0]] = _last_decimal_close(close_series)
+        # With group_by="ticker" the columns are a (sym, field) MultiIndex,
+        # for a single ticker too (``multi_level_index`` defaults to True).
+        # Flat columns are still read, for a yfinance that drops the level.
+        if not isinstance(df.columns, pd.MultiIndex):
+            if len(symbols) == 1 and "Close" in df.columns:
+                out[symbols[0]] = _last_decimal_close(df["Close"])
             return out, rate_limited
 
         level0 = set(df.columns.get_level_values(0))
