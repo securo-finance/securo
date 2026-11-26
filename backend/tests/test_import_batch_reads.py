@@ -222,19 +222,22 @@ async def test_a_300_row_file_lands_as_before(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("external_id", [None, "FIT-616"])
 async def test_a_reimport_finds_the_amount_the_column_rounded(
-    session: AsyncSession, test_user, test_workspace,
+    session: AsyncSession, test_user, test_workspace, external_id,
 ):
     """A file's 10.005 lands as 10.01, and importing the file again skips it.
 
     Issue #616: asked once per row, the duplicate check ran in the database,
     which rounds the bound amount to the column's scale before comparing.
     Read once for the file, the amount is judged in memory, so both sides
-    have to be rounded the same way or the row lands twice.
+    have to be rounded the same way or the row lands twice. Both keys are
+    covered: the fields a CSV fallback uses and an OFX FITID.
     """
     account = await _account(session, test_user.id, test_workspace.id, "Reimport")
     file_row = TransactionImport(
         description="ROUND TRIP", amount=Decimal("10.005"), date=START, type="debit",
+        external_id=external_id,
     )
 
     imported, skipped, _, _ = await import_transactions(
