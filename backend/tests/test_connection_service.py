@@ -4649,6 +4649,34 @@ async def test_sync_connection_enable_banking_booking_date_does_not_merge_dated_
 
 
 @pytest.mark.asyncio
+async def test_sync_connection_enable_banking_booking_date_keeps_an_earlier_purchase_apart(
+    session: AsyncSession, test_user, test_workspace, monkeypatch,
+):
+    """Review on #1868: the pending purchase of the 19th leaves the feed and
+    a posted one of the 18th arrives, both booked on the 20th. The posted one
+    is another purchase and lands as a row of its own."""
+    monkeypatch.setattr(
+        "app.services.connection_service.app_today", lambda: date(2026, 11, 21),
+    )
+    conn, account = await _eb_account(session, test_user.id, test_workspace.id)
+    account_id = account.id
+    await session.commit()
+    held = _same_merchant_purchase("p19", "2026-11-19", booked=False)
+    await _sync_paypal_holds(session, conn, test_workspace.id, test_user.id, [held])
+
+    booked = _same_merchant_purchase("b18", "2026-11-18", booked=True)
+    await _sync_eb(
+        session, conn, test_workspace.id, test_user.id, await _eb_fetch([booked], []),
+    )
+
+    rows = await _account_rows(session, account_id)
+    assert sorted((row.date, row.status, row.external_id) for row in rows) == [
+        (date(2026, 11, 18), "posted", _eb_txn(booked).external_id),
+        (date(2026, 11, 19), "pending", _eb_txn(held, "pending").external_id),
+    ]
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("later_first", [False, True], ids=["18th-stored-first", "19th-stored-first"])
 async def test_sync_connection_enable_banking_dated_purchases_keep_their_notes(
     session: AsyncSession, test_user, test_workspace, monkeypatch, later_first,
