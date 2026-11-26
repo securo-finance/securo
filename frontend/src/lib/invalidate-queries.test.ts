@@ -38,6 +38,8 @@ describe('invalidateFinancialQueries', () => {
       ['accounts', 'a1'],
       ['budgets', 'comparison'],
       ['reports', 'cash-flow'],
+      ['goals', 'active'],
+      ['goals', 'history', 'workspace', 'goal'],
       ['drill-down', 'transactions'],
       ['recurring', 'recent-price-changes', 20],
       ['recurring', 'recent-price-changes', 1],

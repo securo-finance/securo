@@ -4216,6 +4216,25 @@
     "title": "Server nicht erreichbar",
     "description": "Du bist offline oder Securo startet gerade neu. Deine Daten sind sicher und nichts wurde geändert. Wir verbinden uns automatisch wieder, sobald der Server antwortet."
   },
+  "goalChart": {
+    "region": "Fortschritt für {{name}}",
+    "title": "Verlauf und Prognose",
+    "historyFailed": "Der Verlauf konnte nicht geladen werden. Die Prognose verwendet den aktuellen Betrag des Ziels.",
+    "retry": "Erneut versuchen",
+    "loading": "Verlauf wird geladen…",
+    "hidden": "Diagramm im Privatsphärenmodus ausgeblendet",
+    "chartLabel": "Verlauf und Prognose für {{name}} in {{currency}}",
+    "target": "Ziel",
+    "today": "Heute",
+    "deadline": "Zieldatum",
+    "actual": "Historischer Betrag",
+    "projected": "Prognose",
+    "current": "Aktueller Betrag",
+    "notes": {
+      "missing": "Für diesen Zeitraum wurden keine verwendbaren historischen Daten zurückgegeben.",
+      "currency": "Der Verlauf ist in der Währung dieses Ziels nicht verfügbar. Die Prognose verwendet den aktuellen Betrag des Ziels; es wird kein Wechselkurs angenommen."
+    }
+  },
   "documentAi": {
     "reading": "Dokument wird gelesen…",
     "readingHint": "{{model}} liest es gerade. Das kann eine Minute dauern.",

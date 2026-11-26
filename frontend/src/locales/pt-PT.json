@@ -4229,6 +4229,25 @@
     "title": "Não foi possível contactar o servidor",
     "description": "Está sem ligação ou o Securo está a reiniciar. Os seus dados estão seguros e nada foi alterado. Vamos reconectar automaticamente assim que o servidor responder."
   },
+  "goalChart": {
+    "region": "Progresso de {{name}}",
+    "title": "Histórico e projeção",
+    "historyFailed": "Não foi possível carregar o histórico. A projeção utiliza o valor atual do objetivo.",
+    "retry": "Tentar novamente",
+    "loading": "A carregar o histórico…",
+    "hidden": "Gráfico oculto no modo de privacidade",
+    "chartLabel": "Histórico e projeção de {{name}} em {{currency}}",
+    "target": "Objetivo",
+    "today": "Hoje",
+    "deadline": "Prazo",
+    "actual": "Valor histórico",
+    "projected": "Projeção",
+    "current": "Valor atual",
+    "notes": {
+      "missing": "Não foram devolvidos dados históricos utilizáveis para este período.",
+      "currency": "O histórico não está disponível na moeda deste objetivo. A projeção utiliza o valor atual do objetivo; não é pressuposta qualquer taxa de câmbio."
+    }
+  },
   "documentAi": {
     "reading": "A ler o documento…",
     "readingHint": "{{model}} está a ler. Isto pode demorar um minuto.",

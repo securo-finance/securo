@@ -4373,6 +4373,25 @@
     "title": "Brak połączenia z serwerem",
     "description": "Jesteś offline lub Securo się restartuje. Twoje dane są bezpieczne i nic nie zostało zmienione. Połączymy się ponownie automatycznie, gdy tylko serwer odpowie."
   },
+  "goalChart": {
+    "region": "Postęp celu {{name}}",
+    "title": "Historia i prognoza",
+    "historyFailed": "Nie udało się wczytać historii. Prognoza wykorzystuje bieżącą kwotę celu.",
+    "retry": "Spróbuj ponownie",
+    "loading": "Wczytywanie historii…",
+    "hidden": "Wykres ukryty w trybie prywatności",
+    "chartLabel": "Historia i prognoza celu {{name}} w walucie {{currency}}",
+    "target": "Cel",
+    "today": "Dzisiaj",
+    "deadline": "Termin",
+    "actual": "Kwota historyczna",
+    "projected": "Prognoza",
+    "current": "Bieżąca kwota",
+    "notes": {
+      "missing": "Nie otrzymano użytecznych danych historycznych dla tego okresu.",
+      "currency": "Historia jest niedostępna w walucie tego celu. Prognoza wykorzystuje bieżącą kwotę celu; nie przyjmuje się żadnego kursu wymiany."
+    }
+  },
   "documentAi": {
     "reading": "Odczytywanie dokumentu…",
     "readingHint": "{{model}} odczytuje dokument. Może to potrwać minutę.",

@@ -4215,6 +4215,25 @@
     "title": "A szerver nem érhető el",
     "description": "Offline vagy, vagy a Securo újraindul. Az adataid biztonságban vannak, és semmi sem változott. Amint a szerver válaszol, automatikusan újracsatlakozunk."
   },
+  "goalChart": {
+    "region": "A(z) {{name}} cél előrehaladása",
+    "title": "Előzmények és előrejelzés",
+    "historyFailed": "Az előzményeket nem sikerült betölteni. Az előrejelzés a cél aktuális összegét használja.",
+    "retry": "Újrapróbálkozás",
+    "loading": "Előzmények betöltése…",
+    "hidden": "A diagram adatvédelmi módban rejtve van",
+    "chartLabel": "A(z) {{name}} cél előzményei és előrejelzése {{currency}} pénznemben",
+    "target": "Célösszeg",
+    "today": "Ma",
+    "deadline": "Határidő",
+    "actual": "Korábbi összeg",
+    "projected": "Előrejelzés",
+    "current": "Aktuális összeg",
+    "notes": {
+      "missing": "Erre az időszakra nem érkezett használható előzményadat.",
+      "currency": "Az előzmények nem érhetők el a cél pénznemében. Az előrejelzés a cél aktuális összegét használja; nem feltételez átváltási árfolyamot."
+    }
+  },
   "documentAi": {
     "reading": "A dokumentum beolvasása…",
     "readingHint": "A(z) {{model}} olvassa. Ez egy percig is eltarthat.",

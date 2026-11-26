@@ -4217,6 +4217,25 @@
     "title": "Server niet bereikbaar",
     "description": "Je bent offline of Securo start opnieuw op. Je gegevens zijn veilig en er is niets gewijzigd. We maken automatisch opnieuw verbinding zodra de server antwoordt."
   },
+  "goalChart": {
+    "region": "Voortgang voor {{name}}",
+    "title": "Historie en prognose",
+    "historyFailed": "De historie kon niet worden geladen. De prognose gebruikt het huidige bedrag van het doel.",
+    "retry": "Opnieuw proberen",
+    "loading": "Historie laden…",
+    "hidden": "Grafiek verborgen in privacymodus",
+    "chartLabel": "Historie en prognose voor {{name}} in {{currency}}",
+    "target": "Doel",
+    "today": "Vandaag",
+    "deadline": "Einddatum",
+    "actual": "Historisch bedrag",
+    "projected": "Prognose",
+    "current": "Huidig bedrag",
+    "notes": {
+      "missing": "Er zijn geen bruikbare historische gegevens voor deze periode ontvangen.",
+      "currency": "De historie is niet beschikbaar in de valuta van dit doel. De prognose gebruikt het huidige bedrag van het doel; er wordt geen wisselkoers aangenomen."
+    }
+  },
   "documentAi": {
     "reading": "Document wordt gelezen…",
     "readingHint": "{{model}} leest het document. Dit kan een minuut duren.",

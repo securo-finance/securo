@@ -4407,6 +4407,25 @@
     "title": "Server je nedostupný",
     "description": "Ste offline alebo sa Securo reštartuje. Vaše údaje sú v bezpečí a nič sa nezmenilo. Hneď ako server odpovie, automaticky sa znova pripojíme."
   },
+  "goalChart": {
+    "region": "Pokrok cieľa {{name}}",
+    "title": "História a prognóza",
+    "historyFailed": "Históriu sa nepodarilo načítať. Prognóza používa aktuálnu sumu cieľa.",
+    "retry": "Skúsiť znova",
+    "loading": "Načítava sa história…",
+    "hidden": "Graf je v režime súkromia skrytý",
+    "chartLabel": "História a prognóza cieľa {{name}} v mene {{currency}}",
+    "target": "Cieľová suma",
+    "today": "Dnes",
+    "deadline": "Termín",
+    "actual": "Historická suma",
+    "projected": "Prognóza",
+    "current": "Aktuálna suma",
+    "notes": {
+      "missing": "Pre toto obdobie nebola vrátená žiadna použiteľná história.",
+      "currency": "História nie je dostupná v mene tohto cieľa. Prognóza používa aktuálnu sumu cieľa; nepredpokladá sa žiadny výmenný kurz."
+    }
+  },
   "documentAi": {
     "reading": "Čítame dokument…",
     "readingHint": "{{model}} ho práve číta. Môže to trvať minútu.",

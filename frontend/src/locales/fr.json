@@ -4230,6 +4230,25 @@
     "title": "Serveur injoignable",
     "description": "Vous êtes hors ligne ou Securo redémarre. Vos données sont en sécurité et rien n'a été modifié. Nous nous reconnecterons automatiquement dès que le serveur répondra."
   },
+  "goalChart": {
+    "region": "Progression de {{name}}",
+    "title": "Historique et projection",
+    "historyFailed": "Impossible de charger l’historique. La projection utilise le montant actuel de l’objectif.",
+    "retry": "Réessayer",
+    "loading": "Chargement de l’historique…",
+    "hidden": "Graphique masqué en mode confidentialité",
+    "chartLabel": "Historique et projection de {{name}} en {{currency}}",
+    "target": "Objectif",
+    "today": "Aujourd’hui",
+    "deadline": "Échéance",
+    "actual": "Montant historique",
+    "projected": "Projection",
+    "current": "Montant actuel",
+    "notes": {
+      "missing": "Aucune donnée historique exploitable n’a été renvoyée pour cette période.",
+      "currency": "L’historique n’est pas disponible dans la devise de cet objectif. La projection utilise le montant actuel de l’objectif ; aucun taux de change n’est supposé."
+    }
+  },
   "documentAi": {
     "reading": "Lecture du document…",
     "readingHint": "{{model}} est en train de le lire. Cela peut prendre une minute.",

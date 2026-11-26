@@ -4230,6 +4230,25 @@
     "title": "No se puede conectar con el servidor",
     "description": "Estás sin conexión o Securo se está reiniciando. Tus datos están a salvo y nada ha cambiado. Volveremos a conectar automáticamente en cuanto el servidor responda."
   },
+  "goalChart": {
+    "region": "Progreso de {{name}}",
+    "title": "Historial y proyección",
+    "historyFailed": "No se pudo cargar el historial. La proyección utiliza el importe actual del objetivo.",
+    "retry": "Reintentar",
+    "loading": "Cargando historial…",
+    "hidden": "Gráfico oculto en modo de privacidad",
+    "chartLabel": "Historial y proyección de {{name}} en {{currency}}",
+    "target": "Objetivo",
+    "today": "Hoy",
+    "deadline": "Fecha límite",
+    "actual": "Importe histórico",
+    "projected": "Proyección",
+    "current": "Importe actual",
+    "notes": {
+      "missing": "No se obtuvieron datos históricos utilizables para este período.",
+      "currency": "El historial no está disponible en la moneda de este objetivo. La proyección utiliza el importe actual del objetivo; no se presupone ningún tipo de cambio."
+    }
+  },
   "documentAi": {
     "reading": "Leyendo el documento…",
     "readingHint": "{{model}} lo está leyendo. Esto puede tardar un minuto.",
