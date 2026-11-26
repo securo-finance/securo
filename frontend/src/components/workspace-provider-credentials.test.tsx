@@ -24,6 +24,7 @@ const shared: WorkspaceProviderCredentialStatus = {
   has_credentials: false,
   invalid: false,
 }
+const FIELDS = ['pluggy_client_id', 'pluggy_client_secret']
 const own: WorkspaceProviderCredentialStatus = { ...shared, workspace_id: 'ws-own', name: 'Mine', has_credentials: true }
 
 beforeEach(() => {
@@ -35,7 +36,7 @@ beforeEach(() => {
 
 describe('Pluggy clients by workspace', () => {
   it('saves a client for the chosen workspace only once both fields are filled', async () => {
-    const { user } = renderWithProviders(<WorkspaceProviderCredentials provider="pluggy" canStoreSecrets />)
+    const { user } = renderWithProviders(<WorkspaceProviderCredentials provider="pluggy" fields={FIELDS} canStoreSecrets />)
 
     await user.click(await screen.findByRole('button', { name: /: Mom$/ }))
     const form = screen.getByRole('form', { name: 'Mom' })
@@ -57,11 +58,9 @@ describe('Pluggy clients by workspace', () => {
 
   it('explains why a workspace with connections cannot move to another client', async () => {
     vi.mocked(admin.removeWorkspaceProviderCredentials).mockRejectedValue({ response: { status: 409, data: { detail: 'provider_account_change' } } })
-    const { user } = renderWithProviders(<WorkspaceProviderCredentials provider="pluggy" canStoreSecrets />)
+    const { user } = renderWithProviders(<WorkspaceProviderCredentials provider="pluggy" fields={FIELDS} canStoreSecrets />)
 
-    const row = (await screen.findByText('Mine')).closest('li') as HTMLElement
-    const buttons = within(row).getAllByRole('button')
-    await user.click(buttons[0])
+    await user.click(await screen.findByRole('button', { name: 'Remove: Mine' }))
     await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: /delete/i }))
 
     await waitFor(() => expect(admin.removeWorkspaceProviderCredentials).toHaveBeenCalledWith('pluggy', 'ws-own'))
@@ -73,7 +72,7 @@ describe('Pluggy clients by workspace', () => {
     vi.mocked(admin.setWorkspaceProviderCredentials).mockRejectedValue({
       response: { status: 409, data: { detail: 'Set a unique SECRET_KEY of at least 32 characters before saving credentials' } },
     })
-    const { user } = renderWithProviders(<WorkspaceProviderCredentials provider="pluggy" canStoreSecrets />)
+    const { user } = renderWithProviders(<WorkspaceProviderCredentials provider="pluggy" fields={FIELDS} canStoreSecrets />)
 
     await user.click(await screen.findByRole('button', { name: /: Mom$/ }))
     const form = screen.getByRole('form', { name: 'Mom' })
@@ -87,15 +86,24 @@ describe('Pluggy clients by workspace', () => {
   })
 
   it('offers no changes on an instance the operator manages', async () => {
-    renderWithProviders(<WorkspaceProviderCredentials provider="pluggy" canStoreSecrets readOnly />)
+    renderWithProviders(<WorkspaceProviderCredentials provider="pluggy" fields={FIELDS} canStoreSecrets readOnly />)
 
     const row = (await screen.findByText('Mine')).closest('li') as HTMLElement
     expect(within(row).queryAllByRole('button')).toHaveLength(0)
     expect(within(row).getByText('Configured by Securo')).toBeInTheDocument()
   })
 
+  it('says when the workspaces could not be loaded, and retries', async () => {
+    vi.mocked(admin.workspaceProviderCredentials).mockRejectedValueOnce(new Error('down'))
+    const { user } = renderWithProviders(<WorkspaceProviderCredentials provider="pluggy" fields={FIELDS} canStoreSecrets />)
+
+    expect(await screen.findByRole('alert')).toHaveTextContent("Couldn't load the workspaces.")
+    await user.click(screen.getByRole('button', { name: 'Retry' }))
+    expect(await screen.findByText('Mine')).toBeInTheDocument()
+  })
+
   it('blocks saving when the instance cannot store secrets', async () => {
-    renderWithProviders(<WorkspaceProviderCredentials provider="pluggy" canStoreSecrets={false} />)
+    renderWithProviders(<WorkspaceProviderCredentials provider="pluggy" fields={FIELDS} canStoreSecrets={false} />)
     expect(await screen.findByRole('button', { name: /: Mom$/ })).toBeDisabled()
   })
 })

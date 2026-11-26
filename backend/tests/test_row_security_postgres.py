@@ -472,3 +472,44 @@ async def test_the_api_works_under_the_restricted_role(stack, monkeypatch):
             assert patched.status_code == 404
             for path in ("/api/transactions", "/api/dashboard/summary", "/api/budgets", "/api/payees"):
                 assert (await client.get(path, headers=headers)).status_code == 200, path
+
+
+async def test_admin_workspace_credentials_see_each_workspace(stack, monkeypatch):
+    """Admin routes bind no workspace; the credentials service binds each one it reads."""
+    import secrets as token_secrets
+
+    from pydantic import SecretStr
+
+    from app.agents.services.crypto import _fernet
+    from app.services import provider_settings
+
+    monkeypatch.setattr(get_settings(), "secret_key", SecretStr(token_secrets.token_hex(32)))
+    monkeypatch.setattr(get_settings(), "pluggy_client_id", "instance-client")
+    monkeypatch.setattr(get_settings(), "pluggy_client_secret", SecretStr("instance-secret"))
+    _fernet.cache_clear()
+    await _seed(stack)
+    async with _unchecked(stack) as session:
+        table = TABLES["bank_connections"]
+        await session.execute(insert(table).values(**_row(table, workspace_id=A, provider="pluggy")))
+    own = {"pluggy_client_id": "own-client", "pluggy_client_secret": "own-secret"}
+
+    try:
+        async with stack.app() as session:
+            listed = {
+                row["workspace_id"]: row["connections"]
+                for row in await provider_settings.workspace_provider_status(session, "pluggy")
+            }
+            assert listed[A] == 1 and listed[B] == 0
+            # A's item lives under the instance client: moving A away is refused,
+            # which needs its connection to be visible here.
+            with pytest.raises(provider_settings.ProviderAccountChangeError):
+                await provider_settings.set_workspace_credentials(session, "pluggy", A, own)
+            await provider_settings.set_workspace_credentials(session, "pluggy", B, own)
+        async with stack.bound(B)() as session:
+            resolved = await provider_settings.resolve_settings(session, B)
+            assert resolved.pluggy_client_id == "own-client"
+        async with stack.bound(A)() as session:
+            resolved = await provider_settings.resolve_settings(session, A)
+            assert resolved.pluggy_client_id == "instance-client"
+    finally:
+        _fernet.cache_clear()

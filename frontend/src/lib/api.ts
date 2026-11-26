@@ -2206,6 +2206,8 @@ export interface ProviderSettingStatus {
   name: string
   configured: boolean
   can_store_secrets: boolean
+  /** The fields a workspace can replace with its own, when the provider takes them. */
+  workspace_fields?: string[] | null
   fields: Record<string, {
     configured: boolean
     source: 'app' | 'environment' | 'none'

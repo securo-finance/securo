@@ -74,9 +74,10 @@ function ProviderEditor({ provider, name, description, icon, guideUrl, onClose }
     mutationFn: async (fieldToReset?: string) => {
       try {
         return await admin.updateProviderSettings(provider.name, fieldToReset ? { [fieldToReset]: null } : draft)
-      } catch {
+      } catch (error) {
         // Do not retain Axios errors containing the credential request body.
-        throw new Error('Could not update provider settings')
+        const detail = (error as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail
+        throw new Error(detail === 'provider_account_change' ? 'accountChange' : 'failed')
       }
     },
     onSuccess: (updated, fieldToReset) => {
@@ -96,7 +97,8 @@ function ProviderEditor({ provider, name, description, icon, guideUrl, onClose }
       toast.success(t('admin.settings.updated'))
       if (!fieldToReset) onClose()
     },
-    onError: () => toast.error(t('common.error')),
+    onError: (error: Error) =>
+      toast.error(error.message === 'accountChange' ? t('providerSettings.instanceAccountChanged') : t('common.error')),
   })
   const canSave = hasChanges && !hasBlankCredential && !cannotStoreSecrets && !save.isPending
 

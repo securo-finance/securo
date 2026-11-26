@@ -3764,7 +3764,9 @@
       "enable_banking_app_id": "מזהה יישום (App ID)",
       "enable_banking_private_key": "מפתח פרטי (PEM)",
       "simplefin_enabled": "אפשור SimpleFIN"
-    }
+    },
+    "instanceAccountChanged": "לסביבות עבודה שמשתמשות בפרטי גישה אלה יש חיבורים תחת חשבון זה. קודם הגדירו להן פרטי גישה משלהן, או מחקו את החיבורים שלהן.",
+    "workspaceListError": "לא ניתן היה לטעון את סביבות העבודה."
   },
   "categoryLines": {
     "title": "חלוקה בין קטגוריות",

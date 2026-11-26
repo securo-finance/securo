@@ -148,6 +148,8 @@ class ProviderSettingRead(BaseModel):
     configured: bool
     can_store_secrets: bool
     fields: dict[str, ProviderFieldStatus]
+    #: The fields a workspace can replace with its own, if the provider takes them.
+    workspace_fields: Optional[list[str]] = None
     #: Callback URL to register with the provider, when it uses one.
     redirect_uri: Optional[str] = None
 

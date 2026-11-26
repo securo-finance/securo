@@ -217,6 +217,7 @@ def seed_credentials(url: str, old_key: str) -> dict:
         "simplefin": agents_old.encrypt(b"https://user:pass@bridge.example/simplefin").decode(),
         "enable_banking": agents_old.encrypt(b"eb-session-id").decode(),
         "setting": agents_old.encrypt(b"pluggy-client-secret").decode(),
+        "workspace": agents_old.encrypt(b"workspace-client-secret").decode(),
         "unreadable": unrelated.encrypt(b"lost-already").decode(),
     }
     run(execute(
@@ -225,6 +226,10 @@ def seed_credentials(url: str, old_key: str) -> dict:
         ("CREATE TABLE plugin_connections (id INTEGER PRIMARY KEY, secrets TEXT)", {}),
         ("CREATE TABLE bank_connections (id INTEGER PRIMARY KEY, credentials TEXT)", {}),
         ("CREATE TABLE app_settings (key TEXT PRIMARY KEY, value TEXT)", {}),
+        ("CREATE TABLE workspace_provider_credentials"
+         " (workspace_id TEXT, key TEXT, value TEXT, PRIMARY KEY (workspace_id, key))", {}),
+        ("INSERT INTO workspace_provider_credentials VALUES ('w1', 'pluggy_client_secret', :v),"
+         " ('w2', 'pluggy_client_secret', :u)", {"v": values["workspace"], "u": values["unreadable"]}),
         ("INSERT INTO agent_llm_connections VALUES (1, :v), (2, NULL), (3, :u)",
          {"v": values["llm"], "u": values["unreadable"]}),
         ("INSERT INTO plugin_connections VALUES (1, :v)", {"v": values["plugin"]}),
@@ -246,6 +251,7 @@ def read_credentials(url: str) -> dict:
         "plugin": run(fetch(url, "SELECT secrets FROM plugin_connections"))[0][0],
         "bank": {i: (json.loads(c) if c else None) for i, c in run(fetch(url, "SELECT id, credentials FROM bank_connections"))},
         "settings": dict(run(fetch(url, "SELECT key, value FROM app_settings"))),
+        "workspace": dict(run(fetch(url, "SELECT workspace_id, value FROM workspace_provider_credentials"))),
     }
 
 
@@ -273,6 +279,8 @@ def test_credentials_under_a_public_default_move_to_the_new_key(db_url, monkeypa
     assert agents_new.decrypt(after["settings"]["pluggy_client_secret"].encode()) == b"pluggy-client-secret"
     assert after["settings"]["simplefin_enabled"] == "true"
     assert after["settings"]["timezone"] == "Europe/Paris"
+    assert agents_new.decrypt(after["workspace"]["w1"].encode()) == b"workspace-client-secret"
+    assert after["workspace"]["w2"] == seeded["unreadable"]
     # The public key no longer opens anything that was moved.
     for token in (after["llm"][1], after["bank"][1]["access_url_enc"], after["settings"]["pluggy_client_secret"]):
         with pytest.raises(Exception):

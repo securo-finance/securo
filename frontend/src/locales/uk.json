@@ -3787,7 +3787,9 @@
       "enable_banking_app_id": "ID застосунку",
       "enable_banking_private_key": "Приватний ключ (PEM)",
       "simplefin_enabled": "Увімкнути SimpleFIN"
-    }
+    },
+    "instanceAccountChanged": "Робочі простори, що використовують ці облікові дані, мають підключення в цьому акаунті. Спершу надайте їм власні облікові дані або видаліть їхні підключення.",
+    "workspaceListError": "Не вдалося завантажити робочі простори."
   },
   "categoryLines": {
     "title": "Розділити за категоріями",

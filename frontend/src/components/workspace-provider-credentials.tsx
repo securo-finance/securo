@@ -11,7 +11,6 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { DeleteConfirmationDialog } from '@/components/delete-confirmation-dialog'
 import { admin, type WorkspaceProviderCredentialStatus } from '@/lib/api'
-import { WORKSPACE_PROVIDERS } from '@/lib/workspace-providers'
 
 const queryKey = (provider: string) => ['admin', 'workspace-credentials', provider]
 
@@ -29,17 +28,18 @@ function useErrorToast(provider: string) {
 
 function CredentialsDialog({
   provider,
+  fields,
   workspace,
   onClose,
 }: {
   provider: string
+  fields: string[]
   workspace: WorkspaceProviderCredentialStatus
   onClose: () => void
 }) {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
   const showError = useErrorToast(provider)
-  const { fields } = WORKSPACE_PROVIDERS[provider]
   const [values, setValues] = useState<Record<string, string>>(() => Object.fromEntries(fields.map((field) => [field, ''])))
 
   const save = useMutation({
@@ -101,12 +101,19 @@ function CredentialsDialog({
   )
 }
 
+/**
+ * Which credentials each workspace uses for one provider. The provider's
+ * fields come from the API (`workspace_fields`); its texts live under
+ * `providerSettings.workspaces.<provider>`.
+ */
 export function WorkspaceProviderCredentials({
   provider,
+  fields,
   canStoreSecrets,
   readOnly = false,
 }: {
   provider: string
+  fields: string[]
   canStoreSecrets: boolean
   readOnly?: boolean
 }) {
@@ -115,7 +122,7 @@ export function WorkspaceProviderCredentials({
   const showError = useErrorToast(provider)
   const [editing, setEditing] = useState<WorkspaceProviderCredentialStatus | null>(null)
   const [removing, setRemoving] = useState<WorkspaceProviderCredentialStatus | null>(null)
-  const { data } = useQuery({
+  const { data, isError, refetch } = useQuery({
     queryKey: queryKey(provider),
     queryFn: () => admin.workspaceProviderCredentials(provider),
   })
@@ -137,14 +144,35 @@ export function WorkspaceProviderCredentials({
     onSettled: () => setRemoving(null),
   })
 
+  const header = (
+    <div className="border-b border-border/40 px-4 py-4 sm:px-5">
+      <h3 className="text-sm font-semibold text-foreground">{text('title')}</h3>
+      <p className="mt-1 text-sm leading-relaxed text-muted-foreground">{text('description')}</p>
+    </div>
+  )
+
+  if (isError) {
+    return (
+      <div className="min-w-0 overflow-hidden rounded-xl border border-border/60 bg-card">
+        {header}
+        <div role="alert" className="flex flex-wrap items-center justify-between gap-3 px-4 py-4 sm:px-5">
+          <p className="flex items-center gap-2 text-sm text-destructive">
+            <AlertCircle className="size-4" aria-hidden="true" />
+            {t('providerSettings.workspaceListError')}
+          </p>
+          <Button variant="outline" className="h-9 shadow-none" onClick={() => void refetch()}>
+            {t('common.retry')}
+          </Button>
+        </div>
+      </div>
+    )
+  }
+
   if (!data?.length) return null
 
   return (
     <div className="min-w-0 overflow-hidden rounded-xl border border-border/60 bg-card">
-      <div className="border-b border-border/40 px-4 py-4 sm:px-5">
-        <h3 className="text-sm font-semibold text-foreground">{text('title')}</h3>
-        <p className="mt-1 text-sm leading-relaxed text-muted-foreground">{text('description')}</p>
-      </div>
+      {header}
       <ul className="divide-y divide-border/40">
         {data.map((workspace) => (
           <li key={workspace.workspace_id} className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-4 sm:px-5">
@@ -198,7 +226,9 @@ export function WorkspaceProviderCredentials({
           </li>
         ))}
       </ul>
-      {editing && <CredentialsDialog provider={provider} workspace={editing} onClose={() => setEditing(null)} />}
+      {editing && (
+        <CredentialsDialog provider={provider} fields={fields} workspace={editing} onClose={() => setEditing(null)} />
+      )}
       {removing && (
         <DeleteConfirmationDialog
           open

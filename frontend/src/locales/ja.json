@@ -3734,7 +3734,9 @@
       "enable_banking_app_id": "アプリID",
       "enable_banking_private_key": "秘密鍵（PEM）",
       "simplefin_enabled": "SimpleFINを有効にする"
-    }
+    },
+    "instanceAccountChanged": "この認証情報を使うワークスペースに、このアカウントの接続があります。先にそれらのワークスペースに専用の認証情報を設定するか、接続を削除してください。",
+    "workspaceListError": "ワークスペースを読み込めませんでした。"
   },
   "categoryLines": {
     "title": "カテゴリーで分割",

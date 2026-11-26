@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { screen, waitFor, within } from '@testing-library/react'
+import { toast } from 'sonner'
 
 import { admin, type ProviderSettingStatus } from '@/lib/api'
 import { renderWithProviders } from '@/test/utils'
@@ -86,6 +87,32 @@ describe('provider settings', () => {
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ['admin', 'provider-settings'] })
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ['connections', 'providers'] })
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ['fx-rates'] })
+  })
+
+  it('explains a refused client change instead of a generic error', async () => {
+    const error = vi.spyOn(toast, 'error')
+    vi.mocked(admin.updateProviderSettings).mockRejectedValueOnce({
+      response: { status: 409, data: { detail: 'provider_account_change' } },
+    })
+    const { user } = renderWithProviders(<ProviderSettings />)
+
+    await user.click(await screen.findByRole('button', { name: 'Manage Pluggy' }))
+    const form = screen.getByRole('form', { name: 'Pluggy' })
+    await user.type(within(form).getByLabelText('Client ID'), 'another-client')
+    await user.click(within(form).getByRole('button', { name: 'Save changes' }))
+
+    await waitFor(() => expect(error).toHaveBeenCalledWith(expect.stringMatching(/have connections under this account/)))
+  })
+
+  it('lists workspaces only for providers that take workspace credentials', async () => {
+    vi.mocked(admin.providerSettings).mockResolvedValue([
+      { ...pluggy, workspace_fields: ['pluggy_client_id', 'pluggy_client_secret'] },
+      { ...pluggy, name: 'enable_banking', workspace_fields: null },
+    ])
+    renderWithProviders(<ProviderSettings />)
+
+    await waitFor(() => expect(admin.workspaceProviderCredentials).toHaveBeenCalledWith('pluggy'))
+    expect(admin.workspaceProviderCredentials).toHaveBeenCalledTimes(1)
   })
 
   it('asks before deleting a saved value and explains the environment fallback', async () => {

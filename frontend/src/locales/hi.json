@@ -3734,7 +3734,9 @@
       "enable_banking_app_id": "ऐप ID",
       "enable_banking_private_key": "निजी कुंजी (PEM)",
       "simplefin_enabled": "SimpleFIN सक्षम करें"
-    }
+    },
+    "instanceAccountChanged": "इन क्रेडेंशियल्स का उपयोग करने वाले वर्कस्पेस के इस खाते में कनेक्शन हैं। पहले उन वर्कस्पेस को अपने क्रेडेंशियल दें, या उनके कनेक्शन हटाएँ।",
+    "workspaceListError": "वर्कस्पेस लोड नहीं हो सके।"
   },
   "categoryLines": {
     "title": "श्रेणियों में बाँटें",

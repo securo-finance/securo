@@ -307,6 +307,9 @@ def reencrypt_with(old_keys: Iterable[str]) -> OnCreated:
             # Only the provider credentials there are encrypted; any other value
             # fails to open with every key and is left as it was.
             "provider_settings": await _rewrite_settings(conn, agents_value),
+            "workspace_provider_credentials": await _rewrite_workspace_credentials(
+                conn, agents_value
+            ),
         }
         logger.warning("Re-encrypted saved credentials under the new instance key: %s", counts)
 
@@ -329,6 +332,30 @@ async def _rewrite_bank_credentials(
             await conn.execute(
                 text(f"UPDATE bank_connections SET credentials = {cast} WHERE id = :id"),
                 {"v": new_value, "id": row_id},
+            )
+            changed += 1
+    return changed
+
+
+async def _rewrite_workspace_credentials(
+    conn: AsyncConnection, rewrite: Callable[[str], str | None]
+) -> int:
+    if not await _table_exists(conn, "workspace_provider_credentials"):
+        return 0
+    rows = (await conn.execute(text(
+        "SELECT workspace_id, key, value FROM workspace_provider_credentials"
+        f"{_locking(conn)}"
+    ))).all()
+    changed = 0
+    for workspace_id, key, value in rows:
+        new_value = rewrite(value)
+        if new_value is not None:
+            await conn.execute(
+                text(
+                    "UPDATE workspace_provider_credentials SET value = :v "
+                    "WHERE workspace_id = :w AND key = :k"
+                ),
+                {"v": new_value, "w": workspace_id, "k": key},
             )
             changed += 1
     return changed

@@ -3749,7 +3749,9 @@
       "enable_banking_app_id": "ID do aplicativo",
       "enable_banking_private_key": "Chave privada (PEM)",
       "simplefin_enabled": "Ativar SimpleFIN"
-    }
+    },
+    "instanceAccountChanged": "Workspaces que usam estas credenciais têm conexões nesta conta. Dê credenciais próprias a esses workspaces, ou exclua as conexões deles, antes.",
+    "workspaceListError": "Não foi possível carregar os workspaces."
   },
   "categoryLines": {
     "title": "Dividir por categoria",

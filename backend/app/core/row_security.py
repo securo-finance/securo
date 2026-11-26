@@ -36,7 +36,6 @@ NOT_COVERED: dict[str, str] = {
     "group_members": "shared with members in other workspaces",
     "group_settlements": "shared with members in other workspaces",
     "transaction_splits": "shared with members in other workspaces",
-    "workspace_provider_credentials": "instance admins list and write it across workspaces",
 }
 
 #: Tables scoped through a parent that is covered: table -> (FK column, parent).

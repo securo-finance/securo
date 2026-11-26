@@ -3749,7 +3749,9 @@
       "enable_banking_app_id": "ID d’application",
       "enable_banking_private_key": "Clé privée (PEM)",
       "simplefin_enabled": "Activer SimpleFIN"
-    }
+    },
+    "instanceAccountChanged": "Des espaces de travail qui utilisent ces identifiants ont des connexions sous ce compte. Donnez-leur d'abord leurs propres identifiants, ou supprimez leurs connexions.",
+    "workspaceListError": "Impossible de charger les espaces de travail."
   },
   "categoryLines": {
     "title": "Répartir par catégorie",

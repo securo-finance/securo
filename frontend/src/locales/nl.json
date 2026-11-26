@@ -3736,7 +3736,9 @@
       "enable_banking_app_id": "App-ID",
       "enable_banking_private_key": "Privésleutel (PEM)",
       "simplefin_enabled": "SimpleFIN inschakelen"
-    }
+    },
+    "instanceAccountChanged": "Werkruimten die deze gegevens gebruiken hebben koppelingen onder dit account. Geef die werkruimten eerst eigen gegevens, of verwijder hun koppelingen.",
+    "workspaceListError": "De werkruimten konden niet worden geladen."
   },
   "categoryLines": {
     "title": "Verdelen over categorieën",

@@ -8,6 +8,7 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.services.crypto import decrypt, encrypt
+from app.core import row_security
 from app.core.config import Settings, get_settings
 from app.core.database import async_session_maker
 from app.models.app_settings import AppSetting
@@ -45,8 +46,9 @@ class WorkspaceProvider:
 
 #: Providers that take credentials per workspace. To add one, list it here with
 #: its fields from PROVIDER_FIELDS, cache anything keyed by credentials per
-#: account rather than per process, and give it a block of texts in the
-#: frontend (`WORKSPACE_PROVIDERS` in `frontend/src/lib/workspace-providers.ts`).
+#: account rather than per process, and give it texts under
+#: `providerSettings.workspaces.<provider>` in the frontend locales. The admin
+#: screen reads the fields from `workspace_fields` in the provider status.
 WORKSPACE_PROVIDERS: dict[str, WorkspaceProvider] = {
     "pluggy": WorkspaceProvider(fields=PROVIDER_FIELDS["pluggy"], account_field="pluggy_client_id"),
 }
@@ -99,16 +101,68 @@ async def _workspace_overrides(session: AsyncSession, workspace_id: uuid.UUID) -
     return {key: value for key, value in rows.all()}
 
 
+class WorkspaceNotBound(RuntimeError):
+    """Row security is on and the session works for another workspace, or none."""
+
+
 async def resolve_settings(
     session: AsyncSession | None = None, workspace_id: uuid.UUID | None = None
 ) -> Settings:
     if session is None:
         async with async_session_maker() as owned_session:
+            if workspace_id is not None:
+                await row_security.bind_workspace(owned_session, workspace_id)
             return await resolve_settings(owned_session, workspace_id)
     overrides = await _overrides(session)
     if workspace_id is not None:
+        # Under row security a session bound elsewhere reads no workspace rows,
+        # which would quietly fall back to the instance account.
+        if row_security.enabled() and row_security.bound_to(session) != workspace_id:
+            raise WorkspaceNotBound("Session is not bound to the workspace being resolved")
         overrides |= await _workspace_overrides(session, workspace_id)
     return _resolve(overrides)
+
+
+async def _rows_by_workspace(
+    session: AsyncSession, workspace_ids: list[uuid.UUID], query
+) -> list:
+    """Rows of a workspace table for each listed workspace.
+
+    Off, one query reads them all. Under row security a session sees one
+    workspace at a time, so it is bound to each in turn.
+    """
+    if not row_security.enabled():
+        return list((await session.execute(query)).all())
+    rows: list = []
+    for workspace_id in workspace_ids:
+        await row_security.bind_workspace(session, workspace_id)
+        rows += (await session.execute(query)).all()
+    return rows
+
+
+async def _workspace_usage(
+    session: AsyncSession, provider: str, workspace_ids: list[uuid.UUID]
+) -> tuple[dict[uuid.UUID, int], dict[uuid.UUID, list[str]]]:
+    """Each workspace's connections of `provider`, and its saved values for it."""
+    spec = WORKSPACE_PROVIDERS[provider]
+    counts = await _rows_by_workspace(
+        session,
+        workspace_ids,
+        select(BankConnection.workspace_id, func.count())
+        .where(BankConnection.provider == provider)
+        .group_by(BankConnection.workspace_id),
+    )
+    saved = await _rows_by_workspace(
+        session,
+        workspace_ids,
+        select(WorkspaceProviderCredential.workspace_id, WorkspaceProviderCredential.value).where(
+            WorkspaceProviderCredential.key.in_(spec.fields)
+        ),
+    )
+    values: dict[uuid.UUID, list[str]] = {}
+    for workspace_id, value in saved:
+        values.setdefault(workspace_id, []).append(value)
+    return {workspace_id: total for workspace_id, total in counts}, values
 
 
 async def provider_status(session: AsyncSession) -> list[dict]:
@@ -133,6 +187,12 @@ async def provider_status(session: AsyncSession) -> list[dict]:
                 "configured": is_configured(provider, settings),
                 "can_store_secrets": secret_storage_available,
                 "fields": statuses,
+                # The fields a workspace can replace with its own, if any.
+                "workspace_fields": (
+                    list(WORKSPACE_PROVIDERS[provider].fields)
+                    if provider in WORKSPACE_PROVIDERS
+                    else None
+                ),
                 # Read-only: derived from the server URL, shown so it can be
                 # registered with the provider.
                 "redirect_uri": (
@@ -164,6 +224,7 @@ async def update_provider(session: AsyncSession, provider: str, values: dict) ->
             raise SecretStorageUnavailable(
                 "Set a unique SECRET_KEY of at least 32 characters before saving credentials"
             )
+    await _ensure_fallback_keeps_account(session, provider, values)
     for key, value in values.items():
         row = await session.get(AppSetting, key)
         if value is None:
@@ -190,38 +251,26 @@ def _workspace_provider(provider: str) -> WorkspaceProvider:
 
 async def workspace_provider_status(session: AsyncSession, provider: str) -> list[dict]:
     """Which credentials each workspace uses for `provider`. Never returns a value or ciphertext."""
-    spec = _workspace_provider(provider)
-    connections = (
-        select(BankConnection.workspace_id, func.count().label("total"))
-        .where(BankConnection.provider == provider)
-        .group_by(BankConnection.workspace_id)
-        .subquery()
-    )
-    rows = await session.execute(
-        select(Workspace.id, Workspace.name, User.email, connections.c.total)
-        .outerjoin(User, User.id == Workspace.created_by_user_id)
-        .outerjoin(connections, connections.c.workspace_id == Workspace.id)
-        .where(Workspace.is_archived.is_(False))
-        .order_by(Workspace.name)
-    )
-    saved = await session.execute(
-        select(WorkspaceProviderCredential.workspace_id, WorkspaceProviderCredential.value).where(
-            WorkspaceProviderCredential.key.in_(spec.fields)
+    _workspace_provider(provider)
+    workspaces = (
+        await session.execute(
+            select(Workspace.id, Workspace.name, User.email)
+            .outerjoin(User, User.id == Workspace.created_by_user_id)
+            .where(Workspace.is_archived.is_(False))
+            .order_by(Workspace.name)
         )
-    )
-    readable: dict[uuid.UUID, bool] = {}
-    for workspace_id, value in saved.all():
-        readable[workspace_id] = readable.get(workspace_id, True) and bool(decrypt(value))
+    ).all()
+    counts, saved = await _workspace_usage(session, provider, [row[0] for row in workspaces])
     return [
         {
             "workspace_id": workspace_id,
             "name": name,
             "owner_email": email,
-            "connections": total or 0,
-            "has_credentials": workspace_id in readable,
-            "invalid": not readable.get(workspace_id, True),
+            "connections": counts.get(workspace_id, 0),
+            "has_credentials": workspace_id in saved,
+            "invalid": not all(decrypt(value) for value in saved.get(workspace_id, [])),
         }
-        for workspace_id, name, email, total in rows.all()
+        for workspace_id, name, email in workspaces
     ]
 
 
@@ -258,6 +307,7 @@ async def set_workspace_credentials(
 ) -> None:
     spec = _workspace_provider(provider)
     await _active_workspace(session, workspace_id)
+    await row_security.bind_workspace(session, workspace_id)
     if set(values) != set(spec.fields):
         raise ValueError("Every credential field of the provider is required")
     for value in values.values():
@@ -287,6 +337,7 @@ async def remove_workspace_credentials(
 ) -> None:
     spec = _workspace_provider(provider)
     await _active_workspace(session, workspace_id)
+    await row_security.bind_workspace(session, workspace_id)
     # Without its own values the workspace falls back to the instance account.
     instance_account = getattr(await resolve_settings(session), spec.account_field)
     await _ensure_keeps_account(session, provider, workspace_id, instance_account)
@@ -297,3 +348,28 @@ async def remove_workspace_credentials(
         )
     )
     await session.commit()
+
+
+async def _ensure_fallback_keeps_account(session: AsyncSession, provider: str, values: dict) -> None:
+    """Refuse an instance account change that would strand connections.
+
+    Workspaces without their own credentials use the instance ones, so moving
+    the instance to another account moves them too.
+    """
+    spec = WORKSPACE_PROVIDERS.get(provider)
+    if spec is None or spec.account_field not in values:
+        return
+    current = getattr(_resolve(await _overrides(session)), spec.account_field)
+    value = values[spec.account_field]
+    next_account = (
+        value.strip() if isinstance(value, str) else getattr(get_settings(), spec.account_field)
+    )
+    # An unreadable current value stays replaceable, as for a workspace.
+    if not current or current == next_account:
+        return
+    workspace_ids = list((await session.scalars(select(Workspace.id))).all())
+    counts, saved = await _workspace_usage(session, provider, workspace_ids)
+    if any(total and workspace_id not in saved for workspace_id, total in counts.items()):
+        raise ProviderAccountChangeError(
+            "Workspaces on the instance account have connections under it"
+        )

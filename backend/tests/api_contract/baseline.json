@@ -121,7 +121,7 @@
   "GET /api/category-groups": 401,
   "GET /api/collections": 401,
   "GET /api/connections": 401,
-  "GET /api/connections/providers": 200,
+  "GET /api/connections/providers": 401,
   "GET /api/connections/{provider}/institutions": 401,
   "GET /api/currencies": 200,
   "GET /api/dashboard/balance-history": 401,

@@ -3926,7 +3926,9 @@
       "enable_banking_app_id": "ID aplikace",
       "enable_banking_private_key": "Soukromý klíč (PEM)",
       "simplefin_enabled": "Povolit SimpleFIN"
-    }
+    },
+    "instanceAccountChanged": "Pracovní prostory, které používají tyto údaje, mají pod tímto účtem připojení. Nejdřív jim dejte vlastní údaje, nebo jejich připojení smažte.",
+    "workspaceListError": "Pracovní prostory se nepodařilo načíst."
   },
   "categoryLines": {
     "title": "Rozdělit do kategorií",

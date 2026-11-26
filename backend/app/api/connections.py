@@ -40,12 +40,13 @@ router = APIRouter(prefix="/api/connections", tags=["connections"])
 
 @router.get("/providers")
 async def get_available_providers(
+    ctx: WorkspaceContext = Depends(current_workspace),
     session: AsyncSession = Depends(get_async_session),
 ):
-    """List all known open finance providers with configuration status."""
+    """List all known open finance providers, configured as this workspace sees them."""
     from app.services.provider_settings import resolve_settings
 
-    return {"providers": all_known_providers(await resolve_settings(session))}
+    return {"providers": all_known_providers(await resolve_settings(session, ctx.workspace.id))}
 
 
 @router.post("/connect-token", response_model=ConnectTokenResponse)

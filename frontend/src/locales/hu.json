@@ -3734,7 +3734,9 @@
       "enable_banking_app_id": "Alkalmazásazonosító",
       "enable_banking_private_key": "Privát kulcs (PEM)",
       "simplefin_enabled": "SimpleFIN engedélyezése"
-    }
+    },
+    "instanceAccountChanged": "Az ezeket a hitelesítő adatokat használó munkaterületeknek kapcsolataik vannak ezen a fiókon. Előbb adj nekik saját adatokat, vagy töröld a kapcsolataikat.",
+    "workspaceListError": "Nem sikerült betölteni a munkaterületeket."
   },
   "categoryLines": {
     "title": "Felosztás kategóriákra",

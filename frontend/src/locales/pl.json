@@ -3876,7 +3876,9 @@
       "enable_banking_app_id": "ID aplikacji",
       "enable_banking_private_key": "Klucz prywatny (PEM)",
       "simplefin_enabled": "Włącz SimpleFIN"
-    }
+    },
+    "instanceAccountChanged": "Obszary robocze korzystające z tych danych mają połączenia na tym koncie. Najpierw nadaj im własne dane uwierzytelniające albo usuń ich połączenia.",
+    "workspaceListError": "Nie udało się wczytać obszarów roboczych."
   },
   "categoryLines": {
     "title": "Podziel na kategorie",

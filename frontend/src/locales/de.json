@@ -3735,7 +3735,9 @@
       "enable_banking_app_id": "App-ID",
       "enable_banking_private_key": "Privater Schlüssel (PEM)",
       "simplefin_enabled": "SimpleFIN aktivieren"
-    }
+    },
+    "instanceAccountChanged": "Arbeitsbereiche, die diese Zugangsdaten nutzen, haben Verbindungen unter diesem Konto. Gib ihnen zuerst eigene Zugangsdaten oder lösche ihre Verbindungen.",
+    "workspaceListError": "Die Arbeitsbereiche konnten nicht geladen werden."
   },
   "categoryLines": {
     "title": "Auf Kategorien aufteilen",
