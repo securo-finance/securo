@@ -1496,6 +1496,45 @@ def test_build_transaction_description_prefers_remittance_over_counterparty():
     assert tx.description == "Order #12345"
 
 
+@pytest.mark.parametrize(
+    "remittance",
+    [
+        ["mandatereference:,creditorid:,remittanceinformation:KAUFUMSATZ 23.11 Google Pay"],
+        ["mandatereference:4M5J,creditorid:DE98ZZZ09999999999,remittanceinformation:KAUFUMSATZ 23.11 Google Pay"],
+        ["MandateReference:,CreditorId:,", "RemittanceInformation:KAUFUMSATZ 23.11 Google Pay"],
+        ["mandatereference:ABC,DEF,creditorid:DE98ZZZ09999999999,remittanceinformation:KAUFUMSATZ 23.11 Google Pay"],
+    ],
+)
+def test_build_transaction_description_strips_ing_sepa_key_prefix(remittance):
+    # Issue #1882: ING Germany sends its SEPA fields as key prefixes in the
+    # remittance text; the description keeps only the remittance part.
+    provider = EnableBankingProvider()
+    raw = {
+        "transaction_amount": {"amount": "15.00", "currency": "EUR"},
+        "credit_debit_indicator": "DBIT",
+        "booking_date": "2026-08-20",
+        "remittance_information": remittance,
+        "creditor": {"name": "Example Merchant"},
+    }
+    tx = provider._build_transaction("acc-1", raw, "posted", "auto")
+    assert tx is not None
+    assert tx.description == "KAUFUMSATZ 23.11 Google Pay"
+
+
+def test_build_transaction_description_empty_ing_remittance_falls_back():
+    provider = EnableBankingProvider()
+    raw = {
+        "transaction_amount": {"amount": "15.00", "currency": "EUR"},
+        "credit_debit_indicator": "DBIT",
+        "booking_date": "2026-08-20",
+        "remittance_information": ["mandatereference:,creditorid:,remittanceinformation:"],
+        "creditor": {"name": "Example Merchant"},
+    }
+    tx = provider._build_transaction("acc-1", raw, "posted", "auto")
+    assert tx is not None
+    assert tx.description == "Example Merchant"
+
+
 def test_build_transaction_description_prefers_additional_information_over_counterparty():
     provider = EnableBankingProvider()
     raw = {
@@ -2020,6 +2059,36 @@ def _flat_entry(status: str, amount: str) -> dict:
         "credit_debit_indicator": "DBIT",
         "transaction_date": "2026-05-10",
     }
+
+
+@pytest.mark.asyncio
+async def test_get_transactions_maps_unreferenced_othr_entry_to_pending(eb_keys):
+    """BNP Paribas Fortis sends a card authorization as OTHR with no
+    entry_reference and books it a day later. Stored as posted, the hold
+    and the booked entry both stayed (#1918)."""
+    provider = EnableBankingProvider()
+    page = {
+        "transactions": [
+            _flat_entry("OTHR", "1.00"),
+            {**_flat_entry("OTHR", "2.00"), "entry_reference": "  "},
+            {**_flat_entry("OTHR", "3.00"), "entry_reference": "REF-3"},
+        ],
+        "continuation_key": "",
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=page)
+
+    with _patch_client(provider, handler):
+        txns = await provider.get_transactions(
+            {"session_id": "sess-x"}, "acc-1", date(2026, 5, 1)
+        )
+
+    assert [(t.amount, t.status) for t in txns] == [
+        (Decimal("1.00"), "pending"),
+        (Decimal("2.00"), "pending"),
+        (Decimal("3.00"), "posted"),
+    ]
 
 
 @pytest.mark.asyncio

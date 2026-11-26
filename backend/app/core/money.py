@@ -28,6 +28,17 @@ class MoneyOutOfRange(ValueError):
     same bound on a value the client sent."""
 
 
+def as_stored_amount(value: Decimal) -> Decimal:
+    """`value` as a money column stores it: to cents, half away from zero.
+
+    For comparing an amount a file or a provider sent with one already
+    stored. The comparison used to run in the database, which rounded the
+    bound value to the column's scale before matching; made in Python, both
+    sides have to be rounded here instead (issue #616).
+    """
+    return value.quantize(CENTS, rounding=ROUND_HALF_UP)
+
+
 def bounded_conversion(value: Decimal, field: str = "amount_primary") -> Decimal:
     """A conversion the backend worked out itself, as the column stores it.
 

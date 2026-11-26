@@ -76,7 +76,7 @@ function sameTemplate(a?: EmailTemplate, b?: EmailTemplate): boolean {
   return (a?.subject ?? '') === (b?.subject ?? '') && (a?.body ?? '') === (b?.body ?? '')
 }
 
-export function EmailSettings() {
+export function EmailSettings({ readOnly = false }: { readOnly?: boolean } = {}) {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
   const { data, isPending, isError, refetch } = useQuery({
@@ -136,7 +136,7 @@ export function EmailSettings() {
       })
     : []
   const incomplete = LANGUAGES.some(({ code }) => !drafts[code]?.subject.trim() || !drafts[code]?.body.trim())
-  const canSave = dirty && !incomplete && problems.length === 0 && !save.isPending
+  const canSave = dirty && !incomplete && problems.length === 0 && !save.isPending && !readOnly
 
   return (
     <section aria-labelledby="admin-email-heading" className="mb-8 overflow-hidden rounded-xl border border-border/60 bg-card">
@@ -154,6 +154,11 @@ export function EmailSettings() {
           >
             {t(`admin.email.${data.enabled ? 'enabled' : 'disabled'}`)}
           </Badge>
+        )}
+        {readOnly && (
+          <p className="text-xs font-medium text-primary" data-testid="email-managed">
+            {t('admin.settings.managedReadOnly')}
+          </p>
         )}
       </div>
 
@@ -216,6 +221,7 @@ export function EmailSettings() {
                     id={`email-subject-${code}`}
                     value={drafts[code]?.subject ?? ''}
                     onChange={(event) => update(code, 'subject', event.target.value)}
+                    disabled={readOnly}
                   />
                 </div>
                 <div className="space-y-2">
@@ -226,6 +232,7 @@ export function EmailSettings() {
                     className="w-full rounded-md border border-input bg-card px-3 py-2 text-sm"
                     value={drafts[code]?.body ?? ''}
                     onChange={(event) => update(code, 'body', event.target.value)}
+                    readOnly={readOnly}
                   />
                 </div>
                 {problems
@@ -238,22 +245,24 @@ export function EmailSettings() {
               </fieldset>
             ))}
 
-            <div className="flex flex-wrap items-center justify-end gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                className="gap-2 shadow-none"
-                onClick={() => save.mutate({})}
-                disabled={save.isPending}
-              >
-                <RotateCcw className="size-3.5" aria-hidden="true" />
-                {t('admin.email.restoreDefault')}
-              </Button>
-              <Button type="submit" className="gap-2" disabled={!canSave}>
-                <Save className="size-3.5" aria-hidden="true" />
-                {save.isPending ? t('common.loading') : t('admin.email.save')}
-              </Button>
-            </div>
+            {!readOnly && (
+              <div className="flex flex-wrap items-center justify-end gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="gap-2 shadow-none"
+                  onClick={() => save.mutate({})}
+                  disabled={save.isPending}
+                >
+                  <RotateCcw className="size-3.5" aria-hidden="true" />
+                  {t('admin.email.restoreDefault')}
+                </Button>
+                <Button type="submit" className="gap-2" disabled={!canSave}>
+                  <Save className="size-3.5" aria-hidden="true" />
+                  {save.isPending ? t('common.loading') : t('admin.email.save')}
+                </Button>
+              </div>
+            )}
           </form>
         )}
       </div>

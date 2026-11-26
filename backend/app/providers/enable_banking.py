@@ -15,6 +15,7 @@ import hashlib
 import json
 import logging
 import math
+import re
 import time
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
@@ -101,6 +102,11 @@ TERMINAL_SESSION_STATUSES = frozenset(
 # moved money, and a held or scheduled one has not settled yet.
 SKIPPED_TRANSACTION_STATUSES = frozenset({"CNCL", "RJCT"})
 PENDING_TRANSACTION_STATUSES = frozenset({"PDNG", "PENDING", "HOLD", "SCHD"})
+# "Other". Some banks (BNP Paribas Fortis) send a card authorization as OTHR
+# with no entry_reference, then the booked entry a day later as BOOK. An OTHR
+# entry without a reference has not settled, so it is pending; one with a
+# reference stays posted (#1918).
+UNSETTLED_WITHOUT_REFERENCE_STATUSES = frozenset({"OTHR"})
 # What `_iter_transactions` yields for a skipped entry: it is never imported.
 CANCELLED_STATUS = "cancelled"
 
@@ -266,6 +272,21 @@ def _join_remittance(value: Any) -> str:
     if isinstance(value, list):
         return " ".join(str(v) for v in value if v).strip()
     return (value or "").strip() if isinstance(value, str) else ""
+
+
+# ING Germany packs its SEPA fields into the remittance text as
+# "mandatereference:<ref>,creditorid:<id>,remittanceinformation:<text>",
+# empty keys included. Only the text after the last key reads as a
+# description.
+_ING_SEPA_PREFIX = re.compile(
+    r"^\s*mandatereference:.*?,\s*creditorid:[^,]*,\s*remittanceinformation:",
+    re.IGNORECASE,
+)
+
+
+def _description_remittance(value: Any) -> str:
+    """The remittance text as a description, ING's SEPA key prefix removed."""
+    return _ING_SEPA_PREFIX.sub("", _join_remittance(value), count=1).strip()
 
 
 def _counterparty_name(raw: dict, party: str) -> str:
@@ -1592,7 +1613,10 @@ class EnableBankingProvider(BankProvider):
                 raw_status = (raw.get("status") or "").upper()
                 if raw_status in SKIPPED_TRANSACTION_STATUSES:
                     yield raw, CANCELLED_STATUS
-                elif raw_status in PENDING_TRANSACTION_STATUSES:
+                elif raw_status in PENDING_TRANSACTION_STATUSES or (
+                    raw_status in UNSETTLED_WITHOUT_REFERENCE_STATUSES
+                    and not (raw.get("entry_reference") or "").strip()
+                ):
                     yield raw, "pending"
                 else:
                     yield raw, "posted"
@@ -1633,7 +1657,7 @@ class EnableBankingProvider(BankProvider):
             return None
         additional_value = raw.get("additional_information")
         additional = additional_value.strip() if isinstance(additional_value, str) else ""
-        description = _join_remittance(raw.get("remittance_information")) or additional
+        description = _description_remittance(raw.get("remittance_information")) or additional
         if not description:
             creditor = _counterparty_name(raw, "creditor")
             debtor = _counterparty_name(raw, "debtor")
