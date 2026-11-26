@@ -642,12 +642,16 @@ jobs:
               // an issue from a closing keyword in a commit on the default
               // branch, so the keywords are carried over and nothing else is:
               // the rest of the description does not belong in the history.
-              // Both fields go together or neither does: passing either one
-              // replaces GitHub's generated squash message instead of
-              // appending to it, so sending the title alone would drop a
-              // keyword written in a commit message (#532). With no keyword in
-              // the description nothing is passed and GitHub's own message
-              // stays exactly as it was.
+              //
+              // Both fields are sent on every merge, with or without a keyword.
+              // GitHub's generated message is the title plus every commit
+              // message of the branch, trailers included, so leaving it in
+              // place put `Co-authored-by` lines into main (#1903, #1904).
+              // `commit_message: ''` is deliberate: an empty string replaces
+              // the generated message instead of falling back to it, so a pull
+              // request with nothing to close lands with its title alone. A
+              // keyword written only in a commit message is dropped with the
+              // rest; this repository writes it in the description.
               const closing = (pr.body || '').split('\n')
                 .map((line) => line.trim())
                 .filter((line) => CLOSING.test(line));
@@ -655,10 +659,8 @@ jobs:
                 await github.rest.pulls.merge({
                   owner: OWNER, repo: REPO, pull_number: number,
                   sha: head, merge_method: 'squash',
-                  ...(closing.length ? {
-                    commit_title: `${pr.title} (#${number})`,
-                    commit_message: closing.join('\n'),
-                  } : {}),
+                  commit_title: `${pr.title} (#${number})`,
+                  commit_message: closing.join('\n'),
                 });
               } catch (e) {
                 return skip('GitHub refused the merge', true, e.message);
