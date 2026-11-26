@@ -240,15 +240,15 @@ class YFinanceProvider(MarketPriceProvider):
             return {}
 
         out: dict[str, Optional[LatestClose]] = {s: None for s in unique}
+        refused = False
         for i in range(0, len(unique), self._BATCH_CHUNK_SIZE):
             chunk = unique[i : i + self._BATCH_CHUNK_SIZE]
             try:
                 chunk_prices = await asyncio.to_thread(self._download_closes_sync, chunk)
             except (_rate_limit_exception_types() + (MarketPriceRateLimitedError,)):
                 await market_data_guard.start_cooldown()
-                raise MarketPriceRateLimitedError(
-                    "Yahoo Finance rate-limited the batch price download"
-                )
+                refused = True
+                break
 
             # Normalize minor-unit prices (GBp → GBP, ZAc → ZAR, both ×0.01).
             # yf.download returns raw pence/cents for LSE/JSE tickers without
@@ -290,9 +290,24 @@ class YFinanceProvider(MarketPriceProvider):
                 # instance backs off; if it answers, the batch simply found
                 # nothing (a delisted ticker, say) and the caller falls back
                 # to a per-holding quote.
-                await self._call_upstream(self._price_sync, chunk[0])
+                try:
+                    await self._call_upstream(self._price_sync, chunk[0])
+                except MarketPriceRateLimitedError:
+                    refused = True
+                    break
 
             out.update(chunk_prices)
+
+        if refused:
+            # A refusal partway through must not throw away the chunks that
+            # already answered: the caller commits what came in and lets the
+            # remaining tickers (still None here) fall back per holding, where
+            # the cooldown stops them at the first call. Only a batch that got
+            # nothing at all is worth raising for.
+            if all(price is None for price in out.values()):
+                raise MarketPriceRateLimitedError(
+                    "Yahoo Finance rate-limited the batch price download"
+                )
         return out
 
     async def get_quote(self, symbol: str) -> Optional[MarketSymbolQuote]:

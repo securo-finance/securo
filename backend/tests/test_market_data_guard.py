@@ -15,6 +15,7 @@ import pytest
 from app.providers import market_data_guard
 from app.providers.market_price import (
     CompositeMarketPriceProvider,
+    LatestClose,
     MarketPriceRateLimitedError,
     YFinanceProvider,
     set_market_price_provider,
@@ -222,6 +223,33 @@ async def test_a_rate_limit_downloading_the_batch_starts_the_cooldown(fake_redis
         with pytest.raises(MarketPriceRateLimitedError):
             await YFinanceProvider().get_latest_closes(["AAPL"])
 
+    assert fake_redis.data.get("market:yahoo:cooldown") == "1"
+
+
+@pytest.mark.asyncio
+async def test_a_rate_limit_mid_batch_keeps_the_chunks_already_priced(fake_redis, yahoo):
+    """Losing the last chunk must not throw away the closes the first ones had."""
+    from datetime import date
+    from decimal import Decimal
+
+    from yfinance.exceptions import YFRateLimitError
+
+    def download(symbols: list[str]):
+        if symbols == ["AAPL"]:
+            return {"AAPL": LatestClose(price=Decimal("190.5"), on=date(2026, 11, 25))}
+        raise YFRateLimitError()
+
+    with (
+        patch.object(YFinanceProvider, "_BATCH_CHUNK_SIZE", 1),
+        patch.object(YFinanceProvider, "_download_closes_sync", staticmethod(download)),
+    ):
+        closes = await YFinanceProvider().get_latest_closes(["AAPL", "MSFT"])
+
+    # The priced chunk survives, the one that never answered stays None so the
+    # caller falls back per holding (where the cooldown halts it).
+    assert closes["AAPL"] is not None
+    assert closes["AAPL"].price == Decimal("190.5")
+    assert closes["MSFT"] is None
     assert fake_redis.data.get("market:yahoo:cooldown") == "1"
 
 
