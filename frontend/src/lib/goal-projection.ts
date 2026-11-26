@@ -1,4 +1,13 @@
-import { addDays, addYears, format, max, parseISO, subMonths, subYears } from 'date-fns'
+import {
+  addDays,
+  addYears,
+  differenceInCalendarMonths,
+  format,
+  max,
+  parseISO,
+  subMonths,
+  subYears,
+} from 'date-fns'
 import type { Goal } from '@/types'
 
 export interface AmountPoint {
@@ -119,6 +128,100 @@ export function cleanHistory(points: AmountPoint[], from: string, to: string): A
   return [...byDate]
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([date, amount]) => ({ date, amount }))
+}
+
+/**
+ * Counts the calendar months a history window covers, capped at the ten years
+ * the value-trend API accepts and never below one.
+ *
+ * @param {string} from - Inclusive window start in YYYY-MM-DD format.
+ * @param {string} to - Inclusive window end in YYYY-MM-DD format.
+ * @returns {number} Months to request from the value-trend endpoint.
+ */
+export function historyMonths(from: string, to: string): number {
+  const months = differenceInCalendarMonths(parseISO(to), parseISO(from)) + 1
+  return Math.min(120, Math.max(1, months))
+}
+
+/**
+ * Carries the last valuation before the window forward to its start, so an
+ * asset valued at long intervals still draws a line inside the window instead
+ * of being reported as having no history. The window start is left untouched
+ * when a valuation already falls on it.
+ *
+ * @param {AmountPoint[]} points - Valuations returned by the asset API.
+ * @param {string} from - Inclusive window start in YYYY-MM-DD format.
+ * @returns {AmountPoint[]} The original points plus the carried-forward value.
+ */
+export function carryForward(points: AmountPoint[], from: string): AmountPoint[] {
+  if (points.some(point => point.date === from)) {
+    return points
+  }
+  const lastBefore = points
+    .filter(
+      point =>
+        /^\d{4}-\d{2}-\d{2}$/.test(point.date) &&
+        point.date < from &&
+        Number.isFinite(Number(point.amount)),
+    )
+    .reduce<AmountPoint | null>(
+      (latest, point) => (latest === null || point.date > latest.date ? point : latest),
+      null,
+    )
+  if (lastBefore === null) {
+    return points
+  }
+  return [...points, { date: from, amount: cents(lastBefore.amount) / 100 }]
+}
+
+/**
+ * Builds month-anchored x-axis ticks, keeping the range ends and thinning long
+ * ranges. Short windows therefore never repeat the same month label.
+ *
+ * @param {string} from - Inclusive range start in YYYY-MM-DD format.
+ * @param {string} to - Inclusive range end in YYYY-MM-DD format.
+ * @param {number} [max=6] - Highest number of ticks to keep.
+ * @returns {number[]} Tick timestamps in UTC milliseconds, ascending.
+ */
+export function axisTicks(from: string, to: string, max = 6): number[] {
+  const start = Date.parse(from + 'T00:00:00Z')
+  const end = Date.parse(to + 'T00:00:00Z')
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) {
+    return [start]
+  }
+
+  const times = new Set<number>([start, end])
+  const first = new Date(start)
+  let cursor = Date.UTC(first.getUTCFullYear(), first.getUTCMonth() + 1, 1)
+  while (cursor < end) {
+    times.add(cursor)
+    const month = new Date(cursor)
+    cursor = Date.UTC(month.getUTCFullYear(), month.getUTCMonth() + 1, 1)
+  }
+
+  const ascending = [...times].sort((a, b) => a - b)
+  const step = Math.max(1, Math.ceil((ascending.length - 1) / (Math.max(2, max) - 1)))
+  const ticks = ascending.filter((_, index) => index % step === 0)
+  const last = ascending.at(-1)
+  if (last !== undefined && ticks.at(-1) !== last) {
+    ticks[ticks.length - 1] = last
+  }
+  return ticks
+}
+
+/**
+ * Places the target label on the side of the line that does not cover the axis
+ * labels: right when the target sits on the axis floor, left otherwise.
+ *
+ * @param {number} target - Goal target amount in major currency units.
+ * @param {number} floor - Lower bound of the vertical axis.
+ * @returns {'insideTopLeft' | 'insideTopRight'} Recharts label position.
+ */
+export function targetLabelSide(
+  target: number,
+  floor: number,
+): 'insideTopLeft' | 'insideTopRight' {
+  return target <= floor ? 'insideTopRight' : 'insideTopLeft'
 }
 
 /**
