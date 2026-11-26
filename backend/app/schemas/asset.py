@@ -306,3 +306,10 @@ class AssetValueRead(BaseModel):
     source: str
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class PortfolioInvestedPoint(BaseModel):
+    """Net money put into the charted assets, as of ``date``."""
+
+    date: _date
+    amount: float
