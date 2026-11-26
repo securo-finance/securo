@@ -2507,6 +2507,96 @@ class TestBalanceEvolutionAccrual:
         assert apr_hist.current[9].balance == pytest.approx(800.0)
 
     @pytest.mark.asyncio
+    async def test_balance_history_accrual_defers_connected_pending_cc_future_bill(
+        self, session, test_user, test_workspace, test_connection, monkeypatch
+    ):
+        """A connected credit card's pending purchase dated <= today with a bill
+        due date after today must land on the bill date rather than being
+        deducted from day 1 of a future month."""
+        monkeypatch.setattr("app.services.dashboard_service.app_today", lambda: date(2026, 3, 30))
+
+        checking = Account(
+            id=uuid.uuid4(),
+            user_id=test_user.id,
+            workspace_id=test_workspace.id,
+            connection_id=test_connection.id,
+            external_id="chk-conn-pending",
+            name="Connected Checking",
+            type="checking",
+            balance=Decimal("950.00"),
+            currency="BRL",
+        )
+        connected_cc = Account(
+            id=uuid.uuid4(),
+            user_id=test_user.id,
+            workspace_id=test_workspace.id,
+            connection_id=test_connection.id,
+            external_id="cc-conn-pending",
+            name="Connected CC",
+            type="credit_card",
+            balance=Decimal("200.00"),
+            currency="BRL",
+            statement_close_day=31,
+            payment_due_day=10,
+        )
+        session.add_all([checking, connected_cc])
+        await session.flush()
+        session.add_all([
+            # Connected checking pending debit dated <= today (effective_date == date):
+            # already reflected in checking.balance (950), must NOT double-count.
+            Transaction(
+                id=uuid.uuid4(),
+                user_id=test_user.id,
+                workspace_id=test_workspace.id,
+                account_id=checking.id,
+                description="Checking Pending Coffee",
+                amount=Decimal("50.00"),
+                amount_primary=Decimal("50.00"),
+                currency="BRL",
+                date=date(2026, 3, 29),
+                effective_date=date(2026, 3, 29),
+                type="debit",
+                source="sync",
+                status="pending",
+                created_at=datetime.now(timezone.utc),
+            ),
+            # Connected CC pending charge dated <= today with bill due April 10:
+            # already reflected in connected_cc.balance (200), should land on April 10.
+            Transaction(
+                id=uuid.uuid4(),
+                user_id=test_user.id,
+                workspace_id=test_workspace.id,
+                account_id=connected_cc.id,
+                description="Connected CC Pending Charge",
+                amount=Decimal("200.00"),
+                amount_primary=Decimal("200.00"),
+                currency="BRL",
+                date=date(2026, 3, 28),
+                effective_date=date(2026, 4, 10),
+                type="debit",
+                source="sync",
+                status="pending",
+                created_at=datetime.now(timezone.utc),
+            ),
+        ])
+        await session.commit()
+
+        await _set_mode(session, "accrual")
+
+        apr_hist = await dashboard_service.get_balance_history(
+            session, test_workspace.id, test_user.id, month=date(2026, 4, 1)
+        )
+        assert apr_hist.opening_balance == pytest.approx(950.0)
+        assert apr_hist.current[8].balance == pytest.approx(950.0)  # Apr 9
+        assert apr_hist.current[9].balance == pytest.approx(750.0)  # Apr 10 (bill due)
+
+        may_hist = await dashboard_service.get_balance_history(
+            session, test_workspace.id, test_user.id, month=date(2026, 5, 1)
+        )
+        assert may_hist.opening_balance == pytest.approx(750.0)
+        assert may_hist.current[0].balance == pytest.approx(750.0)
+
+    @pytest.mark.asyncio
     async def test_balance_history_accrual_keeps_transfers_and_repayments_on_tx_date(
         self, session, test_user, test_workspace, monkeypatch
     ):

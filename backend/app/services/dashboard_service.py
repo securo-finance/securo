@@ -1951,17 +1951,17 @@ async def _accrual_straddle_adjustment(
     if account_ids is not None and not account_ids:
         return 0.0
 
-    effective_cutoff = min(cutoff, app_today())
+    today = app_today()
+    effective_cutoff = min(cutoff, today)
     eff_col = _balance_history_date_expr("accrual")
     signed = signed_amount_expr(Account.currency)
     primary_currency = primary_currency_hint or get_settings().default_currency
     rates = rates or RateBook(session)
 
-    base_filters = [
+    common_filters = [
         Transaction.workspace_id == workspace_id,
         Account.is_closed == False,
         Account.type != "loan",
-        Transaction.status == "posted",
         Transaction.is_ignored == False,
         Transaction.source != "opening_balance",
         or_(
@@ -1970,7 +1970,24 @@ async def _accrual_straddle_adjustment(
         ),
     ]
     if account_ids is not None:
-        base_filters.append(Transaction.account_id.in_(account_ids))
+        common_filters.append(Transaction.account_id.in_(account_ids))
+
+    # When ``cutoff >= today``, ``_total_balance_by_currency`` reads a connected
+    # account's provider balance directly without backing out pending charges
+    # dated on or before today. Include those connected pending rows in the
+    # forward-straddle adjustment so a future-month chart starts before the
+    # bill due date and applies the charge on ``eff_col`` instead of day 1.
+    forward_status_filter = (
+        or_(
+            Transaction.status == "posted",
+            and_(
+                Account.connection_id.is_not(None),
+                Transaction.status == "pending",
+            ),
+        )
+        if cutoff >= today
+        else Transaction.status == "posted"
+    )
 
     adjustment = 0.0
 
@@ -1979,7 +1996,8 @@ async def _accrual_straddle_adjustment(
         .join(Account, Transaction.account_id == Account.id)
         .outerjoin(Category, Transaction.category_id == Category.id)
         .where(
-            *base_filters,
+            *common_filters,
+            forward_status_filter,
             Transaction.date <= effective_cutoff,
             eff_col > effective_cutoff,
         )
@@ -1996,7 +2014,8 @@ async def _accrual_straddle_adjustment(
         .join(Account, Transaction.account_id == Account.id)
         .outerjoin(Category, Transaction.category_id == Category.id)
         .where(
-            *base_filters,
+            *common_filters,
+            Transaction.status == "posted",
             eff_col <= effective_cutoff,
             Transaction.date > effective_cutoff,
         )
@@ -2394,7 +2413,13 @@ async def get_balance_history(
             for tx in carried_forecasts:
                 if tx.is_ignored or (tx.category and tx.category.is_ignored):
                     continue
-                if tx.account and tx.account.connection_id and tx.status == "pending" and tx.date <= today:
+                if (
+                    tx.account
+                    and tx.account.connection_id
+                    and tx.status == "pending"
+                    and tx.date <= today
+                    and _balance_history_tx_date(tx, accounting_mode) <= today
+                ):
                     continue
                 current_start += await _signed_forecast_amount_primary(
                     session, tx, primary_currency, rates=rates
@@ -2419,6 +2444,7 @@ async def get_balance_history(
                 and tx.account.connection_id
                 and tx.status == "pending"
                 and tx.date <= today
+                and _balance_history_tx_date(tx, accounting_mode) <= today
             ):
                 continue
             converted, _ = await rates.convert(
