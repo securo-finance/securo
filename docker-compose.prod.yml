@@ -26,6 +26,8 @@ x-backend-env: &backend-env
   # Optional. Left empty, Securo generates a unique key on first start and
   # keeps it in the database. Set one (openssl rand -hex 32) to manage it yourself.
   SECRET_KEY: ${SECRET_KEY:-}
+  # true refuses to start without a SECRET_KEY of your own.
+  REQUIRE_SECRET_KEY: ${REQUIRE_SECRET_KEY:-false}
   DEBUG: ${DEBUG:-false}
   FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
   PLUGGY_CLIENT_ID: ${PLUGGY_CLIENT_ID:-}
@@ -54,6 +56,8 @@ x-backend-env: &backend-env
   LOCAL_AUTH_ENABLED: ${LOCAL_AUTH_ENABLED:-true}
   # No default, so an unset value leaves backend/.env and the app default to decide.
   REGISTRATION_ENABLED:
+  # No default, same reason: unset keeps the app default (off).
+  MANAGED_INSTANCE:
   OPENEXCHANGERATES_APP_ID: ${OPENEXCHANGERATES_APP_ID:-}
   FX_SYNC_MODE: ${FX_SYNC_MODE:-on_demand}
   TESOURO_DIRETO_ENABLED: ${TESOURO_DIRETO_ENABLED:-true}
@@ -190,6 +194,11 @@ services:
     # knowledge-base (RAG) migration introduced in v0.11.0.
     image: ${DB_IMAGE:-docker.io/pgvector/pgvector:pg16}
     restart: unless-stopped
+    # JIT compilation costs more than it saves on the short, indexed queries
+    # Securo runs. On the hosted instance a plain GET /api/transactions went
+    # from 1222 ms to 229 ms with it off, and 100k-transaction workspaces
+    # followed (560 ms). DB_JIT=on restores the PostgreSQL default (#583).
+    command: [ "postgres", "-c", "jit=${DB_JIT:-off}" ]
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}

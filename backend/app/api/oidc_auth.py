@@ -15,7 +15,8 @@ from fastapi_users import schemas
 from fastapi_users.exceptions import UserAlreadyExists
 from jose import JWTError, jwt
 from pydantic import BaseModel, EmailStr
-from sqlalchemy import select, update as sql_update
+from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import UserManager, get_jwt_strategy, get_user_manager
@@ -409,6 +410,59 @@ async def _sync_oidc_roles(user: User, merged_claims: dict[str, Any], session: A
         session.add(member)
 
 
+async def _link_existing_account(
+    user: User,
+    *,
+    issuer: str,
+    subject: str,
+    email_verified: Any,
+    link_mode: str,
+    merged: dict[str, Any],
+    session: AsyncSession,
+) -> User:
+    """Attach this OIDC identity to an account the login found but did not
+    create.
+
+    The same checks apply whether the lookup found the account or a concurrent
+    request created it between that lookup and the insert: an account already
+    linked to another identity is refused, the link mode decides whether an
+    unlinked account may be attached, and the verified-email policy is honoured.
+    Nothing else of the account is touched: its preferences, workspace and
+    wallet belong to the person who already signed up.
+    """
+    if user.oidc_issuer or user.oidc_subject:
+        # A concurrent request for this same identity won the race: the
+        # identity is already where it belongs, so this is a login.
+        if user.oidc_issuer != issuer or user.oidc_subject != subject:
+            raise HTTPException(status_code=403, detail="OIDC identity is linked to a different account")
+    else:
+        if link_mode == "disabled":
+            raise HTTPException(status_code=403, detail="Existing account is not linked to this OIDC identity")
+        if link_mode == "verified_email" and email_verified not in (True, "true"):
+            raise HTTPException(status_code=400, detail="OIDC email is not verified")
+        user.oidc_issuer = issuer
+        user.oidc_subject = subject
+        session.add(user)
+    await _sync_oidc_roles(user, merged, session)
+    await session.commit()
+    await session.refresh(user)
+    return user
+
+
+class _OIDCUserCreate(schemas.BaseUserCreate):
+    """The account row the OIDC sign-up inserts, identity and all.
+
+    The identity and the preferences travel with the insert so the row is never
+    visible without them: a concurrent sign-in that read the account between
+    the insert and a later update would find it unlinked, and would either
+    refuse it (the default link mode) or claim it as its own.
+    """
+
+    preferences: dict[str, Any] | None = None
+    oidc_issuer: str | None = None
+    oidc_subject: str | None = None
+
+
 async def _get_or_create_oidc_user(
     claims: dict[str, Any],
     userinfo: dict[str, Any],
@@ -457,19 +511,15 @@ async def _get_or_create_oidc_user(
     # of raising, and picks the row written in this spelling when there is one.
     user = await account_lookup_service.find_account_by_email(session, email)
     if user is not None:
-        if user.oidc_issuer or user.oidc_subject:
-            raise HTTPException(status_code=403, detail="OIDC identity is linked to a different account")
-        if link_mode == "disabled":
-            raise HTTPException(status_code=403, detail="Existing account is not linked to this OIDC identity")
-        if link_mode == "verified_email" and email_verified not in (True, "true"):
-            raise HTTPException(status_code=400, detail="OIDC email is not verified")
-        user.oidc_issuer = issuer
-        user.oidc_subject = subject
-        session.add(user)
-        await _sync_oidc_roles(user, merged, session)
-        await session.commit()
-        await session.refresh(user)
-        return user
+        return await _link_existing_account(
+            user,
+            issuer=issuer,
+            subject=subject,
+            email_verified=email_verified,
+            link_mode=link_mode,
+            merged=merged,
+            session=session,
+        )
     if settings.oidc_require_verified_email and email_verified not in (True, "true"):
         raise HTTPException(status_code=400, detail="OIDC email is not verified")
     if not await admin_service.is_registration_enabled(session):
@@ -488,28 +538,45 @@ async def _get_or_create_oidc_user(
     }
     provider_roles = _claim_values(merged, settings.oidc_roles_claim)
     admin_roles = {role.strip() for role in settings.oidc_admin_roles.split(",") if role.strip()}
-    user_create = schemas.BaseUserCreate(
+    user_create = _OIDCUserCreate(
         email=email.lower(),
         password=secrets.token_urlsafe(32),
         is_verified=True,
         is_superuser=bool(settings.oidc_sync_roles and admin_roles and provider_roles & admin_roles),
+        preferences=preferences,
+        oidc_issuer=issuer,
+        oidc_subject=subject,
     )
     try:
         user = await user_manager.create(user_create, safe=True, request=None)
-    except UserAlreadyExists:
-        # Another request registered the address between the check above and
-        # this insert; it answers through the same resolver (#568).
-        user = await account_lookup_service.find_account_by_email(session, email)
-        if user is None:
-            raise HTTPException(status_code=500, detail="OIDC account could not be created")
+    except (UserAlreadyExists, IntegrityError) as conflict:
+        # A concurrent request created the account between the lookup above and
+        # this insert, so it is an existing account now. The failed insert left
+        # the session unusable, so roll it back and look the row up again — by
+        # the identity first, since the winner may carry another address, then
+        # by the address through the same resolver that read it before (#568).
+        # Apply the same checks instead of claiming it, overwriting its
+        # preferences and provisioning a second workspace and wallet for it
+        # (#572).
+        await session.rollback()
+        winner = (
+            await session.execute(select(User).where(User.oidc_issuer == issuer, User.oidc_subject == subject))
+        ).scalar_one_or_none()
+        if winner is None:
+            winner = await account_lookup_service.find_account_by_email(session, email)
+        if winner is None:
+            raise conflict
+        return await _link_existing_account(
+            winner,
+            issuer=issuer,
+            subject=subject,
+            email_verified=email_verified,
+            link_mode=link_mode,
+            merged=merged,
+            session=session,
+        )
 
     db_session = user_manager.db_session
-    await db_session.execute(
-        sql_update(User)
-        .where(User.id == user.id)
-        .values(preferences=preferences, oidc_issuer=issuer, oidc_subject=str(merged.get("sub")))
-    )
-    await db_session.refresh(user)
     workspace = await create_personal_workspace_for_user(db_session, user)
     wallet = Account(
         user_id=user.id,

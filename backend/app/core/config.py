@@ -42,6 +42,20 @@ class Settings(BaseSettings):
     # App
     app_name: str = "Securo"
     debug: bool = False
+    # Hosted instances (ADR 0045). On, the instance-side settings (bank and
+    # rate providers, open registration, defaults and timezone) are the
+    # operator's: the admin screen shows them read-only and the API refuses
+    # writes. Off by default, a self-hosted instance keeps every control.
+    managed_instance: bool = False
+
+    @field_validator("managed_instance", mode="before")
+    @classmethod
+    def _blank_managed_instance_is_off(cls, value: object) -> object:
+        """`MANAGED_INSTANCE=` in a .env — a documented but unset key — arrives as
+        an empty string. Read it as off, the default, instead of failing the boot."""
+        if isinstance(value, str) and not value.strip():
+            return False
+        return value
 
     # Database
     database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/securo"
@@ -67,6 +81,9 @@ class Settings(BaseSettings):
     # instance generates its own and keeps it in the database: see
     # app.core.instance_secrets and get_settings().
     secret_key: SecretStr = SecretStr("")
+    # Refuse to start instead of generating one: an operator who keeps the key
+    # out of the database finds out at startup when it is missing (ADR 0048).
+    require_secret_key: bool = False
     # Keys this instance encrypted with before, tried when opening a saved
     # credential. Never used to sign or check a token.
     _secret_key_fallbacks: tuple[str, ...] = PrivateAttr(default=())
@@ -489,6 +506,13 @@ def resolve_secret_key(settings: Settings) -> Settings:
             k for k in instance.PUBLIC_SECRET_KEYS if k != raw
         )
         return settings
+
+    if settings.require_secret_key:
+        raise RuntimeError(
+            "REQUIRE_SECRET_KEY is on, but SECRET_KEY is "
+            + ("a public default" if configured else "not set")
+            + ". Set a unique value (openssl rand -hex 32)."
+        )
 
     if configured:
         logging.getLogger(__name__).warning(

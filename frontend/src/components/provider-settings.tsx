@@ -26,7 +26,7 @@ const setupGuides: Partial<Record<Category, string>> = {
   exchangeRates: 'https://docs.usesecuro.com/docs/getting-started/installation#exchange-rates',
 }
 
-function ProviderRow({ provider }: { provider: ProviderSettingStatus }) {
+function ProviderRow({ provider, readOnly }: { provider: ProviderSettingStatus; readOnly: boolean }) {
   const { t } = useTranslation()
   const presentation = providers[provider.name]
   const name = presentation?.name ?? provider.name
@@ -55,21 +55,27 @@ function ProviderRow({ provider }: { provider: ProviderSettingStatus }) {
         </div>
         {description && <p className="mt-1 text-sm leading-relaxed text-muted-foreground">{description}</p>}
       </div>
-      <ProviderSettingsDialog provider={provider} name={name} description={description} icon={<Icon className="size-5" aria-hidden="true" />} guideUrl={presentation && setupGuides[presentation.category]}>
-        <Button
-          variant="outline"
-          className="ms-14 h-10 gap-2 shadow-none sm:ms-0"
-          aria-label={t(`providerSettings.catalog.${hasSettings ? 'manageProvider' : 'configureProvider'}`, { provider: name })}
-        >
-          {t(`providerSettings.catalog.${hasSettings ? 'manage' : 'configure'}`)}
-          <ChevronRight className="size-3.5 text-muted-foreground" aria-hidden="true" />
-        </Button>
-      </ProviderSettingsDialog>
+      {readOnly ? (
+        <span className="ms-14 text-xs font-medium text-primary sm:ms-0" data-testid="provider-managed">
+          {t('admin.settings.managedReadOnly')}
+        </span>
+      ) : (
+        <ProviderSettingsDialog provider={provider} name={name} description={description} icon={<Icon className="size-5" aria-hidden="true" />} guideUrl={presentation && setupGuides[presentation.category]}>
+          <Button
+            variant="outline"
+            className="ms-14 h-10 gap-2 shadow-none sm:ms-0"
+            aria-label={t(`providerSettings.catalog.${hasSettings ? 'manageProvider' : 'configureProvider'}`, { provider: name })}
+          >
+            {t(`providerSettings.catalog.${hasSettings ? 'manage' : 'configure'}`)}
+            <ChevronRight className="size-3.5 text-muted-foreground" aria-hidden="true" />
+          </Button>
+        </ProviderSettingsDialog>
+      )}
     </li>
   )
 }
 
-export function ProviderSettings() {
+export function ProviderSettings({ readOnly = false }: { readOnly?: boolean } = {}) {
   const { t } = useTranslation()
   const { hash } = useLocation()
   const { data, isPending, isError, refetch } = useQuery({
@@ -126,7 +132,7 @@ export function ProviderSettings() {
                 </div>
               ) : (
                 <ul className="divide-y divide-border/40">
-                  {items.map((provider) => <ProviderRow key={provider.name} provider={provider} />)}
+                  {items.map((provider) => <ProviderRow key={provider.name} provider={provider} readOnly={readOnly} />)}
                 </ul>
               )}
             </div>

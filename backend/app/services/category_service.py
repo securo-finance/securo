@@ -40,6 +40,10 @@ class CategoryTransferError(ValueError):
     """Raised when the destination given for a deletion cannot take the references."""
 
 
+class CategoryGroupNotFoundError(ValueError):
+    """Raised when a category points at a group outside the workspace."""
+
+
 async def create_default_categories(
     session: AsyncSession,
     user_id: uuid.UUID,
@@ -151,12 +155,35 @@ async def get_category(
     return result.scalar_one_or_none()
 
 
+async def _ensure_group_in_workspace(
+    session: AsyncSession,
+    workspace_id: uuid.UUID,
+    group_id: Optional[uuid.UUID],
+) -> None:
+    """Refuse a group that is missing or belongs to another workspace.
+
+    Both cases answer the same, so the response never tells a caller whether
+    an id exists somewhere else.
+    """
+    if group_id is None:
+        return
+    result = await session.execute(
+        select(CategoryGroup.id).where(
+            CategoryGroup.id == group_id,
+            CategoryGroup.workspace_id == workspace_id,
+        )
+    )
+    if result.scalar_one_or_none() is None:
+        raise CategoryGroupNotFoundError("Category group not found")
+
+
 async def create_category(
     session: AsyncSession,
     workspace_id: uuid.UUID,
     user_id: uuid.UUID,
     data: CategoryCreate,
 ) -> Category:
+    await _ensure_group_in_workspace(session, workspace_id, data.group_id)
     category = Category(user_id=user_id, workspace_id=workspace_id, **data.model_dump())
     session.add(category)
     await session.commit()
@@ -227,6 +254,8 @@ async def update_category(
         return None
 
     changes = data.model_dump(exclude_unset=True)
+    if "group_id" in changes:
+        await _ensure_group_in_workspace(session, workspace_id, changes["group_id"])
     if changes.get("is_hidden") is True and not category.is_system:
         raise CategoryVisibilityError("Only system categories can be hidden")
     if (
