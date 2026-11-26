@@ -29,7 +29,7 @@ Instead, please email: **info@usesecuro.com** (or open a private security adviso
 
 ## Best Practices for Self-Hosting
 
-- Always change the default `SECRET_KEY` in production
+- Set your own `SECRET_KEY` in production, and `REQUIRE_SECRET_KEY=true` to refuse to start without one
 - Use HTTPS in production
 - Keep dependencies updated
 - Restrict database access to the backend service only

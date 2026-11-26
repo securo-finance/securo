@@ -39,7 +39,7 @@ class CallContext:
     # database on every tool call. None only when a handler is invoked
     # directly (tests), never on a request that went through the server.
     role: Optional[str] = None
-    # The workspace is suspended (ADR 0041), set by `authorize_call` too.
+    # The workspace is suspended (ADR 0049), set by `authorize_call` too.
     suspended: bool = False
 
     @property

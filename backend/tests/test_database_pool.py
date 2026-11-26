@@ -42,6 +42,19 @@ RECONNECT_SCRIPT = textwrap.dedent(
 )
 
 
+POOL_LIMITS_SCRIPT = textwrap.dedent(
+    """
+    from sqlalchemy.pool import QueuePool
+
+    from app.core.database import engine
+
+    pool = engine.pool
+    assert isinstance(pool, QueuePool)
+    print(pool.size(), pool._max_overflow)
+    """
+)
+
+
 def test_pool_recovers_from_a_dropped_connection():
     """A pooled connection killed server-side must not fail the next request.
 
@@ -64,3 +77,28 @@ def test_pool_recovers_from_a_dropped_connection():
     )
 
     assert result.returncode == 0, result.stderr
+
+
+def test_pool_limits_come_from_the_environment():
+    """DB_POOL_SIZE and DB_MAX_OVERFLOW reach the engine that serves requests.
+
+    The API opens its engine at import time, so a changed limit only shows up
+    in a fresh interpreter. With 40 people at once the default pool ran out and
+    requests failed instead of queueing (issue #1901); raising the two settings
+    is how an instance takes more load.
+    """
+    result = subprocess.run(
+        [sys.executable, "-c", POOL_LIMITS_SCRIPT],
+        env={
+            **os.environ,
+            "DATABASE_URL": "postgresql+asyncpg://securo:secret@localhost:5432/securo",
+            "DB_POOL_SIZE": "7",
+            "DB_MAX_OVERFLOW": "3",
+        },
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.split() == ["7", "3"]

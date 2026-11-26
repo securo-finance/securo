@@ -1,4 +1,4 @@
-# 0041. A suspended workspace is read and exported, never written
+# 0049. A suspended workspace is read and exported, never written
 
 - Status: Accepted
 - Date: 2026-11-25

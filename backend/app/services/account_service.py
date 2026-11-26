@@ -184,8 +184,41 @@ def _opening_balance_values(account_type: str, balance: Decimal) -> tuple[Decima
     return amount, "credit" if is_credit else "debit"
 
 
-def _balance_subqueries(today: _Date):
+async def _account_ids_in_scope(
+    session: AsyncSession,
+    workspace_id: uuid.UUID,
+    *,
+    include_closed: bool = True,
+    account_id: Optional[uuid.UUID] = None,
+) -> list[uuid.UUID]:
+    """Ids of the accounts a workspace sees: its own, plus the ones fed by its connections.
+
+    Read before the balances, as two plain lookups. Written as an OR over the
+    outer join to bank_connections, the rule left the planner guessing how many
+    accounts match, and on a large instance it guessed high enough to scan
+    every transaction on it. With the ids in hand it estimates per account.
+    """
+    owned = select(Account.id).where(Account.workspace_id == workspace_id)
+    linked = (
+        select(Account.id)
+        .join(BankConnection, Account.connection_id == BankConnection.id)
+        .where(BankConnection.workspace_id == workspace_id)
+    )
+    if not include_closed:
+        owned = owned.where(Account.is_closed == False)
+        linked = linked.where(Account.is_closed == False)
+    if account_id is not None:
+        owned = owned.where(Account.id == account_id)
+        linked = linked.where(Account.id == account_id)
+    return list((await session.execute(owned.union(linked))).scalars())
+
+
+def _balance_subqueries(today: _Date, account_ids: list[uuid.UUID]):
     """Per-account current and previous balances, as two subqueries.
+
+    Each one reads only the accounts the caller will return, or its cost grows
+    with every other workspace on the instance. The filter is on the account,
+    not on the row's own workspace: a balance counts every row of its account.
 
     Shared by the list and the single-account read so both report the same
     number for the same account: the detail endpoint used to serialize with no
@@ -205,6 +238,7 @@ def _balance_subqueries(today: _Date):
         .join(Account, Transaction.account_id == Account.id)
         .outerjoin(Category, Transaction.category_id == Category.id)
         .where(
+            Transaction.account_id.in_(account_ids),
             counts_in_current_balance(today),
             Transaction.is_ignored == False,
             or_(
@@ -228,6 +262,7 @@ def _balance_subqueries(today: _Date):
         .join(Account, Transaction.account_id == Account.id)
         .outerjoin(Category, Transaction.category_id == Category.id)
         .where(
+            Transaction.account_id.in_(account_ids),
             Transaction.date <= prev_month_end,
             Transaction.status == "posted",
             Transaction.is_ignored == False,
@@ -251,6 +286,7 @@ def _balance_subqueries(today: _Date):
         .join(Account, Transaction.account_id == Account.id)
         .outerjoin(Category, Transaction.category_id == Category.id)
         .where(
+            Transaction.account_id.in_(account_ids),
             Account.type == "credit_card",
             Transaction.type == "debit",
             Transaction.date > today,
@@ -281,6 +317,7 @@ def _balance_subqueries(today: _Date):
         )
         .join(Account, CreditCardBill.account_id == Account.id)
         .where(
+            CreditCardBill.account_id.in_(account_ids),
             Account.type == "credit_card",
             Account.shared_balance_group.isnot(None),
             CreditCardBill.due_date >= today,
@@ -292,8 +329,17 @@ def _balance_subqueries(today: _Date):
 
 
 def _accounts_with_balances_query(
-    workspace_id: uuid.UUID, balance_sq, prev_balance_sq, future_charges_sq, open_bill_sq
+    workspace_id: uuid.UUID, account_ids: list[uuid.UUID], today: _Date
 ):
+    """The accounts with their balances, still checked against the workspace.
+
+    The ids come from an earlier statement, and a sync can move an account to
+    another workspace in between: keeping the workspace rule here means the
+    workspace that lost it stops seeing it in this same request.
+    """
+    balance_sq, prev_balance_sq, future_charges_sq, open_bill_sq = _balance_subqueries(
+        today, account_ids
+    )
     return (
         select(
             Account,
@@ -328,19 +374,24 @@ def _accounts_with_balances_query(
             and_(Account.id == open_bill_sq.c.account_id, open_bill_sq.c.rn == 1),
         )
         .where(
+            Account.id.in_(account_ids),
             or_(
                 Account.workspace_id == workspace_id,
                 BankConnection.workspace_id == workspace_id,
-            )
+            ),
         )
     )
 
 
 async def get_accounts(session: AsyncSession, workspace_id: uuid.UUID, include_closed: bool = False) -> list[dict]:
-    query = _accounts_with_balances_query(workspace_id, *_balance_subqueries(app_today()))
-    if not include_closed:
-        query = query.where(Account.is_closed == False)
-    query = query.order_by(Account.name)
+    account_ids = await _account_ids_in_scope(
+        session, workspace_id, include_closed=include_closed
+    )
+    if not account_ids:
+        return []
+    query = _accounts_with_balances_query(
+        workspace_id, account_ids, app_today()
+    ).order_by(Account.name)
     result = await session.execute(query)
     return [
             serialize_account(
@@ -368,9 +419,10 @@ async def get_account_with_balances(
     session: AsyncSession, account_id: uuid.UUID, workspace_id: uuid.UUID
 ) -> Optional[dict]:
     """One account, serialized with the same balances the list reports."""
-    query = _accounts_with_balances_query(
-        workspace_id, *_balance_subqueries(app_today())
-    ).where(Account.id == account_id)
+    account_ids = await _account_ids_in_scope(session, workspace_id, account_id=account_id)
+    if not account_ids:
+        return None
+    query = _accounts_with_balances_query(workspace_id, account_ids, app_today())
     row = (await session.execute(query)).first()
     if row is None:
         return None

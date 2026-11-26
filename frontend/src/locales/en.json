@@ -743,6 +743,16 @@
     "email": "Email",
     "password": "Password",
     "forgotPassword": "Forgot password?",
+    "forgotPasswordDescription": "Enter the email for your account and we'll send you a link to choose a new password.",
+    "sendResetLink": "Send recovery link",
+    "resetSentTitle": "Check your email",
+    "resetSentBody": "If an account exists for {{email}}, a recovery link is on its way. The link expires soon.",
+    "resetUnavailable": "Password recovery by email is not turned on for this instance. Ask the administrator.",
+    "resetRequestError": "Couldn't send the recovery link. Please try again.",
+    "resetPasswordDescription": "Choose a new password for your account.",
+    "resetPasswordRejected": "The new password was not accepted. Use at least 8 characters and try again.",
+    "resetTokenMissing": "This link is incomplete. Open the link from the recovery email again, or ask for a new one.",
+    "resetTokenInvalid": "This recovery link is invalid or has expired. Ask for a new one.",
     "loginDescription": "Sign in to access your account",
     "invalidCredentials": "Invalid email or password",
     "serverError": "Couldn't connect to the server. Check your connection or that the backend is running, then try again.",
@@ -753,6 +763,8 @@
     "changePassword": "Change password",
     "newPassword": "New password",
     "passwordTooShort": "Password must be at least 8 characters",
+    "passwordTooLong": "Password must be at most 72 characters",
+    "resetPassword": "Reset password",
     "currentPassword": "Current password",
     "currentPasswordWrong": "Current password is incorrect",
     "passwordChanged": "Password changed successfully",
@@ -1240,6 +1252,7 @@
     "calendarActivityTrend": "Daily activity",
     "calendarNoActivity": "No activity this month",
     "calendarNoMovements": "No movements",
+    "calendarMonthOutOfRange": "This month is too far from today.",
     "calendarActualNet": "Actual net",
     "calendarTransfersExcluded": "Transfers are not counted as income or expenses",
     "invoiceBadge": "Invoice {{number}}",
@@ -2257,6 +2270,7 @@
     "txSell": "Sell",
     "txSplit": "Split",
     "txFee": "Fee",
+    "txSyncedHint": "Imported from your bank. Its sync keeps this trade up to date, so it can't be edited here.",
     "txSaved": "Transaction saved",
     "txDeleted": "Transaction deleted",
     "editTransaction": "Edit transaction",
@@ -2380,6 +2394,66 @@
     "chartStacked": "Stacked",
     "chartLines": "Lines",
     "portfolioValue": "Portfolio Value",
+    "tabPerformance": "Performance",
+    "performanceTitle": "Portfolio Performance",
+    "performanceDescription": "See how your investments performed over time.",
+    "performancePeriod": "Time period",
+    "performanceCompare": "Compare",
+    "performanceMethodology": "How returns are calculated",
+    "performanceRemoveBenchmark": "Remove {{name}}",
+    "performancePercentagePoints": "{{value}} pp",
+    "performanceExcessLabel": "Portfolio vs. benchmark",
+    "performanceSelectionCount": "{{count}} selected",
+    "performanceScope": "Portfolio scope",
+    "performanceAllAssets": "Entire portfolio",
+    "performanceCustomAssets": "Wallets or assets",
+    "performanceSelectAssets": "Select wallets and assets",
+    "performanceBenchmarks": "Benchmarks",
+    "performanceAddBenchmark": "Search to add another benchmark.",
+    "performanceBenchmarkLimit": "Up to five benchmarks can be compared at once.",
+    "performanceNoSelection": "Select at least one wallet or asset to calculate performance.",
+    "performanceExcessVs": "Excess",
+    "benchmarkSearchPlaceholder": "Search an index, ETF, stock or crypto by name or symbol…",
+    "benchmarkSearchHint": "Compare your portfolio with indices, ETFs, funds, stocks or crypto, such as the S&P 500, Ibovespa or Bitcoin.",
+    "benchmarkNoResults": "No matching benchmarks found.",
+    "changeBenchmark": "Change benchmark",
+    "portfolioReturn": "Gross portfolio return",
+    "benchmarkReturn": "Benchmark return",
+    "excessReturn": "Excess return",
+    "performanceNoData": "There is not enough portfolio history for this period.",
+    "performanceNoPortfolio": "The active collection has no investment wallets to compare.",
+    "performanceLoadError": "Could not load performance data.",
+    "performanceSourceError": "Error at the data source. Try again.",
+    "performanceSourceRateLimited": "The data source is limiting requests. Try again later.",
+    "performanceSourceNoData": "The data source returned no history for this period.",
+    "performanceSourceNoFxRate": "No exchange rate is stored yet to convert this index to your portfolio's currency.",
+    "performanceRetryBenchmark": "Retry {{name}}",
+    "performanceViewSave": "Save view",
+    "performanceViewNamePlaceholder": "Name this selection (e.g. Retirement)",
+    "performanceViewUpdate": "Update “{{name}}”",
+    "performanceViewDelete": "Delete “{{name}}”",
+    "performanceViewSaved": "Saved view “{{name}}”",
+    "performanceViewDeleted": "Deleted view “{{name}}”",
+    "performanceViewSaveError": "Could not save the view",
+    "performanceViewGone": "View “{{name}}” no longer exists. Your selection is kept, so you can save it as a new view.",
+    "performanceSelectedPeriod": "Selected period",
+    "performanceClearSelection": "Clear selection",
+    "performanceDragHint": "Drag across the chart to see the return for any period.",
+    "performanceChartLabel": "Portfolio performance chart",
+    "performanceKeyboardHint": "With the chart focused, use the arrow keys to move between dates, Enter or Space to mark the start and then the end of a period, and Escape to clear it.",
+    "performanceRangeStartMarked": "Period start marked at {{date}}. Move to the end date and press Enter or Space.",
+    "performanceBenchmarkFrom": "from {{date}}",
+    "performanceCashFlowHint": "Time-weighted gross return: each period's change, net of contributions and withdrawals, compounded. Contributions and withdrawals never count as gains or losses.",
+    "performanceDashboardHint": "Past values here can differ from the dashboard. Once trades are imported, the Assets page rebuilds a connected holding's history from them, and this tab measures gross values, before income tax. The dashboard keeps the balances your bank reported on each date.",
+    "performanceBenchmarkCurrencyHint": "Indices quoted in another currency are converted to your portfolio's currency at each day's exchange rate, so their return includes the currency's move, just like your own foreign holdings.",
+    "performanceTradeImportHint": "Import the purchase and redemption history of your connected investments so returns follow each trade exactly. It starts on the next sync and adds requests to your bank connections.",
+    "performanceTradeImportAction": "Import trades",
+    "performanceTradeImportEnabled": "Trades will be imported on the next sync.",
+    "performanceTradeImportError": "Couldn't turn on trade import.",
+    "performanceTradeImportIssues": "Trades for these holdings couldn't be imported, so their returns are estimated from the values the bank reports:",
+    "performanceTradeImportIncomplete": "Incomplete history",
+    "performanceTradeImportNoHistory": "No history from the bank",
+    "performanceTradeImportRetry": "Try again",
     "total": "Total",
     "confirmRegenerateTitle": "Regenerate values?",
     "confirmRegenerate": "Growth parameters changed. All automatically generated values will be deleted and recalculated. Manual values will be kept.",
@@ -2399,6 +2473,8 @@
     "rangeYtd": "YTD",
     "range12m": "12M",
     "range2y": "2Y",
+    "range3y": "3Y",
+    "range5y": "5Y",
     "rangeThisMonth": "This Month",
     "rangeLastMonth": "Last Month",
     "periodPrev": "Previous period",
@@ -2661,6 +2737,7 @@
     "create": "Create",
     "loading": "Loading...",
     "retry": "Retry",
+    "databaseBusy": "The instance is at its database connection limit. Try again in a moment.",
     "error": "Error",
     "success": "Success",
     "noIconsFound": "No icons found",
@@ -2950,6 +3027,33 @@
     "menuItem": "Check for updates"
   },
   "admin": {
+    "email": {
+      "title": "Email",
+      "enabled": "Email is on",
+      "disabled": "Email is off",
+      "description": "How password recovery mail goes out. The provider and sender come from the server configuration.",
+      "disabledNote": "Turn on EMAIL_ENABLED on the server to send recovery links.",
+      "provider": "Provider",
+      "providerSmtp": "SMTP relay",
+      "providerResend": "Resend",
+      "sender": "Sender",
+      "senderMissing": "Not set",
+      "templatesTitle": "Recovery message",
+      "templatesDescription": "What the person reads. Placeholders: {app_name}, {link} and {minutes}; {link} must be alone on a line of its own, and nothing else may be a link.",
+      "subject": "Subject",
+      "body": "Body",
+      "linkRequired": "The body must contain {link}.",
+      "linkInSubject": "The subject cannot contain {link} or an address.",
+      "linkOnce": "The body must contain {link} exactly once.",
+      "linkAlone": "The {link} placeholder must be alone on its own line.",
+      "otherLink": "The message cannot lead anywhere but {link}.",
+      "restoreDefault": "Restore default text",
+      "save": "Save templates",
+      "saved": "Templates saved",
+      "saveFailed": "Could not save the templates",
+      "languageEn": "English",
+      "languagePt": "Portuguese"
+    },
     "users": {
       "title": "User Management",
       "searchPlaceholder": "Search users...",
@@ -2969,15 +3073,22 @@
       "deleted": "User deleted",
       "confirmDeleteTitle": "Delete user?",
       "confirmDeleteDesc": "This will permanently delete the user {{email}} and all their data. This action cannot be undone.",
-      "resetPassword": "Reset password",
-      "resetPasswordPlaceholder": "Leave blank to keep current",
+      "reason": "Reason",
+      "reasonPlaceholder": "Why is this change being made?",
+      "reasonHint": "Recorded in the access log and shown to the affected account.",
       "addDesc": "Create a new user account with access to the application.",
       "adminRole": "Administrator privileges",
       "enabled": "On",
-      "disabled": "Off"
+      "disabled": "Off",
+      "pending": "Waiting",
+      "pendingEmail": "Asked for {{email}}, waiting for the owner",
+      "emailPendingHint": "The address only changes after its owner confirms it."
     },
     "settings": {
       "title": "Admin Settings",
+      "managedTitle": "This instance is managed by Securo",
+      "managedDesc": "The instance settings on this page are set by whoever runs this instance. They apply to everyone and can't be changed here.",
+      "managedReadOnly": "Configured by Securo",
       "registrationTitle": "Registration",
       "registration": "Allow user registration",
       "registrationDesc": "When disabled, only admins can create new user accounts.",
@@ -3094,8 +3205,8 @@
       "chat": "Chat"
     },
     "globalChat": {
-      "title": "Chat",
-      "openHint": "Open chat",
+      "title": "Agent",
+      "openHint": "Open agent",
       "history": "Recent conversations",
       "selectAgent": "Select agent",
       "openSettings": "Agent settings",
@@ -4197,6 +4308,134 @@
     },
     "unreadPages": "Pages not read (scans, and the model does not read images): {{pages}}. Their lines are missing from this review."
   },
+  "notifications": {
+    "title": "Notifications",
+    "unread": "Unread",
+    "unreadLabel": "Notifications, {{number}} unread",
+    "markAllRead": "Mark all as read",
+    "empty": "Nothing needs your attention.",
+    "loadError": "Could not load notifications.",
+    "connection": {
+      "title": "{{name}} stopped syncing",
+      "rateLimited": "The bank keeps reaching its daily limit."
+    },
+    "recurring": {
+      "title": "{{name}} was not generated",
+      "detail": "It was due on {{date}}. Check its account and settings."
+    },
+    "budget": {
+      "close": "{{name}}: {{percent}}% of the budget used",
+      "reached": "{{name}}: budget used up",
+      "detail": "{{actual}} of {{budget}}"
+    },
+    "backup": {
+      "title": "Scheduled backup failed",
+      "detail": "The last attempt was on {{date}}. Securo will try again."
+    },
+    "seeAll": "See all notifications",
+    "markRead": "Mark as read",
+    "loadMore": "Load more",
+    "filter": {
+      "all": "All",
+      "unread": "Unread"
+    },
+    "emptyFilter": {
+      "all": "No notifications yet.",
+      "unread": "Nothing left to read."
+    },
+    "flag": {
+      "title": "Overdue reminders: {{number}}",
+      "detail": "Flagged transactions past their reminder date."
+    },
+    "match": {
+      "title": "Matches to review: {{number}}",
+      "detail": "Securo found possible matches and needs your answer."
+    },
+    "invoice": {
+      "title": "{{name}}: invoice overdue",
+      "detail": "{{amount}}, due on {{date}}."
+    },
+    "preferences": {
+      "title": "Preferences",
+      "hint": "Choose what you want to hear about in this workspace. Other members keep their own choices.",
+      "saveError": "Could not save your choice.",
+      "loadError": "Could not load your preferences."
+    },
+    "kind": {
+      "connection_error": {
+        "label": "Connections",
+        "hint": "A bank or plugin stopped syncing."
+      },
+      "budget_threshold": {
+        "label": "Budgets",
+        "hint": "A budget reached 80% or 100%."
+      },
+      "recurring_failed": {
+        "label": "Recurring",
+        "hint": "A recurring transaction was not generated."
+      },
+      "flag_overdue": {
+        "label": "Reminders",
+        "hint": "A flagged transaction is past its reminder date."
+      },
+      "reconciliation_pending": {
+        "label": "Matches to review",
+        "hint": "Securo found possible matches and needs your answer."
+      },
+      "invoice_overdue": {
+        "label": "Invoices",
+        "hint": "An invoice to a client is overdue."
+      },
+      "group_expense": {
+        "label": "Shared expenses",
+        "hint": "Someone adds or changes an expense they share with you in a group."
+      },
+      "group_settlement": {
+        "label": "Group payments",
+        "hint": "Someone records a payment to you or from you in a group."
+      },
+      "backup_failed": {
+        "label": "Backups",
+        "hint": "A scheduled backup failed."
+      }
+    },
+    "group": {
+      "added": "{{actor}} added {{name}}",
+      "changed": "{{actor}} changed {{name}}",
+      "batch": "{{actor}} added shared expenses: {{number}}",
+      "share": "Your share in {{group}}: {{amount}}",
+      "paid": "{{actor}} recorded a payment"
+    }
+  },
+  "accessLog": {
+    "title": "Access log",
+    "description": "Every administrative action on your account, and on members of workspaces you own.",
+    "empty": "No administrative actions recorded.",
+    "actionUpdate": "Account updated",
+    "actionDelete": "Account deleted",
+    "actionOther": "Account changed",
+    "by": "By {{email}}",
+    "target": "Account {{email}}",
+    "ip": "IP {{ip}}",
+    "loadMore": "Load more",
+    "loadError": "Could not load the access log.",
+    "emailChange": "Address {{from}} → {{to}}",
+    "emailPending": "waiting for the account owner to confirm",
+    "otherChanges": "Also changed: {{fields}}"
+  },
+  "emailChange": {
+    "title": "Change of email address",
+    "description": "An administrator asked to change the address on your account to {{email}}. Until you confirm, your account keeps its current address.",
+    "accept": "Accept the new address",
+    "decline": "Keep my current address",
+    "accepted": "Your account now uses {{email}}",
+    "declined": "Your account keeps its current address",
+    "unavailable": "That address is no longer available",
+    "failed": "Could not record your decision",
+    "replaced": "The administrator sent a new request. Check the new address before accepting",
+    "withdrawn": "The request was withdrawn. Your account keeps its current address"
+  }
+,
   "workspaceStatus": {
     "notice": "This workspace is suspended. You can read and export everything in it, but nothing can be changed.",
     "error": "This workspace is suspended, so it can be read and exported but not changed.",

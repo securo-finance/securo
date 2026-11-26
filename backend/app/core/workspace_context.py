@@ -65,7 +65,7 @@ class WorkspaceContext:
         if not self.can_write:
             raise HTTPException(status_code=403, detail="Read-only role")
         # Outlives the role: not even the owner writes into a suspended
-        # workspace (ADR 0041).
+        # workspace (ADR 0049).
         if self.workspace.status != WORKSPACE_ACTIVE:
             raise HTTPException(status_code=403, detail=SUSPENDED_DETAIL)
 

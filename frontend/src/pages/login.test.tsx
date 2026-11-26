@@ -229,6 +229,26 @@ describe('LoginPage', () => {
     expect(api.auth.verifyPasskeyAuthentication).not.toHaveBeenCalled()
   })
 
+  it('offers the recovery link only when the instance can send email', async () => {
+    // #540: the link would promise a message the backend will not send.
+    const { unmount } = await renderLogin()
+    expect(
+      screen.queryByRole('link', { name: t('auth.forgotPassword') }),
+    ).not.toBeInTheDocument()
+    unmount()
+
+    api.auth.oidcConfig.mockResolvedValue({
+      enabled: false,
+      provider_name: 'OIDC',
+      local_auth_enabled: true,
+      password_reset_enabled: true,
+    })
+    await renderLogin()
+    expect(
+      screen.getByRole('link', { name: t('auth.forgotPassword') }),
+    ).toHaveAttribute('href', '/forgot-password')
+  })
+
   it('survives the optional config calls failing', async () => {
     // A reverse proxy that blocks /api/admin must not blank the login form.
     api.admin.registrationStatus.mockRejectedValue(new Error('403'))

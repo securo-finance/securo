@@ -4,7 +4,7 @@ from bisect import bisect_left, bisect_right
 from collections import deque
 from datetime import date, timedelta
 from decimal import Decimal
-from typing import Optional
+from typing import NamedTuple, Optional
 
 from sqlalchemy import String, and_, case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -57,6 +57,7 @@ from app.schemas.report import (
 from app.services import invoice_forecast_service
 from app.services.dashboard_service import (
     _account_balance_at,
+    _account_balances_at,
     _get_forecast_transactions,
     _get_open_accounts,
     _open_on,
@@ -143,6 +144,7 @@ async def _net_worth_at(
     asset_group_ids: Optional[list[uuid.UUID]] = None,
     accounts: Optional[list[Account]] = None,
     assets: Optional[tuple[list[Asset], dict[str, list[tuple[date, float]]]]] = None,
+    balances: Optional[dict[tuple[uuid.UUID, date], float]] = None,
 ) -> ReportDataPoint:
     """Compute a single net worth snapshot at a given date, converted to primary currency.
 
@@ -158,6 +160,12 @@ async def _net_worth_at(
     trend passes the ``_get_report_assets`` result for the whole range in,
     instead of reloading the value series for every snapshot. Omit it to load
     them here.
+
+    ``balances`` is the same for the account balances: the
+    ``_account_balances_at`` read for the whole trend, keyed by account and
+    cutoff, so a twelve-point report does not repeat every account's sum once
+    per point (issue #584). A pair missing from it falls back to the
+    single-account read.
     """
     if accounts is None:
         accounts = await _get_open_accounts(session, workspace_id, account_ids, closed_after=cutoff)
@@ -181,12 +189,23 @@ async def _net_worth_at(
         account = group[0]
         bal = 0.0
         for member in group:
-            bal += await _account_balance_at(session, member, cutoff)
+            cached = balances.get((member.id, cutoff)) if balances is not None else None
+            bal += (
+                cached
+                if cached is not None
+                else await _account_balance_at(session, member, cutoff)
+            )
         if len(group) > 1 and account.shared_balance_group:
             # Each card's balance at the cutoff is the shared debt today minus
             # that card's own activity since, so the duplicates to strip are
             # today's shared debt once per extra card.
-            current_shared = await _account_balance_at(session, account, app_today())
+            today = app_today()
+            cached_shared = balances.get((account.id, today)) if balances is not None else None
+            current_shared = (
+                cached_shared
+                if cached_shared is not None
+                else await _account_balance_at(session, account, today)
+            )
             bal -= current_shared * (len(group) - 1)
         label = " + ".join(get_account_name(member) for member in group)
         converted, _ = await convert(
@@ -394,12 +413,19 @@ async def get_net_worth_report(
         session, workspace_id, start, account_ids, asset_group_ids,
     )
 
+    # Read every balance the snapshots need in one pass, instead of one sum per
+    # account per snapshot (issue #584). Today is in the set for a shared
+    # credit line's current debt, which each snapshot of it nets out.
+    balances = await _account_balances_at(
+        session, accounts, sorted({*points, start, app_today()}),
+    )
+
     # Compute snapshot at each date point
     trend: list[ReportDataPoint] = []
     for point in points:
         dp = await _net_worth_at(
             session, workspace_id, point, primary_currency, account_ids, asset_group_ids,
-            accounts=accounts, assets=assets,
+            accounts=accounts, assets=assets, balances=balances,
         )
         dp.date = _format_date_label(point, interval)
         dp.change = round(dp.value - trend[-1].value, 2) if trend else None
@@ -418,7 +444,7 @@ async def get_net_worth_report(
     else:
         baseline = await _net_worth_at(
             session, workspace_id, start, primary_currency, account_ids, asset_group_ids,
-            accounts=accounts, assets=assets,
+            accounts=accounts, assets=assets, balances=balances,
         )
     previous = baseline if trend else current
 
@@ -659,6 +685,23 @@ def _max_leg_pairs(
     return pairs
 
 
+class _ForecastEntry(NamedTuple):
+    """One row the income-expenses forecast adds, in the viewer's currency.
+
+    ``parts`` is the per-category split of a forecast transaction, each with
+    its category and its share of the row; a recurring projection carries its
+    own ``category_id`` and no parts. ``fraction`` is the viewer's share of
+    the row, and ``amount`` is already converted.
+    """
+
+    date: date
+    group: str
+    amount: float
+    fraction: float
+    category_id: Optional[uuid.UUID]
+    parts: Optional[list[tuple[Optional[uuid.UUID], Optional[Category], Decimal]]]
+
+
 async def get_income_expenses_report(
     session: AsyncSession,
     workspace_id: uuid.UUID,
@@ -706,35 +749,52 @@ async def get_income_expenses_report(
     # by part (and its transfer-like parts drop out alone).
     amount_expr = line_primary_or_amount(viewer)
 
-    result = await session.execute(
+    # One read of the window feeds the summary and the per-category trend
+    # below: this query already groups the same rows by period and category,
+    # and the summary's totals are its rollup (issue #584). The window used to
+    # be aggregated twice, once for each of them.
+    cat_trend_result = await session.execute(
         with_category_lines(
             select(
                 label_expr,
-                func.sum(case((Transaction.type == "credit", amount_expr), else_=0)),
-                func.sum(case((Transaction.type == "debit", amount_expr), else_=0)),
+                Category.id,
+                Category.name,
+                Category.color,
+                Transaction.type,
+                func.sum(amount_expr),
             ).select_from(Transaction)
         )
+        .outerjoin(Category, line_category_id() == Category.id)
         .where(
             Transaction.workspace_id == workspace_id,
             report_date >= start,
             report_date <= axis_end,
+            # The two types the summary counts: "credit" is income and "debit"
+            # is expenses, and any other stored value belongs to neither. The
+            # sparkline and the donut read this query, so a row the summary
+            # leaves out must not reach them or both read higher (#345).
+            Transaction.type.in_(("credit", "debit")),
             Transaction.source != "opening_balance",
             Transaction.status == "posted",
             counts_as_user_pnl(line_category_id()),
             *acct_filter,
         )
-        .group_by(label_expr)
-        .order_by(label_expr)
+        .group_by(label_expr, Category.id, Category.name, Category.color, Transaction.type)
     )
+    cat_trend_rows = list(cat_trend_result.all())
 
     # Build the actual (posted-only) data map. Forecast rows are kept in a
     # separate map below so the report can expose the same distinction as
     # balances: actual income/expenses never silently absorb pending entries.
+    # The parts are summed in Decimal, as the database did, so the totals come
+    # out exactly what the aggregate returned before.
+    period_totals: dict[str, list[Decimal]] = {}
+    for period_label, _cat_id, _cat_name, _cat_color, txn_type, total_amount in cat_trend_rows:
+        running = period_totals.setdefault(period_label, [Decimal(0), Decimal(0)])
+        running[0 if txn_type == "credit" else 1] += Decimal(total_amount or 0)
     data_map: dict[str, tuple[float, float]] = {}
-    for row in result.all():
-        income = float(row[1] or 0)
-        expenses = abs(float(row[2] or 0))
-        data_map[row[0]] = (income, expenses)
+    for period_label, (income_total, expense_total) in period_totals.items():
+        data_map[period_label] = (float(income_total), abs(float(expense_total)))
 
     # Subtract non-owner shares of the user's own splits per period — the
     # user shouldn't be charged for the parts they're owed back. Each row's
@@ -856,36 +916,44 @@ async def get_income_expenses_report(
     include_forecasts = include_forecasts or (start_date is None and end_date is None)
     forecast_map: dict[str, tuple[float, float]] = {}
 
-    # Add recurring projections for each month in the range (consistent with dashboard)
+    # Add the window's recurring projections, forecast rows and open claims
+    # (consistent with the dashboard). Each source answers a half-open range,
+    # so the whole window is one read per source: walking month by month
+    # re-read the same recurring rules for every month and returned no rows on
+    # most of them (issue #584).
     from app.services.dashboard_service import _month_range, _get_recurring_projections
 
     # Months up to the window's end: a window stepped back ends before today,
     # and its summary must not pick up the months after it.
-    cursor = start
-    while include_forecasts and cursor <= axis_end:
-        m_start, m_end = _month_range(cursor)
-        # A day-window range can start mid-month: only project occurrences that
-        # fall inside the requested window.
-        projections = await _get_recurring_projections(
-            session, workspace_id, max(m_start, start), m_end, account_ids,
+    window_end = _month_range(axis_end)[1]
+    # One read of the window feeds the summary and the category composition
+    # below. Composition covers whole months, so the read starts on the first
+    # day of the window's first month; the summary drops the rows before its
+    # own start, which a day-window can put mid-month.
+    forecast_entries: list[_ForecastEntry] = []
+    claims = []
+    if include_forecasts and start <= axis_end:
+        forecast_start = start.replace(day=1)
+        for proj in await _get_recurring_projections(
+            session, workspace_id, forecast_start, window_end, account_ids,
             accounting_mode=accounting_mode,
-        )
-        for proj in projections:
+        ):
             # Convert to primary currency
             converted, _ = await fx_convert(
                 session, Decimal(str(proj["amount"])), proj["currency"], primary_currency,
             )
-            proj_amount = float(converted)
             # The projection's own date: in accrual a card charge is due on
             # its bill's date, which can sit days after the month's cursor.
-            label = _format_date_label(proj["date"], interval)
-            existing_income, existing_expenses = forecast_map.get(label, (0.0, 0.0))
-            if proj["type"] == "credit":
-                forecast_map[label] = (existing_income + proj_amount, existing_expenses)
-            else:
-                forecast_map[label] = (existing_income, existing_expenses + proj_amount)
+            forecast_entries.append(_ForecastEntry(
+                date=proj["date"],
+                group="income" if proj["type"] == "credit" else "expenses",
+                amount=float(converted),
+                fraction=1.0,
+                category_id=proj["category_id"],
+                parts=None,
+            ))
         forecast_transactions = await _get_forecast_transactions(
-            session, workspace_id, max(m_start, start), m_end, account_ids,
+            session, workspace_id, forecast_start, window_end, account_ids,
             range_date_col=report_date,
         )
         forecast_fractions = (
@@ -893,8 +961,8 @@ async def get_income_expenses_report(
             else await forecast_owner_share_fractions(session, user_id, forecast_transactions)
         )
         for tx in forecast_transactions:
-            pnl_ratio = user_pnl_ratio(tx)
-            if not pnl_ratio:
+            parts = user_pnl_parts(tx)
+            if not parts:
                 continue
             stamped = await viewer.convert(
                 session, tx.user_id, tx.amount_primary, tx.date,
@@ -907,14 +975,14 @@ async def get_income_expenses_report(
                     session, Decimal(str(abs(tx.amount))), tx.currency, primary_currency,
                 )
                 amount = abs(float(converted))
-            amount *= float(pnl_ratio) * float(forecast_fractions.get(tx.id, 1))
-            tx_report_date = reporting_date_value(tx, accounting_mode)
-            label = _format_date_label(tx_report_date, interval)
-            existing_income, existing_expenses = forecast_map.get(label, (0.0, 0.0))
-            if tx.type == "credit":
-                forecast_map[label] = (existing_income + amount, existing_expenses)
-            else:
-                forecast_map[label] = (existing_income, existing_expenses + amount)
+            forecast_entries.append(_ForecastEntry(
+                date=reporting_date_value(tx, accounting_mode),
+                group="income" if tx.type == "credit" else "expenses",
+                amount=amount,
+                fraction=float(forecast_fractions.get(tx.id, 1)),
+                category_id=None,
+                parts=parts,
+            ))
 
         # Invoices still owed, at the date they were promised for. Only
         # the unallocated balance, so a claim and the payment that
@@ -925,25 +993,41 @@ async def get_income_expenses_report(
         # the report to an empty set of bank accounts, and an empty list
         # means filtered to nothing rather than not filtered at all.
         if account_ids is None:
-            for claim in await invoice_forecast_service.claims_in_range(
-                session, workspace_id, max(m_start, start), m_end
-            ):
-                converted, _ = await fx_convert(
-                    session, claim.amount, claim.currency, primary_currency,
-                )
-                claim_amount = abs(float(converted))
-                label = _format_date_label(claim.due_date, interval)
-                existing_income, existing_expenses = forecast_map.get(label, (0.0, 0.0))
-                if claim.direction == "receivable":
-                    forecast_map[label] = (existing_income + claim_amount, existing_expenses)
-                else:
-                    forecast_map[label] = (existing_income, existing_expenses + claim_amount)
+            claims = list(await invoice_forecast_service.claims_in_range(
+                session, workspace_id, forecast_start, window_end
+            ))
 
-        # Advance to next month
-        if cursor.month == 12:
-            cursor = date(cursor.year + 1, 1, 1)
+    for entry in forecast_entries:
+        if entry.date < start:
+            continue
+        amount = entry.amount
+        if entry.parts:
+            # A split forecast row adds its parts back up, as the summary
+            # has always counted it.
+            ratio = sum((part_ratio for _id, _cat, part_ratio in entry.parts), Decimal("0"))
+            amount *= float(ratio) * entry.fraction
         else:
-            cursor = date(cursor.year, cursor.month + 1, 1)
+            amount *= entry.fraction
+        label = _format_date_label(entry.date, interval)
+        existing_income, existing_expenses = forecast_map.get(label, (0.0, 0.0))
+        if entry.group == "income":
+            forecast_map[label] = (existing_income + amount, existing_expenses)
+        else:
+            forecast_map[label] = (existing_income, existing_expenses + amount)
+
+    for claim in claims:
+        if claim.due_date < start:
+            continue
+        converted, _ = await fx_convert(
+            session, claim.amount, claim.currency, primary_currency,
+        )
+        claim_amount = abs(float(converted))
+        label = _format_date_label(claim.due_date, interval)
+        existing_income, existing_expenses = forecast_map.get(label, (0.0, 0.0))
+        if claim.direction == "receivable":
+            forecast_map[label] = (existing_income + claim_amount, existing_expenses)
+        else:
+            forecast_map[label] = (existing_income, existing_expenses + claim_amount)
 
     # Generate all expected date points and map to results
     points = _date_points(start, axis_end, interval)
@@ -1102,39 +1186,12 @@ async def get_income_expenses_report(
             "value": amount,
         }
 
-    # Build per-category trend (sparklines) for the full date range
-    cat_trend_result = await session.execute(
-        with_category_lines(
-            select(
-                label_expr,
-                Category.id,
-                Category.name,
-                Category.color,
-                Transaction.type,
-                func.sum(amount_expr),
-            ).select_from(Transaction)
-        )
-        .outerjoin(Category, line_category_id() == Category.id)
-        .where(
-            Transaction.workspace_id == workspace_id,
-            report_date >= start,
-            report_date <= axis_end,
-            # Same two types the summary sums: "credit" is income and "debit"
-            # is expenses, and any other stored value belongs to neither. The
-            # sparkline and the donut read this query, so a row the summary
-            # leaves out must not reach them or both read higher (#345).
-            Transaction.type.in_(("credit", "debit")),
-            Transaction.source != "opening_balance",
-            Transaction.status == "posted",
-            counts_as_user_pnl(line_category_id()),
-            *acct_filter,
-        )
-        .group_by(label_expr, Category.id, Category.name, Category.color, Transaction.type)
-    )
+    # Per-category trend (sparklines) for the full date range, read above
+    # together with the summary totals.
 
     # Collect into dict[(cat_key, group)] -> {label, color, total, periods}
     cat_trend_map: dict[tuple[str, str], dict] = {}
-    for row in cat_trend_result.all():
+    for row in cat_trend_rows:
         period_label, cat_id, cat_name, cat_color, txn_type, total_amount = row
         amount = abs(float(total_amount or 0))
         if amount <= 0:
@@ -1260,52 +1317,53 @@ async def get_income_expenses_report(
         if cat_trend_map[key]["total"] <= 0:
             cat_trend_map.pop(key)
 
-    # Add recurring projections to composition and category trend
+    # Add the forecast rows read above to the composition and the category
+    # trend. Composition covers whole months, so it keeps every row of that
+    # read, including the ones before the summary's own start.
     cat_cache: dict[str, dict] = {}
-    cursor2 = start
-    while include_forecasts and cursor2 <= axis_end:
-        m_start, m_end = _month_range(cursor2)
-        projections = await _get_recurring_projections(
-            session, workspace_id, m_start, m_end, account_ids,
-            accounting_mode=accounting_mode,
-        )
-        for proj in projections:
-            period_label = _format_date_label(proj["date"], interval)
-            cat_id_str = str(proj["category_id"]) if proj["category_id"] else "uncategorized"
-            group = "income" if proj["type"] == "credit" else "expenses"
-
-            # Fetch category info if needed
+    for entry in forecast_entries:
+        period_label = _format_date_label(entry.date, interval)
+        if entry.parts:
+            tx_amount = entry.amount * entry.fraction
+            parts = [
+                (part_category_id, part_category, tx_amount * float(ratio))
+                for part_category_id, part_category, ratio in entry.parts
+            ]
+            # A part carries its own category, loaded with the row.
+            lookup_category = False
+        else:
+            parts = [(entry.category_id, None, entry.amount * entry.fraction)]
+            lookup_category = True
+        for part_category_id, part_category, forecast_amount in parts:
+            cat_id_str = str(part_category_id) if part_category_id else "uncategorized"
             if cat_id_str != "uncategorized" and cat_id_str not in cat_cache:
-                cat_row = await session.execute(
-                    select(Category.name, Category.color)
-                    .where(Category.id == proj["category_id"])
-                )
-                row = cat_row.one_or_none()
-                cat_cache[cat_id_str] = {
-                    "label": row[0] if row else "Uncategorized",
-                    "color": row[1] if row else "#6B7280",
-                }
-
+                if lookup_category:
+                    cat_row = await session.execute(
+                        select(Category.name, Category.color)
+                        .where(Category.id == part_category_id)
+                    )
+                    row = cat_row.one_or_none()
+                    cat_cache[cat_id_str] = {
+                        "label": row[0] if row else "Uncategorized",
+                        "color": row[1] if row else "#6B7280",
+                    }
+                else:
+                    cat_cache[cat_id_str] = {
+                        "label": part_category.name if part_category else "Uncategorized",
+                        "color": part_category.color if part_category else "#6B7280",
+                    }
             info = cat_cache.get(cat_id_str, {"label": "Uncategorized", "color": "#6B7280"})
 
-            # Convert projection amount to primary currency
-            converted, _ = await fx_convert(
-                session, Decimal(str(proj["amount"])), proj["currency"], primary_currency,
-            )
-            proj_amount = float(converted)
-
-            # Add to composition map
-            comp_key = (cat_id_str, group)
+            comp_key = (cat_id_str, entry.group)
             if comp_key in comp_map:
-                comp_map[comp_key]["value"] += proj_amount
+                comp_map[comp_key]["value"] += forecast_amount
             else:
                 comp_map[comp_key] = {
                     "label": info["label"],
                     "color": info["color"],
-                    "value": proj_amount,
+                    "value": forecast_amount,
                 }
 
-            # Add to category trend map
             if comp_key not in cat_trend_map:
                 cat_trend_map[comp_key] = {
                     "label": info["label"],
@@ -1313,75 +1371,11 @@ async def get_income_expenses_report(
                     "total": 0.0,
                     "periods": {},
                 }
-            cat_trend_map[comp_key]["total"] += proj_amount
+            cat_trend_map[comp_key]["total"] += forecast_amount
             cat_trend_map[comp_key]["periods"][period_label] = (
-                cat_trend_map[comp_key]["periods"].get(period_label, 0.0) + proj_amount
+                cat_trend_map[comp_key]["periods"].get(period_label, 0.0)
+                + forecast_amount
             )
-
-        forecast_transactions = await _get_forecast_transactions(
-            session, workspace_id, m_start, m_end, account_ids,
-            range_date_col=report_date,
-        )
-        forecast_fractions = (
-            {} if filtered
-            else await forecast_owner_share_fractions(session, user_id, forecast_transactions)
-        )
-        for tx in forecast_transactions:
-            parts = user_pnl_parts(tx)
-            if not parts:
-                continue
-            group = "income" if tx.type == "credit" else "expenses"
-            tx_report_date = reporting_date_value(tx, accounting_mode)
-            forecast_period_label = _format_date_label(tx_report_date, interval)
-            stamped = await viewer.convert(
-                session, tx.user_id, tx.amount_primary, tx.date,
-                currency=tx.currency, amount=tx.amount,
-            )
-            if stamped is not None:
-                tx_amount = abs(float(stamped))
-            else:
-                converted, _ = await fx_convert(
-                    session, Decimal(str(abs(tx.amount))), tx.currency, primary_currency,
-                )
-                tx_amount = abs(float(converted))
-            tx_amount *= float(forecast_fractions.get(tx.id, 1))
-            for part_category_id, part_category, ratio in parts:
-                cat_id_str = str(part_category_id) if part_category_id else "uncategorized"
-                if cat_id_str != "uncategorized" and cat_id_str not in cat_cache:
-                    cat_cache[cat_id_str] = {
-                        "label": part_category.name if part_category else "Uncategorized",
-                        "color": part_category.color if part_category else "#6B7280",
-                    }
-                info = cat_cache.get(
-                    cat_id_str, {"label": "Uncategorized", "color": "#6B7280"}
-                )
-                forecast_amount = tx_amount * float(ratio)
-                comp_key = (cat_id_str, group)
-                if comp_key in comp_map:
-                    comp_map[comp_key]["value"] += forecast_amount
-                else:
-                    comp_map[comp_key] = {
-                        "label": info["label"],
-                        "color": info["color"],
-                        "value": forecast_amount,
-                    }
-                if comp_key not in cat_trend_map:
-                    cat_trend_map[comp_key] = {
-                        "label": info["label"],
-                        "color": info["color"],
-                        "total": 0.0,
-                        "periods": {},
-                    }
-                cat_trend_map[comp_key]["total"] += forecast_amount
-                cat_trend_map[comp_key]["periods"][forecast_period_label] = (
-                    cat_trend_map[comp_key]["periods"].get(forecast_period_label, 0.0)
-                    + forecast_amount
-                )
-
-        if cursor2.month == 12:
-            cursor2 = date(cursor2.year + 1, 1, 1)
-        else:
-            cursor2 = date(cursor2.year, cursor2.month + 1, 1)
 
     # Build final composition list from map
     composition: list[ReportCompositionItem] = []

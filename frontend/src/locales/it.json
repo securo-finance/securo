@@ -745,6 +745,16 @@
     "email": "Email",
     "password": "Password",
     "forgotPassword": "Password dimenticata?",
+    "forgotPasswordDescription": "Inserisci l'email del tuo account e ti invieremo un link per scegliere una nuova password.",
+    "sendResetLink": "Invia link di recupero",
+    "resetSentTitle": "Controlla la tua email",
+    "resetSentBody": "Se esiste un account per {{email}}, il link di recupero è in arrivo. Scade a breve.",
+    "resetUnavailable": "Il recupero della password via email non è attivo su questa istanza. Chiedi all'amministratore.",
+    "resetRequestError": "Impossibile inviare il link di recupero. Riprova.",
+    "resetPasswordDescription": "Scegli una nuova password per il tuo account.",
+    "resetPasswordRejected": "La nuova password non è stata accettata. Usa almeno 8 caratteri e riprova.",
+    "resetTokenMissing": "Questo link è incompleto. Riapri il link dall'email di recupero o chiedine uno nuovo.",
+    "resetTokenInvalid": "Questo link di recupero non è valido o è scaduto. Chiedine uno nuovo.",
     "loginDescription": "Accedi per usare il tuo account",
     "invalidCredentials": "Email o password non validi",
     "serverError": "Impossibile connettersi al server. Controlla la connessione o che il backend sia in esecuzione e riprova.",
@@ -755,6 +765,8 @@
     "changePassword": "Cambia password",
     "newPassword": "Nuova password",
     "passwordTooShort": "La password deve contenere almeno 8 caratteri",
+    "passwordTooLong": "La password deve contenere al massimo 72 caratteri",
+    "resetPassword": "Reimposta la password",
     "currentPassword": "Password attuale",
     "currentPasswordWrong": "La password attuale non è corretta",
     "passwordChanged": "Password cambiata con successo",
@@ -1244,6 +1256,7 @@
     "calendarActivityTrend": "Attività giornaliera",
     "calendarNoActivity": "Nessuna attività questo mese",
     "calendarNoMovements": "Nessun movimento",
+    "calendarMonthOutOfRange": "Questo mese è troppo lontano da oggi.",
     "calendarActualNet": "Netto effettivo",
     "calendarTransfersExcluded": "I trasferimenti non contano come entrate o spese",
     "invoiceBadge": "Invoice {{number}}",
@@ -2263,6 +2276,7 @@
     "txSell": "Vendita",
     "txSplit": "Frazionamento",
     "txFee": "Commissione",
+    "txSyncedHint": "Importata dalla tua banca. La sincronizzazione mantiene aggiornata questa operazione, quindi non può essere modificata qui.",
     "txSaved": "Transazione salvata",
     "txDeleted": "Transazione eliminata",
     "editTransaction": "Modifica transazione",
@@ -2389,6 +2403,66 @@
     "chartStacked": "Impilato",
     "chartLines": "Linee",
     "portfolioValue": "Valore del portafoglio",
+    "tabPerformance": "Rendimento",
+    "performanceTitle": "Rendimento del portafoglio",
+    "performanceDescription": "Scopri come sono andati i tuoi investimenti nel tempo.",
+    "performancePeriod": "Periodo",
+    "performanceCompare": "Confronta",
+    "performanceMethodology": "Come vengono calcolati i rendimenti",
+    "performanceRemoveBenchmark": "Rimuovi {{name}}",
+    "performancePercentagePoints": "{{value}} p.p.",
+    "performanceExcessLabel": "Portafoglio rispetto all’indice",
+    "performanceSelectionCount": "{{count}} selezionati",
+    "performanceScope": "Ambito del portafoglio",
+    "performanceAllAssets": "Intero portafoglio",
+    "performanceCustomAssets": "Portafogli o attività",
+    "performanceSelectAssets": "Seleziona portafogli e attività",
+    "performanceBenchmarks": "Indici di riferimento",
+    "performanceAddBenchmark": "Cerca per aggiungere un altro benchmark.",
+    "performanceBenchmarkLimit": "È possibile confrontare fino a cinque benchmark alla volta.",
+    "performanceNoSelection": "Seleziona almeno un portafoglio o un'attività per calcolare il rendimento.",
+    "performanceExcessVs": "Eccesso",
+    "benchmarkSearchPlaceholder": "Cerca un indice, ETF, azione o cripto per nome o simbolo…",
+    "benchmarkSearchHint": "Confronta il tuo portafoglio con indici, ETF, fondi, azioni o criptovalute come S&P 500, Ibovespa o Bitcoin.",
+    "benchmarkNoResults": "Nessun benchmark corrispondente trovato.",
+    "changeBenchmark": "Cambia indice",
+    "portfolioReturn": "Rendimento lordo del portafoglio",
+    "benchmarkReturn": "Rendimento dell’indice",
+    "excessReturn": "Rendimento in eccesso",
+    "performanceNoData": "Lo storico del portafoglio non è sufficiente per questo periodo.",
+    "performanceNoPortfolio": "La raccolta attiva non contiene portafogli di investimento da confrontare.",
+    "performanceLoadError": "Impossibile caricare i dati sul rendimento.",
+    "performanceSourceError": "Errore nella fonte dei dati. Riprova.",
+    "performanceSourceRateLimited": "La fonte dei dati sta limitando le richieste. Riprova più tardi.",
+    "performanceSourceNoData": "La fonte dei dati non ha restituito lo storico per questo periodo.",
+    "performanceSourceNoFxRate": "Non è ancora salvato alcun tasso di cambio per convertire questo indice nella valuta del tuo portafoglio.",
+    "performanceRetryBenchmark": "Riprova {{name}}",
+    "performanceViewSave": "Salva vista",
+    "performanceViewNamePlaceholder": "Dai un nome a questa selezione (es. Pensione)",
+    "performanceViewUpdate": "Aggiorna «{{name}}»",
+    "performanceViewDelete": "Elimina «{{name}}»",
+    "performanceViewSaved": "Vista «{{name}}» salvata",
+    "performanceViewDeleted": "Vista «{{name}}» eliminata",
+    "performanceViewSaveError": "Impossibile salvare la vista",
+    "performanceViewGone": "La vista «{{name}}» non esiste più. La selezione è stata mantenuta, puoi salvarla come nuova vista.",
+    "performanceSelectedPeriod": "Periodo selezionato",
+    "performanceClearSelection": "Cancella selezione",
+    "performanceDragHint": "Trascina sul grafico per vedere il rendimento di qualsiasi periodo.",
+    "performanceChartLabel": "Grafico del rendimento del portafoglio",
+    "performanceKeyboardHint": "Con il grafico selezionato, usa le frecce per cambiare data, Invio o Spazio per segnare l’inizio e poi la fine di un periodo, ed Esc per cancellarlo.",
+    "performanceRangeStartMarked": "Inizio del periodo segnato al {{date}}. Vai alla data finale e premi Invio o Spazio.",
+    "performanceBenchmarkFrom": "dal {{date}}",
+    "performanceCashFlowHint": "Rendimento lordo ponderato nel tempo: la variazione di ogni periodo, al netto di versamenti e prelievi, composta. Versamenti e prelievi non contano mai come guadagno o perdita.",
+    "performanceDashboardHint": "I valori passati qui possono differire dalla dashboard. Una volta importate le operazioni, la pagina Beni ricostruisce da esse lo storico di un investimento collegato, e questa scheda misura valori lordi, prima delle imposte sul reddito. La dashboard mantiene i saldi comunicati dalla banca in ogni data.",
+    "performanceBenchmarkCurrencyHint": "Gli indici quotati in un'altra valuta vengono convertiti nella valuta del tuo portafoglio al tasso di cambio di ogni giorno, quindi il loro rendimento include il movimento della valuta, come per i tuoi investimenti all'estero.",
+    "performanceTradeImportHint": "Importa lo storico di acquisti e rimborsi dei tuoi investimenti collegati, così il rendimento segue esattamente ogni operazione. Parte dalla prossima sincronizzazione e aggiunge richieste alle tue connessioni bancarie.",
+    "performanceTradeImportAction": "Importa operazioni",
+    "performanceTradeImportEnabled": "Le operazioni verranno importate alla prossima sincronizzazione.",
+    "performanceTradeImportError": "Impossibile attivare l'importazione delle operazioni.",
+    "performanceTradeImportIssues": "Non è stato possibile importare le operazioni di questi investimenti, quindi il loro rendimento è stimato dai valori comunicati dalla banca:",
+    "performanceTradeImportIncomplete": "Storico incompleto",
+    "performanceTradeImportNoHistory": "Nessuno storico dalla banca",
+    "performanceTradeImportRetry": "Riprova",
     "total": "Totale",
     "confirmRegenerateTitle": "Rigenerare i valori?",
     "confirmRegenerate": "I parametri di crescita sono cambiati. Tutti i valori generati automaticamente saranno eliminati e ricalcolati. I valori manuali saranno mantenuti.",
@@ -2408,6 +2482,8 @@
     "rangeYtd": "YTD",
     "range12m": "12M",
     "range2y": "2A",
+    "range3y": "3A",
+    "range5y": "5A",
     "rangeThisMonth": "Questo mese",
     "rangeLastMonth": "Mese scorso",
     "periodPrev": "Periodo precedente",
@@ -2670,6 +2746,7 @@
     "create": "Crea",
     "loading": "Caricamento...",
     "retry": "Riprova",
+    "databaseBusy": "L'istanza ha raggiunto il limite di connessioni al database. Riprova tra un momento.",
     "error": "Errore",
     "success": "Successo",
     "noIconsFound": "Nessuna icona trovata",
@@ -2965,6 +3042,33 @@
     "menuItem": "Controlla aggiornamenti"
   },
   "admin": {
+    "email": {
+      "title": "Email",
+      "enabled": "Email attiva",
+      "disabled": "Email disattivata",
+      "description": "Come partono le email di recupero password. Il provider e il mittente vengono dalla configurazione del server.",
+      "disabledNote": "Attiva EMAIL_ENABLED sul server per inviare i link di recupero.",
+      "provider": "Provider",
+      "providerSmtp": "Server SMTP",
+      "providerResend": "Resend",
+      "sender": "Mittente",
+      "senderMissing": "Non impostato",
+      "templatesTitle": "Messaggio di recupero",
+      "templatesDescription": "Quello che legge la persona. Variabili: {app_name}, {link} e {minutes}; {link} deve stare da solo su una riga propria e nient'altro può essere un link.",
+      "subject": "Oggetto",
+      "body": "Corpo",
+      "linkRequired": "Il corpo deve contenere {link}.",
+      "linkInSubject": "L'oggetto non può contenere {link} né un indirizzo.",
+      "linkOnce": "Il corpo deve contenere {link} esattamente una volta.",
+      "linkAlone": "La variabile {link} deve stare da sola sulla propria riga.",
+      "otherLink": "Il messaggio non può portare da nessun'altra parte che a {link}.",
+      "restoreDefault": "Ripristina il testo predefinito",
+      "save": "Salva modelli",
+      "saved": "Modelli salvati",
+      "saveFailed": "Impossibile salvare i modelli",
+      "languageEn": "Inglese",
+      "languagePt": "Portoghese"
+    },
     "users": {
       "title": "Gestione utenti",
       "searchPlaceholder": "Cerca utenti...",
@@ -2984,15 +3088,22 @@
       "deleted": "Utente eliminato",
       "confirmDeleteTitle": "Eliminare l'utente?",
       "confirmDeleteDesc": "Questo eliminerà definitivamente l'utente {{email}} e tutti i suoi dati. Questa azione non può essere annullata.",
-      "resetPassword": "Reimposta password",
-      "resetPasswordPlaceholder": "Lascia vuoto per mantenere l'attuale",
+      "reason": "Motivo",
+      "reasonPlaceholder": "Perché viene fatta questa modifica?",
+      "reasonHint": "Registrato nel registro degli accessi e mostrato all'account interessato.",
       "addDesc": "Crea un nuovo account utente con accesso all'applicazione.",
       "adminRole": "Privilegi di amministratore",
       "enabled": "Attivo",
-      "disabled": "Disattivo"
+      "disabled": "Disattivo",
+      "pending": "In attesa",
+      "pendingEmail": "Richiesto {{email}}, in attesa del titolare",
+      "emailPendingHint": "L'indirizzo cambia solo dopo la conferma del titolare."
     },
     "settings": {
       "title": "Impostazioni amministratore",
+      "managedTitle": "Questa istanza è gestita da Securo",
+      "managedDesc": "Le impostazioni dell'istanza in questa pagina sono definite da chi gestisce l'istanza. Valgono per tutti e non si possono modificare qui.",
+      "managedReadOnly": "Configurato da Securo",
       "registrationTitle": "Registrazione",
       "registration": "Consenti la registrazione degli utenti",
       "registrationDesc": "Quando disabilitata, solo gli amministratori possono creare nuovi account utente.",
@@ -3296,8 +3407,8 @@
     "defaultBadge": "Predefinito",
     "defaultLabel": "Predefinito",
     "globalChat": {
-      "title": "Chat",
-      "openHint": "Apri chat",
+      "title": "Agente",
+      "openHint": "Apri agente",
       "history": "Conversazioni recenti",
       "selectAgent": "Seleziona agente",
       "openSettings": "Impostazioni agente",
@@ -4212,6 +4323,134 @@
     },
     "unreadPages": "Pagine non lette (scansioni, e il modello non legge immagini): {{pages}}. Le loro righe mancano da questa revisione."
   },
+  "notifications": {
+    "title": "Notifiche",
+    "unread": "Non letta",
+    "unreadLabel": "Notifiche, {{number}} non lette",
+    "markAllRead": "Segna tutte come lette",
+    "empty": "Nulla richiede la tua attenzione.",
+    "loadError": "Impossibile caricare le notifiche.",
+    "connection": {
+      "title": "{{name}} ha smesso di sincronizzarsi",
+      "rateLimited": "La banca continua a raggiungere il limite giornaliero."
+    },
+    "recurring": {
+      "title": "{{name}} non è stata generata",
+      "detail": "Scadeva il {{date}}. Controlla il conto e le impostazioni."
+    },
+    "budget": {
+      "close": "{{name}}: {{percent}}% del budget usato",
+      "reached": "{{name}}: budget esaurito",
+      "detail": "{{actual}} di {{budget}}"
+    },
+    "backup": {
+      "title": "Backup pianificato non riuscito",
+      "detail": "Ultimo tentativo il {{date}}. Securo riproverà."
+    },
+    "seeAll": "Vedi tutte le notifiche",
+    "markRead": "Segna come letta",
+    "loadMore": "Carica altre",
+    "filter": {
+      "all": "Tutte",
+      "unread": "Non lette"
+    },
+    "emptyFilter": {
+      "all": "Ancora nessuna notifica.",
+      "unread": "Niente altro da leggere."
+    },
+    "flag": {
+      "title": "Promemoria scaduti: {{number}}",
+      "detail": "Transazioni contrassegnate con promemoria passato."
+    },
+    "match": {
+      "title": "Corrispondenze da verificare: {{number}}",
+      "detail": "Securo ha trovato possibili corrispondenze e attende la tua risposta."
+    },
+    "invoice": {
+      "title": "{{name}}: fattura scaduta",
+      "detail": "{{amount}}, scadeva il {{date}}."
+    },
+    "preferences": {
+      "title": "Preferenze",
+      "hint": "Scegli su cosa vuoi essere avvisato in questo spazio. Gli altri membri mantengono le proprie scelte.",
+      "saveError": "Impossibile salvare la tua scelta.",
+      "loadError": "Impossibile caricare le tue preferenze."
+    },
+    "kind": {
+      "connection_error": {
+        "label": "Connessioni",
+        "hint": "Una banca o un plugin ha smesso di sincronizzarsi."
+      },
+      "budget_threshold": {
+        "label": "Budget",
+        "hint": "Un budget ha raggiunto l’80% o il 100%."
+      },
+      "recurring_failed": {
+        "label": "Ricorrenti",
+        "hint": "Una transazione ricorrente non è stata generata."
+      },
+      "flag_overdue": {
+        "label": "Promemoria",
+        "hint": "Una transazione contrassegnata ha superato la data del promemoria."
+      },
+      "reconciliation_pending": {
+        "label": "Corrispondenze da verificare",
+        "hint": "Securo ha trovato possibili corrispondenze e attende la tua risposta."
+      },
+      "invoice_overdue": {
+        "label": "Fatture",
+        "hint": "Una fattura a un cliente è scaduta."
+      },
+      "group_expense": {
+        "label": "Spese condivise",
+        "hint": "Qualcuno aggiunge o modifica una spesa condivisa con te in un gruppo."
+      },
+      "group_settlement": {
+        "label": "Pagamenti nei gruppi",
+        "hint": "Qualcuno registra un pagamento tuo o per te in un gruppo."
+      },
+      "backup_failed": {
+        "label": "Backup",
+        "hint": "Un backup pianificato non è riuscito."
+      }
+    },
+    "group": {
+      "added": "{{actor}} ha aggiunto {{name}}",
+      "changed": "{{actor}} ha modificato {{name}}",
+      "batch": "{{actor}} ha aggiunto spese condivise: {{number}}",
+      "share": "La tua quota in {{group}}: {{amount}}",
+      "paid": "{{actor}} ha registrato un pagamento"
+    }
+  },
+  "accessLog": {
+    "title": "Registro degli accessi",
+    "description": "Ogni azione amministrativa sul tuo account e sui membri degli spazi di lavoro che possiedi.",
+    "empty": "Nessuna azione amministrativa registrata.",
+    "actionUpdate": "Account modificato",
+    "actionDelete": "Account eliminato",
+    "actionOther": "Account modificato",
+    "by": "Da {{email}}",
+    "target": "Account {{email}}",
+    "ip": "IP {{ip}}",
+    "loadMore": "Carica altri",
+    "loadError": "Impossibile caricare il registro degli accessi.",
+    "emailChange": "Indirizzo {{from}} → {{to}}",
+    "emailPending": "in attesa della conferma del titolare dell'account",
+    "otherChanges": "Modificato anche: {{fields}}"
+  },
+  "emailChange": {
+    "title": "Modifica dell'indirizzo email",
+    "description": "Un amministratore ha chiesto di cambiare l'indirizzo del tuo account in {{email}}. Finché non confermi, il tuo account mantiene l'indirizzo attuale.",
+    "accept": "Accetta il nuovo indirizzo",
+    "decline": "Mantieni il mio indirizzo attuale",
+    "accepted": "Il tuo account ora usa {{email}}",
+    "declined": "Il tuo account mantiene l'indirizzo attuale",
+    "unavailable": "Questo indirizzo non è più disponibile",
+    "failed": "Impossibile registrare la tua decisione",
+    "replaced": "L'amministratore ha inviato una nuova richiesta. Controlla il nuovo indirizzo prima di accettare",
+    "withdrawn": "La richiesta è stata ritirata. Il tuo account mantiene l'indirizzo attuale"
+  }
+,
   "workspaceStatus": {
     "notice": "Questo spazio di lavoro è sospeso. Puoi leggere ed esportare tutto, ma non modificare nulla.",
     "error": "Questo spazio di lavoro è sospeso: può essere letto ed esportato, ma non modificato.",

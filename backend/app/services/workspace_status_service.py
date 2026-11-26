@@ -1,4 +1,4 @@
-"""A workspace's status: `active`, or `suspended` by an administrator (ADR 0041).
+"""A workspace's status: `active`, or `suspended` by an administrator (ADR 0049).
 
 A suspended workspace can be read and exported, and nothing writes into it.
 Requests are refused by `WorkspaceContext.require_write`; the scheduled jobs

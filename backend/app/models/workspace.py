@@ -26,7 +26,7 @@ if TYPE_CHECKING:
 WorkspaceKind = Literal["personal", "business"]
 WORKSPACE_KINDS: tuple[str, ...] = get_args(WorkspaceKind)
 
-# Whether a workspace can be written to (ADR 0041). Set by an instance
+# Whether a workspace can be written to (ADR 0049). Set by an instance
 # administrator; unrelated to `is_archived`, which is the owner's own choice
 # and hides the workspace.
 WorkspaceStatus = Literal["active", "suspended"]

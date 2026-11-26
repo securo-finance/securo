@@ -14,12 +14,13 @@ import { useAuth } from '@/contexts/auth-context'
 import { useCollectionFilter } from '@/contexts/collection-filter-context'
 import { useWorkspace } from '@/contexts/workspace-context'
 import { useSidebarState } from '@/contexts/sidebar-state-context'
+import { NotificationBell } from '@/components/notification-bell'
 import { CollectionSelector } from '@/components/collection-selector'
 import { ConnectionLost } from '@/components/connection-lost'
+import { EmailChangeDialog } from '@/components/email-change-dialog'
 import { auth as authApi } from '@/lib/api'
 import { resolveSupportedLang } from '@/lib/i18n'
 import { OnboardingTour } from '@/components/onboarding-tour'
-import { useTheme } from 'next-themes'
 import { accounts as accountsApi, transactions as transactionsApi } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
@@ -48,9 +49,6 @@ import {
   ChevronRight,
   Eye,
   EyeOff,
-  Sun,
-  Moon,
-  Monitor,
   Languages,
   KeyRound,
   Check,
@@ -58,12 +56,15 @@ import {
   Shield,
   ShieldCheck,
   Fingerprint,
+  History,
   Palette,
   AlertCircle,
 } from 'lucide-react'
+import { useMediaQuery } from '@/hooks/use-media-query'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
 import { ChangePasswordDialog } from '@/components/change-password-dialog'
 import { BackupDialog } from '@/components/backup-dialog'
+import { AccessLogDialog } from '@/components/access-log-dialog'
 import { WorkspaceSuspendedNotice } from '@/components/workspace-suspended-notice'
 import { TwoFactorSetup } from '@/components/two-factor-setup'
 import { PasskeyManagementDialog } from '@/components/passkey-management-dialog'
@@ -76,7 +77,6 @@ import { useAppTheme } from '@/hooks/use-app-theme'
 import { LibraryProvider } from '@/components/library-provider'
 import { useLibrary } from '@/contexts/library-context'
 import { AssistantContext } from '@/contexts/assistant-context'
-import { nextTheme, THEME_LABEL_KEY } from '@/lib/theme-cycle'
 import { useLocalAuthEnabled } from '@/hooks/use-local-auth'
 import { formatCurrency } from '@/lib/format'
 
@@ -109,7 +109,6 @@ export function AppLayout() {
   const { activeAccountIds } = useCollectionFilter()
   const userCurrency = user?.preferences?.currency_display ?? 'USD'
   const locale = useDisplayLocale()
-  const { theme, setTheme } = useTheme()
   // The theme picked from the library, kept on the page in light and dark.
   useAppTheme()
   const location = useLocation()
@@ -123,12 +122,15 @@ export function AppLayout() {
   const [twoFactorOpen, setTwoFactorOpen] = useState(false)
   const [passkeysOpen, setPasskeysOpen] = useState(false)
   const [backupOpen, setBackupOpen] = useState(false)
+  const [accessLogOpen, setAccessLogOpen] = useState(false)
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [chatOpen, setChatOpen] = useState(false)
   // A message the assistant widget sent, waiting for the chat to pick it up.
   const [chatMessage, setChatMessage] = useState<string | null>(null)
   const [updateDialogOpen, setUpdateDialogOpen] = useState(false)
   useCommandPaletteHotkey(setPaletteOpen)
+  // Tailwind's `lg`. Only the bell on screen mounts, as each one polls.
+  const isDesktop = useMediaQuery('(min-width: 64rem)')
   const { agentsEnabled } = useFeatureFlags()
   const {
     hasModule,
@@ -209,12 +211,6 @@ export function AppLayout() {
   )
 
   const userInitial = user?.email?.charAt(0).toUpperCase() ?? '?'
-  // The button shows, and switches to, the next theme in the cycle.
-  const upcomingTheme = nextTheme(theme)
-  const themeButtonLabel = t(THEME_LABEL_KEY[upcomingTheme])
-  const ThemeIcon = { light: Sun, dark: Moon, system: Monitor }[upcomingTheme]
-  const toggleTheme = () => setTheme(upcomingTheme)
-
   const { data: accountsList } = useQuery({
     queryKey: ['accounts'],
     queryFn: () => accountsApi.list(),
@@ -288,6 +284,22 @@ export function AppLayout() {
           >
             <Search size={18} />
           </button>
+          {!isDesktop && (
+            <NotificationBell
+              size={18}
+              className="p-1 text-sidebar-muted transition-colors hover:text-sidebar-foreground"
+            />
+          )}
+          {chatAvailable && (
+            <button
+              onClick={() => setChatOpen(true)}
+              className="text-sidebar-muted hover:text-sidebar-foreground transition-colors p-1"
+              title={t('agents.globalChat.openHint')}
+              aria-label={t('agents.globalChat.openHint')}
+            >
+              <Bot size={18} />
+            </button>
+          )}
           <button
             onClick={togglePrivacyMode}
             className="text-sidebar-muted hover:text-sidebar-foreground transition-colors p-1"
@@ -295,27 +307,6 @@ export function AppLayout() {
           >
             {privacyMode ? <EyeOff size={18} /> : <Eye size={18} />}
           </button>
-          <button
-            onClick={toggleTheme}
-            className="text-sidebar-muted hover:text-sidebar-foreground transition-colors p-1"
-            title={themeButtonLabel}
-            aria-label={themeButtonLabel}
-          >
-            <ThemeIcon size={18} />
-          </button>
-          {/* AI chat — opens the global slide-over (also reachable via
-              ⌘J). Sits next to the theme toggle so the icon is always
-              within thumb reach on mobile too. */}
-          {chatAvailable && (
-            <button
-              onClick={() => setChatOpen(true)}
-              className="text-sidebar-muted hover:text-sidebar-foreground transition-colors p-1"
-              title={`${t('agents.globalChat.title', 'Chat')} (${isMac ? '⌘J' : 'Ctrl+J'})`}
-              aria-label={t('agents.globalChat.openHint', 'Open chat (⌘J)')}
-            >
-              <Bot size={18} />
-            </button>
-          )}
           <UserMenu
             userInitial={userInitial}
             logout={logout}
@@ -325,6 +316,7 @@ export function AppLayout() {
             localAuthEnabled={localAuthEnabled}
             agentsEnabled={agentsEnabled}
             onBackup={() => setBackupOpen(true)}
+            onAccessLog={() => setAccessLogOpen(true)}
             dark
             isAdmin={user?.is_superuser}
           />
@@ -353,9 +345,10 @@ export function AppLayout() {
               dedicated 'Painel' nav item so the sidebar stays focused
               on the main destinations. */}
           {/* Collapsed on desktop, the header becomes a column: logo on
-              top, then the same privacy / chat / theme buttons stacked,
-              so nothing the expanded header offers goes missing in the
-              rail. */}
+              top, then the privacy button, so nothing the expanded header
+              offers goes missing in the rail. The header holds the logo
+              and the one switch people reach for in public; the rest
+              is in the top bar or the account menu. */}
           <div className={cn(
             'flex h-16 min-h-16 items-center justify-between px-5 border-b border-sidebar-border shrink-0',
             desktopSidebarCollapsed && 'lg:h-auto lg:min-h-0 lg:flex-col lg:justify-center lg:gap-2 lg:px-0 lg:py-3',
@@ -389,33 +382,6 @@ export function AppLayout() {
                 aria-label={privacyMode ? t('privacy.show') : t('privacy.hide')}
               >
                 {privacyMode ? <EyeOff size={16} /> : <Eye size={16} />}
-              </button>
-              {/* AI chat — same trigger as the mobile bar, ⌘J also
-                  works. Lives in the sidebar header so the entry point
-                  is visible even on first load (no floating button). */}
-              {chatAvailable && (
-                <button
-                  onClick={() => setChatOpen(true)}
-                  className={cn(
-                    'text-sidebar-muted hover:text-sidebar-foreground transition-colors p-1 rounded-md hover:bg-sidebar-accent',
-                    desktopSidebarCollapsed && 'lg:flex lg:h-9 lg:w-9 lg:items-center lg:justify-center lg:p-0 lg:[&>svg]:h-[18px] lg:[&>svg]:w-[18px]',
-                  )}
-                  title={`${t('agents.globalChat.title', 'Chat')} (${isMac ? '⌘J' : 'Ctrl+J'})`}
-                  aria-label={t('agents.globalChat.openHint', 'Open chat (⌘J)')}
-                >
-                  <Bot size={16} />
-                </button>
-              )}
-              <button
-                onClick={toggleTheme}
-                className={cn(
-                  'text-sidebar-muted hover:text-sidebar-foreground transition-colors p-1 rounded-md hover:bg-sidebar-accent',
-                  desktopSidebarCollapsed && 'lg:flex lg:h-9 lg:w-9 lg:items-center lg:justify-center lg:p-0 lg:[&>svg]:h-[18px] lg:[&>svg]:w-[18px]',
-                )}
-                title={themeButtonLabel}
-                aria-label={themeButtonLabel}
-              >
-                <ThemeIcon size={16} />
               </button>
             </div>
           </div>
@@ -663,6 +629,7 @@ export function AppLayout() {
               onPasskeys={() => setPasskeysOpen(true)}
               localAuthEnabled={localAuthEnabled}
               onBackup={() => setBackupOpen(true)}
+              onAccessLog={() => setAccessLogOpen(true)}
               onUpdateAvailable={() => setUpdateDialogOpen(true)}
               agentsEnabled={agentsEnabled}
               collapsed={desktopSidebarCollapsed}
@@ -684,13 +651,35 @@ export function AppLayout() {
 
         {/* Main content */}
         <main className={cn(
-          'flex-1 min-h-dvh overflow-x-hidden transition-[margin] duration-300 ease-in-out motion-reduce:transition-none',
+          'flex-1 min-w-0 min-h-dvh overflow-x-clip transition-[margin] duration-300 ease-in-out motion-reduce:transition-none',
           desktopSidebarCollapsed ? 'lg:ms-16' : 'lg:ms-60',
         )}>
+          {/* The top bar: what the numbers below cover, and what is at hand
+              from any page. Phones have the buttons in their own header, which
+              is the one that sticks there. */}
+          <div className="z-30 border-b border-border/60 bg-background/80 backdrop-blur supports-[backdrop-filter]:bg-background/65 lg:sticky lg:top-0">
+            <div className="mx-auto flex h-12 max-w-7xl items-center justify-between gap-3 px-4 lg:h-16 lg:px-6">
+              <CollectionSelector />
+              <div className="flex shrink-0 items-center gap-2 max-lg:hidden">
+                {chatAvailable && (
+                  <button
+                    type="button"
+                    onClick={() => setChatOpen(true)}
+                    title={`${t('agents.globalChat.openHint')} (${isMac ? '⌘J' : 'Ctrl+J'})`}
+                    aria-label={t('agents.globalChat.openHint')}
+                    className="inline-flex h-9 items-center gap-2 rounded-full border border-border/60 px-3 text-[13px] text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
+                  >
+                    <Bot size={16} />
+                    {t('agents.globalChat.title')}
+                  </button>
+                )}
+                {isDesktop && (
+                  <NotificationBell className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-border/60 text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground data-[state=open]:bg-muted data-[state=open]:text-foreground" />
+                )}
+              </div>
+            </div>
+          </div>
           <div className="p-6 max-w-7xl mx-auto">
-            {/* Active-collection filter (issue #105): sticky bar above the
-                content so the scope is visible right where the data is. */}
-            <CollectionSelector variant="header" />
             <WorkspaceSuspendedNotice />
             <Outlet />
           </div>
@@ -715,6 +704,10 @@ export function AppLayout() {
         localAuthEnabled={localAuthEnabled}
       />
       <BackupDialog open={backupOpen} onClose={() => setBackupOpen(false)} />
+      <AccessLogDialog open={accessLogOpen} onClose={() => setAccessLogOpen(false)} />
+      {/* A change of address an administrator asked for, waiting for this
+          person's decision (#556). */}
+      <EmailChangeDialog />
       {quickAddOpen && (
         <Suspense fallback={null}>
           <QuickAddTransaction open={quickAddOpen} onClose={() => setQuickAddOpen(false)} />
@@ -750,6 +743,7 @@ function UserMenu({
   onPasskeys,
   localAuthEnabled,
   onBackup,
+  onAccessLog,
   dark,
   isAdmin,
   agentsEnabled,
@@ -761,6 +755,7 @@ function UserMenu({
   onPasskeys: () => void
   localAuthEnabled: boolean
   onBackup: () => void
+  onAccessLog: () => void
   dark?: boolean
   isAdmin?: boolean
   agentsEnabled?: boolean
@@ -835,6 +830,13 @@ function UserMenu({
         >
           <HardDriveDownload size={14} />
           {t('backup.button')}
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          onClick={onAccessLog}
+          className="flex items-center gap-2"
+        >
+          <History size={14} />
+          {t('accessLog.title')}
         </DropdownMenuItem>
         {agentsEnabled && (
           <DropdownMenuItem
