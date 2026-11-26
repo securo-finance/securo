@@ -971,7 +971,11 @@ export default function AssetsPage() {
       type: formType,
       currency: formCurrency,
       group_id: formGroupId || null,
-      valuation_method: formMethod,
+      // Only a create picks how the value is kept: an edit cannot change it
+      // (the buttons are disabled and the service drops the field), so sending
+      // the stored value back would only let a row outside the accepted set
+      // fail every later edit with a 422.
+      ...(editingAsset ? {} : { valuation_method: formMethod }),
     }
 
     // A ledger-backed holding derives its buy date, quantity and cost basis
