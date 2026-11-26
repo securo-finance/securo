@@ -612,11 +612,9 @@ scenario('a service named for a sync still refuses as sync or plugin', async () 
 });
 
 // A backend test's name says what it checks. "author" in
-// test_invoice_schedule_author.py held #1900 and "permission" in
-// test_write_permission_coverage.py held #1043, with no auth code in either.
+// test_invoice_schedule_author.py held #1900 with no auth code in it.
 for (const file of [
   'backend/tests/test_invoice_schedule_author.py',
-  'backend/tests/test_write_permission_coverage.py',
   'backend/tests/test_auth_api.py',
   'backend/tests/api_contract/test_access_tokens.py',
 ]) {
@@ -643,12 +641,41 @@ for (const [file, what] of [
   });
 }
 
+// The tests that are a gate themselves stay held by name: a pull request that
+// only loosens or deletes one of them would otherwise merge on its own.
+for (const file of [
+  'backend/tests/test_write_permission_coverage.py',
+  'backend/tests/test_write_permission_gate.py',
+  'backend/tests/test_oidc_auth.py',
+  'backend/tests/test_passkeys.py',
+  'backend/tests/test_access_tokens.py',
+  'backend/tests/test_mcp_jwt_secret.py',
+  'backend/tests/test_instance_secrets.py',
+  'backend/tests/test_oauth_state.py',
+]) {
+  scenario(`${file} refuses as a security test`, async () => {
+    const { merged, log } = await evaluate({ threads: [], files: [{ filename: file }] });
+    assert.ok(!merged, `expected a refusal, got a merge: ${log}`);
+    assert.ok(log.includes('(security test)'), `expected the reason "security test": ${log}`);
+  });
+}
+
+// Deleting one is refused too: the lane reads the path, not the change.
+scenario('a deleted write permission sweep refuses', async () => {
+  const { merged, log } = await evaluate({
+    threads: [],
+    files: [{ filename: 'backend/tests/test_write_permission_coverage.py', status: 'removed' }],
+  });
+  assert.ok(!merged, `expected a refusal, got a merge: ${log}`);
+  assert.ok(log.includes('(security test)'), log);
+});
+
 // A test that comes with the code it covers is still held by that code.
 scenario('a test beside an auth file still refuses for the auth file', async () => {
   const { merged, log } = await evaluate({
     threads: [],
     files: [
-      { filename: 'backend/tests/test_access_tokens.py' },
+      { filename: 'backend/tests/test_access_token_service.py' },
       { filename: 'backend/app/services/access_token_service.py' },
     ],
   });

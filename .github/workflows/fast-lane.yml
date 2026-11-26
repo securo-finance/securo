@@ -178,12 +178,20 @@ jobs:
               // them carry "auth" in the name at the right place.
               //
               // A backend test is left out of this word rule only: its name
-              // says what it checks, not what it changes, and "author" or
-              // "permission" in a test name held #1900 and #1043 for nothing.
+              // says what it checks, not what it changes, and "author" in a
+              // test name held #1900 for nothing.
               // A test runs in CI, never in the app, and the code it covers
               // still meets every rule here. The path rules still read it.
               [/^(?!backend\/tests\/)(?:.*\/)?[^/]*(auth|token|secret|credential|passkey|webauthn|oidc|password|login|permission)[^/]*\.(py|ts|tsx|js|jsx)$/i,
                                                                       'auth or credentials'],
+              // Some tests are the gate themselves: the write permission
+              // sweep is the one thing that catches a mutating route with no
+              // gate, since `transactions.py` and its kind match no rule here,
+              // and the others pin how sign-in, tokens and secrets behave. The
+              // lane cannot tell a loosened or deleted test from an added one,
+              // so these stay held by name.
+              [/^backend\/tests\/(test_write_permission_coverage|test_write_permission_gate|test_oidc_auth|test_passkeys|test_access_tokens|test_mcp_jwt_secret|test_instance_secrets|test_oauth_state)\.py$/,
+                                                                      'security test'],
               // CI and the repository configuration are not application code:
               // a pull request that can edit them can edit this file and take
               // the gates with it.
