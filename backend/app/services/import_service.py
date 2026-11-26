@@ -1155,6 +1155,46 @@ def _cents(value: Decimal) -> Decimal:
     return value.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
 
+class ImportCategoryNotFound(ValueError):
+    """A row names a category the workspace does not have."""
+
+    def __init__(self) -> None:
+        super().__init__("Category not found")
+
+
+async def _ensure_categories_in_workspace(
+    session: AsyncSession,
+    workspace_id: uuid.UUID,
+    rows: list[TransactionImport],
+) -> None:
+    """Refuse the batch when a row's `category_id` or `suggested_category_id`
+    is not a category of this workspace.
+
+    Both ids come from the request body and are written as they are, so one
+    from another workspace would file the row under that workspace's category
+    and show its name to whoever imported. An id from another workspace and
+    one that does not exist get the same answer, so the refusal does not tell
+    which ids exist elsewhere. Hidden categories of the workspace are still
+    accepted, as on a hand-made transaction.
+    """
+    named = {
+        category_id
+        for row in rows
+        for category_id in (row.category_id, row.suggested_category_id)
+        if category_id is not None
+    }
+    if not named:
+        return
+    found = await session.execute(
+        select(Category.id).where(
+            Category.workspace_id == workspace_id,
+            Category.id.in_(named),
+        )
+    )
+    if named - set(found.scalars()):
+        raise ImportCategoryNotFound()
+
+
 async def import_transactions(
     session: AsyncSession,
     workspace_id: uuid.UUID,
@@ -1176,26 +1216,18 @@ async def import_transactions(
 
     included = [t for t in transactions if not t.excluded]
     excluded_count = len(transactions) - len(included)
+    await _ensure_categories_in_workspace(session, workspace_id, included)
 
     # Calculate summaries from included transactions only
     total_credit = sum(t.amount for t in included if t.type == "credit")
     total_debit = sum(t.amount for t in included if t.type == "debit")
 
-    # Create import log first to get its ID
-    import_log = ImportLog(
-        user_id=user_id,
-        workspace_id=workspace_id,
-        account_id=account_id,
-        filename=filename,
-        format=detected_format,
-        transaction_count=len(included),
-        total_credit=total_credit,
-        total_debit=total_debit,
-    )
-    session.add(import_log)
-    await session.flush()  # Get the import_log.id
-
-    # Look up account currency for fallback
+    # Lock the connection, then the account, before writing anything that
+    # points at the account. Inserting the import log takes a key-share lock
+    # on the account row (its foreign key); two imports that both held that
+    # share and then asked for the update lock deadlocked, and Postgres
+    # aborted one of them with a 500 (#613). Locked first, a second import
+    # of the same account waits here for the first to commit.
     account_result = await session.execute(select(Account).where(Account.id == account_id))
     account = account_result.scalar_one_or_none()
     if account and account.connection_id:
@@ -1210,6 +1242,19 @@ async def import_transactions(
         )
         account = account_result.scalar_one()
     account_currency = account.currency if account else get_settings().default_currency
+
+    import_log = ImportLog(
+        user_id=user_id,
+        workspace_id=workspace_id,
+        account_id=account_id,
+        filename=filename,
+        format=detected_format,
+        transaction_count=len(included),
+        total_credit=total_credit,
+        total_debit=total_debit,
+    )
+    session.add(import_log)
+    await session.flush()  # Get the import_log.id
 
     # Build category name → id map scoped to the workspace, on the same terms
     # the preview used: hidden categories excluded, names matched
