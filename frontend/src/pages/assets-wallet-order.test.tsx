@@ -94,6 +94,8 @@ describe('Wallet ordering', () => {
 
   it('puts the old order back when saving fails', async () => {
     api.assetGroups.reorder.mockRejectedValue(new Error('offline'))
+    // The refetch after the error never answers, so only the rollback can restore the order.
+    api.assetGroups.list.mockResolvedValueOnce(WALLETS).mockReturnValue(new Promise(() => {}))
     await renderPage()
 
     openMenu('Savings')

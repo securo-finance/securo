@@ -97,7 +97,7 @@ import { getAssetValuePrimary, getPortfolioShare, getPortfolioTotalPrimary } fro
 import { formatTransactionTotal, getTransactionTotalCurrency } from '@/lib/asset-transaction-total'
 import { MAX_SPLIT_UNITS, canRecordSplit, formatSplitRatio, parseSplitUnits } from '@/lib/asset-split'
 import { formatCurrency } from '@/lib/format'
-import { applyWalletOrder } from '@/lib/wallet-order'
+import { applyWalletOrder, compareWallets } from '@/lib/wallet-order'
 
 // Renders a logo image when one is available, falling back to the asset's
 // type-based Lucide icon on missing URL or broken image. Uses the type's
@@ -1376,7 +1376,7 @@ export default function AssetsPage() {
   }, [activeAssets])
 
   const sortedWallets = useMemo(() => {
-    return (walletsList ?? []).slice().sort((a, b) => a.position - b.position || a.name.localeCompare(b.name))
+    return (walletsList ?? []).slice().sort(compareWallets)
   }, [walletsList])
 
   // Performance tells a deleted wallet or holding (dropped from a saved or
@@ -1458,7 +1458,7 @@ export default function AssetsPage() {
   }
 
   function handleWalletDragEnd({ active, over }: DragEndEvent) {
-    if (!over || reorderWalletsMutation.isPending) return
+    if (!over) return
     moveWallet(
       sortedWallets.findIndex(wallet => wallet.id === active.id),
       sortedWallets.findIndex(wallet => wallet.id === over.id),
@@ -1764,7 +1764,7 @@ export default function AssetsPage() {
                     <SortableWalletSection
                       key={w.id}
                       id={w.id}
-                      disabled={!canWrite || sortedWallets.length < 2 || reorderWalletsMutation.isPending}
+                      disabled={reorderWalletsMutation.isPending}
                     >
                       {(dragHandle) => renderWalletSection(w, assetsByGroup.get(w.id) ?? [], index, dragHandle)}
                     </SortableWalletSection>

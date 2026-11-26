@@ -1,6 +1,7 @@
 import type { AssetGroup } from '../types'
 
-function byPositionThenName(a: AssetGroup, b: AssetGroup): number {
+/** Wallet display order; the id breaks ties the way the backend does. */
+export function compareWallets(a: AssetGroup, b: AssetGroup): number {
   return a.position - b.position || a.name.localeCompare(b.name) || a.id.localeCompare(b.id)
 }
 
@@ -22,7 +23,7 @@ export function applyWalletOrder(wallets: AssetGroup[], orderedIds: string[]): A
   let replacementIndex = 0
   const reordered = wallets
     .slice()
-    .sort(byPositionThenName)
+    .sort(compareWallets)
     .map(wallet => selectedIds.has(wallet.id) ? replacements[replacementIndex++] : wallet)
   const positions = new Map(reordered.map((wallet, position) => [wallet.id, position]))
 

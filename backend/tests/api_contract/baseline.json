@@ -890,7 +890,7 @@
   "POST /api/workspaces/{workspace_id}/members": 400,
   "PUT /api/admin/email": 200,
   "PUT /api/agents/{agent_id}/tools": 200,
-  "PUT /api/asset-groups/order": 404,
+  "PUT /api/asset-groups/order": 204,
   "PUT /api/backups/config": 200,
   "PUT /api/document-ai/settings": 200,
   "PUT /api/mortgage-payments/{payment_id}": 404,

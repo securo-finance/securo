@@ -23,7 +23,7 @@ class AssetGroupUpdate(BaseModel):
 
 
 class AssetGroupReorder(BaseModel):
-    group_ids: list[uuid.UUID] = Field(min_length=1)
+    group_ids: list[uuid.UUID] = Field(min_length=1, max_length=1000)
 
     @field_validator("group_ids")
     @classmethod
