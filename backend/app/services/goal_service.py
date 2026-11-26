@@ -205,7 +205,10 @@ def _compute_on_track(
     # actual_progress = how much has been saved since creation
     total_needed = target - initial_amount
     if total_needed <= 0:
-        return "achieved"
+        # The baseline was already at or past the target but the current amount
+        # is below it (a card balance recorded as positive debt before it was
+        # read with its liability sign): the goal has fallen behind, not been met.
+        return "behind"
 
     elapsed_days = (today - start).days
     expected_progress = total_needed * Decimal(str(elapsed_days / total_days))
