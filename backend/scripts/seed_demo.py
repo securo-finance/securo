@@ -37,6 +37,7 @@ from app.models.category import Category
 from app.models.fx_rate import FxRate
 from app.models.goal import Goal
 from app.models.group import Group, GroupMember
+from app.models.import_log import ImportLog
 from app.models.recurring_transaction import RecurringTransaction
 from app.models.rule import Rule
 from app.models.transaction import Transaction
@@ -177,6 +178,10 @@ async def _wipe(session, user_id: uuid.UUID) -> None:
     # enough — but groups + members need to go before transactions in
     # case any split's group_member_id FK is RESTRICT.
     await session.execute(delete(Transaction).where(Transaction.user_id == user_id))
+    # The import logs the business seed writes: rows first, then the records
+    # that name them, so a re-run does not leave an import pointing at
+    # transactions that no longer exist.
+    await session.execute(delete(ImportLog).where(ImportLog.user_id == user_id))
     await session.execute(delete(Group).where(Group.user_id == user_id))
     await session.execute(delete(Category).where(Category.user_id == user_id))
     await session.execute(delete(Account).where(Account.user_id == user_id))

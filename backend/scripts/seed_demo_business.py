@@ -20,6 +20,8 @@ What this module builds, all inside the studio's workspace:
 * a catalog of services with their prices;
 * clients and suppliers as payees, the clients carrying valid CNPJs;
 * six months of cash movement on the checking account and the card;
+* the checking account's statements, one per month, recorded as imports so
+  the import screen has a history and its undo has rows to act on;
 * the invoice ledger, with every derived state the list can show:
   paid, partial, overdue, open and draft, plus one installment plan;
 * two recurring agreements: an active monthly retainer whose periods
@@ -49,7 +51,7 @@ import argparse
 import asyncio
 import calendar
 import uuid
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Any, Optional
 
@@ -66,6 +68,7 @@ from app.models.budget import Budget
 from app.models.category import Category
 from app.models.credit_card_bill import CreditCardBill
 from app.models.goal import Goal
+from app.models.import_log import ImportLog
 from app.models.invoice import (
     Invoice,
     InvoiceAllocation,
@@ -595,6 +598,7 @@ async def _wipe_business(session: AsyncSession, workspace_id: uuid.UUID) -> None
         TransactionCategoryLine,
         RecurringTransactionCategoryLine,
         Transaction,
+        ImportLog,
         CreditCardBill,
         RecurringTransaction,
         Rule,
@@ -1308,6 +1312,67 @@ async def seed_business(
             payee=payees[spec["payee"]],
         )
 
+    # The statements behind those rows. Each month of the checking account
+    # arrived as the bank's OFX export, so the import screen lists a history
+    # and its undo has rows to take back out. The card is left alone: a
+    # statement belongs to one account.
+    await session.flush()
+    statements = 0
+    for months_ago in range(months):
+        period_start = _month_start(today, months_ago)
+        period_end = _month_start(today, months_ago - 1)
+        rows = (
+            (
+                await session.execute(
+                    select(Transaction).where(
+                        Transaction.workspace_id == wsid,
+                        Transaction.account_id == checking.id,
+                        Transaction.date >= period_start,
+                        Transaction.date < period_end,
+                        # The opening balance describes where the account
+                        # started; no bank statement carries it.
+                        Transaction.exclude_from_pnl.is_(False),
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        if not rows:
+            continue
+        imported_on = min(period_end - timedelta(days=1), today)
+        log = ImportLog(
+            user_id=uid,
+            workspace_id=wsid,
+            account_id=checking.id,
+            entity="transactions",
+            filename=f"extrato-conta-pj-{period_start:%Y-%m}.ofx",
+            format="ofx",
+            transaction_count=len(rows),
+            total_credit=sum(
+                (row.amount for row in rows if row.type == "credit"), Decimal("0.00")
+            ),
+            total_debit=sum(
+                (row.amount for row in rows if row.type == "debit"), Decimal("0.00")
+            ),
+            created_at=datetime(
+                imported_on.year,
+                imported_on.month,
+                imported_on.day,
+                9,
+                0,
+                tzinfo=timezone.utc,
+            ),
+        )
+        session.add(log)
+        await session.flush()
+        for row in rows:
+            row.source = "import"
+            row.import_id = log.id
+            # A statement is the bank confirming the money moved.
+            row.is_paid = True
+        statements += 1
+
     await session.commit()
 
     # 9. Budgets, rules, recurring bills and one goal --------------------
@@ -1399,6 +1464,7 @@ async def seed_business(
         "number_to": numbers[-1] if numbers else None,
         "products": len(products),
         "payees": len(payees),
+        "statements": statements,
         "schedules": [
             {"id": str(retainer.id), "name": retainer.name, "status": retainer.status},
             {"id": str(churned.id), "name": churned.name, "status": churned.status},

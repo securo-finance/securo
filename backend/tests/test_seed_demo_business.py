@@ -19,6 +19,7 @@ import app.models  # noqa: F401  (register every table for create_all)
 from app.core.database import Base
 from app.fiscal.validators import validate_br_cnpj
 from app.models.account import Account
+from app.models.import_log import ImportLog
 from app.models.invoice import Invoice
 from app.models.invoice_schedule import InvoiceSchedule
 from app.models.payee import Payee, PayeeTaxId
@@ -270,6 +271,124 @@ async def test_business_seed_lists_first_and_covers_every_invoice_state(demo_dat
 
         workspaces = await _workspaces(session, user.id)
         assert [row.kind for row in workspaces] == ["business", "personal"]
+
+
+async def test_business_seed_records_the_statements_as_imports(demo_database):
+    """The studio's checking account arrives as one statement per month.
+
+    The B2B page promises statement import, and the import screen reads the
+    log rows: cash movement without a log shows the report and never the
+    import. The card is left out, since a statement belongs to one account,
+    and a second run keeps the same six rather than stacking another six.
+    """
+    session_maker = demo_database
+    demo = _load("seed_demo")
+    seed = demo.business_seed
+
+    async with session_maker() as session:
+        user = User(
+            email="demo@example.test",
+            hashed_password="not-used-here",
+            is_active=True,
+            is_verified=True,
+            is_superuser=False,
+            preferences={"language": "pt-BR", "currency_display": "BRL"},
+        )
+        session.add(user)
+        await session.commit()
+
+        personal = await demo._ensure_personal_workspace(session, user)
+        business = await seed.ensure_business_workspace(
+            session, user, before=personal.created_at
+        )
+        summary = await seed.seed_business(session, user, business, months=6, today=TODAY)
+
+        checking = await session.scalar(
+            select(Account).where(
+                Account.workspace_id == business.id, Account.type == "checking"
+            )
+        )
+        card = await session.scalar(
+            select(Account).where(
+                Account.workspace_id == business.id, Account.type == "credit_card"
+            )
+        )
+
+        logs = list(
+            (
+                await session.execute(
+                    select(ImportLog)
+                    .where(ImportLog.workspace_id == business.id)
+                    .order_by(ImportLog.created_at.asc())
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert summary["statements"] == 6
+        assert len(logs) == 6
+        assert len({row.filename for row in logs}) == 6
+        assert all(row.filename.startswith("extrato-conta-pj-") for row in logs)
+        assert all(row.account_id == checking.id for row in logs)
+        assert all(row.entity == "transactions" and row.format == "ofx" for row in logs)
+
+        # Each log counts and totals exactly the rows it marks as imported.
+        for log in logs:
+            rows = list(
+                (
+                    await session.execute(
+                        select(Transaction).where(Transaction.import_id == log.id)
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            assert len(rows) == log.transaction_count
+            assert all(row.source == "import" and row.is_paid for row in rows)
+            assert log.total_credit == sum(
+                (row.amount for row in rows if row.type == "credit"), Decimal("0.00")
+            )
+            assert log.total_debit == sum(
+                (row.amount for row in rows if row.type == "debit"), Decimal("0.00")
+            )
+
+        # Everything the checking account shows came from a statement, but the
+        # opening balance, which no statement carries, and nothing on the card.
+        strays = list(
+            (
+                await session.execute(
+                    select(Transaction).where(
+                        Transaction.account_id == checking.id,
+                        Transaction.import_id.is_(None),
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert [row.description for row in strays] == ["Saldo inicial"]
+        assert (
+            await session.scalar(
+                select(func.count())
+                .select_from(Transaction)
+                .where(
+                    Transaction.account_id == card.id,
+                    Transaction.import_id.is_not(None),
+                )
+            )
+            == 0
+        )
+
+        # Running it again rewrites the statements instead of adding six more.
+        await seed.seed_business(session, user, business, months=6, today=TODAY)
+        assert (
+            await session.scalar(
+                select(func.count())
+                .select_from(ImportLog)
+                .where(ImportLog.workspace_id == business.id)
+            )
+            == 6
+        )
 
 
 async def test_second_company_sits_between_the_studio_and_the_personal_wallet(
