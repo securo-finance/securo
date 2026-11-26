@@ -165,7 +165,7 @@ export function carryForward(points: AmountPoint[], from: string): AmountPoint[]
         Number.isFinite(Number(point.amount)),
     )
     .reduce<AmountPoint | null>(
-      (latest, point) => (latest === null || point.date > latest.date ? point : latest),
+      (latest, point) => (latest === null || point.date >= latest.date ? point : latest),
       null,
     )
   if (lastBefore === null) {

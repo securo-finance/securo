@@ -115,6 +115,22 @@ describe('goal history window', () => {
     ])
   })
 
+  it('keeps the later amount when two valuations share the last date', () => {
+    expect(
+      carryForward(
+        [
+          { date: '2026-01-28', amount: 4200 },
+          { date: '2026-01-28', amount: 4800 },
+        ],
+        '2026-02-01',
+      ),
+    ).toEqual([
+      { date: '2026-01-28', amount: 4200 },
+      { date: '2026-01-28', amount: 4800 },
+      { date: '2026-02-01', amount: 4800 },
+    ])
+  })
+
   it('leaves points untouched when a valuation already starts the window', () => {
     const points = [{ date: '2026-02-01', amount: 5000 }]
     expect(carryForward(points, '2026-02-01')).toBe(points)

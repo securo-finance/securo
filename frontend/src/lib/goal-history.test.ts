@@ -114,7 +114,7 @@ describe('existing history APIs', () => {
   })
 
   it('requests the whole goal window from the value-trend API', async () => {
-    await loadGoalHistory(
+    const result = await loadGoalHistory(
       goal(
         {
           tracking_type: 'asset',
@@ -125,8 +125,13 @@ describe('existing history APIs', () => {
       ),
       today,
     )
-    // Ten years, capped at the endpoint's limit, instead of the 12-month default.
+    // Ten years, capped at the endpoint's limit, instead of the 12-month default,
+    // and the 2020 valuation stays inside the returned window.
     expect(api.assets.valueTrend).toHaveBeenCalledWith('studio', 120)
+    expect(result.points).toEqual([
+      { date: '2020-01-01', amount: 100 },
+      { date: today, amount: 8000 },
+    ])
   })
 
   it('uses weekly report totals for only the selected wallet, starting at an older goal creation date', async () => {

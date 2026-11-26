@@ -243,6 +243,17 @@ it('keeps the month labels distinct on a short x-axis window', async () => {
   })
 })
 
+it('draws a dot for a single actual point carried into a sparse window', async () => {
+  mocks.goals.list.mockResolvedValue([fixtures()[2]])
+  mocks.history.mockResolvedValue({ points: [{ date: '2026-02-01', amount: 4800 }], notes: [] })
+  renderWithProviders(<GoalsPage />)
+  const region = await screen.findByRole('region', { name: 'Progress for Studio Upgrade' })
+  await waitFor(() => {
+    const dot = region.querySelector('circle.recharts-line-dot')
+    expect(dot).toBeTruthy()
+  })
+})
+
 it('moves the target label off the axis when the target is zero', async () => {
   mocks.goals.list.mockResolvedValue([
     { ...fixtures()[0], target_amount: 0, current_amount: 500 },

@@ -148,6 +148,9 @@ export function GoalVisualization({ goal }: { goal: Goal }) {
         ? { day: 'numeric', month: 'short', timeZone: 'UTC' }
         : { month: 'short', year: '2-digit', timeZone: 'UTC' },
     )
+  // A single actual point, such as the valuation carried into a sparse window,
+  // has no segment to draw, so it needs its own dot to stay visible.
+  const actualPoints = chart.filter(point => point.actual !== undefined).length
   // y-max = 10% above the target, current amount, or highest historical value,
   // whichever is largest
   // Use 100 only when the value is at most 90.
@@ -241,7 +244,7 @@ export function GoalVisualization({ goal }: { goal: Goal }) {
                     scale="time"
                     domain={[start, end]}
                     ticks={axisTicks(historyStart, new Date(end).toISOString().slice(0, 10))}
-                    interval={0}
+                    interval="preserveStartEnd"
                     tick={{ fontSize: 11, fill: 'var(--muted-foreground)' }}
                     tickFormatter={axisLabel}
                   />
@@ -317,7 +320,7 @@ export function GoalVisualization({ goal }: { goal: Goal }) {
                     name={t('goalChart.actual')}
                     stroke="var(--primary)"
                     strokeWidth={2.5}
-                    dot={false}
+                    dot={actualPoints === 1}
                     connectNulls
                     isAnimationActive={false}
                   />
