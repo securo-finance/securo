@@ -401,6 +401,8 @@ async def test_an_access_token_sees_nothing_shared(stack):
     """A token's request is bound without its creator, so the shared policy gives it nothing."""
     from types import SimpleNamespace
 
+    from starlette.requests import Request
+
     from app.core.workspace_context import current_workspace
     from app.models.user import User
 
@@ -424,11 +426,13 @@ async def test_an_access_token_sees_nothing_shared(stack):
     for token, seen in ((None, 2), (SimpleNamespace(workspace_id=A), 1)):
         async with stack.app() as session:
             user = await session.get(User, person)
-            request = SimpleNamespace(state=SimpleNamespace(access_token=token))
-            context = current_workspace(request, None, user, session)
-            assert (await anext(context)).id == A
+            assert user is not None
+            request = Request({"type": "http", "headers": [], "state": {"access_token": token}})
+            # Driven the way FastAPI drives a yield dependency: up to the yield, then on to its end.
+            dependency = current_workspace(request, None, user, session)
+            assert (await anext(dependency)).id == A
             assert await session.scalar(select(func.count()).select_from(transactions)) == seen
-            await context.aclose()
+            assert await anext(dependency, None) is None
 
 
 async def test_the_api_works_under_the_restricted_role(stack, monkeypatch):
