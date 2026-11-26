@@ -3673,6 +3673,23 @@
     }
   },
   "providerSettings": {
+    "workspaces": {
+      "pluggy": {
+        "title": "Client Pluggy per area di lavoro",
+        "description": "Un'area con un proprio client collega le banche a quell'account Pluggy. Le altre usano le credenziali dell'istanza.",
+        "own": "Client proprio",
+        "shared": "Client condiviso",
+        "invalid": "Non leggibile",
+        "connections": "Connessioni Pluggy: {{count}}",
+        "set": "Imposta client",
+        "replace": "Sostituisci",
+        "remove": "Rimuovi",
+        "removeTitle": "Rimuovere il client Pluggy di {{workspace}}?",
+        "removeDescription": "Quest'area tornerà a usare le credenziali condivise per le nuove operazioni.",
+        "dialogDescription": "Queste credenziali valgono solo per quest'area. Impostale prima che qualcuno colleghi una banca qui.",
+        "clientChanged": "Quest'area ha connessioni con un altro client Pluggy. Elimina prima quelle connessioni."
+      }
+    },
     "catalog": {
       "connectionsTitle": "Connessioni bancarie",
       "connectionsDescription": "Scegli come collegare i conti bancari a questa istanza.",
@@ -3732,7 +3749,11 @@
       "enable_banking_app_id": "ID applicazione",
       "enable_banking_private_key": "Chiave privata (PEM)",
       "simplefin_enabled": "Attiva SimpleFIN"
-    }
+    },
+    "instanceAccountChanged": "Alcune aree di lavoro che usano queste credenziali hanno connessioni in questo account. Prima assegna loro credenziali proprie o elimina le loro connessioni.",
+    "workspaceListError": "Impossibile caricare le aree di lavoro.",
+    "workspacesTab": "Aree di lavoro",
+    "workspaceCreatedBy": "Creato da {{email}}"
   },
   "categoryLines": {
     "title": "Dividi per categoria",

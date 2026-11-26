@@ -3659,6 +3659,23 @@
     }
   },
   "providerSettings": {
+    "workspaces": {
+      "pluggy": {
+        "title": "Pluggy-Clients pro Arbeitsbereich",
+        "description": "Ein Arbeitsbereich mit eigenem Client verbindet Banken über dieses Pluggy-Konto. Andere nutzen die Zugangsdaten der Instanz.",
+        "own": "Eigener Client",
+        "shared": "Gemeinsamer Client",
+        "invalid": "Nicht lesbar",
+        "connections": "Pluggy-Verbindungen: {{count}}",
+        "set": "Client festlegen",
+        "replace": "Ersetzen",
+        "remove": "Entfernen",
+        "removeTitle": "Pluggy-Client von {{workspace}} entfernen?",
+        "removeDescription": "Dieser Arbeitsbereich nutzt für neue Vorgänge wieder die gemeinsamen Zugangsdaten.",
+        "dialogDescription": "Diese Zugangsdaten gelten nur für diesen Arbeitsbereich. Lege sie fest, bevor hier jemand eine Bank verbindet.",
+        "clientChanged": "Dieser Arbeitsbereich hat Verbindungen unter einem anderen Pluggy-Client. Lösche diese Verbindungen zuerst."
+      }
+    },
     "catalog": {
       "connectionsTitle": "Bankverbindungen",
       "connectionsDescription": "Wähle aus, wie Bankkonten mit dieser Instanz verbunden werden.",
@@ -3718,7 +3735,11 @@
       "enable_banking_app_id": "App-ID",
       "enable_banking_private_key": "Privater Schlüssel (PEM)",
       "simplefin_enabled": "SimpleFIN aktivieren"
-    }
+    },
+    "instanceAccountChanged": "Arbeitsbereiche, die diese Zugangsdaten nutzen, haben Verbindungen unter diesem Konto. Gib ihnen zuerst eigene Zugangsdaten oder lösche ihre Verbindungen.",
+    "workspaceListError": "Die Arbeitsbereiche konnten nicht geladen werden.",
+    "workspacesTab": "Arbeitsbereiche",
+    "workspaceCreatedBy": "Erstellt von {{email}}"
   },
   "categoryLines": {
     "title": "Auf Kategorien aufteilen",

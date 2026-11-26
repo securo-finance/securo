@@ -1,5 +1,6 @@
 import pytest
 import json
+import uuid
 from unittest.mock import patch
 
 import httpx
@@ -9,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.models.app_settings import AppSetting
+from app.models.bank_connection import BankConnection
 
 
 @pytest.fixture(autouse=True)
@@ -134,13 +136,16 @@ async def test_enable_banking_error_does_not_echo_saved_credential(
 
 
 @pytest.mark.asyncio
-async def test_availability_changes_without_restart(client, admin_auth_headers, monkeypatch):
+async def test_availability_changes_without_restart(
+    client, admin_auth_headers, auth_headers, monkeypatch
+):
     monkeypatch.setattr(get_settings(), "pluggy_client_id", "")
     monkeypatch.setattr(get_settings(), "pluggy_client_secret", SecretStr(""))
     url = "/api/admin/provider-settings/pluggy"
 
     async def available():
-        response = await client.get("/api/connections/providers", headers=admin_auth_headers)
+        # The picker answers for a workspace, so a member of one asks.
+        response = await client.get("/api/connections/providers", headers=auth_headers)
         return next(p["configured"] for p in response.json()["providers"] if p["name"] == "pluggy")
 
     assert not await available()
@@ -393,6 +398,10 @@ async def test_pluggy_reauthenticates_after_credential_change(session, clean_db)
             assert isinstance(provider, PluggyProvider)
             assert await provider._ensure_api_key() == secret + "-token"
     assert [request["clientSecret"] for request in requests] == ["first-secret", "second-secret"]
+    # The rotated secret replaced the client's cached key instead of adding one.
+    assert [key for key in PluggyProvider._api_keys if key[0] == "test-id"] == [
+        ("test-id", "second-secret")
+    ]
 
 
 @pytest.mark.asyncio
@@ -518,3 +527,487 @@ async def test_enable_banking_status_shows_the_redirect_url_to_register(
         settings, "enable_banking_oauth_redirect_uri", "http://localhost:4321/bank/callback"
     )
     assert (await redirect_uris())["enable_banking"] == "http://localhost:4321/bank/callback"
+
+
+async def _workspace_with_pluggy_connection(session, user, name="Mom", connected=True):
+    from app.models.bank_connection import BankConnection
+    from app.models.workspace import Workspace
+
+    workspace = Workspace(name=name, created_by_user_id=user.id)
+    session.add(workspace)
+    await session.flush()
+    if connected:
+        session.add(
+            BankConnection(
+                user_id=user.id,
+                workspace_id=workspace.id,
+                provider="pluggy",
+                external_id="item-1",
+                institution_name="Banco",
+                credentials={"item_id": "item-1"},
+            )
+        )
+    await session.commit()
+    return workspace
+
+
+def _pluggy_values(client_id="mom-client", client_secret="mom-secret"):
+    return {"values": {"pluggy_client_id": client_id, "pluggy_client_secret": client_secret}}
+
+
+def _workspace_url(workspace_id):
+    return f"/api/admin/provider-settings/pluggy/workspaces/{workspace_id}"
+
+
+@pytest.mark.asyncio
+async def test_workspace_client_applies_only_to_that_workspace(
+    client, admin_auth_headers, session, test_user, monkeypatch
+):
+    from app.providers import get_provider
+    from app.services.provider_settings import resolve_settings
+
+    monkeypatch.setattr(get_settings(), "pluggy_client_id", "instance-client")
+    monkeypatch.setattr(get_settings(), "pluggy_client_secret", SecretStr("instance-secret"))
+    mom = await _workspace_with_pluggy_connection(session, test_user, connected=False)
+    other = await _workspace_with_pluggy_connection(session, test_user, "Other", connected=False)
+
+    response = await client.put(
+        _workspace_url(mom.id), headers=admin_auth_headers, json=_pluggy_values()
+    )
+    assert response.status_code == 204
+
+    mom_settings = await resolve_settings(session, mom.id)
+    assert mom_settings.pluggy_client_id == "mom-client"
+    assert mom_settings.pluggy_client_secret.get_secret_value() == "mom-secret"
+    assert get_provider("pluggy", settings=mom_settings).settings.pluggy_client_id == "mom-client"
+    for settings in (await resolve_settings(session, other.id), await resolve_settings(session)):
+        assert settings.pluggy_client_id == "instance-client"
+        assert settings.pluggy_client_secret.get_secret_value() == "instance-secret"
+
+
+@pytest.mark.asyncio
+async def test_sync_and_connect_token_use_the_workspace_client(
+    session, admin_auth_headers, client, test_user, monkeypatch
+):
+    from app.providers.pluggy import PluggyProvider
+    from app.services import connection_service
+    from app.services.provider_settings import set_workspace_credentials
+
+    monkeypatch.setattr(get_settings(), "pluggy_client_id", "instance-client")
+    monkeypatch.setattr(get_settings(), "pluggy_client_secret", SecretStr("instance-secret"))
+    mom = await _workspace_with_pluggy_connection(session, test_user, connected=False)
+    await set_workspace_credentials(session, "pluggy", mom.id, _pluggy_values()["values"])
+
+    used = []
+
+    async def create_connect_token(self, client_user_id, item_id=None):
+        used.append(self.settings.pluggy_client_id)
+        raise RuntimeError("reached")
+
+    with (
+        patch.object(PluggyProvider, "create_connect_token", create_connect_token),
+        pytest.raises(RuntimeError, match="reached"),
+    ):
+        await connection_service.create_connect_token(
+            "pluggy", test_user.id, session=session, workspace_id=mom.id
+        )
+    assert used == ["mom-client"]
+
+
+@pytest.mark.asyncio
+async def test_unreadable_workspace_client_does_not_fall_back_to_instance(
+    session, test_user, monkeypatch
+):
+    from app.models.workspace_provider_credential import WorkspaceProviderCredential
+    from app.providers import get_provider
+    from app.services.provider_settings import resolve_settings, workspace_provider_status
+
+    monkeypatch.setattr(get_settings(), "pluggy_client_id", "instance-client")
+    monkeypatch.setattr(get_settings(), "pluggy_client_secret", SecretStr("instance-secret"))
+    mom = await _workspace_with_pluggy_connection(session, test_user, connected=False)
+    for key in ("pluggy_client_id", "pluggy_client_secret"):
+        session.add(WorkspaceProviderCredential(workspace_id=mom.id, key=key, value="not-a-token"))
+    await session.commit()
+
+    settings = await resolve_settings(session, mom.id)
+    with pytest.raises(ValueError, match="Unknown provider"):
+        get_provider("pluggy", settings=settings)
+    row = next(r for r in await workspace_provider_status(session, "pluggy") if r["workspace_id"] == mom.id)
+    assert row["invalid"] is True
+
+
+@pytest.mark.asyncio
+async def test_workspace_with_connections_cannot_change_pluggy_client(
+    client, admin_auth_headers, session, test_user, monkeypatch
+):
+    from app.services.provider_settings import resolve_settings
+
+    monkeypatch.setattr(get_settings(), "pluggy_client_id", "instance-client")
+    monkeypatch.setattr(get_settings(), "pluggy_client_secret", SecretStr("instance-secret"))
+    workspace = await _workspace_with_pluggy_connection(session, test_user)
+    url = _workspace_url(workspace.id)
+
+    # Connected under the instance client: moving away would strand the item.
+    response = await client.put(url, headers=admin_auth_headers, json=_pluggy_values())
+    assert response.status_code == 409
+    assert response.json()["detail"] == "provider_account_change"
+    assert (await resolve_settings(session, workspace.id)).pluggy_client_id == "instance-client"
+
+    # Same client with a new secret is a rotation, not a move.
+    response = await client.put(
+        url, headers=admin_auth_headers, json=_pluggy_values("instance-client", "rotated")
+    )
+    assert response.status_code == 204
+    settings = await resolve_settings(session, workspace.id)
+    assert settings.pluggy_client_secret.get_secret_value() == "rotated"
+
+    # Removing it falls back to the same client, so that is allowed too.
+    assert (await client.delete(url, headers=admin_auth_headers)).status_code == 204
+
+
+@pytest.mark.asyncio
+async def test_removing_a_workspace_client_with_connections_is_refused(
+    client, admin_auth_headers, session, test_user, monkeypatch
+):
+    from app.services.provider_settings import resolve_settings, set_workspace_credentials
+
+    monkeypatch.setattr(get_settings(), "pluggy_client_id", "instance-client")
+    monkeypatch.setattr(get_settings(), "pluggy_client_secret", SecretStr("instance-secret"))
+    mom = await _workspace_with_pluggy_connection(session, test_user, connected=False)
+    await set_workspace_credentials(session, "pluggy", mom.id, _pluggy_values()["values"])
+    from app.models.bank_connection import BankConnection
+
+    session.add(
+        BankConnection(
+            user_id=test_user.id, workspace_id=mom.id, provider="pluggy", external_id="item-2",
+            institution_name="Banco", credentials={"item_id": "item-2"},
+        )
+    )
+    await session.commit()
+
+    response = await client.delete(_workspace_url(mom.id), headers=admin_auth_headers)
+    assert response.status_code == 409
+    assert response.json()["detail"] == "provider_account_change"
+    assert (await resolve_settings(session, mom.id)).pluggy_client_id == "mom-client"
+
+
+@pytest.mark.asyncio
+async def test_workspace_client_routes_never_return_secrets_and_require_admin(
+    client, admin_auth_headers, auth_headers, session, test_user
+):
+    from app.models.workspace_provider_credential import WorkspaceProviderCredential
+
+    mom = await _workspace_with_pluggy_connection(session, test_user, connected=False)
+    url = _workspace_url(mom.id)
+    assert (await client.put(url, headers=auth_headers, json=_pluggy_values())).status_code == 403
+    assert (await client.delete(url, headers=auth_headers)).status_code == 403
+    listing = "/api/admin/provider-settings/pluggy/workspaces"
+    assert (await client.get(listing, headers=auth_headers)).status_code == 403
+
+    assert (await client.put(url, headers=admin_auth_headers, json=_pluggy_values())).status_code == 204
+    stored = (await session.execute(select(WorkspaceProviderCredential.value))).scalars().all()
+    assert len(stored) == 2
+    assert not any("mom-" in value for value in stored)
+
+    response = await client.get(listing, headers=admin_auth_headers)
+    row = next(r for r in response.json() if r["workspace_id"] == str(mom.id))
+    assert row["has_credentials"] is True and row["invalid"] is False
+    assert "mom-" not in response.text
+
+
+@pytest.mark.asyncio
+async def test_workspace_client_needs_both_fields_and_a_real_workspace(
+    client, admin_auth_headers, session, test_user
+):
+    mom = await _workspace_with_pluggy_connection(session, test_user, connected=False)
+    url = _workspace_url(mom.id)
+    partial = {"values": {"pluggy_client_id": "mom-client"}}
+    response = await client.put(url, headers=admin_auth_headers, json=partial)
+    assert response.status_code == 400
+    assert "mom-client" not in response.text
+    missing = _workspace_url(uuid.uuid4())
+    assert (await client.put(missing, headers=admin_auth_headers, json=_pluggy_values())).status_code == 404
+    assert (await client.delete(missing, headers=admin_auth_headers)).status_code == 404
+
+
+@pytest.mark.asyncio
+@pytest.mark.filterwarnings("ignore::jwt.warnings.InsecureKeyLengthWarning")
+@pytest.mark.parametrize("provider_encryption_key", ["short-custom-key"], indirect=True)
+async def test_weak_master_key_cannot_store_a_workspace_client(
+    client, admin_auth_headers, session, test_user
+):
+    from app.models.workspace_provider_credential import WorkspaceProviderCredential
+
+    mom = await _workspace_with_pluggy_connection(session, test_user, connected=False)
+    response = await client.put(
+        _workspace_url(mom.id), headers=admin_auth_headers, json=_pluggy_values()
+    )
+    # Same answer as the instance credentials, and not the client-change code.
+    assert response.status_code == 409
+    assert "SECRET_KEY" in response.json()["detail"]
+    assert "mom-" not in response.text
+    assert (await session.execute(select(WorkspaceProviderCredential))).first() is None
+
+
+@pytest.mark.asyncio
+async def test_managed_instance_refuses_workspace_client_writes(
+    client, admin_auth_headers, session, test_user, monkeypatch
+):
+    from app.services.provider_settings import resolve_settings, set_workspace_credentials
+
+    mom = await _workspace_with_pluggy_connection(session, test_user, connected=False)
+    await set_workspace_credentials(session, "pluggy", mom.id, _pluggy_values()["values"])
+    monkeypatch.setattr(get_settings(), "managed_instance", True)
+    url = _workspace_url(mom.id)
+
+    for response in (
+        await client.put(url, headers=admin_auth_headers, json=_pluggy_values("other", "x")),
+        await client.delete(url, headers=admin_auth_headers),
+    ):
+        assert response.status_code == 403
+        assert response.json()["detail"]["code"] == "instance_managed"
+    assert (await resolve_settings(session, mom.id)).pluggy_client_id == "mom-client"
+    # Reading stays open: the screen shows what is in force.
+    listing = await client.get(
+        "/api/admin/provider-settings/pluggy/workspaces", headers=admin_auth_headers
+    )
+    assert listing.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_provider_without_workspace_credentials_is_not_found(
+    client, admin_auth_headers, session, test_user
+):
+    mom = await _workspace_with_pluggy_connection(session, test_user, connected=False)
+    base = "/api/admin/provider-settings/enable_banking/workspaces"
+    values = {"values": {"enable_banking_app_id": "app", "enable_banking_private_key": "key"}}
+    assert (await client.get(base, headers=admin_auth_headers)).status_code == 404
+    url = f"{base}/{mom.id}"
+    assert (await client.put(url, headers=admin_auth_headers, json=values)).status_code == 404
+    assert (await client.delete(url, headers=admin_auth_headers)).status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_stored_key_of_a_provider_not_enabled_per_workspace_is_ignored(
+    session, test_user, monkeypatch
+):
+    from app.agents.services.crypto import encrypt
+    from app.models.workspace_provider_credential import WorkspaceProviderCredential
+    from app.services.provider_settings import resolve_settings
+
+    monkeypatch.setattr(get_settings(), "enable_banking_app_id", "instance-app")
+    mom = await _workspace_with_pluggy_connection(session, test_user, connected=False)
+    session.add(
+        WorkspaceProviderCredential(
+            workspace_id=mom.id, key="enable_banking_app_id", value=encrypt("stray-app")
+        )
+    )
+    await session.commit()
+    assert (await resolve_settings(session, mom.id)).enable_banking_app_id == "instance-app"
+
+
+@pytest.mark.asyncio
+async def test_unreadable_workspace_client_with_connections_stays_replaceable(
+    client, admin_auth_headers, session, test_user, monkeypatch
+):
+    from sqlalchemy import update
+
+    from app.models.workspace_provider_credential import WorkspaceProviderCredential
+    from app.services.provider_settings import resolve_settings, set_workspace_credentials
+
+    monkeypatch.setattr(get_settings(), "pluggy_client_id", "instance-client")
+    monkeypatch.setattr(get_settings(), "pluggy_client_secret", SecretStr("instance-secret"))
+    mom = await _workspace_with_pluggy_connection(session, test_user, connected=False)
+    await set_workspace_credentials(session, "pluggy", mom.id, _pluggy_values()["values"])
+    session.add(
+        BankConnection(
+            user_id=test_user.id, workspace_id=mom.id, provider="pluggy", external_id="item-3",
+            institution_name="Banco", credentials={"item_id": "item-3"},
+        )
+    )
+    await session.execute(update(WorkspaceProviderCredential).values(value="not-a-token"))
+    await session.commit()
+
+    # Nothing can be read, so there is no account to protect: the admin can recover.
+    url = _workspace_url(mom.id)
+    response = await client.put(url, headers=admin_auth_headers, json=_pluggy_values("new", "s"))
+    assert response.status_code == 204
+    assert (await resolve_settings(session, mom.id)).pluggy_client_id == "new"
+
+
+@pytest.mark.asyncio
+async def test_archived_workspaces_are_not_listed(session, test_user):
+    from app.services.provider_settings import workspace_provider_status
+
+    mom = await _workspace_with_pluggy_connection(session, test_user, connected=False)
+    gone = await _workspace_with_pluggy_connection(session, test_user, name="Gone", connected=False)
+    gone.is_archived = True
+    await session.commit()
+
+    listed = {row["workspace_id"] for row in await workspace_provider_status(session, "pluggy")}
+    assert mom.id in listed and gone.id not in listed
+
+
+@pytest.mark.asyncio
+async def test_instance_client_change_is_refused_while_fallback_workspaces_have_connections(
+    client, admin_auth_headers, session, test_user, monkeypatch
+):
+    from app.services.provider_settings import resolve_settings, set_workspace_credentials
+
+    monkeypatch.setattr(get_settings(), "pluggy_client_id", "instance-client")
+    monkeypatch.setattr(get_settings(), "pluggy_client_secret", SecretStr("instance-secret"))
+    fallback = await _workspace_with_pluggy_connection(session, test_user)
+    url = "/api/admin/provider-settings/pluggy"
+
+    def patch_values(client_id, secret="x"):
+        return {"values": {"pluggy_client_id": client_id, "pluggy_client_secret": secret}}
+
+    response = await client.patch(url, headers=admin_auth_headers, json=patch_values("other-client"))
+    assert response.status_code == 409
+    assert response.json()["detail"] == "provider_account_change"
+    assert (await resolve_settings(session)).pluggy_client_id == "instance-client"
+
+    # A new secret for the same client is a rotation.
+    response = await client.patch(url, headers=admin_auth_headers, json=patch_values("instance-client"))
+    assert response.status_code == 200
+
+    # Removing the saved value falls back to the environment's client: the same one.
+    response = await client.patch(
+        url, headers=admin_auth_headers, json={"values": {"pluggy_client_id": None}}
+    )
+    assert response.status_code == 200
+
+    # Once that workspace has its own client, the instance one is free to change.
+    await set_workspace_credentials(
+        session, "pluggy", fallback.id,
+        {"pluggy_client_id": "instance-client", "pluggy_client_secret": "instance-secret"},
+    )
+    response = await client.patch(url, headers=admin_auth_headers, json=patch_values("other-client"))
+    assert response.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_provider_status_names_the_fields_a_workspace_can_replace(client, admin_auth_headers):
+    response = await client.get("/api/admin/provider-settings", headers=admin_auth_headers)
+    fields = {item["name"]: item["workspace_fields"] for item in response.json()}
+    assert fields["pluggy"] == ["pluggy_client_id", "pluggy_client_secret"]
+    assert fields["enable_banking"] is None
+
+
+@pytest.mark.asyncio
+async def test_resolving_for_a_workspace_the_session_is_not_bound_to_is_refused(
+    session, test_user, monkeypatch
+):
+    from app.core import row_security
+    from app.services.provider_settings import WorkspaceNotBound, resolve_settings
+
+    mom = await _workspace_with_pluggy_connection(session, test_user, connected=False)
+    monkeypatch.setattr(get_settings(), "row_security_enabled", True)
+    # Under row security an unbound session would read no workspace rows and
+    # fall back to the instance account without a word.
+    with pytest.raises(WorkspaceNotBound):
+        await resolve_settings(session, mom.id)
+    await row_security.bind_workspace(session, mom.id)
+    await resolve_settings(session, mom.id)
+
+
+@pytest.mark.asyncio
+async def test_every_account_change_takes_the_provider_lock(session, test_user, monkeypatch):
+    """The instance change, a workspace set and a workspace remove read what
+    the others write, so each takes the per-provider lock before reading."""
+    from app.services import provider_settings
+
+    monkeypatch.setattr(get_settings(), "pluggy_client_id", "instance-client")
+    monkeypatch.setattr(get_settings(), "pluggy_client_secret", SecretStr("instance-secret"))
+    mom = await _workspace_with_pluggy_connection(session, test_user, connected=False)
+    events = []
+    real_lock = provider_settings.lock_provider_accounts
+
+    async def lock(session, provider):
+        events.append(("lock", provider))
+        await real_lock(session, provider)
+
+    monkeypatch.setattr(provider_settings, "lock_provider_accounts", lock)
+    # Every query the service makes goes through one of these.
+    for name in ("execute", "scalar", "scalars", "get"):
+        real = getattr(session, name)
+
+        def recording(*args, _real=real, _name=name, **kwargs):
+            events.append(("read", _name))
+            return _real(*args, **kwargs)
+
+        monkeypatch.setattr(session, name, recording)
+
+    for change in (
+        provider_settings.set_workspace_credentials(session, "pluggy", mom.id, _pluggy_values()["values"]),
+        provider_settings.remove_workspace_credentials(session, "pluggy", mom.id),
+        provider_settings.update_provider(session, "pluggy", {"pluggy_client_id": "other-client"}),
+    ):
+        events.clear()
+        await change
+        assert events[0] == ("lock", "pluggy"), events
+
+
+@pytest.mark.asyncio
+async def test_connection_saved_after_its_account_changed_is_refused(
+    session, test_user, test_workspace, monkeypatch
+):
+    """An admin moves the workspace to another client while a user is in the
+    Pluggy widget: the item belongs to the old client, so it isn't saved."""
+    from sqlalchemy import func
+
+    from app.providers.base import ConnectionData
+    from app.providers.pluggy import PluggyProvider
+    from app.services import connection_service
+    from app.services.provider_settings import ProviderAccountChangeError, set_workspace_credentials
+
+    monkeypatch.setattr(get_settings(), "pluggy_client_id", "instance-client")
+    monkeypatch.setattr(get_settings(), "pluggy_client_secret", SecretStr("instance-secret"))
+    workspace_id, user_id = test_workspace.id, test_user.id
+
+    async def callback(self, code):
+        # The admin's change lands while the provider talks to Pluggy.
+        await set_workspace_credentials(session, "pluggy", workspace_id, _pluggy_values()["values"])
+        return ConnectionData(
+            external_id=code, institution_name="Banco", credentials={"item_id": code}, accounts=[]
+        )
+
+    with patch.object(PluggyProvider, "handle_oauth_callback", callback):
+        with pytest.raises(ProviderAccountChangeError):
+            await connection_service.handle_oauth_callback(
+                session, workspace_id, user_id, "item-9", provider_name="pluggy"
+            )
+    await session.rollback()
+    saved = await session.scalar(
+        select(func.count()).select_from(BankConnection).where(BankConnection.external_id == "item-9")
+    )
+    assert saved == 0
+
+
+@pytest.mark.asyncio
+async def test_pluggy_keeps_a_separate_api_key_per_client(session, clean_db):
+    from app.providers.pluggy import PluggyProvider
+
+    PluggyProvider._api_keys.clear()
+    requests = []
+
+    def handler(request):
+        requests.append(json.loads(request.content)["clientId"])
+        return httpx.Response(200, json={"apiKey": requests[-1] + "-key"})
+
+    transport = httpx.MockTransport(handler)
+    real_client = httpx.AsyncClient
+    with patch(
+        "app.providers.pluggy.httpx.AsyncClient",
+        lambda **kwargs: real_client(transport=transport, **kwargs),
+    ):
+        first = get_settings().model_copy(
+            update={"pluggy_client_id": "a", "pluggy_client_secret": SecretStr("sa")}
+        )
+        second = get_settings().model_copy(
+            update={"pluggy_client_id": "b", "pluggy_client_secret": SecretStr("sb")}
+        )
+        for _ in range(2):
+            assert await PluggyProvider(settings=first)._ensure_api_key() == "a-key"
+            assert await PluggyProvider(settings=second)._ensure_api_key() == "b-key"
+    assert requests == ["a", "b"]

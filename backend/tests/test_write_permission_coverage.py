@@ -66,6 +66,8 @@ ALLOWLIST: dict[tuple[str, str], str] = {
     ("DELETE", "/api/admin/settings/{key}"): "superuser-gated instance administration",
     ("PATCH", "/api/admin/provider-settings/{provider}"): "superuser-gated instance administration",
     ("PUT", "/api/admin/email"): "superuser-gated instance administration",
+    ("PUT", "/api/admin/provider-settings/{provider}/workspaces/{workspace_id}"): "superuser-gated instance administration",
+    ("DELETE", "/api/admin/provider-settings/{provider}/workspaces/{workspace_id}"): "superuser-gated instance administration",
     # Workspace administration: uses its own, stricter owner floor via
     # `require_membership(min_role="owner")` inside the handler. Converting
     # these to the write gate would *widen* access, since editors can write.

@@ -3800,6 +3800,23 @@
     }
   },
   "providerSettings": {
+    "workspaces": {
+      "pluggy": {
+        "title": "Klienci Pluggy według obszaru roboczego",
+        "description": "Obszar z własnym klientem łączy banki przez to konto Pluggy. Pozostałe używają danych instancji.",
+        "own": "Własny klient",
+        "shared": "Wspólny klient",
+        "invalid": "Nie można odczytać",
+        "connections": "Połączenia Pluggy: {{count}}",
+        "set": "Ustaw klienta",
+        "replace": "Zastąp",
+        "remove": "Usuń",
+        "removeTitle": "Usunąć klienta Pluggy obszaru {{workspace}}?",
+        "removeDescription": "Ten obszar wróci do wspólnych danych przy nowych operacjach.",
+        "dialogDescription": "Te dane dotyczą tylko tego obszaru. Ustaw je, zanim ktoś połączy tu bank.",
+        "clientChanged": "Ten obszar ma połączenia w innym kliencie Pluggy. Najpierw usuń te połączenia."
+      }
+    },
     "catalog": {
       "setupGuide": "Instrukcja konfiguracji",
       "connectionsTitle": "Połączenia bankowe",
@@ -3859,7 +3876,11 @@
       "enable_banking_app_id": "ID aplikacji",
       "enable_banking_private_key": "Klucz prywatny (PEM)",
       "simplefin_enabled": "Włącz SimpleFIN"
-    }
+    },
+    "instanceAccountChanged": "Obszary robocze korzystające z tych danych mają połączenia na tym koncie. Najpierw nadaj im własne dane uwierzytelniające albo usuń ich połączenia.",
+    "workspaceListError": "Nie udało się wczytać obszarów roboczych.",
+    "workspacesTab": "Obszary robocze",
+    "workspaceCreatedBy": "Utworzone przez {{email}}"
   },
   "categoryLines": {
     "title": "Podziel na kategorie",

@@ -11,7 +11,7 @@ reason is checked where it can be: a table scoped through its parent must
 really hang off a workspace-owned parent, and a table owned by a user must
 really point at one.
 """
-from sqlalchemy import Table, UniqueConstraint
+from sqlalchemy import PrimaryKeyConstraint, Table, UniqueConstraint
 
 from app.core.database import Base
 from app.models import *  # noqa: F401,F403
@@ -84,10 +84,11 @@ def test_workspace_id_is_required_indexed_and_cascades():
         targets = [(fk.column.table.name, fk.column.name, fk.ondelete) for fk in column.foreign_keys]
         if targets != [("workspaces", "id", "CASCADE")]:
             problems.append(f"{name}: workspace_id must reference workspaces.id ON DELETE CASCADE, got {targets}")
-        # A unique constraint builds an index too, so one that leads with the column counts.
+        # A unique constraint or a primary key builds an index too, so one that
+        # leads with the column counts.
         leading = [index.columns for index in table.indexes] + [
             constraint.columns for constraint in table.constraints
-            if isinstance(constraint, UniqueConstraint)
+            if isinstance(constraint, (UniqueConstraint, PrimaryKeyConstraint))
         ]
         indexed = column.index or any(
             len(columns) and next(iter(columns)).name == "workspace_id" for columns in leading

@@ -53,7 +53,7 @@ from app.providers.base import (
     SessionExpiredError,
     TransactionData,
 )
-from app.services.provider_settings import resolve_settings
+from app.services.provider_settings import ensure_account_unchanged, resolve_settings
 from app.services import oauth_state
 from app.services import admin_service
 from app.services import category_line_service, notification_service, reconciliation_service, recurring_match_service
@@ -526,7 +526,7 @@ async def _fetch_holdings(
     """
     try:
         provider = provider or get_provider(
-            connection.provider, settings=await resolve_settings(session)
+            connection.provider, settings=await resolve_settings(session, connection.workspace_id)
         )
         # A plugin's payload may leave holdings out of a run: nothing to sync.
         if getattr(provider, "holdings_fetched", True) is False:
@@ -1182,7 +1182,7 @@ async def _sync_holdings(
     if _HOLDING_TRADES in (connection.settings or {}):
         try:
             trade_provider = provider or get_provider(
-                connection.provider, settings=await resolve_settings(session)
+                connection.provider, settings=await resolve_settings(session, connection.workspace_id)
             )
         except ValueError:
             logger.exception("Provider %s is not configured; skipping trades", source)
@@ -1933,7 +1933,7 @@ async def get_oauth_url(
     reconnect_connection_id: Optional[uuid.UUID] = None,
     session: AsyncSession | None = None,
 ) -> str:
-    provider = get_provider(provider_name, settings=await resolve_settings(session))
+    provider = get_provider(provider_name, settings=await resolve_settings(session, workspace_id))
     state = await oauth_state.store_state(
         {
             "user_id": str(user_id),
@@ -1957,7 +1957,7 @@ async def get_reauth_url(
     connection = await get_connection(session, connection_id, workspace_id)
     if not connection:
         raise ValueError("Connection not found")
-    provider = get_provider(connection.provider, settings=await resolve_settings(session))
+    provider = get_provider(connection.provider, settings=await resolve_settings(session, workspace_id))
     state = await oauth_state.store_state(
         {
             "user_id": str(user_id),
@@ -1976,9 +1976,12 @@ async def get_reauth_url(
 
 
 async def list_provider_institutions(
-    provider_name: str, country: Optional[str] = None, session: AsyncSession | None = None
+    provider_name: str,
+    country: Optional[str] = None,
+    session: AsyncSession | None = None,
+    workspace_id: uuid.UUID | None = None,
 ) -> dict:
-    provider = get_provider(provider_name, settings=await resolve_settings(session))
+    provider = get_provider(provider_name, settings=await resolve_settings(session, workspace_id))
     data = await provider.list_institutions(country)
     return {
         "countries": data.countries,
@@ -2001,8 +2004,9 @@ async def list_provider_institutions(
 async def create_connect_token(
     provider_name: str, user_id: uuid.UUID, item_id: str | None = None,
     session: AsyncSession | None = None,
+    workspace_id: uuid.UUID | None = None,
 ) -> dict:
-    provider = get_provider(provider_name, settings=await resolve_settings(session))
+    provider = get_provider(provider_name, settings=await resolve_settings(session, workspace_id))
     token_data = await provider.create_connect_token(str(user_id), item_id=item_id)
     return {"access_token": token_data.access_token}
 
@@ -2148,8 +2152,12 @@ async def handle_oauth_callback(
     if not provider_name:
         raise ValueError("OAuth callback missing provider")
 
-    provider = get_provider(provider_name, settings=await resolve_settings(session))
+    used_settings = await resolve_settings(session, workspace_id)
+    provider = get_provider(provider_name, settings=used_settings)
     connection_data = await provider.handle_oauth_callback(code)
+    # The connection exists under the account the provider was built with; an
+    # admin may have moved the workspace since. Holds the lock until it commits.
+    await ensure_account_unchanged(session, provider_name, workspace_id, used_settings)
 
     if existing_reconnect is None:
         existing_reconnect = await _connection_holding_these_accounts(
@@ -4796,7 +4804,7 @@ async def sync_connection(
     # provider is a server misconfiguration, and the catch-all below would
     # wrongly stamp the (healthy) connection with status="error".
     try:
-        provider = provider or get_provider(connection.provider, settings=await resolve_settings(session))
+        provider = provider or get_provider(connection.provider, settings=await resolve_settings(session, connection.workspace_id))
     except ValueError as exc:
         raise ProviderNotConfiguredError(
             f"Provider '{connection.provider}' is not configured. "

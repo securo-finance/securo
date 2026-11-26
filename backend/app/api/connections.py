@@ -40,12 +40,13 @@ router = APIRouter(prefix="/api/connections", tags=["connections"])
 
 @router.get("/providers")
 async def get_available_providers(
+    ctx: WorkspaceContext = Depends(current_workspace),
     session: AsyncSession = Depends(get_async_session),
 ):
-    """List all known open finance providers with configuration status."""
+    """List all known open finance providers, configured as this workspace sees them."""
     from app.services.provider_settings import resolve_settings
 
-    return {"providers": all_known_providers(await resolve_settings(session))}
+    return {"providers": all_known_providers(await resolve_settings(session, ctx.workspace.id))}
 
 
 @router.post("/connect-token", response_model=ConnectTokenResponse)
@@ -57,7 +58,7 @@ async def create_connect_token(
     """Create a connect token for widget-based bank connection flows."""
     try:
         token_data = await connection_service.create_connect_token(
-            data.provider, ctx.user_id, session=session
+            data.provider, ctx.user_id, session=session, workspace_id=ctx.workspace.id
         )
         return ConnectTokenResponse(**token_data)
     except ValueError as e:
@@ -115,7 +116,9 @@ async def list_provider_institutions(
     session: AsyncSession = Depends(get_async_session),
 ):
     try:
-        return await connection_service.list_provider_institutions(provider, country, session=session)
+        return await connection_service.list_provider_institutions(
+            provider, country, session=session, workspace_id=ctx.workspace.id
+        )
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     except Exception as e:
@@ -283,7 +286,8 @@ async def get_reconnect_token(
 
     try:
         token_data = await connection_service.create_connect_token(
-            connection.provider, ctx.user_id, item_id=item_id, session=session
+            connection.provider, ctx.user_id, item_id=item_id, session=session,
+            workspace_id=ctx.workspace.id,
         )
         return ReconnectTokenResponse(**token_data)
     except Exception as e:

@@ -62,3 +62,4 @@ Each file here records one decision about how Securo is built: what we chose, wh
 | [0046](0046-email-provider-and-templates.md) | The mail path is SMTP or a hosted API, and an admin may rewrite the recovery message |
 | [0047](0047-deleting-a-user-keeps-workspace-data.md) | Deleting a user keeps what they added to other people's workspaces |
 | [0048](0048-required-secret-key.md) | An operator can require a secret key of their own |
+| [0049](0049-workspace-provider-credentials.md) | A workspace can use its own provider account, set by an instance admin |

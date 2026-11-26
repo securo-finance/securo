@@ -148,8 +148,22 @@ class ProviderSettingRead(BaseModel):
     configured: bool
     can_store_secrets: bool
     fields: dict[str, ProviderFieldStatus]
+    #: The fields a workspace can replace with its own, if the provider takes them.
+    workspace_fields: Optional[list[str]] = None
     #: Callback URL to register with the provider, when it uses one.
     redirect_uri: Optional[str] = None
+
+
+class WorkspaceProviderCredentialRead(BaseModel):
+    """Credential values and ciphertext are intentionally excluded."""
+
+    workspace_id: uuid.UUID
+    name: str
+    #: Who created the workspace, not necessarily who owns it now.
+    creator_email: Optional[str] = None
+    connections: int
+    has_credentials: bool
+    invalid: bool
 
 
 class TimezoneSettingRead(BaseModel):

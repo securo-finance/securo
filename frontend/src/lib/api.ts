@@ -2206,6 +2206,8 @@ export interface ProviderSettingStatus {
   name: string
   configured: boolean
   can_store_secrets: boolean
+  /** The fields a workspace can replace with its own, when the provider takes them. */
+  workspace_fields?: string[] | null
   fields: Record<string, {
     configured: boolean
     source: 'app' | 'environment' | 'none'
@@ -2214,6 +2216,15 @@ export interface ProviderSettingStatus {
   }>
   /** Callback URL to register with the provider, derived from the server URL. */
   redirect_uri?: string | null
+}
+
+export interface WorkspaceProviderCredentialStatus {
+  workspace_id: string
+  name: string
+  creator_email: string | null
+  connections: number
+  has_credentials: boolean
+  invalid: boolean
 }
 
 export interface TimezoneSetting {
@@ -2296,6 +2307,19 @@ export const admin = {
   ): Promise<ProviderSettingStatus> => {
     const { data } = await api.patch(`/admin/provider-settings/${encodeURIComponent(provider)}`, { values })
     return data
+  },
+  workspaceProviderCredentials: async (provider: string): Promise<WorkspaceProviderCredentialStatus[]> => {
+    const { data } = await api.get(`/admin/provider-settings/${encodeURIComponent(provider)}/workspaces`)
+    return data
+  },
+  setWorkspaceProviderCredentials: async (provider: string, workspaceId: string, values: Record<string, string>): Promise<void> => {
+    await api.put(
+      `/admin/provider-settings/${encodeURIComponent(provider)}/workspaces/${encodeURIComponent(workspaceId)}`,
+      { values },
+    )
+  },
+  removeWorkspaceProviderCredentials: async (provider: string, workspaceId: string): Promise<void> => {
+    await api.delete(`/admin/provider-settings/${encodeURIComponent(provider)}/workspaces/${encodeURIComponent(workspaceId)}`)
   },
   getSetting: async (key: string): Promise<AppSetting> => {
     const { data } = await api.get(`/admin/settings/${key}`)

@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { screen, waitFor, within } from '@testing-library/react'
+import { toast } from 'sonner'
 
 import { admin, type ProviderSettingStatus } from '@/lib/api'
 import { renderWithProviders } from '@/test/utils'
@@ -7,7 +8,7 @@ import { renderWithProviders } from '@/test/utils'
 import { ProviderSettings } from './provider-settings'
 
 vi.mock('@/lib/api', () => ({
-  admin: { providerSettings: vi.fn(), updateProviderSettings: vi.fn() },
+  admin: { providerSettings: vi.fn(), updateProviderSettings: vi.fn(), workspaceProviderCredentials: vi.fn().mockResolvedValue([]), setWorkspaceProviderCredentials: vi.fn() },
 }))
 
 const pluggy: ProviderSettingStatus = {
@@ -86,6 +87,76 @@ describe('provider settings', () => {
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ['admin', 'provider-settings'] })
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ['connections', 'providers'] })
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ['fx-rates'] })
+  })
+
+  it('explains a refused client change instead of a generic error', async () => {
+    const error = vi.spyOn(toast, 'error')
+    vi.mocked(admin.updateProviderSettings).mockRejectedValueOnce({
+      response: { status: 409, data: { detail: 'provider_account_change' } },
+    })
+    const { user } = renderWithProviders(<ProviderSettings />)
+
+    await user.click(await screen.findByRole('button', { name: 'Manage Pluggy' }))
+    const form = screen.getByRole('form', { name: 'Pluggy' })
+    await user.type(within(form).getByLabelText('Client ID'), 'another-client')
+    await user.click(within(form).getByRole('button', { name: 'Save changes' }))
+
+    await waitFor(() => expect(error).toHaveBeenCalledWith(expect.stringMatching(/have connections under this account/)))
+  })
+
+  it('lists workspaces in the dialog of a provider that takes workspace credentials', async () => {
+    vi.mocked(admin.providerSettings).mockResolvedValue([
+      { ...pluggy, workspace_fields: ['pluggy_client_id', 'pluggy_client_secret'] },
+      { ...pluggy, name: 'enable_banking', workspace_fields: null },
+    ])
+    vi.mocked(admin.workspaceProviderCredentials).mockResolvedValue([{
+      workspace_id: 'ws-1', name: 'Family', creator_email: null, connections: 0, has_credentials: false, invalid: false,
+    }])
+    const { user } = renderWithProviders(<ProviderSettings />)
+
+    // Nothing extra on the page itself.
+    await screen.findByRole('button', { name: 'Manage Pluggy' })
+    expect(screen.queryByText('Pluggy clients by workspace')).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Manage Pluggy' }))
+    const dialog = screen.getByRole('dialog')
+    // The instance credentials open first; the workspaces have a tab of their own.
+    expect(within(dialog).getByRole('form', { name: 'Pluggy' })).toBeVisible()
+    await user.click(within(dialog).getByRole('tab', { name: 'Workspaces' }))
+    expect(await within(dialog).findByRole('region', { name: 'Pluggy clients by workspace' })).toBeVisible()
+    expect(within(dialog).getByText('Family')).toBeVisible()
+    expect(admin.workspaceProviderCredentials).toHaveBeenCalledWith('pluggy')
+    await user.click(within(dialog).getByRole('button', { name: 'Close' }))
+
+    await user.click(screen.getByRole('button', { name: /Enable Banking/ }))
+    expect(screen.queryByRole('tab', { name: 'Workspaces' })).not.toBeInTheDocument()
+    expect(screen.queryByText('Pluggy clients by workspace')).not.toBeInTheDocument()
+    expect(admin.workspaceProviderCredentials).toHaveBeenCalledTimes(1)
+  })
+
+  it('saving a workspace client does not submit the instance form', async () => {
+    vi.mocked(admin.providerSettings).mockResolvedValue([
+      { ...pluggy, workspace_fields: ['pluggy_client_id', 'pluggy_client_secret'] },
+    ])
+    vi.mocked(admin.workspaceProviderCredentials).mockResolvedValue([{
+      workspace_id: 'ws-1', name: 'Family', creator_email: null, connections: 0, has_credentials: false, invalid: false,
+    }])
+    vi.mocked(admin.setWorkspaceProviderCredentials).mockResolvedValue()
+    const { user } = renderWithProviders(<ProviderSettings />)
+
+    await user.click(await screen.findByRole('button', { name: 'Manage Pluggy' }))
+    const instance = screen.getByRole('form', { name: 'Pluggy' })
+    await user.type(within(instance).getByLabelText('Client ID'), 'typed-but-not-saved')
+    await user.click(screen.getByRole('tab', { name: 'Workspaces' }))
+    await user.click(await screen.findByRole('button', { name: 'Set client: Family' }))
+    const family = screen.getByRole('form', { name: 'Family' })
+    const [clientId, clientSecret] = Array.from(family.querySelectorAll('input'))
+    await user.type(clientId, 'family-client')
+    await user.type(clientSecret, 'family-secret')
+    await user.click(within(family).getByRole('button', { name: 'Save changes' }))
+
+    await waitFor(() => expect(admin.setWorkspaceProviderCredentials).toHaveBeenCalledTimes(1))
+    expect(admin.updateProviderSettings).not.toHaveBeenCalled()
   })
 
   it('asks before deleting a saved value and explains the environment fallback', async () => {

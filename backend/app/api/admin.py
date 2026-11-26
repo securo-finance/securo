@@ -34,6 +34,7 @@ from app.schemas.admin import (
     InstanceModeRead,
     ProviderSettingRead,
     TimezoneSettingRead,
+    WorkspaceProviderCredentialRead,
     clean_reason,
 )
 from app.services import admin_service
@@ -230,11 +231,78 @@ async def update_provider_settings(
         if not isinstance(body, dict) or set(body) != {"values"} or not isinstance(body["values"], dict):
             raise ValueError("Invalid provider settings")
         return await provider_settings.update_provider(session, provider, body["values"])
+    except provider_settings.ProviderAccountChangeError:
+        raise HTTPException(status_code=409, detail="provider_account_change") from None
     except provider_settings.SecretStorageUnavailable as exc:
         # Fixed server-side text, never the submitted values.
         raise HTTPException(status_code=409, detail=str(exc)) from None
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid provider settings") from None
+
+
+@router.get(
+    "/provider-settings/{provider}/workspaces",
+    response_model=list[WorkspaceProviderCredentialRead],
+)
+async def get_workspace_provider_credentials(
+    provider: str,
+    session: AsyncSession = Depends(get_async_session),
+    _user: User = Depends(current_superuser),
+):
+    try:
+        return await provider_settings.workspace_provider_status(session, provider)
+    except LookupError:
+        raise HTTPException(status_code=404, detail="Provider not found") from None
+
+
+@router.put(
+    "/provider-settings/{provider}/workspaces/{workspace_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def set_workspace_provider_credentials(
+    provider: str,
+    workspace_id: uuid.UUID,
+    request: Request,
+    session: AsyncSession = Depends(get_async_session),
+    _user: User = Depends(current_superuser),
+):
+    _refuse_managed_write(provider)
+    # Parse explicitly so schema validation errors cannot echo submitted secrets.
+    try:
+        body = await request.json()
+        if not isinstance(body, dict) or set(body) != {"values"} or not isinstance(body["values"], dict):
+            raise ValueError("Invalid provider settings")
+        await provider_settings.set_workspace_credentials(
+            session, provider, workspace_id, body["values"]
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from None
+    except provider_settings.ProviderAccountChangeError:
+        raise HTTPException(status_code=409, detail="provider_account_change") from None
+    except provider_settings.SecretStorageUnavailable as exc:
+        # Fixed server-side text, never the submitted values.
+        raise HTTPException(status_code=409, detail=str(exc)) from None
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid provider settings") from None
+
+
+@router.delete(
+    "/provider-settings/{provider}/workspaces/{workspace_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def remove_workspace_provider_credentials(
+    provider: str,
+    workspace_id: uuid.UUID,
+    session: AsyncSession = Depends(get_async_session),
+    _user: User = Depends(current_superuser),
+):
+    _refuse_managed_write(provider)
+    try:
+        await provider_settings.remove_workspace_credentials(session, provider, workspace_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from None
+    except provider_settings.ProviderAccountChangeError:
+        raise HTTPException(status_code=409, detail="provider_account_change") from None
 
 
 @router.patch("/settings/{key}", response_model=AppSettingRead)

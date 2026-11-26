@@ -3660,6 +3660,23 @@
     }
   },
   "providerSettings": {
+    "workspaces": {
+      "pluggy": {
+        "title": "Pluggy-clients per werkruimte",
+        "description": "Een werkruimte met een eigen client koppelt banken aan dat Pluggy-account. Andere gebruiken de gegevens van de instantie.",
+        "own": "Eigen client",
+        "shared": "Gedeelde client",
+        "invalid": "Niet leesbaar",
+        "connections": "Pluggy-koppelingen: {{count}}",
+        "set": "Client instellen",
+        "replace": "Vervangen",
+        "remove": "Verwijderen",
+        "removeTitle": "Pluggy-client van {{workspace}} verwijderen?",
+        "removeDescription": "Deze werkruimte gebruikt voor nieuwe bewerkingen weer de gedeelde gegevens.",
+        "dialogDescription": "Deze gegevens gelden alleen voor deze werkruimte. Stel ze in voordat iemand hier een bank koppelt.",
+        "clientChanged": "Deze werkruimte heeft koppelingen onder een andere Pluggy-client. Verwijder die koppelingen eerst."
+      }
+    },
     "catalog": {
       "setupGuide": "Installatiehandleiding",
       "connectionsTitle": "Bankverbindingen",
@@ -3719,7 +3736,11 @@
       "enable_banking_app_id": "App-ID",
       "enable_banking_private_key": "Privésleutel (PEM)",
       "simplefin_enabled": "SimpleFIN inschakelen"
-    }
+    },
+    "instanceAccountChanged": "Werkruimten die deze gegevens gebruiken hebben koppelingen onder dit account. Geef die werkruimten eerst eigen gegevens, of verwijder hun koppelingen.",
+    "workspaceListError": "De werkruimten konden niet worden geladen.",
+    "workspacesTab": "Werkruimten",
+    "workspaceCreatedBy": "Aangemaakt door {{email}}"
   },
   "categoryLines": {
     "title": "Verdelen over categorieën",

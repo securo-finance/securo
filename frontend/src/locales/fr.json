@@ -3673,6 +3673,23 @@
     }
   },
   "providerSettings": {
+    "workspaces": {
+      "pluggy": {
+        "title": "Clients Pluggy par espace de travail",
+        "description": "Un espace doté de son propre client connecte les banques sur ce compte Pluggy. Les autres utilisent les identifiants de l'instance.",
+        "own": "Client propre",
+        "shared": "Client partagé",
+        "invalid": "Illisible",
+        "connections": "Connexions Pluggy : {{count}}",
+        "set": "Définir le client",
+        "replace": "Remplacer",
+        "remove": "Supprimer",
+        "removeTitle": "Supprimer le client Pluggy de {{workspace}} ?",
+        "removeDescription": "Cet espace reviendra aux identifiants partagés pour les nouvelles opérations.",
+        "dialogDescription": "Ces identifiants ne s'appliquent qu'à cet espace. Définissez-les avant que quiconque y connecte une banque.",
+        "clientChanged": "Cet espace a des connexions sous un autre client Pluggy. Supprimez d'abord ces connexions."
+      }
+    },
     "catalog": {
       "connectionsTitle": "Connexions bancaires",
       "connectionsDescription": "Choisissez comment les comptes bancaires se connectent à cette instance.",
@@ -3732,7 +3749,11 @@
       "enable_banking_app_id": "ID d’application",
       "enable_banking_private_key": "Clé privée (PEM)",
       "simplefin_enabled": "Activer SimpleFIN"
-    }
+    },
+    "instanceAccountChanged": "Des espaces de travail qui utilisent ces identifiants ont des connexions sous ce compte. Donnez-leur d'abord leurs propres identifiants, ou supprimez leurs connexions.",
+    "workspaceListError": "Impossible de charger les espaces de travail.",
+    "workspacesTab": "Espaces de travail",
+    "workspaceCreatedBy": "Créé par {{email}}"
   },
   "categoryLines": {
     "title": "Répartir par catégorie",

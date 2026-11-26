@@ -3658,6 +3658,23 @@
     }
   },
   "providerSettings": {
+    "workspaces": {
+      "pluggy": {
+        "title": "Pluggy clients by workspace",
+        "description": "A workspace with its own client connects banks under that Pluggy account. Others use the instance credentials.",
+        "own": "Own client",
+        "shared": "Shared client",
+        "invalid": "Cannot be read",
+        "connections": "Pluggy connections: {{count}}",
+        "set": "Set client",
+        "replace": "Replace",
+        "remove": "Remove",
+        "removeTitle": "Remove the Pluggy client of {{workspace}}?",
+        "removeDescription": "This workspace will go back to the shared credentials for new operations.",
+        "dialogDescription": "These credentials apply only to this workspace. Set them before anyone connects a bank here.",
+        "clientChanged": "This workspace has connections under a different Pluggy client. Delete those connections first."
+      }
+    },
     "catalog": {
       "setupGuide": "Setup guide",
       "connectionsTitle": "Bank connections",
@@ -3717,7 +3734,11 @@
       "enable_banking_app_id": "App ID",
       "enable_banking_private_key": "Private key (PEM)",
       "simplefin_enabled": "Enable SimpleFIN"
-    }
+    },
+    "instanceAccountChanged": "Workspaces using these credentials have connections under this account. Give those workspaces their own credentials, or delete their connections, first.",
+    "workspaceListError": "Couldn't load the workspaces.",
+    "workspacesTab": "Workspaces",
+    "workspaceCreatedBy": "Created by {{email}}"
   },
   "categoryLines": {
     "title": "Split across categories",

@@ -3834,6 +3834,23 @@
     }
   },
   "providerSettings": {
+    "workspaces": {
+      "pluggy": {
+        "title": "Klienti Pluggy podľa pracovného priestoru",
+        "description": "Priestor s vlastným klientom pripája banky cez tento účet Pluggy. Ostatné používajú údaje inštancie.",
+        "own": "Vlastný klient",
+        "shared": "Zdieľaný klient",
+        "invalid": "Nedá sa prečítať",
+        "connections": "Pripojenia Pluggy: {{count}}",
+        "set": "Nastaviť klienta",
+        "replace": "Nahradiť",
+        "remove": "Odstrániť",
+        "removeTitle": "Odstrániť klienta Pluggy priestoru {{workspace}}?",
+        "removeDescription": "Tento priestor bude pre nové operácie opäť používať zdieľané údaje.",
+        "dialogDescription": "Tieto údaje platia len pre tento priestor. Nastavte ich skôr, než tu niekto pripojí banku.",
+        "clientChanged": "Tento priestor má pripojenia pod iným klientom Pluggy. Najprv tieto pripojenia odstráňte."
+      }
+    },
     "catalog": {
       "setupGuide": "Sprievodca nastavením",
       "connectionsTitle": "Bankové pripojenia",
@@ -3893,7 +3910,11 @@
       "enable_banking_app_id": "ID aplikácie",
       "enable_banking_private_key": "Súkromný kľúč (PEM)",
       "simplefin_enabled": "Zapnúť SimpleFIN"
-    }
+    },
+    "instanceAccountChanged": "Pracovné priestory, ktoré používajú tieto údaje, majú pod týmto účtom pripojenia. Najprv im dajte vlastné údaje alebo ich pripojenia odstráňte.",
+    "workspaceListError": "Pracovné priestory sa nepodarilo načítať.",
+    "workspacesTab": "Pracovné priestory",
+    "workspaceCreatedBy": "Vytvoril(a) {{email}}"
   },
   "categoryLines": {
     "title": "Rozdeliť do kategórií",
