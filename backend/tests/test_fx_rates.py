@@ -383,6 +383,29 @@ class TestOnDemandFetchDiscipline:
         assert rate == Decimal("5.2000000000")
 
     @pytest.mark.asyncio
+    async def test_one_legs_monthly_rate_does_not_suppress_the_other_leg(
+        self, session: AsyncSession, clean_db
+    ):
+        """A month with only BRL history still fetches the EUR leg."""
+        from app.core.app_clock import app_today
+        from app.services.fx_rate_service import _resolve_rate
+
+        target = app_today() - timedelta(days=200)
+        await _insert_rate(session, "BRL", Decimal("5.0000000000"), target)
+        calls: list[date] = []
+
+        async def counting_sync(db: AsyncSession, day: date) -> int:
+            calls.append(day)
+            await _insert_rate(db, "EUR", Decimal("0.9200000000"), day)
+            return 1
+
+        with patch("app.services.fx_rate_service.sync_rates", side_effect=counting_sync):
+            rate = await _resolve_rate(session, "EUR", "BRL", target)
+
+        assert calls == [target]
+        assert rate == Decimal("5.0000000000") / Decimal("0.9200000000")
+
+    @pytest.mark.asyncio
     async def test_quota_exceeded_is_remembered_and_warned_once(
         self, session: AsyncSession, clean_db, caplog
     ):

@@ -111,13 +111,16 @@ def _samples_monthly(target: date) -> bool:
     return target < app_today() - _MONTHLY_SAMPLING_AFTER
 
 
-async def _month_has_stored_rate(session: AsyncSession, target: date) -> bool:
+async def _month_has_stored_rate(
+    session: AsyncSession, currency: str, target: date
+) -> bool:
     first = target.replace(day=1)
     next_first = (first + timedelta(days=32)).replace(day=1)
     found = await session.scalar(
         select(FxRate.id)
         .where(
             FxRate.base_currency == "USD",
+            FxRate.quote_currency == currency,
             FxRate.date >= first,
             FxRate.date < next_first,
         )
@@ -126,15 +129,26 @@ async def _month_has_stored_rate(session: AsyncSession, target: date) -> bool:
     return found is not None
 
 
-async def _may_fetch(session: AsyncSession, target: date) -> bool:
+async def _may_fetch(
+    session: AsyncSession, target: date, currencies: tuple[str, str]
+) -> bool:
     """Whether an on-demand provider call is worth making for this date."""
     if _fetch_blocked(target):
         return False
-    if _samples_monthly(target) and await _month_has_stored_rate(session, target):
-        logger.debug(
-            "Using the month's stored FX rate for %s instead of fetching", target
-        )
-        return False
+    if _samples_monthly(target):
+        # Both legs need the month's sample: one leg's stored rate must not
+        # suppress the fetch the other leg still needs (the month may only
+        # have history for one of them).
+        legs = [currency for currency in currencies if currency != "USD"]
+        sampled = [
+            await _month_has_stored_rate(session, currency, target)
+            for currency in legs
+        ]
+        if legs and all(sampled):
+            logger.debug(
+                "Using the month's stored FX rates for %s instead of fetching", target
+            )
+            return False
     return True
 
 
@@ -256,7 +270,7 @@ async def _resolve_rate(
         allow_fetch
         and not _stored_only.get()
         and (usd_to_source is None or usd_to_target is None)
-        and await _may_fetch(session, target)
+        and await _may_fetch(session, target, (from_currency, to_currency))
     ):
         try:
             synced = await sync_rates(session, target)
