@@ -54,7 +54,7 @@ function openMenu(name: string) {
   })
 }
 
-const handle = (name: string) => screen.queryByRole('button', { name: t('assets.reorderWallet', { name }) })
+const handle = (name: string) => screen.queryByRole('button', { name: t('assets.reorder', { name }) })
 
 /** The wallet names in the order the page draws them. */
 const shownOrder = () =>
@@ -84,7 +84,7 @@ describe('Wallet ordering', () => {
     await renderPage()
 
     openMenu('Brokerage')
-    fireEvent.click(await screen.findByRole('menuitem', { name: t('assets.moveWalletDown') }))
+    fireEvent.click(await screen.findByRole('menuitem', { name: t('assets.moveDown') }))
 
     await waitFor(() => expect(api.assetGroups.reorder).toHaveBeenCalledWith(['pension', 'brokerage', 'savings']))
     // Drawn in the new order while the save is still pending.
@@ -99,7 +99,7 @@ describe('Wallet ordering', () => {
     await renderPage()
 
     openMenu('Savings')
-    fireEvent.click(await screen.findByRole('menuitem', { name: t('assets.moveWalletUp') }))
+    fireEvent.click(await screen.findByRole('menuitem', { name: t('assets.moveUp') }))
 
     await waitFor(() => expect(toast.error).toHaveBeenCalledWith(t('common.error')))
     expect(shownOrder()).toEqual(['Brokerage', 'Pension', 'Savings'])
@@ -110,8 +110,8 @@ describe('Wallet ordering', () => {
 
     openMenu('Brokerage')
 
-    expect(await screen.findByRole('menuitem', { name: t('assets.moveWalletUp') })).toHaveAttribute('data-disabled')
-    expect(screen.getByRole('menuitem', { name: t('assets.moveWalletDown') })).not.toHaveAttribute('data-disabled')
+    expect(await screen.findByRole('menuitem', { name: t('assets.moveUp') })).toHaveAttribute('data-disabled')
+    expect(screen.getByRole('menuitem', { name: t('assets.moveDown') })).not.toHaveAttribute('data-disabled')
   })
 
   it('offers no ordering when there is only one wallet', async () => {
@@ -121,7 +121,7 @@ describe('Wallet ordering', () => {
     expect(handle('Brokerage')).not.toBeInTheDocument()
     openMenu('Brokerage')
     await screen.findByRole('menu')
-    expect(screen.queryByRole('menuitem', { name: t('assets.moveWalletDown') })).not.toBeInTheDocument()
+    expect(screen.queryByRole('menuitem', { name: t('assets.moveDown') })).not.toBeInTheDocument()
   })
 
   it('shows a drag handle per wallet to someone who can write', async () => {

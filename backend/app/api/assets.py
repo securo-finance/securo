@@ -36,6 +36,7 @@ from app.schemas.asset import (
     AssetCreate,
     AssetPriceRefreshResult,
     AssetRead,
+    AssetReorder,
     AssetTransactionCreate,
     AssetTransactionRead,
     AssetTransactionUpdate,
@@ -339,6 +340,23 @@ async def refresh_all_asset_prices(
             },
         )
     return AssetPriceRefreshResult(**summary)
+
+
+@router.put("/order", status_code=status.HTTP_204_NO_CONTENT)
+async def reorder_assets(
+    data: AssetReorder,
+    ctx: WorkspaceContext = Depends(current_writable_workspace),
+    session: AsyncSession = Depends(get_async_session),
+):
+    try:
+        reordered = await asset_service.reorder_assets(session, ctx.workspace.id, data.asset_ids)
+    except asset_service.MixedWalletsError:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Holdings must belong to one wallet",
+        )
+    if not reordered:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="One or more holdings not found")
 
 
 @router.get("", response_model=list[AssetRead])

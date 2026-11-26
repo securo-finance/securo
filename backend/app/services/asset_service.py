@@ -36,6 +36,7 @@ from app.schemas.asset import (
     AssetValueRead,
     MarketSymbolMatch,
 )
+from app.services.ordering import place_in_order
 from app.services.asset_group_service import ensure_group_in_workspace
 from app.services.fx_rate_service import (
     DatedRateBook,
@@ -51,6 +52,14 @@ ValueRecord = tuple[date, Decimal, Optional[Decimal]]  # (date, amount, price_pe
 TxRecord = tuple[date, str, Decimal, Optional[Decimal]]  # (date, kind, quantity, price_per_share)
 GrossValueRecord = tuple[date, Decimal, Optional[Decimal]]  # (date, net, gross)
 SplitRecord = tuple[date, int, int]  # (date, old_units, new_units)
+
+
+# The order holdings list in: placed ones by position, then unplaced (0) by name.
+_LIST_ORDER = (Asset.position == 0, Asset.position, Asset.name, Asset.id)
+
+
+def _list_order_key(asset: Asset) -> tuple:
+    return (asset.position == 0, asset.position, asset.name, asset.id)
 
 
 def _next_due_date(last_date: date, frequency: str) -> date:
@@ -797,7 +806,7 @@ async def get_assets(
     query = select(Asset).where(Asset.workspace_id == workspace_id)
     if not include_archived:
         query = query.where(Asset.is_archived == False)
-    query = query.order_by(Asset.position, Asset.name)
+    query = query.order_by(*_LIST_ORDER)
 
     result = await session.execute(query)
     assets = list(result.scalars().all())
@@ -1150,6 +1159,45 @@ _LEDGER_DERIVED_FIELDS = (
 )
 
 
+class MixedWalletsError(Exception):
+    """A reorder named holdings from more than one wallet."""
+
+
+async def reorder_assets(
+    session: AsyncSession, workspace_id: uuid.UUID, asset_ids: list[uuid.UUID]
+) -> bool:
+    """Put the named holdings of one wallet in this order.
+
+    The other holdings of that wallet (sold, archived) keep their places, and
+    every holding of the wallet is numbered from 1, which places the ones that
+    were not placed yet. False when an id is not a holding of this workspace;
+    MixedWalletsError when the ids span wallets.
+    """
+    named = await session.execute(
+        select(Asset.group_id).where(Asset.workspace_id == workspace_id, Asset.id.in_(asset_ids))
+    )
+    group_ids = list(named.scalars().all())
+    if len(group_ids) != len(asset_ids):
+        return False
+    if len(set(group_ids)) > 1:
+        raise MixedWalletsError()
+
+    group_id = group_ids[0]
+    in_wallet = Asset.group_id.is_(None) if group_id is None else Asset.group_id == group_id
+    result = await session.execute(
+        select(Asset).where(Asset.workspace_id == workspace_id, in_wallet).with_for_update()
+    )
+    # Sorted here, not in SQL: FOR UPDATE can return rows out of ORDER BY order.
+    holdings = sorted(result.scalars().all(), key=_list_order_key)
+    reordered = place_in_order(holdings, asset_ids)
+    if reordered is None:  # moved to another wallet since the first read
+        return False
+    for position, asset in enumerate(reordered, start=1):
+        asset.position = position
+    await session.commit()
+    return True
+
+
 async def update_asset(
     session: AsyncSession,
     asset_id: uuid.UUID,
@@ -1169,6 +1217,9 @@ async def update_asset(
     update_data = data.model_dump(exclude_unset=True)
     if "group_id" in update_data:
         await ensure_group_in_workspace(session, update_data["group_id"], workspace_id)
+        if update_data["group_id"] != asset.group_id:
+            # Its place belonged to the old wallet: unplaced, it goes to the end.
+            update_data.setdefault("position", 0)
     # Prevent changing valuation_method on existing assets
     update_data.pop("valuation_method", None)
     # Stored uppercase, as on create, so the ledger's ticker filter (which
@@ -1440,7 +1491,7 @@ async def get_portfolio_trend(
         if not selection_filters:
             return {"assets": [], "trend": [], "total": 0.0}
         query = query.where(or_(*selection_filters))
-    result = await session.execute(query.order_by(Asset.position, Asset.name))
+    result = await session.execute(query.order_by(*_LIST_ORDER))
     active_assets = list(result.scalars().all())
 
     if not active_assets:

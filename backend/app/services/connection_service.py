@@ -1159,6 +1159,7 @@ async def _sync_holdings(
             and asset.group_id != group.id
         ):
             asset.group_id = group.id
+            asset.position = 0  # its place was in the old wallet
         # Seed a historical value at purchase_date so users get a real
         # evolution curve from day one — not just today's snapshot.
         # Idempotent: skips if any AssetValue already exists at that date.

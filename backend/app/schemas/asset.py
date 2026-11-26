@@ -6,6 +6,7 @@ from typing import Literal, Optional
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.core.money import bounded_asset_value
+from app.schemas.ordering import OrderedIds
 
 #: How an asset's current value is kept: recorded by hand, projected by a
 #: growth rule, or read from the market through its ticker. The jobs, the
@@ -78,6 +79,12 @@ class AssetUpdate(BaseModel):
     group_id: Optional[uuid.UUID] = None
     ticker: Optional[str] = None
     ticker_exchange: Optional[str] = None
+
+
+class AssetReorder(BaseModel):
+    """The holdings of one wallet (or of no wallet) in the order to show them."""
+
+    asset_ids: OrderedIds
 
 
 class AssetRead(BaseModel):
