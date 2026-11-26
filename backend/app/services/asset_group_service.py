@@ -262,14 +262,22 @@ async def reorder_groups(
     only that subset's slots lets users rearrange what they see without moving
     hidden wallets unexpectedly. Normalizing all positions also repairs the
     duplicate/default positions left by older data.
+
+    The rows are locked in id order and sorted by position afterwards: the
+    positions are what concurrent reorders change, so locking in position
+    order lets two of them take the same locks in different orders and
+    deadlock.
     """
     result = await session.execute(
         select(AssetGroup)
         .where(AssetGroup.workspace_id == workspace_id)
-        .order_by(AssetGroup.position, AssetGroup.name, AssetGroup.id)
+        .order_by(AssetGroup.id)
         .with_for_update()
     )
-    groups = list(result.scalars().all())
+    groups = sorted(
+        result.scalars().all(),
+        key=lambda group: (group.position, group.name, group.id),
+    )
     groups_by_id = {group.id: group for group in groups}
     if any(group_id not in groups_by_id for group_id in group_ids):
         return False
