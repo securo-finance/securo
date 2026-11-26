@@ -267,17 +267,21 @@ async def reorder_groups(
     reorders change, so locking in position order lets two of them take the
     same locks in different orders and deadlock. The slots are then read in
     the database's own order, so names that tie on position keep the order
-    the database's collation gives them.
+    the database's collation gives them. Only the locked rows are read back:
+    a wallet created after the lock is left where it is, since renumbering it
+    would wait on a row lock this reorder doesn't hold.
     """
-    await session.execute(
-        select(AssetGroup.id)
-        .where(AssetGroup.workspace_id == workspace_id)
-        .order_by(AssetGroup.id)
-        .with_for_update()
-    )
+    locked_ids = (
+        await session.execute(
+            select(AssetGroup.id)
+            .where(AssetGroup.workspace_id == workspace_id)
+            .order_by(AssetGroup.id)
+            .with_for_update()
+        )
+    ).scalars().all()
     result = await session.execute(
         select(AssetGroup)
-        .where(AssetGroup.workspace_id == workspace_id)
+        .where(AssetGroup.workspace_id == workspace_id, AssetGroup.id.in_(locked_ids))
         .order_by(AssetGroup.position, AssetGroup.name, AssetGroup.id)
         .execution_options(populate_existing=True)
     )

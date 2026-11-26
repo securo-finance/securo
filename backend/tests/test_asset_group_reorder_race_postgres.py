@@ -126,3 +126,56 @@ async def test_reorder_keeps_database_order_for_tied_positions(
         )
     ).scalars().all()
     assert names == ["bbc", "ABC", "abc"]
+
+
+@pytest.mark.asyncio
+async def test_reorder_leaves_wallets_created_after_the_lock_alone(
+    session, postgres_sessions, test_user, test_workspace
+):
+    """A wallet committed between the lock and the read is not renumbered.
+
+    Renumbering it would need a row lock the reorder never took, which another
+    reorder may already hold, and the two would deadlock.
+    """
+    first = AssetGroup(
+        user_id=test_user.id, workspace_id=test_workspace.id, name="First", position=0
+    )
+    second = AssetGroup(
+        user_id=test_user.id, workspace_id=test_workspace.id, name="Second", position=2
+    )
+    session.add_all([first, second])
+    await session.commit()
+
+    created = []
+    execute = session.execute
+
+    async def lock_then_create(statement, *args, **kwargs):
+        result = await execute(statement, *args, **kwargs)
+        if not created:
+            async with postgres_sessions() as other:
+                late = AssetGroup(
+                    user_id=test_user.id, workspace_id=test_workspace.id,
+                    name="Late", position=3,
+                )
+                other.add(late)
+                await other.commit()
+                created.append(late.id)
+        return result
+
+    session.execute = lock_then_create
+    try:
+        assert await asset_group_service.reorder_groups(
+            session, test_workspace.id, [second.id, first.id]
+        )
+    finally:
+        del session.execute
+
+    async with postgres_sessions() as check:
+        rows = (
+            await check.execute(
+                select(AssetGroup.name, AssetGroup.position).where(
+                    AssetGroup.workspace_id == test_workspace.id
+                )
+            )
+        ).all()
+    assert dict(rows) == {"Second": 0, "First": 1, "Late": 3}
