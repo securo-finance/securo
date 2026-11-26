@@ -21,6 +21,7 @@ from app.models.fx_rate import FxRate
 from app.models.goal import Goal
 from app.models.transaction import Transaction
 from app.schemas.goal import GoalCreate, GoalUpdate
+from app.services.account_service import get_accounts
 from app.services.goal_service import (
     _compute_monthly_contribution,
     _compute_on_track,
@@ -335,6 +336,39 @@ async def test_resolve_account_no_account_id_fallback(session, test_user, test_w
     assert val == Decimal("13")
 
 
+@pytest.mark.asyncio
+async def test_resolve_credit_card_counts_pending_and_matches_accounts_list(
+    session, test_user, test_workspace
+):
+    """A manual card's debt follows the accounts list, pending purchases included.
+
+    The card was paid ahead (posted credits above this month's posted
+    purchases), and a large authorized purchase is still pending. Summing
+    posted rows only turns that into a positive balance, which reads as a
+    goal reached on a card that is still owed money.
+    """
+    today = date.today()
+    card = await _make_account(
+        session, test_user.id, test_workspace.id, currency="BRL", acc_type="credit_card",
+    )
+    await _add_txn(session, test_user.id, card.id, test_workspace.id, 1500, "credit", today)
+    await _add_txn(
+        session, test_user.id, card.id, test_workspace.id, 2000, "debit", today,
+        status="pending",
+    )
+    goal = await _make_goal(
+        session, test_user.id, test_workspace.id,
+        tracking_type="account", account_id=card.id, currency="BRL",
+        target_amount=Decimal("0"),
+    )
+
+    val = await _resolve_current_amount(session, goal, test_user.id)
+
+    assert val == pytest.approx(Decimal("-500"))
+    [listed] = await get_accounts(session, test_workspace.id)
+    assert Decimal(str(listed["current_balance"])) == pytest.approx(val)
+
+
 # ---------------------------------------------------------------------------
 # _resolve_current_amount — asset tracking
 # ---------------------------------------------------------------------------
@@ -384,6 +418,27 @@ async def test_resolve_asset_with_asset_value(session, test_user, test_workspace
 
 
 @pytest.mark.asyncio
+async def test_resolve_asset_ignores_valuation_dated_after_today(
+    session, test_user, test_workspace
+):
+    today = date.today()
+    asset = await _make_asset(session, test_user.id, test_workspace.id, currency="BRL", price="100")
+    for amount, day in ((Decimal("100"), today - timedelta(days=10)),
+                        (Decimal("250"), today + timedelta(days=2))):
+        session.add(AssetValue(
+            id=uuid.uuid4(), asset_id=asset.id, workspace_id=test_workspace.id,
+            amount=amount, date=day, source="manual",
+        ))
+    await session.commit()
+    goal = await _make_goal(
+        session, test_user.id, test_workspace.id,
+        tracking_type="asset", asset_id=asset.id, currency="BRL",
+    )
+    val = await _resolve_current_amount(session, goal, test_user.id)
+    assert val == pytest.approx(Decimal("100"))
+
+
+@pytest.mark.asyncio
 async def test_resolve_asset_missing_fallback(session, test_user, test_workspace):
     goal = await _make_goal(
         session, test_user.id, test_workspace.id,
@@ -430,6 +485,32 @@ async def test_resolve_asset_group_cross_currency(session, test_user, test_works
     )
     val = await _resolve_current_amount(session, goal, test_user.id)
     assert float(val) == pytest.approx(500.0, abs=1.0)
+
+
+@pytest.mark.asyncio
+async def test_resolve_asset_group_ignores_valuation_dated_after_today(
+    session, test_user, test_workspace
+):
+    """A wallet goal values its assets on today, like the net-worth report."""
+    today = date.today()
+    group = await _make_asset_group(session, test_user.id, test_workspace.id)
+    asset = await _make_asset(
+        session, test_user.id, test_workspace.id,
+        currency="BRL", price="100", group_id=group.id,
+    )
+    for amount, day in ((Decimal("100"), today - timedelta(days=10)),
+                        (Decimal("250"), today + timedelta(days=2))):
+        session.add(AssetValue(
+            id=uuid.uuid4(), asset_id=asset.id, workspace_id=test_workspace.id,
+            amount=amount, date=day, source="manual",
+        ))
+    await session.commit()
+    goal = await _make_goal(
+        session, test_user.id, test_workspace.id,
+        tracking_type="asset_group", asset_group_id=group.id, currency="BRL",
+    )
+    val = await _resolve_current_amount(session, goal, test_user.id)
+    assert val == pytest.approx(Decimal("100"))
 
 
 @pytest.mark.asyncio
@@ -492,6 +573,28 @@ async def test_resolve_net_worth_counts_shared_credit_line_once(session, test_us
     val = await _resolve_current_amount(session, goal, test_user.id)
     # 2000 account - 500 shared credit line (not 1000)
     assert float(val) == pytest.approx(1500.0, abs=1.0)
+
+
+@pytest.mark.asyncio
+async def test_resolve_net_worth_ignores_valuation_dated_after_today(
+    session, test_user, test_workspace
+):
+    """Net worth on today leaves out valuations still dated in the future."""
+    today = date.today()
+    asset = await _make_asset(session, test_user.id, test_workspace.id, currency="BRL", price="100")
+    for amount, day in ((Decimal("100"), today - timedelta(days=10)),
+                        (Decimal("250"), today + timedelta(days=2))):
+        session.add(AssetValue(
+            id=uuid.uuid4(), asset_id=asset.id, workspace_id=test_workspace.id,
+            amount=amount, date=day, source="manual",
+        ))
+    await session.commit()
+    goal = await _make_goal(
+        session, test_user.id, test_workspace.id,
+        tracking_type="net_worth", currency="BRL",
+    )
+    val = await _resolve_current_amount(session, goal, test_user.id)
+    assert val == pytest.approx(Decimal("100"))
 
 
 @pytest.mark.asyncio

@@ -1652,16 +1652,24 @@ async def get_period_opening_balance(
 async def _account_balance_at(
     session: AsyncSession, account_id: uuid.UUID, cutoff: _Date,
     account_currency: str = "",
+    *,
+    include_pending: bool = False,
 ) -> float:
     """Get balance for a single account at a specific date.
-    Excludes ignored transactions from the balance calculation."""
+    Excludes ignored transactions from the balance calculation.
+
+    ``include_pending`` keeps authorized rows in the sum. A credit card's
+    current balance counts them (``counts_in_current_balance``), so its
+    history must too, or its last point disagrees with the accounts list.
+    """
+    status_filter = [] if include_pending else [Transaction.status == "posted"]
     result = await session.execute(
         select(func.coalesce(func.sum(signed_amount_expr(account_currency)), 0))
         .outerjoin(Category, Transaction.category_id == Category.id)
         .where(
             Transaction.account_id == account_id,
             Transaction.date <= min(cutoff, app_today()),
-            Transaction.status == "posted",
+            *status_filter,
             Transaction.is_ignored == False,
             or_(
                 Transaction.category_id.is_(None),
@@ -1676,14 +1684,25 @@ async def _account_daily_balance_series(
     session: AsyncSession, account_id: uuid.UUID,
     date_from: _Date, date_to: _Date,
     account_currency: str = "",
+    *,
+    include_pending: bool = False,
 ) -> list[dict]:
     """Build daily balance series for [date_from, date_to] inclusive.
-    Excludes ignored transactions from balance calculations."""
+    Excludes ignored transactions from balance calculations.
+
+    ``include_pending`` is for credit cards, whose current balance keeps
+    authorized purchases: the series then ends on the same number the
+    accounts list reports.
+    """
     # Get balance at end of day before range start
-    start_balance = await _account_balance_at(session, account_id, date_from - timedelta(days=1), account_currency)
+    start_balance = await _account_balance_at(
+        session, account_id, date_from - timedelta(days=1), account_currency,
+        include_pending=include_pending,
+    )
 
     # Get daily deltas within range: group by actual date
     # Exclude ignored transactions from daily deltas
+    status_filter = [] if include_pending else [Transaction.status == "posted"]
     result = await session.execute(
         select(
             Transaction.date,
@@ -1695,7 +1714,7 @@ async def _account_daily_balance_series(
             Transaction.date >= date_from,
             Transaction.date <= date_to,
             Transaction.date <= app_today(),
-            Transaction.status == "posted",
+            *status_filter,
             Transaction.is_ignored == False,
             or_(
                 Transaction.category_id.is_(None),
@@ -1734,7 +1753,12 @@ async def get_account_balance_history(
 
     sign = -1.0 if (account.type in LIABILITY_ACCOUNT_TYPES and account.connection_id) else 1.0
 
-    series = await _account_daily_balance_series(session, account_id, date_from, date_to, account.currency)
+    series = await _account_daily_balance_series(
+        session, account_id, date_from, date_to, account.currency,
+        # A card's current balance counts authorized purchases, so the last
+        # point of its history has to match the accounts list.
+        include_pending=account.type == "credit_card",
+    )
 
     if sign != 1.0:
         for point in series:
