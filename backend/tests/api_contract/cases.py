@@ -88,6 +88,7 @@ BODY_OVERRIDES: dict[tuple[str, str], Callable[[dict], Any]] = {
         "name": "Second LLM", "kind": "ollama", "base_url": "http://ollama:11434",
     },
     ("PUT", "/api/agents/{agent_id}/tools"): lambda w: [],
+    ("PUT", "/api/asset-groups/order"): lambda w: {"group_ids": [w["asset_group_id"]]},
     ("POST", "/api/invoices"): lambda w: {
         "payee_id": w["payee_id"], "currency": "USD", "lines": _INVOICE_LINES,
     },
