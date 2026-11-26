@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { AssetGroup } from '../types'
-import { applyWalletOrder } from './wallet-order'
+import { applyWalletOrder, placeInOrder } from './manual-order'
 
 function wallet(id: string, position: number): AssetGroup {
   return {
@@ -44,5 +44,18 @@ describe('applyWalletOrder', () => {
 
     expect(applyWalletOrder(wallets, ['missing', 'first'])).toBe(wallets)
     expect(applyWalletOrder(wallets, ['first', 'first'])).toBe(wallets)
+  })
+})
+
+describe('placeInOrder', () => {
+  const rows = ['a', 'b', 'c', 'd'].map(id => ({ id }))
+
+  it('trades only the slots of the named items', () => {
+    expect(placeInOrder(rows, ['d', 'a']).map(row => row.id)).toEqual(['d', 'b', 'c', 'a'])
+  })
+
+  it('leaves the list alone for an order it cannot apply', () => {
+    expect(placeInOrder(rows, ['a', 'missing'])).toBe(rows)
+    expect(placeInOrder(rows, ['a', 'a'])).toBe(rows)
   })
 })

@@ -97,7 +97,7 @@ import { getAssetValuePrimary, getPortfolioShare, getPortfolioTotalPrimary } fro
 import { formatTransactionTotal, getTransactionTotalCurrency } from '@/lib/asset-transaction-total'
 import { MAX_SPLIT_UNITS, canRecordSplit, formatSplitRatio, parseSplitUnits } from '@/lib/asset-split'
 import { formatCurrency } from '@/lib/format'
-import { applyWalletOrder, compareWallets } from '@/lib/wallet-order'
+import { applyWalletOrder, compareWallets, placeInOrder } from '@/lib/manual-order'
 
 // Renders a logo image when one is available, falling back to the asset's
 // type-based Lucide icon on missing URL or broken image. Uses the type's
@@ -211,13 +211,16 @@ type DragHandleProps = ButtonHTMLAttributes<HTMLButtonElement> & {
   ref: (element: HTMLElement | null) => void
 }
 
-function SortableWalletSection({
+/** A wallet or a holding that is moved by the drag handle it hands its children. */
+function Sortable({
   id,
   disabled,
+  className,
   children,
 }: {
   id: string
   disabled: boolean
+  className: string
   children: (dragHandle: DragHandleProps) => ReactNode
 }) {
   const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } = useSortable({
@@ -228,9 +231,9 @@ function SortableWalletSection({
   return (
     <div
       ref={setNodeRef}
-      // Translate only: scaling would squash a wallet into its neighbour's height.
+      // Translate only: scaling would squash an item into its neighbour's height.
       style={{ transform: CSS.Translate.toString(transform), transition }}
-      className={`space-y-2 rounded-xl ${
+      className={`${className} ${
         isDragging ? 'relative z-20 bg-background/90 opacity-75 shadow-xl ring-2 ring-primary/30' : ''
       }`}
     >
@@ -720,7 +723,29 @@ export default function AssetsPage() {
     onSettled: () => queryClient.invalidateQueries({ queryKey: ['asset-groups'] }),
   })
 
-  const walletSensors = useSensors(
+  // The page reads one of two lists, so both take the new order.
+  const holdingListKeys = [['assets'], ['assets', 'archived']]
+  const reorderHoldingsMutation = useMutation({
+    mutationFn: (assetIds: string[]) => assets.reorder(assetIds),
+    onMutate: async (assetIds) => {
+      const previous = await Promise.all(holdingListKeys.map(async (queryKey) => {
+        await queryClient.cancelQueries({ queryKey, exact: true })
+        const list = queryClient.getQueryData<Asset[]>(queryKey)
+        if (list) queryClient.setQueryData(queryKey, placeInOrder(list, assetIds))
+        return { queryKey, list }
+      }))
+      return { previous }
+    },
+    onError: (error, _assetIds, context) => {
+      for (const { queryKey, list } of context?.previous ?? []) {
+        if (list) queryClient.setQueryData(queryKey, list)
+      }
+      toast.error(assetErrorMessage(error, t('common.error')))
+    },
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ['assets'] }),
+  })
+
+  const sortSensors = useSensors(
     // A few pixels of travel before a drag starts, so a click on the handle stays a click.
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
@@ -1058,7 +1083,7 @@ export default function AssetsPage() {
   }
 
   // The row's actions, shared by its "⋯" button and its right-click menu.
-  function holdingActions(asset: Asset): AssetRowAction[] {
+  function holdingActions(asset: Asset, orderedRows?: Asset[]): AssetRowAction[] {
     if (!canWrite) return []
     const isMarketPriced = asset.valuation_method === 'market_price'
     const isProviderOwned = asset.source !== 'manual' && !isMarketPriced
@@ -1084,6 +1109,25 @@ export default function AssetsPage() {
         })
       }
     }
+    if (orderedRows && orderedRows.length > 1) {
+      const index = orderedRows.indexOf(asset)
+      actions.push(
+        {
+          key: 'move-up',
+          label: t('assets.moveUp'),
+          icon: ChevronUp,
+          onSelect: () => moveHolding(orderedRows, index, index - 1),
+          disabled: index === 0 || reorderHoldingsMutation.isPending,
+        },
+        {
+          key: 'move-down',
+          label: t('assets.moveDown'),
+          icon: ChevronDown,
+          onSelect: () => moveHolding(orderedRows, index, index + 1),
+          disabled: index === orderedRows.length - 1 || reorderHoldingsMutation.isPending,
+        },
+      )
+    }
     actions.push(
       { key: 'move', label: t('assets.moveToWallet'), icon: FolderInput, onSelect: () => setMovingAsset(asset) },
       { key: 'delete', label: t('common.delete'), icon: Trash2, onSelect: () => setDeletingId(asset.id), destructive: true },
@@ -1096,7 +1140,17 @@ export default function AssetsPage() {
   // Preço Atual · Rentabilidade · Saldo · % da carteira. Market-priced rows
   // are fully populated; holdings with no recorded cost show "—" for the
   // cost-based columns and offer a one-tap way to add their buys.
-  function renderHoldingRow(asset: Asset, variant: 'holding' | 'sold' = 'holding') {
+  function moveHolding(rows: Asset[], from: number, to: number) {
+    if (from === to || from < 0 || to < 0 || to >= rows.length) return
+    reorderHoldingsMutation.mutate(arrayMove(rows.map(row => row.id), from, to))
+  }
+
+  // `order` makes the row movable among `rows`, by its handle or its menu.
+  function renderHoldingRow(
+    asset: Asset,
+    variant: 'holding' | 'sold' = 'holding',
+    order?: { rows: Asset[]; dragHandle: DragHandleProps },
+  ) {
     const config = getTypeConfig(asset.type)
     const Icon = config.icon
     const isExpanded = expandedId === asset.id
@@ -1122,10 +1176,10 @@ export default function AssetsPage() {
       isSynced && today ? getStaleProviderValueDate(asset, today) : null
 
     const displayName = asset.ticker && !asset.ticker.startsWith('TD:') ? asset.ticker : asset.name
-    const actions = holdingActions(asset)
+    const actions = holdingActions(asset, order?.rows)
 
     return (
-      <div key={asset.id} className="border-b border-border last:border-b-0">
+      <>
         <AssetRowContextMenu actions={actions}>
         <div
           className="grid items-center gap-2 px-3 py-3 cursor-pointer hover:bg-muted/20 transition-colors text-sm"
@@ -1134,6 +1188,19 @@ export default function AssetsPage() {
         >
           {/* Ativo */}
           <div className="flex items-center gap-2.5 min-w-0">
+            {order && (
+              <button
+                {...order.dragHandle}
+                type="button"
+                // A click on the handle is not a click on the row.
+                onClick={(e) => e.stopPropagation()}
+                className="-mx-1 touch-none cursor-grab rounded-md p-1 text-muted-foreground/60 transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:cursor-grabbing aria-disabled:cursor-default aria-disabled:opacity-30"
+                aria-label={t('assets.reorder', { name: displayName })}
+                title={t('assets.reorder', { name: displayName })}
+              >
+                <GripVertical size={14} />
+              </button>
+            )}
             <AssetIcon logoUrl={asset.logo_url} Icon={Icon} colorClass={config.color} bgClass={config.bg} size={16} tile="w-8 h-8" />
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-1.5">
@@ -1309,7 +1376,7 @@ export default function AssetsPage() {
           )}
           </>
         )}
-      </div>
+      </>
     )
   }
 
@@ -1351,12 +1418,38 @@ export default function AssetsPage() {
 
   // Wrap a set of holding rows in a horizontally-scrollable table shell so the
   // columns stay aligned (and usable on narrow screens).
-  function renderHoldingsTable(rows: Asset[], variant: 'holding' | 'sold' = 'holding') {
+  // `orderable` lets someone who can write move the rows of one wallet.
+  function renderHoldingsTable(
+    rows: Asset[],
+    variant: 'holding' | 'sold' = 'holding',
+    { orderable = false }: { orderable?: boolean } = {},
+  ) {
+    const rowClass = 'border-b border-border last:border-b-0'
+    const body = orderable && canWrite && rows.length > 1 ? (
+      <DndContext
+        sensors={sortSensors}
+        collisionDetection={closestCenter}
+        onDragEnd={({ active, over }: DragEndEvent) => {
+          if (!over) return
+          moveHolding(rows, rows.findIndex(row => row.id === active.id), rows.findIndex(row => row.id === over.id))
+        }}
+      >
+        <SortableContext items={rows.map(row => row.id)} strategy={verticalListSortingStrategy}>
+          {rows.map((row) => (
+            <Sortable key={row.id} id={row.id} disabled={reorderHoldingsMutation.isPending} className={rowClass}>
+              {(dragHandle) => renderHoldingRow(row, variant, { rows, dragHandle })}
+            </Sortable>
+          ))}
+        </SortableContext>
+      </DndContext>
+    ) : (
+      rows.map((row) => <div key={row.id} className={rowClass}>{renderHoldingRow(row, variant)}</div>)
+    )
     return (
       <div className="rounded-xl border border-border bg-card shadow-sm overflow-x-auto">
         <div className="min-w-[720px]">
           {renderHoldingsHeader(variant)}
-          {rows.map((row) => renderHoldingRow(row, variant))}
+          {body}
         </div>
       </div>
     )
@@ -1508,8 +1601,8 @@ export default function AssetsPage() {
               // that would drop keyboard focus right after a drop.
               type="button"
               className="-me-1 touch-none cursor-grab rounded-md p-1 text-muted-foreground/60 transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:cursor-grabbing aria-disabled:cursor-default aria-disabled:opacity-30"
-              aria-label={t('assets.reorderWallet', { name: wallet.name })}
-              title={t('assets.reorderWallet', { name: wallet.name })}
+              aria-label={t('assets.reorder', { name: wallet.name })}
+              title={t('assets.reorder', { name: wallet.name })}
             >
               <GripVertical size={15} />
             </button>
@@ -1574,14 +1667,14 @@ export default function AssetsPage() {
                       onSelect={() => moveWallet(walletIndex, walletIndex - 1)}
                     >
                       <ChevronUp />
-                      {t('assets.moveWalletUp')}
+                      {t('assets.moveUp')}
                     </DropdownMenuItem>
                     <DropdownMenuItem
                       disabled={walletIndex === sortedWallets.length - 1 || reorderWalletsMutation.isPending}
                       onSelect={() => moveWallet(walletIndex, walletIndex + 1)}
                     >
                       <ChevronDown />
-                      {t('assets.moveWalletDown')}
+                      {t('assets.moveDown')}
                     </DropdownMenuItem>
                     <DropdownMenuSeparator />
                   </>
@@ -1602,7 +1695,7 @@ export default function AssetsPage() {
         </div>
         {!isCollapsed && walletAssets.length > 0 && (
           <div className="ps-4">
-            {renderHoldingsTable(walletAssets)}
+            {renderHoldingsTable(walletAssets, 'holding', { orderable: true })}
           </div>
         )}
         {!isCollapsed && walletAssets.length === 0 && (
@@ -1758,16 +1851,17 @@ export default function AssetsPage() {
           {/* Wallets (active assets grouped) */}
           {(sortedWallets.length > 0 || ungroupedAssets.length > 0) && (
             <div className="space-y-4">
-              <DndContext sensors={walletSensors} collisionDetection={closestCenter} onDragEnd={handleWalletDragEnd}>
+              <DndContext sensors={sortSensors} collisionDetection={closestCenter} onDragEnd={handleWalletDragEnd}>
                 <SortableContext items={sortedWallets.map(w => w.id)} strategy={verticalListSortingStrategy}>
                   {sortedWallets.map((w, index) => (
-                    <SortableWalletSection
+                    <Sortable
                       key={w.id}
                       id={w.id}
                       disabled={reorderWalletsMutation.isPending}
+                      className="space-y-2 rounded-xl"
                     >
                       {(dragHandle) => renderWalletSection(w, assetsByGroup.get(w.id) ?? [], index, dragHandle)}
-                    </SortableWalletSection>
+                    </Sortable>
                   ))}
                 </SortableContext>
               </DndContext>
@@ -1777,7 +1871,7 @@ export default function AssetsPage() {
                   <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider px-1">
                     {sortedWallets.length > 0 ? t('assets.ungrouped') : t('assets.activeAssets')}
                   </h3>
-                  {renderHoldingsTable(ungroupedAssets)}
+                  {renderHoldingsTable(ungroupedAssets, 'holding', { orderable: true })}
                 </div>
               )}
             </div>

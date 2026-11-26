@@ -15,6 +15,7 @@ from app.models.bank_connection import BankConnection
 from app.models.user import User
 from app.schemas.asset_group import AssetGroupCreate, AssetGroupRead, AssetGroupUpdate
 from app.services.fx_rate_service import convert_or_none
+from app.services.ordering import place_in_order
 
 
 async def ensure_group_in_workspace(
@@ -264,19 +265,14 @@ async def reorder_groups(
     duplicate/default positions left by older data.
     """
     result = await session.execute(
-        select(AssetGroup)
-        .where(AssetGroup.workspace_id == workspace_id)
-        .order_by(AssetGroup.position, AssetGroup.name, AssetGroup.id)
-        .with_for_update()
+        select(AssetGroup).where(AssetGroup.workspace_id == workspace_id).with_for_update()
     )
-    groups = list(result.scalars().all())
-    groups_by_id = {group.id: group for group in groups}
-    if any(group_id not in groups_by_id for group_id in group_ids):
+    # Sorted here, not in SQL: under READ COMMITTED, Postgres can return rows
+    # out of ORDER BY order once FOR UPDATE has waited on a concurrent save.
+    groups = sorted(result.scalars().all(), key=lambda g: (g.position, g.name, g.id))
+    reordered = place_in_order(groups, group_ids)
+    if reordered is None:
         return False
-
-    selected_ids = set(group_ids)
-    selected = iter(groups_by_id[group_id] for group_id in group_ids)
-    reordered = [next(selected) if group.id in selected_ids else group for group in groups]
     for position, group in enumerate(reordered):
         group.position = position
 

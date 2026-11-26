@@ -5,6 +5,8 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from app.schemas.ordering import OrderedIds
+
 
 class AssetCreate(BaseModel):
     name: str
@@ -70,6 +72,12 @@ class AssetUpdate(BaseModel):
     group_id: Optional[uuid.UUID] = None
     ticker: Optional[str] = None
     ticker_exchange: Optional[str] = None
+
+
+class AssetReorder(BaseModel):
+    """The holdings of one wallet (or of no wallet) in the order to show them."""
+
+    asset_ids: OrderedIds
 
 
 class AssetRead(BaseModel):
