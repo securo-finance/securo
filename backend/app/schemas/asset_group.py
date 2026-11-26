@@ -1,7 +1,7 @@
 import uuid
 from typing import Optional
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class AssetGroupBase(BaseModel):
@@ -20,6 +20,17 @@ class AssetGroupUpdate(BaseModel):
     icon: Optional[str] = None
     color: Optional[str] = None
     position: Optional[int] = None
+
+
+class AssetGroupReorder(BaseModel):
+    group_ids: list[uuid.UUID] = Field(min_length=1)
+
+    @field_validator("group_ids")
+    @classmethod
+    def group_ids_must_be_unique(cls, group_ids: list[uuid.UUID]) -> list[uuid.UUID]:
+        if len(group_ids) != len(set(group_ids)):
+            raise ValueError("group_ids must be unique")
+        return group_ids
 
 
 class AssetGroupRead(AssetGroupBase):

@@ -1874,6 +1874,9 @@ export const assetGroups = {
     const { data } = await api.patch(`/asset-groups/${id}`, group)
     return data
   },
+  reorder: async (groupIds: string[]): Promise<void> => {
+    await api.put('/asset-groups/order', { group_ids: groupIds })
+  },
   delete: async (id: string): Promise<void> => {
     await api.delete(`/asset-groups/${id}`)
   },

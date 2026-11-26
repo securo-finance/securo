@@ -186,13 +186,18 @@ async def get_group(
     return _group_to_read(group, count, cv, cvp, institution)
 
 
-async def _next_position(session: AsyncSession, user_id: uuid.UUID) -> int:
-    # Position is per-user for sync compatibility — the connection sync path
-    # also calls this, and isn't yet workspace-scoped.
+async def _next_position(
+    session: AsyncSession, user_id: uuid.UUID, workspace_id: Optional[uuid.UUID]
+) -> int:
+    # Wallets are ordered per workspace, whoever created them. A sync that
+    # names no workspace falls back to the user's own wallets.
+    scope = (
+        AssetGroup.workspace_id == workspace_id
+        if workspace_id is not None
+        else AssetGroup.user_id == user_id
+    )
     row = await session.execute(
-        select(func.coalesce(func.max(AssetGroup.position), -1) + 1).where(
-            AssetGroup.user_id == user_id
-        )
+        select(func.coalesce(func.max(AssetGroup.position), -1) + 1).where(scope)
     )
     return int(row.scalar() or 0)
 
@@ -207,7 +212,7 @@ async def create_group(
     # groups don't fight with existing drag-ordered ones.
     position = data.position
     if position == 0:
-        position = await _next_position(session, user_id)
+        position = await _next_position(session, user_id, workspace_id)
     group = AssetGroup(
         user_id=user_id,
         workspace_id=workspace_id,
@@ -244,6 +249,39 @@ async def update_group(
     count, cv, cvp = await _rollup(session, group, primary)
     institution = await _institution_name_for(session, group)
     return _group_to_read(group, count, cv, cvp, institution)
+
+
+async def reorder_groups(
+    session: AsyncSession,
+    workspace_id: uuid.UUID,
+    group_ids: list[uuid.UUID],
+) -> bool:
+    """Reorder the requested wallets while preserving every other wallet's place.
+
+    The API can receive a subset when a Collection filter is active. Replacing
+    only that subset's slots lets users rearrange what they see without moving
+    hidden wallets unexpectedly. Normalizing all positions also repairs the
+    duplicate/default positions left by older data.
+    """
+    result = await session.execute(
+        select(AssetGroup)
+        .where(AssetGroup.workspace_id == workspace_id)
+        .order_by(AssetGroup.position, AssetGroup.name, AssetGroup.id)
+        .with_for_update()
+    )
+    groups = list(result.scalars().all())
+    groups_by_id = {group.id: group for group in groups}
+    if any(group_id not in groups_by_id for group_id in group_ids):
+        return False
+
+    selected_ids = set(group_ids)
+    selected = iter(groups_by_id[group_id] for group_id in group_ids)
+    reordered = [next(selected) if group.id in selected_ids else group for group in groups]
+    for position, group in enumerate(reordered):
+        group.position = position
+
+    await session.commit()
+    return True
 
 
 async def delete_group(session: AsyncSession, group_id: uuid.UUID, workspace_id: uuid.UUID) -> bool:
@@ -307,7 +345,7 @@ async def ensure_group_for_connection(
     if group:
         return _align(group)
 
-    position = await _next_position(session, user_id)
+    position = await _next_position(session, user_id, workspace_id)
     # Disambiguate when the user has multiple connections from the same
     # institution (common with Pluggy sandbox, where every item comes back
     # as "MeuPluggy"). Appends " 2", " 3", etc. until we find a free name.
