@@ -3172,11 +3172,17 @@ async def _find_synced_duplicate(
     for candidate in result.scalars():
         if candidate.external_id and candidate.external_id.startswith("bill_charge:"):
             continue
-        # A row the provider still returns, cancelled ones included, is an
-        # entry of its own, so only a row that left the feed is matched by
-        # its payload dates. A fetch cut short can't tell, so it is matched.
+        # A pending row the provider still returns, cancelled ones included,
+        # is an entry of its own, so only one that left the feed is matched
+        # by its payload dates. A fetch cut short can't tell, so it is
+        # matched. A posted row stays posted, so a pending copy can still
+        # fold into it while the bank lists both.
         if candidate.date != txn_data.date and not (
-            (live_external_ids is None or candidate.external_id not in live_external_ids)
+            (
+                candidate.status != "pending"
+                or live_external_ids is None
+                or candidate.external_id not in live_external_ids
+            )
             and _eb_same_entry_day(candidate, txn_data)
         ):
             continue

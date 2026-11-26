@@ -4620,6 +4620,51 @@ async def test_sync_connection_enable_banking_posted_entry_matches_pending_by_bo
     assert rows[0].external_id == _eb_txn(posted).external_id
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("posted_listed", [False, True], ids=["posted-left", "posted-listed"])
+async def test_sync_connection_enable_banking_late_pending_copy_matches_posted_by_booking_date(
+    session: AsyncSession, test_user, test_workspace, monkeypatch, posted_listed,
+):
+    """Review on #1868: the posted entry lands first, dated by its value
+    date (18 November), and a pending copy that carries only the booking
+    date (20 November) arrives later. It names the same booking date, so it
+    folds into the posted row, which keeps its status and id."""
+    monkeypatch.setattr(
+        "app.services.connection_service.app_today", lambda: date(2026, 11, 21),
+    )
+    conn, account = await _eb_account(session, test_user.id, test_workspace.id)
+    account_id = account.id
+    await session.commit()
+    posted = {
+        **_paypal_payload("b1", "2026-11-18", booked=True),
+        "transaction_date": None,
+        "booking_date": "2026-11-20",
+        "value_date": "2026-11-18",
+    }
+    pending = {
+        **_paypal_payload("p1", "2026-11-18", booked=False),
+        "transaction_date": None,
+        "booking_date": "2026-11-20",
+        "value_date": None,
+    }
+    await _sync_eb(
+        session, conn, test_workspace.id, test_user.id, await _eb_fetch([posted], []),
+    )
+    (stored,) = await _account_rows(session, account_id)
+    stored_id = stored.id
+
+    await _sync_eb(
+        session, conn, test_workspace.id, test_user.id,
+        await _eb_fetch([posted] if posted_listed else [], [pending]),
+    )
+
+    rows = await _account_rows(session, account_id)
+    assert [(row.id, row.status, row.date) for row in rows] == [
+        (stored_id, "posted", date(2026, 11, 18)),
+    ]
+    assert rows[0].external_id == _eb_txn(posted).external_id
+
+
 def _same_merchant_purchase(entry_ref: str, transaction_date: str, *, booked: bool) -> dict:
     """One of two purchases from the same merchant for the same amount, made
     on different days and booked on the same day, 20 November."""
