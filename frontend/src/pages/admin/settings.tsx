@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { admin as adminApi, currencies as currenciesApi } from '@/lib/api'
+import { extractApiError } from '@/lib/api-errors'
 import { resolveDisplayLocale, resolveDateLocale, type NumberFormat, type DateFormat } from '@/lib/format'
 import { resolveSupportedLang, SUPPORTED_LANGS } from '@/lib/i18n'
 import { useAuth } from '@/contexts/auth-context'
@@ -123,8 +124,8 @@ export default function AdminSettingsPage() {
       setDeleteUser(null)
       toast.success(t('admin.users.deleted'))
     },
-    onError: (err: { response?: { data?: { detail?: string } } }) => {
-      toast.error(err.response?.data?.detail || t('common.error'))
+    onError: (err) => {
+      toast.error(extractApiError(err, t('common.error')))
     },
   })
 

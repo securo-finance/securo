@@ -44,6 +44,7 @@ from app.services import admin_service
 from app.services import email_service
 from app.services import provider_settings
 from app.services import workspace_status_service
+from app.services.user_removal_service import SoleOwnerError
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
@@ -164,6 +165,15 @@ async def delete_user(
     try:
         deleted = await admin_service.delete_user(
             session, user_id, current_user.id, reason=reason, ip=client_ip(request)
+        )
+    except SoleOwnerError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "code": "user_sole_owner",
+                "message": str(e),
+                "workspace": e.workspace_name,
+            },
         )
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))

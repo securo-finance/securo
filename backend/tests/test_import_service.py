@@ -1,5 +1,5 @@
 import uuid
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 from unittest.mock import AsyncMock, patch
 
@@ -1552,6 +1552,57 @@ class TestImportTransactionsFx:
 
     All tests mock the external OER provider to avoid real API calls.
     """
+
+    @pytest.mark.asyncio
+    async def test_two_years_of_usd_rows_cost_one_fetch_per_month(
+        self, session: AsyncSession, test_user: User, test_workspace, test_account: Account,
+    ):
+        """A two-year backfill of USD rows in a BRL workspace is O(months), not O(days).
+
+        Before issue #624 this was one provider call per distinct date (731);
+        now only the first date of each month fetches and the rest of the month
+        reads the closest stored rate.
+        """
+        from app.schemas.transaction import TransactionImport
+
+        usd_account = Account(
+            id=uuid.uuid4(),
+            user_id=test_user.id,
+            name="USD Card",
+            type="credit_card",
+            balance=Decimal("0.00"),
+            currency="USD",
+        )
+        session.add(usd_account)
+        await session.commit()
+
+        calls: list[date] = []
+
+        async def counting_sync(db: AsyncSession, target: date) -> int:
+            calls.append(target)
+            await _insert_fx_rate(db, "BRL", Decimal("5.0000000000"), target)
+            return 1
+
+        start = date(2024, 1, 1)
+        days = (date(2026, 1, 1) - start).days
+        txns = [
+            TransactionImport(
+                description=f"US purchase {offset}",
+                amount=Decimal("10.00"),
+                date=start + timedelta(days=offset),
+                type="debit",
+                currency="USD",
+            )
+            for offset in range(days)
+        ]
+
+        with patch("app.services.fx_rate_service.sync_rates", side_effect=counting_sync):
+            imported, _, _, _ = await import_transactions(
+                session, test_workspace.id, test_user.id, usd_account.id, txns, "csv",
+            )
+
+        assert imported == days
+        assert len(calls) == 24  # one per month, not one per day
 
     @pytest.mark.asyncio
     @patch("app.services.fx_rate_service.OpenExchangeRatesProvider", new_callable=_RateProviderFactoryStub)

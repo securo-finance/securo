@@ -14,6 +14,11 @@ x-backend-env: &backend-env
   # instance; the defaults are in backend/app/core/config.py (#1901).
   DB_POOL_SIZE: ${DB_POOL_SIZE:-5}
   DB_MAX_OVERFLOW: ${DB_MAX_OVERFLOW:-10}
+  # Plan each query with the values of the call that runs it, which keeps
+  # reports on a large history fast. Set it to false to keep the server's own
+  # plan_cache_mode, which is what an instance behind a connection pooler that
+  # refuses the parameter needs (#584).
+  DB_FORCE_CUSTOM_PLANS: ${DB_FORCE_CUSTOM_PLANS:-true}
   # Optional. Left empty, Securo generates a unique key on first start and
   # keeps it in the database. Set one (openssl rand -hex 32) to manage it yourself.
   SECRET_KEY: ${SECRET_KEY:-}

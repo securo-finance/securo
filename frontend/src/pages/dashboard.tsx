@@ -2092,6 +2092,7 @@ export default function DashboardPage() {
           type: a.type,
           currency: a.currency,
           secured_asset_id: a.secured_asset_id,
+          loan_kind: a.loan_kind,
         }))}
         onSave={(data, _recurring, _installment, _files, action) => {
           if (editingTx) updateMutation.mutate({ id: editingTx.id, ...data, action })
