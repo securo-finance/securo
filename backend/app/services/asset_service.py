@@ -61,10 +61,6 @@ SplitRecord = tuple[date, int, int]  # (date, old_units, new_units)
 _LIST_ORDER = (Asset.position == 0, Asset.position, Asset.name, Asset.id)
 
 
-def _list_order_key(asset: Asset) -> tuple:
-    return (asset.position == 0, asset.position, asset.name, asset.id)
-
-
 def _next_due_date(last_date: date, frequency: str) -> date:
     """Calculate the next due date based on frequency."""
     if frequency == "daily":
@@ -1175,6 +1171,10 @@ async def reorder_assets(
     every holding of the wallet is numbered from 1, which places the ones that
     were not placed yet. False when an id is not a holding of this workspace;
     MixedWalletsError when the ids span wallets.
+
+    Locked the way wallets are (#1944): in id order, which concurrent reorders
+    don't change, so two of them can't deadlock; then read in list order, so
+    names that tie keep the order the database's collation shows.
     """
     named = await session.execute(
         select(Asset.group_id).where(Asset.workspace_id == workspace_id, Asset.id.in_(asset_ids))
@@ -1187,11 +1187,21 @@ async def reorder_assets(
 
     group_id = group_ids[0]
     in_wallet = Asset.group_id.is_(None) if group_id is None else Asset.group_id == group_id
+    locked_ids = (
+        await session.execute(
+            select(Asset.id)
+            .where(Asset.workspace_id == workspace_id, in_wallet)
+            .order_by(Asset.id)
+            .with_for_update()
+        )
+    ).scalars().all()
     result = await session.execute(
-        select(Asset).where(Asset.workspace_id == workspace_id, in_wallet).with_for_update()
+        select(Asset)
+        .where(Asset.id.in_(locked_ids))
+        .order_by(*_LIST_ORDER)
+        .execution_options(populate_existing=True)
     )
-    # Sorted here, not in SQL: FOR UPDATE can return rows out of ORDER BY order.
-    holdings = sorted(result.scalars().all(), key=_list_order_key)
+    holdings = list(result.scalars().all())
     reordered = place_in_order(holdings, asset_ids)
     if reordered is None:  # moved to another wallet since the first read
         return False
