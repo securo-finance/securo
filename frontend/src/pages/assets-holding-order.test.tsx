@@ -126,7 +126,11 @@ describe('Holding ordering', () => {
     fireEvent.click(handle('Alpha')!)
 
     expect(api.assets.reorder).not.toHaveBeenCalled()
-    expect(api.assets.values).not.toHaveBeenCalled()
+    expect(screen.queryByText(t('assets.addValue'))).not.toBeInTheDocument()
+
+    // The same click on the row itself does open it.
+    fireEvent.click(screen.getByText('Alpha'))
+    expect(await screen.findByText(t('assets.addValue'))).toBeInTheDocument()
   })
 
   it('offers no ordering for a holding alone in its wallet', async () => {

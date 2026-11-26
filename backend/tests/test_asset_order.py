@@ -85,6 +85,8 @@ async def test_new_and_moved_holdings_go_after_the_placed_ones(client: AsyncClie
 
     await _holding(client, auth_headers, "Aardvark", wallet)
     moving = await _holding(client, auth_headers, "Able", other)
+    # Placed first in its old wallet: that place must not come along.
+    assert (await _reorder(client, auth_headers, [moving])).status_code == 204
     moved = await client.patch(f"/api/assets/{moving}", headers=auth_headers, json={"group_id": wallet})
     assert moved.status_code == 200
 
