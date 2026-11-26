@@ -97,10 +97,10 @@ ALLOWLIST: dict[tuple[str, str], str] = {
     ("DELETE", "/api/agents/connections/{conn_id}"): "the requester's own LLM credentials",
     ("POST", "/api/agents/connections/{conn_id}/test"): "probes the requester's own credential",
     # Global, not workspace data: FX rates are shared by the whole instance.
-    # Any authenticated user may refresh them, and nothing per-workspace is
-    # touched. Flagged here so a future rate limit or admin floor is a
-    # decision rather than an oversight.
-    ("POST", "/api/fx-rates/refresh"): "refreshes instance-wide FX rates, no workspace data",
+    # The manual refresh is an administrator action since #636 (the provider
+    # app id is the instance's, and a success clears the quota pause), and it
+    # reuses a day already stored, so it writes no workspace data either.
+    ("POST", "/api/fx-rates/refresh"): "instance-wide FX refresh, admin-only, no workspace data",
     # A member's own credentials. Any member may issue one, but its scopes are
     # capped by their role (a viewer only gets read scopes) and every request
     # made with it still runs under that role. Revoking is limited to one's
