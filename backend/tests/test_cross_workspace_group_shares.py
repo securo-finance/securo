@@ -597,7 +597,8 @@ async def test_cross_workspace_equivalent_categories_merge_across_views(
         category=guest_only,
     )
 
-    # 1. Dashboard spending-by-category merges both into viewer_food.id and never leaks guest_only.id
+    # 1. Dashboard spending-by-category merges mapped categories into viewer_food.id
+    #    while preserving unmapped foreign categories so drill-downs match Reports.
     spending = await dashboard_service.get_spending_by_category(
         session, test_workspace.id, test_user.id, month=month
     )
@@ -605,8 +606,9 @@ async def test_cross_workspace_equivalent_categories_merge_across_views(
     assert str(viewer_food.id) in by_id
     assert by_id[str(viewer_food.id)].total == pytest.approx(90.0)
     assert str(guest_food_pt.id) not in by_id
-    assert str(guest_only.id) not in by_id
-    assert by_id[None].total == pytest.approx(30.0)
+    assert str(guest_only.id) in by_id
+    assert by_id[str(guest_only.id)].category_name == "Guest-Only Tag"
+    assert by_id[str(guest_only.id)].total == pytest.approx(30.0)
 
     # 2. Reports merge "Alimentação" into viewer's "Food & Dining" slice & trend
     report = await report_service.get_income_expenses_report(
@@ -615,6 +617,7 @@ async def test_cross_workspace_equivalent_categories_merge_across_views(
     comp = {item.label: item.value for item in report.composition if item.group == "expenses"}
     assert comp["Food & Dining"] == pytest.approx(90.0)
     assert "Alimentação" not in comp
+    assert comp["Guest-Only Tag"] == pytest.approx(30.0)
 
     # 3. Budgets include the mapped cross-workspace share under viewer_food
     bva = await budget_service.get_budget_vs_actual(
@@ -622,6 +625,30 @@ async def test_cross_workspace_equivalent_categories_merge_across_views(
     )
     food_bva = next(row for row in bva if row.category_id == viewer_food.id)
     assert food_bva.actual_amount == pytest.approx(90.0)
+
+    # 3b. Budget suggestions count months_with_data for mapped shared-only categories
+    viewer_transport = await _make_category(
+        session, test_user, test_workspace, "Transport", "#0EA5E9"
+    )
+    guest_transport_pt = await _make_category(
+        session, guest, guest_ws, "Transporte", "#38BDF8"
+    )
+    prev_month = (month - timedelta(days=1)).replace(day=15)
+    prev_tx = await _record_split_expense(
+        session, guest, guest_ws, [me, friend], "120.00", "Shared taxi",
+        category=guest_transport_pt,
+    )
+    prev_tx.date = prev_month
+    await session.flush()
+
+    suggestions = await budget_service.get_budget_suggestions(
+        session, test_workspace.id, test_user.id, month=month, months=1
+    )
+    transport_sugg = next(
+        s for s in suggestions.suggestions if s.category_id == viewer_transport.id
+    )
+    assert transport_sugg.total_spent == Decimal("60.00")
+    assert transport_sugg.months_with_data == 1
 
     # 4. Category statement attributes mapped share to viewer_food, unmapped to uncategorized
     stmt = await category_statement_service.get_category_statement(
@@ -649,6 +676,22 @@ async def test_cross_workspace_equivalent_categories_merge_across_views(
     assert shared_tx.category_id == viewer_food.id
     assert shared_tx.category is not None and shared_tx.category.id == viewer_food.id
 
+    # 5b. Drilling down on an unmapped foreign category slice returns the shared row and matching summary
+    foreign_txs, foreign_total, foreign_summary = await transaction_service.get_transactions(
+        session,
+        test_workspace.id,
+        test_user.id,
+        from_date=month,
+        to_date=month_end - timedelta(days=1),
+        category_id=guest_only.id,
+        include_summary=True,
+    )
+    assert foreign_total == 1
+    assert foreign_txs[0].description == "Shared misc"
+    assert foreign_txs[0].category_id == guest_only.id
+    assert foreign_summary is not None
+    assert float(foreign_summary["expense"]) == pytest.approx(30.0)
+
     # 6. shared_as_uncategorized drill-down returns only the unmapped shared row (not "Shared lunch")
     uncat_txs, uncat_total, _ = await transaction_service.get_transactions(
         session,
@@ -661,4 +704,4 @@ async def test_cross_workspace_equivalent_categories_merge_across_views(
     )
     assert uncat_total == 1
     assert uncat_txs[0].description == "Shared misc"
-    assert uncat_txs[0].category_id is None
+    assert uncat_txs[0].category_id == guest_only.id

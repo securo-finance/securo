@@ -537,6 +537,18 @@ async def get_transactions(
                 workspace_id,
                 candidate_foreign_cat_ids=cand_foreign_cat_ids,
             )
+            # Also allow drilling down directly on an unmapped foreign category
+            # slice emitted by Dashboard or Income & Expenses reports.
+            direct_foreign_candidates = set(filter_category_ids) & cand_foreign_cat_ids
+            if direct_foreign_candidates:
+                direct_resolved = await resolve_viewer_category_map(
+                    session, direct_foreign_candidates, workspace_id
+                )
+                foreign_cat_ids |= {
+                    cid
+                    for cid in direct_foreign_candidates
+                    if direct_resolved.get(cid) is None
+                }
         cat_clauses = [
             and_(
                 Transaction.workspace_id == workspace_id,
@@ -1135,14 +1147,10 @@ async def get_transactions(
                 if tx.workspace_id != workspace_id:
                     if tx.category_id is not None:
                         mapped_cat = cat_map.get(tx.category_id)
-                        set_committed_value(tx, "category", mapped_cat)
-                        set_committed_value(
-                            tx,
-                            "category_id",
-                            mapped_cat.id if mapped_cat is not None else None,
-                        )
+                        if mapped_cat is not None:
+                            set_committed_value(tx, "category", mapped_cat)
+                            set_committed_value(tx, "category_id", mapped_cat.id)
                     if tx.category_lines:
-                        remapped_lines = []
                         for line in tx.category_lines:
                             mapped_line_cat = cat_map.get(line.category_id)
                             if mapped_line_cat is not None:
@@ -1150,10 +1158,6 @@ async def get_transactions(
                                 set_committed_value(
                                     line, "category_id", mapped_line_cat.id
                                 )
-                                remapped_lines.append(line)
-                        set_committed_value(tx, "category_lines", remapped_lines)
-                        if not remapped_lines:
-                            set_committed_value(tx, "has_category_lines", False)
         # Paybacks recorded on these rows, so reopening one shows it.
         # Only on the viewer's own rows: another member's row could point at
         # a group the viewer can't see.

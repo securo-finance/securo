@@ -765,29 +765,48 @@ async def get_budget_suggestions(
                 total_by_cat.pop(cat_id)
 
     from app.services._query_filters import (
+        _viewer_shared_filters,
         resolve_viewer_category_map,
-        viewer_shared_spending_by_category,
+        viewer_shares_in_primary,
     )
 
-    shared_by_cat = await viewer_shared_spending_by_category(
-        session,
-        user_id,
-        window_start,
-        window_end,
-        use_effective_date=accounting_mode == "accrual",
-        primary_currency=primary_currency,
-        exclude_workspace_id=workspace_id,
+    shared_where = (
+        *_viewer_shared_filters(
+            user_id,
+            window_start,
+            window_end,
+            use_effective_date=accounting_mode == "accrual",
+            exclude_workspace_id=workspace_id,
+        ),
+        Transaction.type == "debit",
     )
-    if shared_by_cat:
+    shared_by_day_cat = await viewer_shares_in_primary(
+        session,
+        (report_date, Transaction.category_id),
+        shared_where,
+        primary_currency,
+        viewer,
+    )
+    if shared_by_day_cat:
+        shared_cat_ids = {
+            cat_uuid for (_d, cat_uuid) in shared_by_day_cat if cat_uuid is not None
+        }
         sugg_cat_map = await resolve_viewer_category_map(
-            session, shared_by_cat.keys(), workspace_id
+            session, shared_cat_ids, workspace_id
         )
-        for cat_uuid, total in shared_by_cat.items():
+        for (d, cat_uuid), (_income, expense) in shared_by_day_cat.items():
+            if not expense:
+                continue
             mapped_cat = sugg_cat_map.get(cat_uuid) if cat_uuid is not None else None
             if mapped_cat is None:
                 continue
             cat_id = str(mapped_cat.id)
-            total_by_cat[cat_id] = total_by_cat.get(cat_id, Decimal("0")) + Decimal(str(total))
+            total_by_cat[cat_id] = total_by_cat.get(cat_id, Decimal("0")) + expense
+            month_start = d.replace(day=1)
+            key = (cat_id, month_start)
+            monthly_net[key] = monthly_net.get(key, Decimal("0")) + expense
+            if monthly_net[key] > 0:
+                months_with_data.setdefault(cat_id, set()).add(month_start)
 
     budget_map = await _build_budget_map(session, workspace_id, target)
     divisor = Decimal(len(analyzed))
