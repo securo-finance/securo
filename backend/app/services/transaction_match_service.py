@@ -7,6 +7,7 @@ from typing import Optional
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.money import as_stored_amount
 from app.models.transaction import Transaction
 
 
@@ -37,17 +38,20 @@ async def find_unique_transaction_match(
     `candidates`, when given, stands in for the query: every row of the
     account under `sources` within reach of `txn_data`, loaded once by a
     caller that asks about many rows of one account (an import). They are
-    filtered here on the same terms the query uses.
+    filtered here on the same terms the query uses, amounts compared as the
+    column stores them: the query rounded the bound amount to the column's
+    scale before matching (issue #616).
     """
     date_lo = txn_data.date - timedelta(days=date_tolerance_days)
     date_hi = txn_data.date + timedelta(days=date_tolerance_days)
     if candidates is not None:
+        amount = as_stored_amount(txn_data.amount)
         found = [
             candidate
             for candidate in candidates
             if candidate.account_id == account_id
             and candidate.source in sources
-            and candidate.amount == txn_data.amount
+            and as_stored_amount(candidate.amount) == amount
             and candidate.type == txn_data.type
             and date_lo <= candidate.date <= date_hi
             and not (unclaimed_only and candidate.raw_data is not None)

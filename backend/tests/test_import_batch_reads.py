@@ -219,3 +219,78 @@ async def test_a_300_row_file_lands_as_before(
     assert upgraded.import_id == log_id
     assert upgraded.recurring_transaction_id == netflix_id
     assert [r.amount for r in rows if r.description == "ROUND"] == [Decimal("10.01")] * 3
+
+
+@pytest.mark.asyncio
+async def test_a_reimport_finds_the_amount_the_column_rounded(
+    session: AsyncSession, test_user, test_workspace,
+):
+    """A file's 10.005 lands as 10.01, and importing the file again skips it.
+
+    Issue #616: asked once per row, the duplicate check ran in the database,
+    which rounds the bound amount to the column's scale before comparing.
+    Read once for the file, the amount is judged in memory, so both sides
+    have to be rounded the same way or the row lands twice.
+    """
+    account = await _account(session, test_user.id, test_workspace.id, "Reimport")
+    file_row = TransactionImport(
+        description="ROUND TRIP", amount=Decimal("10.005"), date=START, type="debit",
+    )
+
+    imported, skipped, _, _ = await import_transactions(
+        session, test_workspace.id, test_user.id, account.id, [file_row], "import",
+        filename="statement.csv", detected_format="csv",
+    )
+    assert (imported, skipped) == (1, 0)
+    # The second import is another request: it reads the row back from the column.
+    session.expunge_all()
+    stored = (await session.execute(
+        select(Transaction.amount).where(
+            Transaction.account_id == account.id,
+            Transaction.description == "ROUND TRIP",
+        )
+    )).scalars().all()
+    assert stored == [Decimal("10.01")]
+
+    imported, skipped, _, _ = await import_transactions(
+        session, test_workspace.id, test_user.id, account.id, [file_row.model_copy()],
+        "import", filename="statement.csv", detected_format="csv",
+    )
+    assert (imported, skipped) == (0, 1)
+    amounts = (await session.execute(
+        select(Transaction.amount).where(
+            Transaction.account_id == account.id,
+            Transaction.description == "ROUND TRIP",
+        )
+    )).scalars().all()
+    assert amounts == [Decimal("10.01")]
+
+
+@pytest.mark.asyncio
+async def test_a_synced_row_is_found_at_the_amount_the_column_rounded(
+    session: AsyncSession, test_user, test_workspace,
+):
+    """A file row collides with a connection's row at the amount both store.
+
+    Both carry 29.994; the column keeps 29.99 for each. The per-row query
+    rounded the file's amount before comparing, and so must the in-memory
+    match against the loaded rows (issue #616).
+    """
+    account = await _account(session, test_user.id, test_workspace.id, "Synced")
+    session.add(Transaction(
+        id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+        account_id=account.id, description="GYM", original_description="GYM",
+        amount=Decimal("29.994"), date=START + timedelta(days=2), type="debit",
+        status="posted", source="sync", currency="BRL",
+    ))
+    await session.commit()
+
+    imported, skipped, _, _ = await import_transactions(
+        session, test_workspace.id, test_user.id, account.id,
+        [TransactionImport(
+            description="GYM", amount=Decimal("29.994"), date=START, type="debit",
+        )],
+        "import", filename="statement.csv", detected_format="csv",
+    )
+
+    assert (imported, skipped) == (0, 1)

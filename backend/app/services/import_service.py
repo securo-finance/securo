@@ -10,7 +10,7 @@ import warnings
 import xml.etree.ElementTree as ET
 from xml.parsers import expat
 from datetime import date, datetime, timedelta
-from decimal import ROUND_HALF_UP, Decimal
+from decimal import Decimal
 
 from bs4 import XMLParsedAsHTMLWarning
 from ofxparse import OfxParser
@@ -18,7 +18,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
-from app.core.money import bounded_conversion
+from app.core.money import as_stored_amount, bounded_conversion
 from app.models.account import Account
 from app.models.bank_connection import BankConnection
 from app.models.category import Category
@@ -1157,7 +1157,7 @@ async def enrich_with_category_suggestions(
 def _cents(value: Decimal) -> Decimal:
     """A conversion as `Numeric(15, 2)` stores it, rounded before it is bounded:
     9999999999999.9918 fits as 9999999999999.99 (issue #422)."""
-    return value.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    return as_stored_amount(value)
 
 
 class ImportCategoryNotFound(ValueError):
@@ -1261,11 +1261,12 @@ class _StatementRows:
         The first match rather than the only one: the key can legitimately
         match more than one row (a prior sync/import race left a duplicate,
         or a bank reuses one FITID across statements), and any match is a
-        duplicate. Amounts compare as the column stores them, so a row this
-        import added matches as it will be written.
+        duplicate. Amounts compare as the column stores them, on both sides:
+        the query rounded the file's amount to the column's scale, and a row
+        this import added matches as it will be written.
         """
         for row in self.rows:
-            if row.type != txn_data.type or _cents(row.amount) != txn_data.amount:
+            if row.type != txn_data.type or _cents(row.amount) != _cents(txn_data.amount):
                 continue
             if txn_data.external_id:
                 if row.external_id != txn_data.external_id:
