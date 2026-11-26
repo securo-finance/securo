@@ -50,6 +50,11 @@ secret:
   agentsAnthropicApiKey: ""
   agentsOpenaiCompatApiKey: ""
 
+  # Password recovery by email: the credential of the provider picked in
+  # config.emailProvider. Only read when config.emailEnabled is "true".
+  smtpPassword: ""
+  resendApiKey: ""
+
 # Non-sensitive configuration
 config:
   debug: "false"
@@ -77,6 +82,25 @@ config:
   oidcWorkspaceRoleMap: ""
   fxSyncMode: "on_demand"
   tesouroDiretoEnabled: "true"
+
+  # Password recovery by email (ADR 0044), off by default: with emailEnabled
+  # "false" nothing is sent and "forgot password" answers 503. The backend
+  # refuses to start when it is on without the provider's settings.
+  emailEnabled: "false"
+  # smtp (your own relay) or resend (hosted API). With resend nothing under
+  # smtp* is read; set secret.resendApiKey and emailFrom.
+  emailProvider: "smtp"
+  resendApiUrl: "https://api.resend.com"
+  smtpHost: ""
+  smtpPort: "587"
+  # starttls (587), ssl (465) or none. none sends the credentials in the clear.
+  smtpSecurity: "starttls"
+  smtpUsername: ""
+  # The From address, e.g. "Securo <no-reply@example.com>". Empty uses
+  # smtpUsername (smtp only).
+  emailFrom: ""
+  # How long a recovery link stays valid.
+  passwordResetTokenMinutes: "60"
 
   # Proxies in front of the backend whose X-Forwarded-For is trusted when
   # resolving the client IP for rate limits and bank PSU headers (ADR 0024).

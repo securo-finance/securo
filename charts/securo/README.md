@@ -132,6 +132,30 @@ before disabling their PVC. The permissions and migration steps are in the
 [deployment guide](https://docs.usesecuro.com/docs/deployment/docker/#storing-attachments-in-s3).
 S3 mode does not move AI knowledge files to object storage.
 
+### Password recovery by email
+
+Off by default: "forgot password" answers 503 until it is turned on. With your
+own SMTP relay:
+
+```yaml
+config:
+  emailEnabled: "true"
+  emailProvider: smtp
+  smtpHost: smtp.example.com
+  smtpPort: "587"
+  smtpSecurity: starttls
+  smtpUsername: no-reply@example.com
+  emailFrom: "Securo <no-reply@example.com>"
+global:
+  existingSecret: securo-secrets
+```
+
+Put `SMTP_PASSWORD` in `securo-secrets`, or set `secret.smtpPassword` when
+letting Helm create the Secret. With Resend, set `config.emailProvider: resend`,
+`config.emailFrom` and `RESEND_API_KEY` (or `secret.resendApiKey`); the `smtp*`
+keys are not read. The backend refuses to start when `emailEnabled` is `"true"`
+and the provider's settings are missing.
+
 ### Client IP behind the Ingress
 
 Login, second factor and registration are rate limited per client IP, read
