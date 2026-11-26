@@ -295,15 +295,19 @@ class YFinanceProvider(MarketPriceProvider):
                 # `yf.download` records a per-ticker failure instead of
                 # raising it, so a rate limit inside the batch never reaches
                 # the handler above — and it can sit next to tickers that did
-                # answer, which a whole-chunk check would never look at. One
-                # quote probe on a symbol the chunk left unanswered tells the
-                # two cases apart: a refusing Yahoo raises here and the whole
-                # instance backs off; a delisted ticker answers without a
-                # price and the caller falls back to a per-holding quote.
-                try:
-                    await self._call_upstream(self._price_sync, unanswered[0])
-                except MarketPriceRateLimitedError:
-                    refused = True
+                # answer, which a whole-chunk check would never look at. Every
+                # unanswered ticker is probed until one refuses: a delisted
+                # ticker answering without a price says nothing about the next
+                # one, whose 429 is hidden the same way. Probing stops at the
+                # first refusal, so the extra calls only happen while Yahoo is
+                # still answering them.
+                for symbol in unanswered:
+                    try:
+                        await self._call_upstream(self._price_sync, symbol)
+                    except MarketPriceRateLimitedError:
+                        refused = True
+                        break
+                if refused:
                     break
 
         if refused:
@@ -541,11 +545,21 @@ class YFinanceProvider(MarketPriceProvider):
             # Everything below reads a third-party payload, so it stays inside
             # the handler: a malformed field must not fail a quote whose price
             # is already in hand.
-            name = info.get("longName") or info.get("shortName") or None
+            # First *usable* name wins: a wrongly typed `longName` must not
+            # keep a valid `shortName` out, or the day-long cache keeps a
+            # missing name for a symbol that did answer.
+            name = next(
+                (
+                    value
+                    for value in (info.get("longName"), info.get("shortName"))
+                    if isinstance(value, str) and value
+                ),
+                None,
+            )
             quote_type = info.get("quoteType")
             website = info.get("website") or None
             metadata = {
-                "name": name if isinstance(name, str) else None,
+                "name": name,
                 "quote_type": (
                     quote_type.upper()
                     if isinstance(quote_type, str) and quote_type

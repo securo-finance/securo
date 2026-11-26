@@ -291,6 +291,47 @@ async def test_a_rate_limit_beside_priced_tickers_starts_the_cooldown(fake_redis
 
 
 @pytest.mark.asyncio
+async def test_a_delisted_ticker_does_not_hide_a_rate_limit_behind_it(fake_redis, yahoo):
+    """The probe has to cover every unanswered ticker, not only the first."""
+    from datetime import date
+    from decimal import Decimal
+
+    def download(symbols: list[str]):
+        return {
+            "AAPL": LatestClose(price=Decimal("190.5"), on=date(2026, 11, 25)),
+            "GONE": None,
+            "MSFT": None,
+        }
+
+    probed: list[str] = []
+
+    def price(symbol: str):
+        probed.append(symbol)
+        yahoo["price"] += 1
+        if symbol == "MSFT":
+            raise MarketPriceRateLimitedError("429")
+        # GONE: Yahoo answered, it just has nothing for a delisted ticker.
+        return None
+
+    with (
+        patch.object(YFinanceProvider, "_download_closes_sync", staticmethod(download)),
+        patch.object(YFinanceProvider, "_price_sync", staticmethod(price)),
+    ):
+        closes = await YFinanceProvider().get_latest_closes(["AAPL", "GONE", "MSFT"])
+
+    # GONE answers (no 429), so the probe must go on to MSFT, whose refusal
+    # `yf.download` swallowed. Stopping at the first unanswered ticker would
+    # leave the shared cooldown unset.
+    assert probed == ["GONE", "MSFT"]
+    priced = closes["AAPL"]
+    assert priced is not None
+    assert priced.price == Decimal("190.5")
+    assert closes["GONE"] is None
+    assert closes["MSFT"] is None
+    assert fake_redis.data.get("market:yahoo:cooldown") == "1"
+
+
+@pytest.mark.asyncio
 async def test_a_denied_probe_keeps_the_chunks_already_priced(fake_redis, yahoo):
     """A probe our own throttle denies must not erase closes a chunk returned."""
     from datetime import date
@@ -399,3 +440,16 @@ def test_malformed_metadata_keeps_the_usable_fields():
         info = YFinanceProvider._info_sync("AAPL")
 
     assert info == {"name": "Apple Inc.", "quote_type": None, "website": None}
+
+
+def test_a_bad_long_name_does_not_hide_a_usable_short_name():
+    """A wrongly typed `longName` must fall through to `shortName`, not to None."""
+
+    class _Ticker:
+        def __init__(self, symbol: str) -> None:
+            self.info = {"longName": 123, "shortName": "Apple", "quoteType": "EQUITY"}
+
+    with patch("yfinance.Ticker", _Ticker):
+        info = YFinanceProvider._info_sync("AAPL")
+
+    assert info == {"name": "Apple", "quote_type": "EQUITY", "website": None}
