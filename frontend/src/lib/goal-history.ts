@@ -1,6 +1,12 @@
 import { accounts, assets, reports } from '@/lib/api'
 import type { Goal } from '@/types'
-import { cleanHistory, goalHistoryStart, type AmountPoint } from './goal-projection'
+import {
+  carryForward,
+  cleanHistory,
+  goalHistoryStart,
+  historyMonths,
+  type AmountPoint,
+} from './goal-projection'
 
 export type HistoryNote =
   'manual' | 'currency' | 'missing' | 'wallet' | 'reconstructed' | 'netWorth'
@@ -12,10 +18,11 @@ export interface GoalHistory {
 
 /**
  * Loads a goal's history through the existing account, asset, and report APIs.
- * Histories start one month before goal creation, capped at ten years. Wallet history
- * uses weekly wallet-filtered net-worth reports; net worth uses weekly unfiltered reports.
- * Manual goals have no history; currency mismatches and missing data return
- * explanatory notes instead of invented balances.
+ * Histories start one month before goal creation, capped at ten years. Asset history
+ * requests the whole window and carries the last valuation from before it forward.
+ * Wallet history uses weekly wallet-filtered net-worth reports; net worth uses weekly
+ * unfiltered reports. Manual goals have no history; currency mismatches and missing
+ * data return explanatory notes instead of invented balances.
  *
  * @param {Goal} goal - Goal identifying its tracking source and display currency.
  * @param {string} today - Current workspace date in YYYY-MM-DD format.
@@ -62,12 +69,15 @@ export async function loadGoalHistory(goal: Goal, today: string): Promise<GoalHi
   }
 
   // for tying the goal to an asset, we simply use the assets valueTrend.
+  // Request as many months as the window covers and carry the last valuation
+  // before it forward, so sparse valuations still draw inside the window.
   if (goal.tracking_type === 'asset' && goal.asset_id) {
     const asset = await assets.get(goal.asset_id)
     if (asset.currency !== goal.currency) {
       return { points: [], notes: ['currency'] }
     }
-    return result(await assets.valueTrend(goal.asset_id), ['reconstructed'])
+    const trend = await assets.valueTrend(goal.asset_id, historyMonths(earliest, today))
+    return result(carryForward(trend, earliest), ['reconstructed'])
   }
 
   // historical wallet totals are computed using the net worth report limited to that wallet.

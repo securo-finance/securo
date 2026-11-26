@@ -15,10 +15,12 @@ import { ChevronDown, ChevronUp } from 'lucide-react'
 
 import { loadGoalHistory } from '@/lib/goal-history'
 import {
+  axisTicks,
   calendarMonthAfter,
   firstOfMonthAfter,
   goalHistoryStart,
   projectGoal,
+  targetLabelSide,
 } from '@/lib/goal-projection'
 import { todayInTimezone } from '@/lib/date-utils'
 import { useGoalChartState } from '@/contexts/goal-chart-state'
@@ -136,6 +138,19 @@ export function GoalVisualization({ goal }: { goal: Goal }) {
     timestamp(firstOfMonthAfter(today)),
     deadlineEnd,
   )
+  // Anchor the ticks on month starts and show the day on short windows, so a
+  // one- or two-month range never repeats the same month label.
+  const shortAxis = end - start < 92 * 86_400_000
+  const axisLabel = (value: number) =>
+    new Date(value).toLocaleDateString(
+      locale,
+      shortAxis
+        ? { day: 'numeric', month: 'short', timeZone: 'UTC' }
+        : { month: 'short', year: '2-digit', timeZone: 'UTC' },
+    )
+  // A single actual point, such as the valuation carried into a sparse window,
+  // has no segment to draw, so it needs its own dot to stay visible.
+  const actualPoints = chart.filter(point => point.actual !== undefined).length
   // y-max = 10% above the target, current amount, or highest historical value,
   // whichever is largest
   // Use 100 only when the value is at most 90.
@@ -228,15 +243,10 @@ export function GoalVisualization({ goal }: { goal: Goal }) {
                     dataKey="time"
                     scale="time"
                     domain={[start, end]}
-                    tickCount={6}
+                    ticks={axisTicks(historyStart, new Date(end).toISOString().slice(0, 10))}
+                    interval="preserveStartEnd"
                     tick={{ fontSize: 11, fill: 'var(--muted-foreground)' }}
-                    tickFormatter={value =>
-                      new Date(value).toLocaleDateString(locale, {
-                        month: 'short',
-                        year: '2-digit',
-                        timeZone: 'UTC',
-                      })
-                    }
+                    tickFormatter={axisLabel}
                   />
                   {/* Vertical axis: use the amount bounds and compact labels such as 6.6K. */}
                   <YAxis
@@ -271,7 +281,7 @@ export function GoalVisualization({ goal }: { goal: Goal }) {
                     strokeDasharray="4 4"
                     label={{
                       value: t('goalChart.target'),
-                      position: 'insideTopLeft',
+                      position: targetLabelSide(Number(goal.target_amount), floor),
                       fill: 'var(--muted-foreground)',
                       fontSize: 11,
                     }}
@@ -310,7 +320,7 @@ export function GoalVisualization({ goal }: { goal: Goal }) {
                     name={t('goalChart.actual')}
                     stroke="var(--primary)"
                     strokeWidth={2.5}
-                    dot={false}
+                    dot={actualPoints === 1}
                     connectNulls
                     isAnimationActive={false}
                   />
