@@ -57,6 +57,7 @@ from app.schemas.report import (
 from app.services import invoice_forecast_service
 from app.services.dashboard_service import (
     _account_balance_at,
+    _account_balances_at,
     _get_forecast_transactions,
     _get_open_accounts,
     _open_on,
@@ -143,6 +144,7 @@ async def _net_worth_at(
     asset_group_ids: Optional[list[uuid.UUID]] = None,
     accounts: Optional[list[Account]] = None,
     assets: Optional[tuple[list[Asset], dict[str, list[tuple[date, float]]]]] = None,
+    balances: Optional[dict[tuple[uuid.UUID, date], float]] = None,
 ) -> ReportDataPoint:
     """Compute a single net worth snapshot at a given date, converted to primary currency.
 
@@ -158,6 +160,12 @@ async def _net_worth_at(
     trend passes the ``_get_report_assets`` result for the whole range in,
     instead of reloading the value series for every snapshot. Omit it to load
     them here.
+
+    ``balances`` is the same for the account balances: the
+    ``_account_balances_at`` read for the whole trend, keyed by account and
+    cutoff, so a twelve-point report does not repeat every account's sum once
+    per point (issue #584). A pair missing from it falls back to the
+    single-account read.
     """
     if accounts is None:
         accounts = await _get_open_accounts(session, workspace_id, account_ids, closed_after=cutoff)
@@ -181,12 +189,23 @@ async def _net_worth_at(
         account = group[0]
         bal = 0.0
         for member in group:
-            bal += await _account_balance_at(session, member, cutoff)
+            cached = balances.get((member.id, cutoff)) if balances is not None else None
+            bal += (
+                cached
+                if cached is not None
+                else await _account_balance_at(session, member, cutoff)
+            )
         if len(group) > 1 and account.shared_balance_group:
             # Each card's balance at the cutoff is the shared debt today minus
             # that card's own activity since, so the duplicates to strip are
             # today's shared debt once per extra card.
-            current_shared = await _account_balance_at(session, account, app_today())
+            today = app_today()
+            cached_shared = balances.get((account.id, today)) if balances is not None else None
+            current_shared = (
+                cached_shared
+                if cached_shared is not None
+                else await _account_balance_at(session, account, today)
+            )
             bal -= current_shared * (len(group) - 1)
         label = " + ".join(get_account_name(member) for member in group)
         converted, _ = await convert(
@@ -394,12 +413,19 @@ async def get_net_worth_report(
         session, workspace_id, start, account_ids, asset_group_ids,
     )
 
+    # Read every balance the snapshots need in one pass, instead of one sum per
+    # account per snapshot (issue #584). Today is in the set for a shared
+    # credit line's current debt, which each snapshot of it nets out.
+    balances = await _account_balances_at(
+        session, accounts, sorted({*points, start, app_today()}),
+    )
+
     # Compute snapshot at each date point
     trend: list[ReportDataPoint] = []
     for point in points:
         dp = await _net_worth_at(
             session, workspace_id, point, primary_currency, account_ids, asset_group_ids,
-            accounts=accounts, assets=assets,
+            accounts=accounts, assets=assets, balances=balances,
         )
         dp.date = _format_date_label(point, interval)
         dp.change = round(dp.value - trend[-1].value, 2) if trend else None
@@ -418,7 +444,7 @@ async def get_net_worth_report(
     else:
         baseline = await _net_worth_at(
             session, workspace_id, start, primary_currency, account_ids, asset_group_ids,
-            accounts=accounts, assets=assets,
+            accounts=accounts, assets=assets, balances=balances,
         )
     previous = baseline if trend else current
 

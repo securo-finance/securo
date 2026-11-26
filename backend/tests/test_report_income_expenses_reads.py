@@ -73,13 +73,13 @@ async def _make_category(session: AsyncSession, user_id: uuid.UUID, name: str) -
 async def _make_recurring(
     session: AsyncSession, user_id: uuid.UUID, account_id: uuid.UUID,
     amount: float, txn_type: str, next_occurrence: date,
-    category_id: uuid.UUID | None = None,
+    category_id: uuid.UUID | None = None, frequency: str = "monthly",
 ) -> RecurringTransaction:
     rec = RecurringTransaction(
         id=uuid.uuid4(), user_id=user_id, account_id=account_id,
         category_id=category_id, description=f"Rec {txn_type} {amount}",
         amount=Decimal(str(amount)), currency="BRL", type=txn_type,
-        frequency="monthly", start_date=next_occurrence,
+        frequency=frequency, start_date=next_occurrence,
         next_occurrence=next_occurrence, is_active=True,
     )
     session.add(rec)
@@ -280,3 +280,48 @@ async def test_the_window_is_aggregated_once(
         if "GROUP BY" in statement.upper() and "category_line.id" in statement
     ]
     assert len(window_aggregates) == 1, len(window_aggregates)
+
+
+@pytest.mark.asyncio
+async def test_a_weekly_rule_keeps_every_occurrence_of_a_long_window(
+    session: AsyncSession, test_user, test_workspace,
+):
+    """Reading the window once must not hit a cap the monthly walk never reached.
+
+    ``get_occurrences_in_range`` stopped after 201 occurrences. Walking the
+    window month by month the report never asked for enough dates to reach it;
+    reading the whole window in one call did, and both the summary and the
+    composition stopped at 201, dropping the rest of a multi-year window
+    without any warning (#1904).
+    """
+    acct = await _make_account(session, test_user.id, "IE Long Window")
+    cat = await _make_category(session, test_user.id, "Rent")
+    today = date.today()
+    start = today - timedelta(days=1461)
+    await _make_recurring(
+        session, test_user.id, acct.id, 100, "debit",
+        next_occurrence=start, category_id=cat.id, frequency="weekly",
+    )
+
+    window_end = (today.replace(day=1) + timedelta(days=32)).replace(day=1)
+    occurrences = 0
+    cursor = start
+    while cursor < window_end:
+        occurrences += 1
+        cursor += timedelta(weeks=1)
+    # The requested range holds more occurrences than the old cap, so the
+    # head before this fix reported 201 of them and this test fails there.
+    assert occurrences > 201
+
+    report = await get_income_expenses_report(
+        session, test_workspace.id, test_user.id, months=1, interval="monthly",
+        start_date=start, end_date=today, include_forecasts=True,
+    )
+
+    expected = 100.0 * occurrences
+    summary = {b.key: b.value for b in report.summary.breakdowns}
+    assert summary["projectedExpenses"] == pytest.approx(expected)
+    slices = {(item.key, item.group): item for item in report.composition}
+    rent = [item for item in slices.values() if item.label == "Rent"]
+    assert len(rent) == 1
+    assert rent[0].value == pytest.approx(expected)

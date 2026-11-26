@@ -136,6 +136,27 @@ def test_local_auth_disabled_requires_oidc(secrets: Path):
         Settings(local_auth_enabled=False, _secrets_dir=str(secrets))
 
 
+def test_database_pool_limits_reject_values_that_disable_the_limit(secrets: Path):
+    """A pool size of 0 with no overflow leaves the pool unbounded, the opposite
+    of what an instance raising its limits asks for (#1901)."""
+    with pytest.raises(ValidationError, match="db_pool_size"):
+        Settings(db_pool_size=0, _secrets_dir=str(secrets))
+
+    with pytest.raises(ValidationError, match="db_pool_size"):
+        Settings(db_pool_size=-1, _secrets_dir=str(secrets))
+
+    with pytest.raises(ValidationError, match="db_max_overflow"):
+        Settings(db_max_overflow=-1, _secrets_dir=str(secrets))
+
+
+def test_database_pool_size_without_overflow_is_allowed(secrets: Path):
+    """Overflow 0 is a hard cap at DB_POOL_SIZE, a valid way to bound an
+    instance, so it must keep loading."""
+    settings = Settings(db_pool_size=3, db_max_overflow=0, _secrets_dir=str(secrets))
+
+    assert (settings.db_pool_size, settings.db_max_overflow) == (3, 0)
+
+
 @pytest.mark.parametrize(
     ("missing_field", "oidc_client_id", "oidc_discovery_url"),
     [
@@ -196,6 +217,20 @@ def test_set_frontend_url_is_used_as_is(monkeypatch):
     monkeypatch.setenv("FRONTEND_PORT", "3132")
 
     assert Settings(_env_file=None).frontend_url == "https://securo.example.com"
+
+
+def test_empty_managed_instance_reads_as_off(monkeypatch):
+    """MANAGED_INSTANCE with no value documents the key without setting it: an
+    empty string has to mean the default (off), not abort the boot (ADR 0045)."""
+    monkeypatch.setenv("MANAGED_INSTANCE", "")
+
+    assert Settings(_env_file=None).managed_instance is False
+
+
+def test_managed_instance_reads_true(monkeypatch):
+    monkeypatch.setenv("MANAGED_INSTANCE", "true")
+
+    assert Settings(_env_file=None).managed_instance is True
 
 
 EMAIL_COMPOSE_KEYS = (

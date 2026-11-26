@@ -272,4 +272,39 @@ describe('localized API errors', () => {
       message: 'Cannot change amount or date on a synchronized transaction',
     }))).toBe('Não é possível alterar o valor ou a data de uma transação sincronizada')
   })
+
+  // The calendar refuses a month far from today (#598). Its message spells the
+  // window in, so the lookup matches the sentence with the number as a slot:
+  // moving the limit must not send the toast back to English (#600).
+  it.each([
+    ['en', 'This month is too far from today.'],
+    ['pt-BR', 'Este mês está longe demais de hoje.'],
+  ])('shows the calendar month bound in %s', async (language, expected) => {
+    await i18n.changeLanguage(language)
+
+    expect(extractApiError(apiError('month must be within 50 years of today'))).toBe(expected)
+    expect(extractApiError(apiError('month must be within 25 years of today'))).toBe(expected)
+  })
+
+  it('keeps an English message that only looks like the calendar bound', async () => {
+    await i18n.changeLanguage('pt-BR')
+
+    expect(extractApiError(apiError('month must be within 50 days of today'))).toBe(
+      'month must be within 50 days of today',
+    )
+  })
+
+  // The pool refuses with 503 when no database connection is free (#1901).
+  it.each([
+    ['en', 'The instance is at its database connection limit. Try again in a moment.'],
+    ['pt-BR', 'A instância atingiu o limite de conexões com o banco de dados. Tente de novo em instantes.'],
+  ])('shows the database pool refusal in %s', async (language, expected) => {
+    await i18n.changeLanguage(language)
+
+    expect(
+      extractApiError(
+        apiError('The instance is at its database connection limit. Try again in a moment.'),
+      ),
+    ).toBe(expected)
+  })
 })

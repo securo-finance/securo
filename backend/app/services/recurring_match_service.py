@@ -43,7 +43,7 @@ banks do not post charges of zero, but it is a difference rather than an
 identity.
 """
 import uuid
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from datetime import date, timedelta
 from decimal import Decimal
 from typing import Any, Optional
@@ -287,6 +287,105 @@ async def find_real_tx_for_occurrence(
     return _only_fit(fits)
 
 
+def _placeholder_reach(policy: dict[str, Any], composed: dict[str, Any]) -> tuple[int, int]:
+    """Days before and after a charge the placeholder query has to reach.
+
+    The two passes of `find_placeholder_for_incoming` read the window in
+    opposite directions, so it is the wider of the two on each side.
+    Narrowing for frequency only ever shrinks a window, so the unnarrowed
+    rule is an upper bound.
+    """
+    p_before, p_after = _date_reach(policy)
+    r_before, r_after = _date_reach(composed)
+    return max(p_before, r_after), max(p_after, r_before)
+
+
+def _placeholders_query(account_id: uuid.UUID, date_lo: date, date_hi: date):
+    """Generated rows of an account still waiting for their charge, with the
+    frequency of their bill."""
+    return (
+        select(Transaction, RecurringTransaction.frequency)
+        .join(
+            RecurringTransaction,
+            RecurringTransaction.id == Transaction.recurring_transaction_id,
+        )
+        .where(
+            Transaction.account_id == account_id,
+            Transaction.source == "recurring",
+            Transaction.recurring_transaction_id.is_not(None),
+            Transaction.external_id.is_(None),
+            Transaction.date >= date_lo,
+            Transaction.date <= date_hi,
+        )
+    )
+
+
+@dataclass
+class IncomingMatchPool:
+    """What the recurring lookups of one batch read, loaded once.
+
+    An import asks both lookups about every row of one account. The
+    workspace's recurring rule, the account's bills and its placeholders
+    near the batch's dates are read here once, and each row is then judged
+    in memory on the same terms the per-row queries use. The objects are the
+    session's own, so a placeholder an earlier row upgraded (it is no longer
+    `source="recurring"`) or a bill it advanced is seen as it now is.
+    """
+
+    composed: dict[str, Any]
+    placeholders: list[tuple[Transaction, str]]
+    bills: list[RecurringTransaction]
+
+    def placeholders_between(self, date_lo, date_hi, tx_type, currency_fits):
+        return [
+            (placeholder, frequency)
+            for placeholder, frequency in self.placeholders
+            if placeholder.source == "recurring"
+            and placeholder.recurring_transaction_id is not None
+            and placeholder.external_id is None
+            and placeholder.type == tx_type
+            and currency_fits(placeholder.currency)
+            and date_lo <= placeholder.date <= date_hi
+        ]
+
+
+async def load_incoming_pool(
+    session: AsyncSession,
+    user_id: uuid.UUID,
+    account: Account,
+    first_date: date,
+    last_date: date,
+) -> IncomingMatchPool:
+    """Read once what the lookups below need for charges dated in
+    [first_date, last_date] on `account`."""
+    composed = await reconciliation_rule_service.resolve(
+        session, account.workspace_id, reconciliation_policy.MATCH_RECURRING["node"]
+    )
+    reach_before, reach_after = _placeholder_reach(
+        reconciliation_policy.default_policy("reconciliation.match_placeholder"),
+        composed,
+    )
+    placeholders = await session.execute(
+        _placeholders_query(
+            account.id,
+            first_date - timedelta(days=reach_before),
+            last_date + timedelta(days=reach_after),
+        )
+    )
+    bills = await session.execute(
+        select(RecurringTransaction).where(
+            RecurringTransaction.user_id == user_id,
+            RecurringTransaction.account_id == account.id,
+            RecurringTransaction.is_active.is_(True),
+        )
+    )
+    return IncomingMatchPool(
+        composed=composed,
+        placeholders=[(row[0], row[1]) for row in placeholders.all()],
+        bills=list(bills.scalars().all()),
+    )
+
+
 async def find_placeholder_for_incoming(
     session: AsyncSession,
     account_id: uuid.UUID,
@@ -295,6 +394,8 @@ async def find_placeholder_for_incoming(
     tx_type: str,
     tx_date: date,
     description: Optional[str],
+    *,
+    pool: Optional[IncomingMatchPool] = None,
 ) -> Optional[Transaction]:
     """Find an unmatched generated placeholder this incoming charge fulfills.
 
@@ -335,37 +436,34 @@ async def find_placeholder_for_incoming(
     if account is None:
         return None
     policy = reconciliation_policy.default_policy("reconciliation.match_placeholder")
-    composed = await reconciliation_rule_service.resolve(
-        session,
-        account.workspace_id,
-        reconciliation_policy.MATCH_RECURRING["node"],
-    )
-    # Narrowing for frequency only ever shrinks a window, so the unnarrowed
-    # rule is an upper bound for the query.
-    p_before, p_after = _date_reach(policy)
-    r_before, r_after = _date_reach(composed)
-    result = await session.execute(
-        select(Transaction, RecurringTransaction.frequency)
-        .join(
-            RecurringTransaction,
-            RecurringTransaction.id == Transaction.recurring_transaction_id,
-        )
-        .where(
-            Transaction.account_id == account_id,
-            Transaction.source == "recurring",
-            Transaction.recurring_transaction_id.is_not(None),
-            Transaction.external_id.is_(None),
-            Transaction.currency == currency,
-            Transaction.type == tx_type,
-            Transaction.date >= tx_date - timedelta(days=max(p_before, r_after)),
-            Transaction.date <= tx_date + timedelta(days=max(p_after, r_before)),
+    composed = (
+        pool.composed
+        if pool is not None
+        else await reconciliation_rule_service.resolve(
+            session,
+            account.workspace_id,
+            reconciliation_policy.MATCH_RECURRING["node"],
         )
     )
+    reach_before, reach_after = _placeholder_reach(policy, composed)
+    date_lo = tx_date - timedelta(days=reach_before)
+    date_hi = tx_date + timedelta(days=reach_after)
+    if pool is not None:
+        found_rows = pool.placeholders_between(
+            date_lo, date_hi, tx_type, lambda c: c == currency
+        )
+    else:
+        result = await session.execute(
+            _placeholders_query(account_id, date_lo, date_hi).where(
+                Transaction.currency == currency, Transaction.type == tx_type
+            )
+        )
+        found_rows = result.all()
     # The score only reads the description, so tied placeholders go to the
     # nearest in date, which both passes honour by seeing it first; at equal
     # distance the earlier wins, a fixed order rather than the database's.
     rows = sorted(
-        result.all(),
+        found_rows,
         key=lambda row: (abs((row[0].date - tx_date).days), row[0].date, row[0].id),
     )
     incoming = Expectation(
@@ -404,25 +502,19 @@ async def find_placeholder_for_incoming(
     # still links nothing.
     if not account.currency or currency != account.currency:
         return None
-    result = await session.execute(
-        select(Transaction, RecurringTransaction.frequency)
-        .join(
-            RecurringTransaction,
-            RecurringTransaction.id == Transaction.recurring_transaction_id,
+    if pool is not None:
+        foreign_rows = pool.placeholders_between(
+            date_lo, date_hi, tx_type, lambda c: c is not None and c != currency
         )
-        .where(
-            Transaction.account_id == account_id,
-            Transaction.source == "recurring",
-            Transaction.recurring_transaction_id.is_not(None),
-            Transaction.external_id.is_(None),
-            Transaction.currency != currency,
-            Transaction.type == tx_type,
-            Transaction.date >= tx_date - timedelta(days=max(p_before, r_after)),
-            Transaction.date <= tx_date + timedelta(days=max(p_after, r_before)),
+    else:
+        result = await session.execute(
+            _placeholders_query(account_id, date_lo, date_hi).where(
+                Transaction.currency != currency, Transaction.type == tx_type
+            )
         )
-    )
+        foreign_rows = result.all()
     fits = []
-    for placeholder, frequency in result.all():
+    for placeholder, frequency in foreign_rows:
         if placeholder.is_ignored:
             continue
         promise = _at_the_charge(_as_placeholder(placeholder), amount, currency)
@@ -493,6 +585,8 @@ async def find_bill_for_incoming(
     tx_type: str,
     tx_date: date,
     description: Optional[str],
+    *,
+    pool: Optional[IncomingMatchPool] = None,
 ) -> Optional[RecurringTransaction]:
     """Find an active bill whose next expected occurrence this charge fulfills.
 
@@ -506,15 +600,28 @@ async def find_bill_for_incoming(
     """
     from app.services.recurring_transaction_service import adjust_weekend_date
 
-    result = await session.execute(
-        select(RecurringTransaction).where(
-            RecurringTransaction.user_id == user_id,
-            RecurringTransaction.account_id == account_id,
-            RecurringTransaction.is_active.is_(True),
-            RecurringTransaction.currency == currency,
-            RecurringTransaction.type == tx_type,
+    if pool is not None:
+        bills = [
+            bill
+            for bill in pool.bills
+            # An earlier row may have advanced a bill past its end date,
+            # which deactivates it.
+            if bill.is_active
+            and bill.account_id == account_id
+            and bill.currency == currency
+            and bill.type == tx_type
+        ]
+    else:
+        result = await session.execute(
+            select(RecurringTransaction).where(
+                RecurringTransaction.user_id == user_id,
+                RecurringTransaction.account_id == account_id,
+                RecurringTransaction.is_active.is_(True),
+                RecurringTransaction.currency == currency,
+                RecurringTransaction.type == tx_type,
+            )
         )
-    )
+        bills = list(result.scalars())
     charge = Movement(
         amount=amount,
         currency=currency,
@@ -530,7 +637,9 @@ async def find_bill_for_incoming(
     # belongs to one account, so they share a workspace, and the only thing
     # that varies between them is how often they repeat.
     composed: Optional[dict] = None
-    for recurring in result.scalars():
+    for recurring in bills:
+        if composed is None and pool is not None:
+            composed = pool.composed
         if composed is None:
             composed = await reconciliation_rule_service.resolve(
                 session,

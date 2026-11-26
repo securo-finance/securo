@@ -42,7 +42,14 @@ async def create_category(
     ctx: WorkspaceContext = Depends(current_writable_workspace),
     session: AsyncSession = Depends(get_async_session),
 ):
-    return await category_service.create_category(session, ctx.workspace.id, ctx.user_id, data)
+    try:
+        return await category_service.create_category(
+            session, ctx.workspace.id, ctx.user_id, data
+        )
+    except category_service.CategoryGroupNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
+        ) from exc
 
 
 @router.get("/{category_id}/rule-usage", response_model=CategoryRuleUsage)
@@ -92,7 +99,10 @@ async def update_category(
             data,
             deactivate_rules=deactivate_rules,
         )
-    except category_service.CategoryVisibilityError as exc:
+    except (
+        category_service.CategoryVisibilityError,
+        category_service.CategoryGroupNotFoundError,
+    ) as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     if not category:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Category not found")

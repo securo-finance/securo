@@ -6,7 +6,8 @@ import i18n from 'i18next'
  * Backend messages the user can trigger from the UI, mapped to translation
  * keys. The API answers in English; without this the toast would too.
  * Matching is on the exact message, so a backend wording change falls back
- * to the English text instead of showing the wrong translation.
+ * to the English text instead of showing the wrong translation. Messages that
+ * spell a number into the sentence are matched by `MESSAGE_PATTERNS` instead.
  */
 const KNOWN_MESSAGES: Record<string, string> = {
   'Enter a valid http or https endpoint URL': 'agents.connections.baseUrlInvalid',
@@ -69,6 +70,30 @@ const KNOWN_MESSAGES: Record<string, string> = {
     'splitGroups.errorOnlyReceiver',
   "Linked transaction must be your own credit in the settlement's currency":
     'splitGroups.errorReceiverCurrency',
+  // The instance has no free database connection right now (issue #600).
+  'The instance is at its database connection limit. Try again in a moment.':
+    'common.databaseBusy',
+}
+
+/**
+ * Messages whose English text spells a number into the sentence. An exact
+ * entry would stop translating the day the backend moves the limit, so the
+ * pattern matches the whole message with that value as a slot.
+ */
+const MESSAGE_PATTERNS: ReadonlyArray<{ pattern: RegExp; key: string }> = [
+  // The calendar refuses a month far from today (issue #598); the router's
+  // window (50 years) is interpolated into the message.
+  {
+    pattern: /^month must be within \d+ years of today$/,
+    key: 'transactions.calendarMonthOutOfRange',
+  },
+]
+
+function knownKey(message: string): string | undefined {
+  return (
+    KNOWN_MESSAGES[message] ??
+    MESSAGE_PATTERNS.find(({ pattern }) => pattern.test(message))?.key
+  )
 }
 
 /** Pydantic prefixes a validator's own message with this. */
@@ -80,7 +105,7 @@ const PYDANTIC_VALUE_ERROR = 'Value error, '
  */
 export function translateValidationMessage(msg: string): string | null {
   const text = msg.startsWith(PYDANTIC_VALUE_ERROR) ? msg.slice(PYDANTIC_VALUE_ERROR.length) : msg
-  const key = KNOWN_MESSAGES[text]
+  const key = knownKey(text)
   return key && i18n.isInitialized && i18n.exists(key) ? i18n.t(key) : null
 }
 
@@ -96,7 +121,7 @@ const KNOWN_CODES: Record<string, string> = {
 }
 
 export function translateApiMessage(message: string): string {
-  const key = KNOWN_MESSAGES[message]
+  const key = knownKey(message)
   return key && i18n.isInitialized && i18n.exists(key) ? i18n.t(key) : message
 }
 
