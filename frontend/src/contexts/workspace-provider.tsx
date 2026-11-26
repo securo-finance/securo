@@ -75,7 +75,10 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       }
       setList([])
     } finally {
-      if (load === loadGeneration.current && !background) setLoadingList(false)
+      // Whoever is the latest load clears the flag, background ones included:
+      // a refresh that overtook the first load leaves the shell waiting on a
+      // response nobody applies unless its own completion ends the wait.
+      if (load === loadGeneration.current) setLoadingList(false)
     }
   }, [])
 

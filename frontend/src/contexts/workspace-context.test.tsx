@@ -211,6 +211,31 @@ describe('loading', () => {
     }
   })
 
+  it('stops loading when a background refresh overtakes the first load', async () => {
+    // A focus event while the first load is still in flight starts a refresh.
+    // The refresh is now the latest request, so the first response is dropped;
+    // if the refresh never clears the loading state, the shell keeps showing
+    // it for the rest of the session.
+    let resolveFirst: (list: Workspace[]) => void = () => {}
+    let resolveRefresh: (list: Workspace[]) => void = () => {}
+    workspacesApi.list
+      .mockReturnValueOnce(new Promise<Workspace[]>((resolve) => { resolveFirst = resolve }))
+      .mockReturnValueOnce(new Promise<Workspace[]>((resolve) => { resolveRefresh = resolve }))
+
+    const { result } = renderHook(() => useWorkspace(), { wrapper })
+    expect(result.current.isLoading).toBe(true)
+
+    await act(async () => { window.dispatchEvent(new Event('focus')) })
+    expect(workspacesApi.list).toHaveBeenCalledTimes(2)
+
+    await act(async () => { resolveRefresh([makeWorkspace()]) })
+    await act(async () => { resolveFirst([makeWorkspace({ name: 'Stale' })]) })
+
+    expect(result.current.isLoading).toBe(false)
+    expect(result.current.workspaces).toHaveLength(1)
+    expect(result.current.workspaces[0].name).toBe('Personal')
+  })
+
   it('does not refresh on focus when the list was just loaded', async () => {
     workspacesApi.list.mockResolvedValue([makeWorkspace()])
 
