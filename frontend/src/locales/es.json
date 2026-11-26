@@ -4113,8 +4113,7 @@
     "current": "Importe actual",
     "notes": {
       "missing": "No se obtuvieron datos históricos utilizables para este período.",
-      "currency": "El historial no está disponible en la moneda de este objetivo. La proyección utiliza el importe actual del objetivo; no se presupone ningún tipo de cambio.",
-      "partial": "Faltan algunas valoraciones; se omiten los totales incompletos de la cartera."
+      "currency": "El historial no está disponible en la moneda de este objetivo. La proyección utiliza el importe actual del objetivo; no se presupone ningún tipo de cambio."
     }
   },
   "documentAi": {

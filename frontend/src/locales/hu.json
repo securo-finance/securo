@@ -4098,8 +4098,7 @@
     "current": "Aktuális összeg",
     "notes": {
       "missing": "Erre az időszakra nem érkezett használható előzményadat.",
-      "currency": "Az előzmények nem érhetők el a cél pénznemében. Az előrejelzés a cél aktuális összegét használja; nem feltételez átváltási árfolyamot.",
-      "partial": "Néhány értékbecslés hiányzik; a tárca hiányos összesített értékei kimaradnak."
+      "currency": "Az előzmények nem érhetők el a cél pénznemében. Az előrejelzés a cél aktuális összegét használja; nem feltételez átváltási árfolyamot."
     }
   },
   "documentAi": {

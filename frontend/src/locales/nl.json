@@ -4100,8 +4100,7 @@
     "current": "Huidig bedrag",
     "notes": {
       "missing": "Er zijn geen bruikbare historische gegevens voor deze periode ontvangen.",
-      "currency": "De historie is niet beschikbaar in de valuta van dit doel. De prognose gebruikt het huidige bedrag van het doel; er wordt geen wisselkoers aangenomen.",
-      "partial": "Sommige waarderingen ontbreken; onvolledige totalen van de portemonnee worden weggelaten."
+      "currency": "De historie is niet beschikbaar in de valuta van dit doel. De prognose gebruikt het huidige bedrag van het doel; er wordt geen wisselkoers aangenomen."
     }
   },
   "documentAi": {

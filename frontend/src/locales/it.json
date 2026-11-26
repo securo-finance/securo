@@ -4113,8 +4113,7 @@
     "current": "Importo attuale",
     "notes": {
       "missing": "Non sono stati restituiti dati storici utilizzabili per questo periodo.",
-      "currency": "Lo storico non è disponibile nella valuta di questo obiettivo. La proiezione utilizza l’importo attuale dell’obiettivo; non viene ipotizzato alcun tasso di cambio.",
-      "partial": "Mancano alcune valutazioni; i totali incompleti del portafoglio vengono omessi."
+      "currency": "Lo storico non è disponibile nella valuta di questo obiettivo. La proiezione utilizza l’importo attuale dell’obiettivo; non viene ipotizzato alcun tasso di cambio."
     }
   },
   "documentAi": {

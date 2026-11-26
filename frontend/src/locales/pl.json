@@ -4254,8 +4254,7 @@
     "current": "Bieżąca kwota",
     "notes": {
       "missing": "Nie otrzymano użytecznych danych historycznych dla tego okresu.",
-      "currency": "Historia jest niedostępna w walucie tego celu. Prognoza wykorzystuje bieżącą kwotę celu; nie przyjmuje się żadnego kursu wymiany.",
-      "partial": "Brakuje niektórych wycen; niepełne sumy wartości portfela są pomijane."
+      "currency": "Historia jest niedostępna w walucie tego celu. Prognoza wykorzystuje bieżącą kwotę celu; nie przyjmuje się żadnego kursu wymiany."
     }
   },
   "documentAi": {

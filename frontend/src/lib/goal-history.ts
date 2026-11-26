@@ -3,7 +3,7 @@ import type { Goal } from '@/types'
 import { cleanHistory, goalHistoryStart, type AmountPoint } from './goal-projection'
 
 export type HistoryNote =
-  'manual' | 'currency' | 'missing' | 'wallet' | 'reconstructed' | 'netWorth' | 'partial'
+  'manual' | 'currency' | 'missing' | 'wallet' | 'reconstructed' | 'netWorth'
 
 export interface GoalHistory {
   points: AmountPoint[]

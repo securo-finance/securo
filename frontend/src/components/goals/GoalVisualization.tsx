@@ -195,7 +195,7 @@ export function GoalVisualization({ goal }: { goal: Goal }) {
           )}
           {/* Show data-quality warnings returned by the history loader. */}
           {history.data?.notes
-            .filter(note => ['missing', 'currency', 'partial'].includes(note))
+            .filter(note => ['missing', 'currency'].includes(note))
             .map(note => (
               <p key={note} className="mb-2 text-xs text-muted-foreground">
                 {t(`goalChart.notes.${note}`)}

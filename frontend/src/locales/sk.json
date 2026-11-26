@@ -4288,8 +4288,7 @@
     "current": "Aktuálna suma",
     "notes": {
       "missing": "Pre toto obdobie nebola vrátená žiadna použiteľná história.",
-      "currency": "História nie je dostupná v mene tohto cieľa. Prognóza používa aktuálnu sumu cieľa; nepredpokladá sa žiadny výmenný kurz.",
-      "partial": "Niektoré ocenenia chýbajú; neúplné súčty hodnôt peňaženky sú vynechané."
+      "currency": "História nie je dostupná v mene tohto cieľa. Prognóza používa aktuálnu sumu cieľa; nepredpokladá sa žiadny výmenný kurz."
     }
   },
   "documentAi": {

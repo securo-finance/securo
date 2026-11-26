@@ -4099,8 +4099,7 @@
     "current": "Aktueller Betrag",
     "notes": {
       "missing": "Für diesen Zeitraum wurden keine verwendbaren historischen Daten zurückgegeben.",
-      "currency": "Der Verlauf ist in der Währung dieses Ziels nicht verfügbar. Die Prognose verwendet den aktuellen Betrag des Ziels; es wird kein Wechselkurs angenommen.",
-      "partial": "Einige Bewertungen fehlen; unvollständige Portfoliosummen werden ausgelassen."
+      "currency": "Der Verlauf ist in der Währung dieses Ziels nicht verfügbar. Die Prognose verwendet den aktuellen Betrag des Ziels; es wird kein Wechselkurs angenommen."
     }
   },
   "documentAi": {

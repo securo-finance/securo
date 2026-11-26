@@ -4113,8 +4113,7 @@
     "current": "Valor atual",
     "notes": {
       "missing": "Nenhum histórico utilizável foi retornado para este período.",
-      "currency": "O histórico não está disponível na moeda desta meta. A projeção usa o valor atual da meta; nenhuma taxa de câmbio é presumida.",
-      "partial": "Algumas avaliações estão ausentes; os totais incompletos da carteira são omitidos."
+      "currency": "O histórico não está disponível na moeda desta meta. A projeção usa o valor atual da meta; nenhuma taxa de câmbio é presumida."
     }
   },
   "documentAi": {

@@ -4113,8 +4113,7 @@
     "current": "Montant actuel",
     "notes": {
       "missing": "Aucune donnée historique exploitable n’a été renvoyée pour cette période.",
-      "currency": "L’historique n’est pas disponible dans la devise de cet objectif. La projection utilise le montant actuel de l’objectif ; aucun taux de change n’est supposé.",
-      "partial": "Certaines valorisations sont manquantes ; les totaux incomplets du portefeuille sont omis."
+      "currency": "L’historique n’est pas disponible dans la devise de cet objectif. La projection utilise le montant actuel de l’objectif ; aucun taux de change n’est supposé."
     }
   },
   "documentAi": {
