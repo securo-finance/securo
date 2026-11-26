@@ -266,7 +266,16 @@ class YFinanceProvider(MarketPriceProvider):
                 s for s, p in chunk_prices.items()
                 if p is not None and (s.endswith(".L") or s.endswith(".JO"))
             ]
-            if candidates:
+            if chunk_refused and candidates:
+                # `_get_currencies_sync` talks to Yahoo by itself, outside the
+                # throttle and the cooldown, so right after a refusal it would
+                # send one uncooled request per minor-unit ticker in the batch
+                # — up to a hundred. The closes cannot be scaled without their
+                # currency, so they are dropped here and fall back to
+                # `get_quote`, whose first call hits the cooldown started below.
+                for sym in candidates:
+                    chunk_prices[sym] = None
+            elif candidates:
                 try:
                     currencies = await asyncio.to_thread(
                         self._get_currencies_sync, candidates

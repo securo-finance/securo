@@ -331,6 +331,47 @@ async def test_a_rate_limit_the_batch_reported_starts_the_cooldown_without_a_pro
     assert fake_redis.data.get("market:yahoo:cooldown") == "1"
 
 
+@pytest.mark.asyncio
+async def test_a_batch_that_reported_a_rate_limit_skips_the_currency_lookup(
+    fake_redis, yahoo
+):
+    """The minor-unit lookup reaches Yahoo unthrottled, so a 429 must stop it.
+
+    ``_get_currencies_sync`` calls ``yf.Ticker(...).fast_info`` directly, with
+    no ``take_call_slot`` and no cooldown, and it runs on every priced *.L and
+    *.JO ticker of the batch. Letting it run after the batch reported a 429
+    would send up to a hundred uncooled requests. Those closes cannot be
+    scaled without their currency either, so they come back None and fall
+    back to ``get_quote``, which the cooldown blocks.
+    """
+    from datetime import date
+    from decimal import Decimal
+
+    def download(symbols: list[str]):
+        return (
+            {
+                "EQQQ.L": LatestClose(price=Decimal("38450"), on=date(2026, 11, 25)),
+                "AAPL": LatestClose(price=Decimal("190.5"), on=date(2026, 11, 25)),
+            },
+            # yf.download swallowed a 429 for a ticker of this batch.
+            True,
+        )
+
+    with (
+        patch.object(YFinanceProvider, "_download_closes_sync", staticmethod(download)),
+        patch.object(YFinanceProvider, "_get_currencies_sync") as currencies,
+    ):
+        closes = await YFinanceProvider().get_latest_closes(["EQQQ.L", "AAPL"])
+
+    currencies.assert_not_called()
+    assert closes["EQQQ.L"] is None
+    # The ticker that needed no currency keeps the close the batch did price.
+    priced = closes["AAPL"]
+    assert priced is not None
+    assert priced.price == Decimal("190.5")
+    assert fake_redis.data.get("market:yahoo:cooldown") == "1"
+
+
 def test_yf_download_rate_limits_are_read_from_the_errors_it_logs():
     """The failures ``yf.download`` keeps to itself only surface in its log."""
     yf_logger = logging.getLogger("yfinance")
