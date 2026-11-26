@@ -692,6 +692,32 @@ def test_row_security_without_a_secret_key_fails_at_once(monkeypatch):
     assert called["n"] == 0
 
 
+def test_row_security_startup_error_keeps_an_existing_install_on_its_stored_key(
+    app_settings, db_url, monkeypatch
+):
+    """An install that ran without SECRET_KEY encrypted its credentials with
+    the stored key. The error must lead it back to that key, not to a new one."""
+    generated = app_settings(None).secret_key.get_secret_value()
+    saved = crypto.encrypt("bank-token")
+    monkeypatch.setenv("ROW_SECURITY_ENABLED", "true")
+
+    with pytest.raises(RuntimeError) as refused:
+        app_settings(None)
+    message = str(refused.value)
+    query = re.search(r"`(SELECT [^`]+)`", message)
+    assert query is not None, message
+    assert "openssl rand -hex 32" in message  # still the advice for a new install
+
+    # The query the message gives, run as the owner, returns the stored key...
+    assert [v for (v,) in run(fetch(db_url, query.group(1)))] == [generated]
+    # ...and with it the saved credentials still open under row security.
+    app_settings(generated)
+    assert crypto.decrypt(saved) == "bank-token"
+    # A new key instead would have lost them: that's why the message tells apart.
+    app_settings("a-new-key-generated-after-the-error")
+    assert crypto.decrypt(saved) is None
+
+
 def test_row_security_with_its_own_key_never_reads_the_stored_one(monkeypatch):
     """Each attempt would fail with permission denied and log a warning, on
     every use of the fallbacks for the life of the process."""

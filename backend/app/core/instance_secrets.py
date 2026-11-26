@@ -53,6 +53,8 @@ PUBLIC_SECRET_KEYS = (
 SECRET_KEY_NAME = "secret_key"
 
 _TABLE = "instance_secrets"
+# What an operator runs, as the owner of the tables, to read the stored key.
+STORED_KEY_QUERY = f"SELECT value FROM {_TABLE} WHERE name = '{SECRET_KEY_NAME}'"
 # Any constant works: it only has to be the same in every process.
 _LOCK_ID = 0x5EC5_0001
 

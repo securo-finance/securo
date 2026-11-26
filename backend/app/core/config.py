@@ -480,10 +480,16 @@ def resolve_secret_key(settings: Settings) -> Settings:
         return settings
 
     if settings.row_security_enabled:
+        # An install that already ran without SECRET_KEY encrypted its saved
+        # credentials with the stored key: a new key would leave them unreadable.
         raise RuntimeError(
             "ROW_SECURITY_ENABLED needs its own SECRET_KEY in the environment: the "
             "restricted database role can't read or create the stored instance key "
-            "(ADR 0043). Generate one with `openssl rand -hex 32`."
+            "(ADR 0043). On an install that already ran without SECRET_KEY, set it to "
+            "the key stored in the database, read as the owner of the tables with "
+            f"`{instance.STORED_KEY_QUERY}`; a new key would leave the saved "
+            "credentials unreadable. On a new install, generate one with "
+            "`openssl rand -hex 32`."
         )
 
     if configured:
