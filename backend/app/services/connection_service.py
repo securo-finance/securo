@@ -3168,9 +3168,10 @@ async def _find_existing_connected_account(
     # one session, so reauthorising changes it while `stable_external_id` (the
     # identification_hash) survives. Rebind the existing row, keeping its
     # transactions, rules and name overrides, instead of inserting a duplicate.
-    # EB does not guarantee the hash is unique across sub-accounts, so narrow
-    # by currency/type/masked_number/name and require a single unclaimed
-    # candidate before rebinding (failing closed if still ambiguous).
+    # EB does not guarantee the hash is unique, so require exactly one unclaimed
+    # candidate: a row another incoming account already took in this run carries
+    # an external_id that is in the batch, and adopting it a second time would
+    # put both transaction feeds on one account.id.
     if acc_data.stable_external_id:
         stable_rows = (await session.execute(
             select(Account).where(
@@ -3181,12 +3182,11 @@ async def _find_existing_connected_account(
         stable_rows = [
             row for row in stable_rows if row.external_id not in incoming_external_ids
         ]
-        picked_stable = _disambiguate_account_candidates(stable_rows, acc_data)
-        if picked_stable is not None:
-            picked_stable.external_id = acc_data.external_id
-            return picked_stable
         if len(stable_rows) > 1:
             return None
+        if len(stable_rows) == 1:
+            stable_rows[0].external_id = acc_data.external_id
+            return stable_rows[0]
 
     # Last resort for rows that predate `stable_external_id` (added by migration
     # 097, and only ever backfilled by a *successful* sync, which a user whose
@@ -3352,21 +3352,22 @@ async def _resolve_sync_account(
             for link in unclaimed_links
             if link.stable_external_id == acc_data.stable_external_id
         ]
-        picked_acc = _disambiguate_account_candidates(
-            [link.account for link in stable_links if link.account is not None], acc_data
-        )
-        if picked_acc is not None:
-            matched_link = next(link for link in stable_links if link.account_id == picked_acc.id)
-            matched_link.external_id = acc_data.external_id
-            if matched_link.is_primary_feed:
-                picked_acc.external_id = acc_data.external_id
-            if matched_link.status == "pending":
-                return picked_acc, matched_link, "pending"
-            return (
-                picked_acc,
-                matched_link,
-                "primary" if matched_link.is_primary_feed else "secondary",
-            )
+        if len(stable_links) > 1:
+            return None, None, "new"
+        if len(stable_links) == 1:
+            matched_link = stable_links[0]
+            picked_acc = matched_link.account
+            if picked_acc is not None:
+                matched_link.external_id = acc_data.external_id
+                if matched_link.is_primary_feed:
+                    picked_acc.external_id = acc_data.external_id
+                if matched_link.status == "pending":
+                    return picked_acc, matched_link, "pending"
+                return (
+                    picked_acc,
+                    matched_link,
+                    "primary" if matched_link.is_primary_feed else "secondary",
+                )
 
     existing = await _find_existing_connected_account(
         session,

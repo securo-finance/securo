@@ -347,6 +347,7 @@ EXCLUDED_WORKSPACE_TABLES: dict[str, str] = {
     "access_tokens": "API access secrets",
     "agents": "AI agent setup of the optional agents module, tied to its provider",
     "agent_conversations": "chat history with AI agents",
+    "account_connection_links": "bank-connection feed links; bank connections are not backed up",
     "bank_connections": "provider secrets and bank sessions",
     "document_extractions": "what a model read from an uploaded document; the transactions it became are backed up",
     "workspace_document_ai_settings": "which agents LLM connection reads documents; connections are not backed up either",
