@@ -1716,6 +1716,27 @@ export const assets = {
     const { data } = await api.post(`/assets/${id}/values`, value)
     return data
   },
+  archiveBatch: async (
+    assetIds: string[],
+    isArchived = true,
+  ): Promise<{ updated_count: number }> => {
+    const { data } = await api.post('/assets/archive', {
+      asset_ids: assetIds,
+      is_archived: isArchived,
+    })
+    return data
+  },
+  backfill: async (
+    id: string,
+    payload: {
+      purchase_date?: string
+      purchase_price?: number
+      values?: { date: string; amount: number }[]
+    },
+  ): Promise<{ asset: Asset; values_created: number }> => {
+    const { data } = await api.post(`/assets/${id}/backfill`, payload)
+    return data
+  },
   deleteValue: async (valueId: string): Promise<void> => {
     await api.delete(`/assets/values/${valueId}`)
   },

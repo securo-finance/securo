@@ -81,6 +81,14 @@ BODY_OVERRIDES: dict[tuple[str, str], Callable[[dict], Any]] = {
     ("POST", "/api/payees/merge"): lambda w: {
         "source_ids": [w["second_payee_id"]], "target_id": w["payee_id"],
     },
+    ("POST", "/api/assets/archive"): lambda w: {
+        "asset_ids": [w["asset_id"]], "is_archived": True,
+    },
+    ("POST", "/api/assets/{asset_id}/backfill"): lambda w: {
+        "purchase_date": "2026-04-28",
+        "purchase_price": 250000,
+        "values": [{"date": "2026-04-28", "amount": 250000}],
+    },
     ("POST", "/api/assets/{asset_id}/transactions"): lambda w: {
         "kind": "buy", "quantity": 1, "price": 100, "date": "2026-04-28",
     },

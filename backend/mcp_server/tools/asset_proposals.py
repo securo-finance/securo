@@ -560,14 +560,17 @@ async def propose_update_asset(
     }
 
     if _can_apply(ctx, apply):
-        updated = await asset_service.update_asset(
-            session,
-            asset.id,
-            ws_id,
-            ctx.user_id,
-            AssetUpdate(**update_kwargs),
-            regenerate_growth=bool(regenerate_growth),
-        )
+        try:
+            updated = await asset_service.update_asset(
+                session,
+                asset.id,
+                ws_id,
+                ctx.user_id,
+                AssetUpdate(**update_kwargs),
+                regenerate_growth=bool(regenerate_growth),
+            )
+        except ValueError as exc:
+            return {**preview, "error": str(exc)}
         if updated is None:
             return {**preview, "error": "asset not found"}
         return {**preview, "applied": True, "id": str(updated.id)}
@@ -665,7 +668,7 @@ async def propose_archive_assets(
         "affected_count": len(affected),
         "affected": affected,
         "missing_ids": missing_ids,
-        "apply_endpoint": "PATCH /api/assets/{id}",
+        "apply_endpoint": "POST /api/assets/archive",
     }
 
     if _can_apply(ctx, apply):
@@ -824,7 +827,7 @@ async def propose_asset_purchase_backfill(
         "target": await _asset_snapshot(session, asset),
         "changes": changes,
         "values": values_preview,
-        "apply_endpoint": f"PATCH /api/assets/{asset.id}",
+        "apply_endpoint": f"POST /api/assets/{asset.id}/backfill",
     }
 
     if _can_apply(ctx, apply):

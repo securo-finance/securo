@@ -1562,10 +1562,8 @@ async def test_propose_asset_purchase_backfill_and_refusals(
     )
     assert "duplicate value date" in dup["error"]
 
-    # Dry-run then apply
-    applied = await backfill_h(
-        session=session,
-        ctx=ext_ctx,
+    # 1. Dry-run preview (apply omitted / False) must leave DB untouched
+    valid_backfill_kwargs = dict(
         asset_id=str(manual_usd.id),
         purchase_date="2025-03-01",
         purchase_price=2000.0,
@@ -1573,7 +1571,35 @@ async def test_propose_asset_purchase_backfill_and_refusals(
             {"date": "2025-03-01", "amount": 2000.0},
             {"date": "2025-06-01", "amount": 2300.0},
         ],
-        apply=True,
+    )
+    preview = await backfill_h(session=session, ctx=ext_ctx, **valid_backfill_kwargs)
+    assert preview.get("applied") is not True
+    assert preview["kind"] == "asset_purchase_backfill"
+    await session.refresh(manual_usd)
+    assert manual_usd.purchase_date is None
+    assert manual_usd.purchase_price is None
+    assert (
+        await session.execute(select(AssetValue).where(AssetValue.asset_id == manual_usd.id))
+    ).scalars().all() == []
+
+    # 2. Viewer role with apply=True must be denied (no DB writes)
+    viewer_ctx = CallContext(
+        user_id=test_user.id, workspace_id=test_workspace.id, external=True, role="viewer"
+    )
+    viewer_res = await backfill_h(
+        session=session, ctx=viewer_ctx, **valid_backfill_kwargs, apply=True
+    )
+    assert viewer_res.get("applied") is not True
+    await session.refresh(manual_usd)
+    assert manual_usd.purchase_date is None
+    assert manual_usd.purchase_price is None
+    assert (
+        await session.execute(select(AssetValue).where(AssetValue.asset_id == manual_usd.id))
+    ).scalars().all() == []
+
+    # 3. Writer with apply=True commits metadata + snapshots
+    applied = await backfill_h(
+        session=session, ctx=ext_ctx, **valid_backfill_kwargs, apply=True
     )
     assert applied.get("applied") is True
     assert applied["values_created"] == 2
@@ -1594,6 +1620,43 @@ async def test_propose_asset_purchase_backfill_and_refusals(
         (date(2025, 3, 1), Decimal("2000.000000")),
         (date(2025, 6, 1), Decimal("2300.000000")),
     ]
+
+    # 4. Retrying the exact same backfill is idempotent (skips stored (date, amount))
+    retry = await backfill_h(
+        session=session, ctx=ext_ctx, **valid_backfill_kwargs, apply=True
+    )
+    assert retry.get("applied") is True
+    assert retry["values_created"] == 0
+    assert len(
+        (
+            await session.execute(select(AssetValue).where(AssetValue.asset_id == manual_usd.id))
+        ).scalars().all()
+    ) == 2
+
+    # 5. Distinct sub-cent 6-decimal amount on an existing date is preserved, then deduped on retry
+    distinct_res = await backfill_h(
+        session=session,
+        ctx=ext_ctx,
+        asset_id=str(manual_usd.id),
+        values=[{"date": "2025-03-01", "amount": 2000.001}],
+        apply=True,
+    )
+    assert distinct_res.get("applied") is True
+    assert distinct_res["values_created"] == 1
+    distinct_retry = await backfill_h(
+        session=session,
+        ctx=ext_ctx,
+        asset_id=str(manual_usd.id),
+        values=[{"date": "2025-03-01", "amount": 2000.001}],
+        apply=True,
+    )
+    assert distinct_retry.get("applied") is True
+    assert distinct_retry["values_created"] == 0
+    assert len(
+        (
+            await session.execute(select(AssetValue).where(AssetValue.asset_id == manual_usd.id))
+        ).scalars().all()
+    ) == 3
 
 
 async def test_propose_create_and_update_asset_accept_negative_growth_rate(
@@ -1649,3 +1712,134 @@ async def test_propose_create_and_update_asset_accept_negative_growth_rate(
         purchase_price=-500.0,
     )
     assert "cannot be negative" in bad_price["error"]
+
+
+async def test_asset_update_date_validation_and_atomic_rest_routes(
+    client,
+    auth_headers,
+    viewer_auth_headers,
+    session: AsyncSession,
+    test_user,
+    test_workspace,
+):
+    """Service-level date validation rejects purchase_date > sell_date, and
+    atomic archive/backfill REST endpoints enforce write gates and rollback."""
+    from sqlalchemy import select
+    from app.models.asset import Asset
+    from app.models.asset_value import AssetValue
+
+    manual_a = Asset(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        name="Gold Coin",
+        type="valuable",
+        currency="USD",
+        valuation_method="manual",
+        source="manual",
+        purchase_date=date(2025, 1, 10),
+        sell_date=date(2025, 6, 10),
+    )
+    market_b = Asset(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        name="AAPL",
+        type="stock",
+        currency="USD",
+        valuation_method="market_price",
+        ticker="AAPL",
+        source="manual",
+    )
+    session.add_all([manual_a, market_b])
+    await session.commit()
+
+    # Partial PATCH moving purchase_date past stored sell_date is rejected (422)
+    bad_patch = await client.patch(
+        f"/api/assets/{manual_a.id}",
+        headers=auth_headers,
+        json={"purchase_date": "2025-07-01"},
+    )
+    assert bad_patch.status_code == 422
+    assert "purchase_date cannot be after sell_date" in bad_patch.json()["detail"]
+    await session.refresh(manual_a)
+    assert manual_a.purchase_date == date(2025, 1, 10)
+
+    # Atomic archive: protected asset in batch rejects entire batch (manual_a unchanged)
+    bad_archive = await client.post(
+        "/api/assets/archive",
+        headers=auth_headers,
+        json={"asset_ids": [str(manual_a.id), str(market_b.id)], "is_archived": True},
+    )
+    assert bad_archive.status_code == 422
+    await session.refresh(manual_a)
+    assert manual_a.is_archived is False
+
+    # Viewer forbidden on both new write routes
+    assert (
+        await client.post(
+            "/api/assets/archive",
+            headers=viewer_auth_headers,
+            json={"asset_ids": [str(manual_a.id)], "is_archived": True},
+        )
+    ).status_code == 403
+    assert (
+        await client.post(
+            f"/api/assets/{manual_a.id}/backfill",
+            headers=viewer_auth_headers,
+            json={"purchase_price": 500},
+        )
+    ).status_code == 403
+
+    # Atomic backfill: invalid value entry rolls back purchase_price too
+    bad_backfill = await client.post(
+        f"/api/assets/{manual_a.id}/backfill",
+        headers=auth_headers,
+        json={
+            "purchase_price": 999,
+            "values": [
+                {"date": "2025-02-01", "amount": 1000},
+                {"date": "2025-02-01", "amount": 1100},
+            ],
+        },
+    )
+    assert bad_backfill.status_code == 422
+    await session.refresh(manual_a)
+    assert manual_a.purchase_price is None
+    assert (
+        await session.execute(select(AssetValue).where(AssetValue.asset_id == manual_a.id))
+    ).scalars().all() == []
+
+    # Valid atomic backfill + idempotent retry
+    ok_backfill = await client.post(
+        f"/api/assets/{manual_a.id}/backfill",
+        headers=auth_headers,
+        json={
+            "purchase_price": 1000,
+            "values": [{"date": "2025-02-01", "amount": "1000.001000"}],
+        },
+    )
+    assert ok_backfill.status_code == 200
+    assert ok_backfill.json()["values_created"] == 1
+
+    retry_backfill = await client.post(
+        f"/api/assets/{manual_a.id}/backfill",
+        headers=auth_headers,
+        json={
+            "purchase_price": 1000,
+            "values": [{"date": "2025-02-01", "amount": "1000.001000"}],
+        },
+    )
+    assert retry_backfill.status_code == 200
+    assert retry_backfill.json()["values_created"] == 0
+
+    # Valid atomic archive
+    ok_archive = await client.post(
+        "/api/assets/archive",
+        headers=auth_headers,
+        json={"asset_ids": [str(manual_a.id)], "is_archived": True},
+    )
+    assert ok_archive.status_code == 200
+    assert ok_archive.json()["updated_count"] == 1
+    await session.refresh(manual_a)
+    assert manual_a.is_archived is True

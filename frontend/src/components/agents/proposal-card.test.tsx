@@ -9,6 +9,8 @@ const {
   createAccount,
   createAsset,
   updateAsset,
+  archiveAssetsBatch,
+  backfillAsset,
   getAssetValues,
   addAssetValue,
   linkTransfer,
@@ -24,6 +26,8 @@ const {
     createAccount: vi.fn(),
     createAsset: vi.fn(),
     updateAsset: vi.fn(),
+    archiveAssetsBatch: vi.fn(),
+    backfillAsset: vi.fn(),
     getAssetValues: vi.fn(),
     addAssetValue: vi.fn(),
     linkTransfer: vi.fn(),
@@ -37,7 +41,14 @@ const {
   }))
 vi.mock('@/lib/api', () => ({
   accounts: { create: createAccount, update: updateAccount },
-  assets: { create: createAsset, update: updateAsset, values: getAssetValues, addValue: addAssetValue },
+  assets: {
+    create: createAsset,
+    update: updateAsset,
+    archiveBatch: archiveAssetsBatch,
+    backfill: backfillAsset,
+    values: getAssetValues,
+    addValue: addAssetValue,
+  },
   budgets: { update: updateBudget, delete: deleteBudget },
   categories: {},
   categoryGroups: { create: createGroup },
@@ -476,6 +487,8 @@ describe('ProposalCard manual asset proposals (#1260)', () => {
     localStorage.clear()
     createAsset.mockReset()
     updateAsset.mockReset()
+    archiveAssetsBatch.mockReset()
+    backfillAsset.mockReset()
     getAssetValues.mockReset()
     getAssetValues.mockResolvedValue([])
     addAssetValue.mockReset()
@@ -555,8 +568,24 @@ describe('ProposalCard manual asset proposals (#1260)', () => {
     )
   })
 
-  it('archives multiple assets via assets.update fan-out', async () => {
-    updateAsset.mockResolvedValue({ id: 'a1' })
+  it('formats old amount in target currency and proposed amount in new currency', () => {
+    renderWithProviders(
+      <ProposalCard
+        toolCallId="call-update-asset-currency"
+        data={{
+          kind: 'update_asset',
+          target: { id: 'asset-fx', name: 'Watch', currency: 'USD', purchase_price: 100 },
+          changes: { currency: 'EUR', purchase_price: 120 },
+        }}
+      />,
+    )
+
+    const summary = screen.getByText(/Watch/)
+    expect(summary.textContent).toMatch(/\$100\.00\s*→\s*€120\.00/)
+  })
+
+  it('archives multiple assets atomically via assets.archiveBatch', async () => {
+    archiveAssetsBatch.mockResolvedValue({ updated_count: 2 })
     const { user } = renderWithProviders(
       <ProposalCard
         toolCallId="call-archive-assets"
@@ -577,17 +606,14 @@ describe('ProposalCard manual asset proposals (#1260)', () => {
 
     await user.click(screen.getByRole('button', { name: /Apply/ }))
 
-    await waitFor(() => expect(updateAsset).toHaveBeenCalledTimes(2))
-    expect(updateAsset).toHaveBeenCalledWith('a1', { is_archived: true })
-    expect(updateAsset).toHaveBeenCalledWith('a2', { is_archived: true })
+    await waitFor(() =>
+      expect(archiveAssetsBatch).toHaveBeenCalledWith(['a1', 'a2'], true),
+    )
+    expect(updateAsset).not.toHaveBeenCalled()
   })
 
-  it('applies asset_purchase_backfill and skips already-recorded snapshots on retry', async () => {
-    updateAsset.mockResolvedValue({ id: 'asset-3' })
-    getAssetValues.mockResolvedValueOnce([
-      { id: 'v-existing', asset_id: 'asset-3', date: '2025-01-10', amount: 2000, source: 'manual' },
-    ])
-    addAssetValue.mockResolvedValue({ id: 'val-2' })
+  it('applies asset_purchase_backfill atomically via assets.backfill preserving 6-decimal values', async () => {
+    backfillAsset.mockResolvedValue({ asset: { id: 'asset-3' }, values_created: 2 })
 
     const { user } = renderWithProviders(
       <ProposalCard
@@ -597,8 +623,8 @@ describe('ProposalCard manual asset proposals (#1260)', () => {
           target: { id: 'asset-3', name: 'Gold Bar', currency: 'USD' },
           changes: { purchase_date: '2025-01-10', purchase_price: 2000 },
           values: [
-            { date: '2025-01-10', amount: 2000 },
-            { date: '2025-06-10', amount: 2200 },
+            { date: '2025-01-10', amount: 100.001 },
+            { date: '2025-06-10', amount: 100.002 },
           ],
         }}
       />,
@@ -608,12 +634,16 @@ describe('ProposalCard manual asset proposals (#1260)', () => {
     await user.click(screen.getByRole('button', { name: /Apply/ }))
 
     await waitFor(() =>
-      expect(updateAsset).toHaveBeenCalledWith('asset-3', {
+      expect(backfillAsset).toHaveBeenCalledWith('asset-3', {
         purchase_date: '2025-01-10',
         purchase_price: 2000,
+        values: [
+          { date: '2025-01-10', amount: 100.001 },
+          { date: '2025-06-10', amount: 100.002 },
+        ],
       }),
     )
-    await waitFor(() => expect(addAssetValue).toHaveBeenCalledTimes(1))
-    expect(addAssetValue).toHaveBeenCalledWith('asset-3', { amount: 2200, date: '2025-06-10' })
+    expect(updateAsset).not.toHaveBeenCalled()
+    expect(addAssetValue).not.toHaveBeenCalled()
   })
 })

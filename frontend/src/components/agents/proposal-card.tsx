@@ -194,7 +194,8 @@ function formatChangeEntries(
   moneyFields: Set<string>,
   dateFields: Set<string>,
 ): string {
-  const defaultCurrency = target.currency
+  const beforeCurrency = target.currency
+  const afterCurrency = changes.currency ?? target.currency
   return Object.entries(changes)
     .map(([k, v]) => {
       const labelPair = changeLabels?.[k]
@@ -202,13 +203,13 @@ function formatChangeEntries(
         return `${k}: ${String(labelPair.before ?? '∅')} → ${String(labelPair.after ?? '∅')}`
       }
       const rawBefore = target[k]
-      const formatVal = (val: unknown) => {
+      const formatVal = (val: unknown, currency: unknown) => {
         if (val == null) return '∅'
-        if (moneyFields.has(k)) return fmt(val, defaultCurrency)
+        if (moneyFields.has(k)) return fmt(val, currency)
         if (dateFields.has(k)) return formatDate(String(val), dateLocale)
         return String(val)
       }
-      return `${k}: ${formatVal(rawBefore)} → ${formatVal(v)}`
+      return `${k}: ${formatVal(rawBefore, beforeCurrency)} → ${formatVal(v, afterCurrency)}`
     })
     .join(', ')
 }
@@ -790,32 +791,21 @@ async function applyProposal(data: ProposalData): Promise<string | void> {
         ? data.affected.map((a) => a.id)
         : (data.asset_ids ?? [])
       const targetArchived = data.is_archived ?? true
-      await Promise.all(
-        ids.map((id) => assets.update(id, { is_archived: targetArchived })),
-      )
-      return `${ids.length} updated`
+      const result = await assets.archiveBatch(ids, targetArchived)
+      return `${result.updated_count} updated`
     }
     case 'asset_purchase_backfill': {
       const id = String((data.target as Record<string, unknown>).id)
       const raw: Record<string, unknown> = { ...((data.changes || {}) as Record<string, unknown>) }
-      if (Object.keys(raw).length > 0) {
-        await assets.update(id, raw as Parameters<typeof assets.update>[1])
-      }
       const entries = data.value_entries ?? data.values ?? []
-      if (entries.length > 0) {
-        const existingValues = typeof assets.values === 'function' ? await assets.values(id) : []
-        const recordedKeys = new Set(
-          existingValues.map((v) => `${String(v.date).slice(0, 10)}::${Number(v.amount).toFixed(2)}`),
-        )
-        for (const entry of entries) {
-          const amount = Number(entry.amount)
-          const date = String(entry.date)
-          const key = `${date.slice(0, 10)}::${amount.toFixed(2)}`
-          if (recordedKeys.has(key)) continue
-          await assets.addValue(id, { amount, date })
-          recordedKeys.add(key)
-        }
-      }
+      await assets.backfill(id, {
+        ...(raw.purchase_date !== undefined ? { purchase_date: String(raw.purchase_date) } : {}),
+        ...(raw.purchase_price !== undefined ? { purchase_price: Number(raw.purchase_price) } : {}),
+        values: entries.map((entry) => ({
+          date: String(entry.date),
+          amount: Number(entry.amount),
+        })),
+      })
       return id
     }
   }

@@ -1244,7 +1244,9 @@ async def update_asset(
 ) -> Optional[AssetRead]:
     """Partial update of an asset."""
     result = await session.execute(
-        select(Asset).where(Asset.id == asset_id, Asset.workspace_id == workspace_id)
+        select(Asset)
+        .where(Asset.id == asset_id, Asset.workspace_id == workspace_id)
+        .with_for_update()
     )
     asset = result.scalar_one_or_none()
     if not asset:
@@ -1277,6 +1279,13 @@ async def update_asset(
 
     for key, value in update_data.items():
         setattr(asset, key, value)
+
+    if (
+        asset.purchase_date is not None
+        and asset.sell_date is not None
+        and asset.purchase_date > asset.sell_date
+    ):
+        raise ValueError("purchase_date cannot be after sell_date")
 
     # Only a property or a vehicle can secure a loan, so an asset that changes
     # to another type releases its loans instead of leaving them linked to it.
@@ -1425,6 +1434,9 @@ def _validate_manual_snapshot_asset(asset: Asset, tx_count: int) -> None:
         raise ValueError("synced assets are managed by the provider connection")
 
 
+_ASSET_VALUE_QUANT = Decimal("0.000001")
+
+
 async def set_assets_archived(
     session: AsyncSession,
     workspace_id: uuid.UUID,
@@ -1438,10 +1450,12 @@ async def set_assets_archived(
     rows = list(
         (
             await session.execute(
-                select(Asset).where(
+                select(Asset)
+                .where(
                     Asset.id.in_(list(asset_ids)),
                     Asset.workspace_id == workspace_id,
                 )
+                .with_for_update()
             )
         )
         .scalars()
@@ -1482,9 +1496,18 @@ async def backfill_asset_purchase_history(
 ) -> Optional[tuple[AssetRead, int]]:
     """Update purchase metadata and insert historical AssetValue snapshots
     atomically for a manual/growth asset (refuses market-priced, ledger-backed,
-    and synced holdings)."""
+    and synced holdings).
+
+    Idempotency policy: within a single call, duplicate dates are rejected;
+    against already-stored ``AssetValue`` rows, exact ``(date, amount)`` pairs
+    at the stored 6-decimal scale are skipped so retries do not duplicate
+    snapshots, while distinct amounts on an existing date are appended
+    (matching ``add_asset_value``).
+    """
     result = await session.execute(
-        select(Asset).where(Asset.id == asset_id, Asset.workspace_id == workspace_id)
+        select(Asset)
+        .where(Asset.id == asset_id, Asset.workspace_id == workspace_id)
+        .with_for_update()
     )
     asset = result.scalar_one_or_none()
     if asset is None:
@@ -1506,12 +1529,29 @@ async def backfill_asset_purchase_history(
         raise ValueError("purchase_price cannot be negative")
 
     seen_dates: set[date] = set()
+    normalized_values: list[tuple[date, Decimal]] = []
     for dt, amt in values:
         if dt in seen_dates:
             raise ValueError(f"duplicate value date: {dt.isoformat()}")
         seen_dates.add(dt)
         if not amt.is_finite() or amt < 0:
             raise ValueError("value amount must be a finite non-negative number")
+        normalized_values.append((dt, amt.quantize(_ASSET_VALUE_QUANT)))
+
+    existing_keys: set[tuple[date, Decimal]] = set()
+    if seen_dates:
+        existing_rows = (
+            await session.execute(
+                select(AssetValue.date, AssetValue.amount).where(
+                    AssetValue.asset_id == asset.id,
+                    AssetValue.date.in_(seen_dates),
+                )
+            )
+        ).all()
+        existing_keys = {
+            (row_dt, Decimal(str(row_amt)).quantize(_ASSET_VALUE_QUANT))
+            for row_dt, row_amt in existing_rows
+        }
 
     if purchase_date is not None:
         asset.purchase_date = purchase_date
@@ -1531,22 +1571,27 @@ async def backfill_asset_purchase_history(
             date_field="purchase_date",
         )
 
-    for dt, amt in values:
+    inserted_count = 0
+    for dt, q_amt in normalized_values:
+        if (dt, q_amt) in existing_keys:
+            continue
         session.add(
             AssetValue(
                 asset_id=asset.id,
                 workspace_id=workspace_id,
-                amount=amt,
+                amount=q_amt,
                 date=dt,
                 source="manual",
             )
         )
+        existing_keys.add((dt, q_amt))
+        inserted_count += 1
 
     await session.commit()
     await session.refresh(asset)
     latest = await _get_latest_value(session, asset.id)
     count = await _get_value_count(session, asset.id)
-    return _asset_to_read(asset, latest, count, tx_count), len(values)
+    return _asset_to_read(asset, latest, count, tx_count), inserted_count
 
 
 async def delete_asset_value(
