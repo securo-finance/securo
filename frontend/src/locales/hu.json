@@ -3325,7 +3325,11 @@
         "update_budget": "Költségkeret frissítése",
         "delete_budget": "Költségkeret törlése",
         "update_transaction_notes": "Tranzakció megjegyzéseinek szerkesztése",
-        "create_category_group": "Kategóriacsoport létrehozása"
+        "create_category_group": "Kategóriacsoport létrehozása",
+        "create_asset": "Eszköz hozzáadása",
+        "update_asset": "Eszköz frissítése",
+        "archive_assets": "Eszközök archiválása",
+        "asset_purchase_backfill": "Eszköz vásárlási előzményeinek pótlása"
       },
       "summary": {
         "categorize": "{{count}} tranzakció → {{category}}",
@@ -3351,7 +3355,15 @@
         "manualAccountMoney": "{{label}}: {{amount}}",
         "manualAccountDate": "{{label}}: {{date}}",
         "manualAccountChange": "{{field}}: {{before}} → {{after}}",
-        "manualAccountNoChanges": "Nincs változás"
+        "manualAccountNoChanges": "Nincs változás",
+        "createAsset": "{{name}} · {{type}} · {{amount}}",
+        "updateAsset": "{{name}} → {{changes}}",
+        "archiveAssets": "{{count}} eszköz archiválása: {{names}}",
+        "unarchiveAssets": "{{count}} eszköz visszaállítása: {{names}}",
+        "assetPurchaseBackfill": "{{name}}: {{details}}",
+        "assetBackfillPurchase": "vásárlás {{amount}} ekkor: {{date}}",
+        "assetBackfillValues": "{{count}} értékrögzítés",
+        "regenerateGrowth": "növekedési előzmények újragenerálása"
       }
     },
     "conversation": {

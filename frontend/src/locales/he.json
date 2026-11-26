@@ -3354,7 +3354,11 @@
         "update_budget": "עדכון תקציב",
         "delete_budget": "מחיקת תקציב",
         "update_transaction_notes": "עריכת הערות התנועה",
-        "create_category_group": "יצירת קבוצת קטגוריות"
+        "create_category_group": "יצירת קבוצת קטגוריות",
+        "create_asset": "הוספת נכס",
+        "update_asset": "עדכון נכס",
+        "archive_assets": "העברת נכסים לארכיון",
+        "asset_purchase_backfill": "השלמת היסטוריית רכישת נכס"
       },
       "summary": {
         "categorize": "{{count}} תנועות ← {{category}}",
@@ -3380,7 +3384,15 @@
         "manualAccountMoney": "{{label}}: {{amount}}",
         "manualAccountDate": "{{label}}: {{date}}",
         "manualAccountChange": "{{field}}: {{before}} ← {{after}}",
-        "manualAccountNoChanges": "אין שינויים"
+        "manualAccountNoChanges": "אין שינויים",
+        "createAsset": "{{name}} · {{type}} · {{amount}}",
+        "updateAsset": "{{name}} → {{changes}}",
+        "archiveAssets": "העברה לארכיון של {{count}} נכס(ים): {{names}}",
+        "unarchiveAssets": "שחזור של {{count}} נכס(ים): {{names}}",
+        "assetPurchaseBackfill": "{{name}}: {{details}}",
+        "assetBackfillPurchase": "רכישה של {{amount}} בתאריך {{date}}",
+        "assetBackfillValues": "{{count}} תיעוד(י) שווי",
+        "regenerateGrowth": "יצירה מחדש של היסטוריית צמיחה"
       }
     },
     "conversation": {

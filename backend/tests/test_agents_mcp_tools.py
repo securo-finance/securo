@@ -59,6 +59,10 @@ def test_registry_contains_v1_tools():
         "propose_update_payee",
         "propose_merge_payees",
         "propose_create_payee",
+        "propose_create_asset",
+        "propose_update_asset",
+        "propose_archive_assets",
+        "propose_asset_purchase_backfill",
         "search_knowledge_base",
         "list_recurring_transactions",
         "list_assets",
@@ -78,6 +82,10 @@ def test_proposal_tools_marked_is_proposal():
         "propose_update_payee",
         "propose_merge_payees",
         "propose_create_payee",
+        "propose_create_asset",
+        "propose_update_asset",
+        "propose_archive_assets",
+        "propose_asset_purchase_backfill",
     ):
         spec = REGISTRY[name]
         assert spec.is_proposal, f"{name} should have is_proposal=True"
@@ -1258,3 +1266,386 @@ async def test_propose_create_payee_rule_external_apply_writes(
     )).scalar_one()
     assert any(c.get("value") == "UBER" for c in row.conditions)
     assert any(a.get("value") == str(cat.id) for a in row.actions)
+
+
+# --- Manual Asset MCP Proposal Tools (#1260) -------------------------------
+
+
+async def test_propose_create_asset_manual_and_growth_and_refusals(
+    session: AsyncSession, test_user, test_workspace
+):
+    from sqlalchemy import select
+    from app.models.asset import Asset
+    from app.models.asset_group import AssetGroup
+    from app.models.workspace import Workspace
+
+    other_ws = Workspace(id=uuid.uuid4(), name="OtherAsset", kind="personal", default_currency="USD", locale="en")
+    session.add(other_ws)
+    await session.flush()
+    other_group = AssetGroup(id=uuid.uuid4(), user_id=test_user.id, workspace_id=other_ws.id, name="ForeignWallet")
+    my_group = AssetGroup(id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id, name="RealEstate")
+    session.add_all([other_group, my_group])
+    await session.commit()
+
+    handler = REGISTRY["propose_create_asset"].handler
+    ext_ctx = CallContext(user_id=test_user.id, workspace_id=test_workspace.id, external=True)
+
+    # market_price refused
+    assert "market_price" in (
+        await handler(
+            session=session, ctx=ext_ctx, name="AAPL", type="stock", valuation_method="market_price"
+        )
+    )["error"]
+
+    # cross-workspace group refused
+    assert "group not found" in (
+        await handler(
+            session=session, ctx=ext_ctx, name="Flat", type="real_estate", group_id=str(other_group.id)
+        )
+    )["error"]
+
+    # growth_rule requires growth fields
+    assert "growth_type" in (
+        await handler(
+            session=session, ctx=ext_ctx, name="CDB", type="investment", valuation_method="growth_rule"
+        )
+    )["error"]
+
+    # manual create preview + apply
+    created = await handler(
+        session=session,
+        ctx=ext_ctx,
+        name="Apartment",
+        type="real_estate",
+        currency="BRL",
+        current_value=500000.0,
+        purchase_date="2025-01-15",
+        purchase_price=450000.0,
+        group_id=str(my_group.id),
+        apply=True,
+    )
+    assert created.get("applied") is True
+    assert created["kind"] == "create_asset"
+    asset_row = (await session.execute(select(Asset).where(Asset.id == uuid.UUID(created["id"])))).scalar_one()
+    assert asset_row.name == "Apartment"
+    assert asset_row.group_id == my_group.id
+    assert asset_row.purchase_price == Decimal("450000.00")
+
+    # growth_rule apply + name_collision check
+    growth = await handler(
+        session=session,
+        ctx=ext_ctx,
+        name="apartment",
+        type="investment",
+        currency="BRL",
+        valuation_method="growth_rule",
+        purchase_price=10000.0,
+        purchase_date="2026-01-01",
+        growth_type="percentage",
+        growth_rate=1.0,
+        growth_frequency="monthly",
+        apply=True,
+    )
+    assert growth.get("applied") is True
+    assert growth["name_collision"]["name"] == "Apartment"
+
+
+async def test_propose_update_and_archive_assets_and_refusals(
+    session: AsyncSession, test_user, test_workspace
+):
+    from app.models.asset import Asset
+    from app.models.asset_group import AssetGroup
+    from app.models.asset_transaction import AssetTransaction
+
+    group = AssetGroup(id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id, name="Wallet")
+    manual_asset = Asset(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        name="Gold Coin",
+        type="valuable",
+        currency="BRL",
+        valuation_method="manual",
+        purchase_price=Decimal("1000.00"),
+        purchase_date=date(2025, 1, 1),
+        group_id=group.id,
+        source="manual",
+    )
+    market_asset = Asset(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        name="Apple",
+        type="stock",
+        currency="USD",
+        valuation_method="market_price",
+        ticker="AAPL",
+        source="manual",
+    )
+    synced_asset = Asset(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        name="Synced CDB",
+        type="investment",
+        currency="BRL",
+        valuation_method="manual",
+        source="pluggy",
+    )
+    ledger_asset = Asset(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        name="Ledger Fund",
+        type="fund",
+        currency="BRL",
+        valuation_method="manual",
+        source="manual",
+    )
+    session.add_all([group, manual_asset, market_asset, synced_asset, ledger_asset])
+    await session.flush()
+    session.add(
+        AssetTransaction(
+            id=uuid.uuid4(),
+            asset_id=ledger_asset.id,
+            workspace_id=test_workspace.id,
+            kind="buy",
+            quantity=Decimal("10"),
+            price=Decimal("100"),
+            fee=Decimal("0"),
+            date=date(2025, 1, 1),
+            source="manual",
+        )
+    )
+    await session.commit()
+
+    ext_ctx = CallContext(user_id=test_user.id, workspace_id=test_workspace.id, external=True)
+    update_h = REGISTRY["propose_update_asset"].handler
+    archive_h = REGISTRY["propose_archive_assets"].handler
+
+    # Refusals on update
+    assert "market-priced" in (await update_h(session=session, ctx=ext_ctx, asset_id=str(market_asset.id), name="X"))["error"]
+    assert "synced" in (await update_h(session=session, ctx=ext_ctx, asset_id=str(synced_asset.id), name="X"))["error"]
+    assert "ledger-backed" in (await update_h(session=session, ctx=ext_ctx, asset_id=str(ledger_asset.id), name="X"))["error"]
+
+    # Update name and ungroup (group_id="")
+    updated = await update_h(
+        session=session,
+        ctx=ext_ctx,
+        asset_id=str(manual_asset.id),
+        name="Silver Coin",
+        group_id="",
+        apply=True,
+    )
+    assert updated.get("applied") is True
+    await session.refresh(manual_asset)
+    assert manual_asset.name == "Silver Coin"
+    assert manual_asset.group_id is None
+
+    # Archive refuses market/synced/ledger
+    assert "market-priced" in (
+        await archive_h(session=session, ctx=ext_ctx, asset_ids=[str(manual_asset.id), str(market_asset.id)])
+    )["error"]
+    assert "synced" in (
+        await archive_h(session=session, ctx=ext_ctx, asset_ids=[str(synced_asset.id)])
+    )["error"]
+    assert "ledger-backed" in (
+        await archive_h(session=session, ctx=ext_ctx, asset_ids=[str(ledger_asset.id)])
+    )["error"]
+
+    # Archive manual asset + missing_ids handling
+    missing_id = str(uuid.uuid4())
+    archived = await archive_h(
+        session=session,
+        ctx=ext_ctx,
+        asset_ids=[str(manual_asset.id), missing_id],
+        is_archived=True,
+        apply=True,
+    )
+    assert archived.get("applied") is True
+    assert archived["updated_count"] == 1
+    assert archived["missing_ids"] == [missing_id]
+    await session.refresh(manual_asset)
+    assert manual_asset.is_archived is True
+
+
+async def test_propose_asset_purchase_backfill_and_refusals(
+    session: AsyncSession, test_user, test_workspace
+):
+    from sqlalchemy import select
+    from app.models.asset import Asset
+    from app.models.asset_transaction import AssetTransaction
+    from app.models.asset_value import AssetValue
+    from app.models.fx_rate import FxRate
+
+    manual_usd = Asset(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        name="Watch",
+        type="valuable",
+        currency="USD",
+        valuation_method="manual",
+        source="manual",
+    )
+    market_asset = Asset(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        name="MSFT",
+        type="stock",
+        currency="USD",
+        valuation_method="market_price",
+        ticker="MSFT",
+        source="manual",
+    )
+    synced_asset = Asset(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        name="Synced",
+        type="investment",
+        currency="BRL",
+        valuation_method="manual",
+        source="pluggy",
+    )
+    ledger_asset = Asset(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        name="Ledger",
+        type="investment",
+        currency="BRL",
+        valuation_method="manual",
+        source="manual",
+    )
+    session.add_all([manual_usd, market_asset, synced_asset, ledger_asset])
+    await session.flush()
+    session.add(
+        AssetTransaction(
+            id=uuid.uuid4(),
+            asset_id=ledger_asset.id,
+            workspace_id=test_workspace.id,
+            kind="buy",
+            quantity=Decimal("1"),
+            price=Decimal("50"),
+            fee=Decimal("0"),
+            date=date(2025, 2, 1),
+            source="manual",
+        )
+    )
+    session.add(
+        FxRate(base_currency="USD", quote_currency="BRL", date=date(2025, 3, 1), rate=Decimal("5.000000"), source="test")
+    )
+    await session.commit()
+
+    ext_ctx = CallContext(user_id=test_user.id, workspace_id=test_workspace.id, external=True)
+    backfill_h = REGISTRY["propose_asset_purchase_backfill"].handler
+
+    # Explicit refusals: market-priced, ledger-backed, synced
+    assert "market-priced" in (
+        await backfill_h(session=session, ctx=ext_ctx, asset_id=str(market_asset.id), purchase_price=100.0)
+    )["error"]
+    assert "ledger-backed" in (
+        await backfill_h(session=session, ctx=ext_ctx, asset_id=str(ledger_asset.id), purchase_price=100.0)
+    )["error"]
+    assert "synced" in (
+        await backfill_h(session=session, ctx=ext_ctx, asset_id=str(synced_asset.id), purchase_price=100.0)
+    )["error"]
+
+    # Duplicate value dates refused
+    dup = await backfill_h(
+        session=session,
+        ctx=ext_ctx,
+        asset_id=str(manual_usd.id),
+        values=[{"date": "2025-03-01", "amount": 1000.0}, {"date": "2025-03-01", "amount": 1100.0}],
+    )
+    assert "duplicate value date" in dup["error"]
+
+    # Dry-run then apply
+    applied = await backfill_h(
+        session=session,
+        ctx=ext_ctx,
+        asset_id=str(manual_usd.id),
+        purchase_date="2025-03-01",
+        purchase_price=2000.0,
+        values=[
+            {"date": "2025-03-01", "amount": 2000.0},
+            {"date": "2025-06-01", "amount": 2300.0},
+        ],
+        apply=True,
+    )
+    assert applied.get("applied") is True
+    assert applied["values_created"] == 2
+
+    await session.refresh(manual_usd)
+    assert manual_usd.purchase_date == date(2025, 3, 1)
+    assert manual_usd.purchase_price == Decimal("2000.00")
+    assert manual_usd.purchase_price_primary == Decimal("10000.00")
+
+    vals = (
+        await session.execute(
+            select(AssetValue).where(AssetValue.asset_id == manual_usd.id).order_by(AssetValue.date)
+        )
+    ).scalars().all()
+    assert len(vals) == 2
+    assert all(v.workspace_id == test_workspace.id and v.source == "manual" for v in vals)
+    assert [(v.date, v.amount) for v in vals] == [
+        (date(2025, 3, 1), Decimal("2000.000000")),
+        (date(2025, 6, 1), Decimal("2300.000000")),
+    ]
+
+
+async def test_propose_create_and_update_asset_accept_negative_growth_rate(
+    session: AsyncSession, test_user, test_workspace
+):
+    """Depreciating growth-rule assets (e.g. vehicles at -10%/yr) must be allowed."""
+    from app.models.asset import Asset
+
+    ext_ctx = CallContext(user_id=test_user.id, workspace_id=test_workspace.id, external=True)
+    create_h = REGISTRY["propose_create_asset"].handler
+    update_h = REGISTRY["propose_update_asset"].handler
+
+    created = await create_h(
+        session=session,
+        ctx=ext_ctx,
+        name="Family Car",
+        type="vehicle",
+        currency="USD",
+        valuation_method="growth_rule",
+        purchase_date="2026-01-01",
+        purchase_price=30000.0,
+        growth_type="percentage",
+        growth_rate=-10.0,
+        growth_frequency="yearly",
+        apply=True,
+    )
+    assert created.get("applied") is True, created
+    assert created["proposed"]["growth_rate"] == -10.0
+    asset_id = uuid.UUID(created["id"])
+
+    asset = await session.get(Asset, asset_id)
+    assert asset is not None
+    assert asset.growth_rate == Decimal("-10.0")
+
+    updated = await update_h(
+        session=session,
+        ctx=ext_ctx,
+        asset_id=str(asset_id),
+        growth_rate=-12.5,
+        apply=True,
+    )
+    assert updated.get("applied") is True, updated
+    assert updated["changes"]["growth_rate"] == -12.5
+    await session.refresh(asset)
+    assert asset.growth_rate == Decimal("-12.5")
+
+    # Non-negative monetary fields still reject negatives
+    bad_price = await create_h(
+        session=session,
+        ctx=ext_ctx,
+        name="Bad Car",
+        type="vehicle",
+        purchase_price=-500.0,
+    )
+    assert "cannot be negative" in bad_price["error"]

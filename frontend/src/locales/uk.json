@@ -3376,7 +3376,11 @@
         "update_budget": "Оновити бюджет",
         "delete_budget": "Видалити бюджет",
         "update_transaction_notes": "Змінити примітки до транзакції",
-        "create_category_group": "Створити групу категорій"
+        "create_category_group": "Створити групу категорій",
+        "create_asset": "Додати актив",
+        "update_asset": "Оновити актив",
+        "archive_assets": "Архівувати активи",
+        "asset_purchase_backfill": "Заповнити історію купівлі активу"
       },
       "summary": {
         "categorize": "{{count}} транзакцій → {{category}}",
@@ -3402,7 +3406,15 @@
         "manualAccountMoney": "{{label}}: {{amount}}",
         "manualAccountDate": "{{label}}: {{date}}",
         "manualAccountChange": "{{field}}: {{before}} → {{after}}",
-        "manualAccountNoChanges": "Немає змін"
+        "manualAccountNoChanges": "Немає змін",
+        "createAsset": "{{name}} · {{type}} · {{amount}}",
+        "updateAsset": "{{name}} → {{changes}}",
+        "archiveAssets": "Архівувати {{count}} актив(ів): {{names}}",
+        "unarchiveAssets": "Відновити {{count}} актив(ів): {{names}}",
+        "assetPurchaseBackfill": "{{name}}: {{details}}",
+        "assetBackfillPurchase": "купівля {{amount}} від {{date}}",
+        "assetBackfillValues": "{{count}} знімок(ів) вартості",
+        "regenerateGrowth": "перерахувати історію зростання"
       }
     },
     "conversation": {

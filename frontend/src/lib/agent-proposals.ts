@@ -20,6 +20,10 @@ export type ProposalKind =
   | 'delete_budget'
   | 'update_transaction_notes'
   | 'create_category_group'
+  | 'create_asset'
+  | 'update_asset'
+  | 'archive_assets'
+  | 'asset_purchase_backfill'
 
 /** One leg of a transfer pair, as the transfer tools preview it. */
 export interface TransferLeg {
@@ -37,8 +41,23 @@ export interface ProposalData {
   proposed?: Record<string, unknown>
   target?: Record<string, unknown>
   changes?: Record<string, unknown>
-  affected?: { id: string; description?: string; amount?: number; currency?: string }[]
+  change_labels?: Record<string, { before?: string | null; after?: string | null }>
+  affected?: {
+    id: string
+    description?: string
+    name?: string
+    type?: string
+    amount?: number
+    current_value?: number | null
+    currency?: string
+    is_archived?: boolean
+  }[]
   affected_count?: number
+  asset_ids?: string[]
+  is_archived?: boolean
+  regenerate_growth?: boolean
+  value_entries?: { date: string; amount: number }[]
+  values?: { date: string; amount: number }[]
   target_category?: { id: string; name: string }
   name_collision?: { id: string; name: string }
   mode?: 'deactivate' | 'delete'
@@ -63,6 +82,7 @@ export function isProposalData(data: unknown): data is ProposalData {
     'update_goal', 'update_budget', 'delete_budget',
     'update_manual_account',
     'update_transaction_notes', 'create_category_group',
+    'create_asset', 'update_asset', 'archive_assets', 'asset_purchase_backfill',
   ].includes(k)
 }
 

@@ -3325,7 +3325,11 @@
         "update_budget": "Ενημέρωση προϋπολογισμού",
         "delete_budget": "Διαγραφή προϋπολογισμού",
         "update_transaction_notes": "Επεξεργασία σημειώσεων συναλλαγής",
-        "create_category_group": "Δημιουργία ομάδας κατηγοριών"
+        "create_category_group": "Δημιουργία ομάδας κατηγοριών",
+        "create_asset": "Προσθήκη περιουσιακού στοιχείου",
+        "update_asset": "Ενημέρωση περιουσιακού στοιχείου",
+        "archive_assets": "Αρχειοθέτηση περιουσιακών στοιχείων",
+        "asset_purchase_backfill": "Συμπλήρωση ιστορικού αγοράς στοιχείου"
       },
       "summary": {
         "categorize": "{{count}} συναλλαγή(ές) → {{category}}",
@@ -3351,7 +3355,15 @@
         "manualAccountMoney": "{{label}}: {{amount}}",
         "manualAccountDate": "{{label}}: {{date}}",
         "manualAccountChange": "{{field}}: {{before}} → {{after}}",
-        "manualAccountNoChanges": "Καμία αλλαγή"
+        "manualAccountNoChanges": "Καμία αλλαγή",
+        "createAsset": "{{name}} · {{type}} · {{amount}}",
+        "updateAsset": "{{name}} → {{changes}}",
+        "archiveAssets": "Αρχειοθέτηση {{count}} στοιχείου/ων: {{names}}",
+        "unarchiveAssets": "Επαναφορά {{count}} στοιχείου/ων: {{names}}",
+        "assetPurchaseBackfill": "{{name}}: {{details}}",
+        "assetBackfillPurchase": "αγορά {{amount}} στις {{date}}",
+        "assetBackfillValues": "{{count}} καταγραφή/ές αξίας",
+        "regenerateGrowth": "επαναδημιουργία ιστορικού ανάπτυξης"
       }
     },
     "conversation": {

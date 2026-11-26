@@ -1316,8 +1316,8 @@ async def update_asset(
             for v in backfill:
                 session.add(v)
 
-    # Re-stamp purchase_price_primary if purchase_price or currency changed
-    if "purchase_price" in update_data or "currency" in update_data:
+    # Re-stamp purchase_price_primary if purchase_price, purchase_date, or currency changed
+    if "purchase_price" in update_data or "purchase_date" in update_data or "currency" in update_data:
         if asset.purchase_price is not None:
             await stamp_primary_amount(
                 session, user_id, asset,
@@ -1401,6 +1401,7 @@ async def add_asset_value(
 
     value = AssetValue(
         asset_id=asset_id,
+        workspace_id=workspace_id,
         amount=data.amount,
         date=data.date,
         source="manual",
@@ -1409,6 +1410,143 @@ async def add_asset_value(
     await session.commit()
     await session.refresh(value)
     return AssetValueRead.model_validate(value)
+
+
+def _validate_manual_snapshot_asset(asset: Asset, tx_count: int) -> None:
+    """Enforce that `asset` is a manual/growth holding (no market ticker,
+    no provider sync, no ledger transactions)."""
+    if asset.valuation_method == "market_price" or asset.ticker is not None:
+        raise ValueError("market-priced assets are not supported by this operation")
+    if asset.average_price is not None or tx_count > 0:
+        raise ValueError(
+            "ledger-backed assets cannot use this operation; record transactions in the ledger instead"
+        )
+    if asset.connection_id is not None or asset.source != "manual":
+        raise ValueError("synced assets are managed by the provider connection")
+
+
+async def set_assets_archived(
+    session: AsyncSession,
+    workspace_id: uuid.UUID,
+    asset_ids: Sequence[uuid.UUID],
+    *,
+    is_archived: bool,
+) -> int:
+    """Atomically update `is_archived` across matching manual/growth assets."""
+    if not asset_ids:
+        return 0
+    rows = list(
+        (
+            await session.execute(
+                select(Asset).where(
+                    Asset.id.in_(list(asset_ids)),
+                    Asset.workspace_id == workspace_id,
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    if not rows:
+        return 0
+
+    tx_counts_result = await session.execute(
+        select(AssetTransaction.asset_id, func.count())
+        .where(AssetTransaction.asset_id.in_([a.id for a in rows]))
+        .group_by(AssetTransaction.asset_id)
+    )
+    tx_counts = {aid: int(cnt) for aid, cnt in tx_counts_result.all()}
+
+    for asset in rows:
+        _validate_manual_snapshot_asset(asset, tx_counts.get(asset.id, 0))
+
+    updated_count = 0
+    for asset in rows:
+        if bool(asset.is_archived) != bool(is_archived):
+            asset.is_archived = bool(is_archived)
+            updated_count += 1
+
+    await session.commit()
+    return updated_count
+
+
+async def backfill_asset_purchase_history(
+    session: AsyncSession,
+    asset_id: uuid.UUID,
+    workspace_id: uuid.UUID,
+    user_id: uuid.UUID,
+    *,
+    purchase_date: Optional[date] = None,
+    purchase_price: Optional[Decimal] = None,
+    values: Sequence[tuple[date, Decimal]] = (),
+) -> Optional[tuple[AssetRead, int]]:
+    """Update purchase metadata and insert historical AssetValue snapshots
+    atomically for a manual/growth asset (refuses market-priced, ledger-backed,
+    and synced holdings)."""
+    result = await session.execute(
+        select(Asset).where(Asset.id == asset_id, Asset.workspace_id == workspace_id)
+    )
+    asset = result.scalar_one_or_none()
+    if asset is None:
+        return None
+
+    tx_count = (
+        await session.scalar(
+            select(func.count())
+            .select_from(AssetTransaction)
+            .where(AssetTransaction.asset_id == asset.id)
+        )
+        or 0
+    )
+    _validate_manual_snapshot_asset(asset, tx_count)
+
+    if purchase_date is not None and asset.sell_date is not None and purchase_date > asset.sell_date:
+        raise ValueError("purchase_date cannot be after sell_date")
+    if purchase_price is not None and purchase_price < 0:
+        raise ValueError("purchase_price cannot be negative")
+
+    seen_dates: set[date] = set()
+    for dt, amt in values:
+        if dt in seen_dates:
+            raise ValueError(f"duplicate value date: {dt.isoformat()}")
+        seen_dates.add(dt)
+        if not amt.is_finite() or amt < 0:
+            raise ValueError("value amount must be a finite non-negative number")
+
+    if purchase_date is not None:
+        asset.purchase_date = purchase_date
+    if purchase_price is not None:
+        asset.purchase_price = purchase_price
+
+    if asset.purchase_price is not None and (
+        purchase_price is not None or purchase_date is not None
+    ):
+        await stamp_primary_amount(
+            session,
+            user_id,
+            asset,
+            amount_field="purchase_price",
+            primary_field="purchase_price_primary",
+            rate_field="_no_rate",
+            date_field="purchase_date",
+        )
+
+    for dt, amt in values:
+        session.add(
+            AssetValue(
+                asset_id=asset.id,
+                workspace_id=workspace_id,
+                amount=amt,
+                date=dt,
+                source="manual",
+            )
+        )
+
+    await session.commit()
+    await session.refresh(asset)
+    latest = await _get_latest_value(session, asset.id)
+    count = await _get_value_count(session, asset.id)
+    return _asset_to_read(asset, latest, count, tx_count), len(values)
 
 
 async def delete_asset_value(

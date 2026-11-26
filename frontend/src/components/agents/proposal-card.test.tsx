@@ -7,6 +7,10 @@ import { toast } from 'sonner'
 
 const {
   createAccount,
+  createAsset,
+  updateAsset,
+  getAssetValues,
+  addAssetValue,
   linkTransfer,
   unlinkTransfer,
   updateAccount,
@@ -18,6 +22,10 @@ const {
 } =
   vi.hoisted(() => ({
     createAccount: vi.fn(),
+    createAsset: vi.fn(),
+    updateAsset: vi.fn(),
+    getAssetValues: vi.fn(),
+    addAssetValue: vi.fn(),
     linkTransfer: vi.fn(),
     unlinkTransfer: vi.fn(),
     updateAccount: vi.fn(),
@@ -29,6 +37,7 @@ const {
   }))
 vi.mock('@/lib/api', () => ({
   accounts: { create: createAccount, update: updateAccount },
+  assets: { create: createAsset, update: updateAsset, values: getAssetValues, addValue: addAssetValue },
   budgets: { update: updateBudget, delete: deleteBudget },
   categories: {},
   categoryGroups: { create: createGroup },
@@ -459,5 +468,152 @@ describe('ProposalCard notes and category group kinds', () => {
 
     await waitFor(() => expect(toast.error).toHaveBeenCalledWith('Failed to apply'))
     expect(createGroup).not.toHaveBeenCalled()
+  })
+})
+
+describe('ProposalCard manual asset proposals (#1260)', () => {
+  beforeEach(() => {
+    localStorage.clear()
+    createAsset.mockReset()
+    updateAsset.mockReset()
+    getAssetValues.mockReset()
+    getAssetValues.mockResolvedValue([])
+    addAssetValue.mockReset()
+  })
+
+  it('recognizes all 4 asset proposal kinds', () => {
+    expect(isProposalData({ kind: 'create_asset' })).toBe(true)
+    expect(isProposalData({ kind: 'update_asset' })).toBe(true)
+    expect(isProposalData({ kind: 'archive_assets' })).toBe(true)
+    expect(isProposalData({ kind: 'asset_purchase_backfill' })).toBe(true)
+  })
+
+  it('creates an asset and invalidates assets and asset-groups queries', async () => {
+    createAsset.mockResolvedValue({ id: 'asset-1' })
+    const queryClient = createTestQueryClient()
+    const invalidate = vi.spyOn(queryClient, 'invalidateQueries')
+    const { user } = renderWithProviders(
+      <ProposalCard
+        toolCallId="call-create-asset"
+        data={{
+          kind: 'create_asset',
+          proposed: {
+            name: 'Beach Flat',
+            type: 'real_estate',
+            currency: 'BRL',
+            current_value: 300000,
+            group_name: 'Properties',
+            group_id: 'grp-1',
+          },
+        }}
+      />,
+      { queryClient },
+    )
+
+    expect(screen.getByText('Add asset')).toBeInTheDocument()
+    expect(screen.getByText(/Beach Flat/)).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: /Apply/ }))
+
+    await waitFor(() =>
+      expect(createAsset).toHaveBeenCalledWith({
+        name: 'Beach Flat',
+        type: 'real_estate',
+        currency: 'BRL',
+        current_value: 300000,
+        group_id: 'grp-1',
+      }),
+    )
+    await waitFor(() => expect(invalidate).toHaveBeenCalledWith({ queryKey: ['assets'] }))
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['asset-groups'] })
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['dashboard'] })
+  })
+
+  it('updates an asset with regenerateGrowth option', async () => {
+    updateAsset.mockResolvedValue({ id: 'asset-2' })
+    const { user } = renderWithProviders(
+      <ProposalCard
+        toolCallId="call-update-asset"
+        data={{
+          kind: 'update_asset',
+          target: { id: 'asset-2', name: 'CDB 2027', currency: 'BRL' },
+          changes: { name: 'CDB 2028', growth_rate: 1.1 },
+          regenerate_growth: true,
+        }}
+      />,
+    )
+
+    expect(screen.getByText('Update asset')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: /Apply/ }))
+
+    await waitFor(() =>
+      expect(updateAsset).toHaveBeenCalledWith(
+        'asset-2',
+        { name: 'CDB 2028', growth_rate: 1.1 },
+        { regenerateGrowth: true },
+      ),
+    )
+  })
+
+  it('archives multiple assets via assets.update fan-out', async () => {
+    updateAsset.mockResolvedValue({ id: 'a1' })
+    const { user } = renderWithProviders(
+      <ProposalCard
+        toolCallId="call-archive-assets"
+        data={{
+          kind: 'archive_assets',
+          is_archived: true,
+          affected_count: 2,
+          affected: [
+            { id: 'a1', name: 'Car' },
+            { id: 'a2', name: 'Watch' },
+          ],
+        }}
+      />,
+    )
+
+    expect(screen.getByText('Archive assets')).toBeInTheDocument()
+    expect(screen.getByText(/Archive 2 asset\(s\): Car, Watch/)).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: /Apply/ }))
+
+    await waitFor(() => expect(updateAsset).toHaveBeenCalledTimes(2))
+    expect(updateAsset).toHaveBeenCalledWith('a1', { is_archived: true })
+    expect(updateAsset).toHaveBeenCalledWith('a2', { is_archived: true })
+  })
+
+  it('applies asset_purchase_backfill and skips already-recorded snapshots on retry', async () => {
+    updateAsset.mockResolvedValue({ id: 'asset-3' })
+    getAssetValues.mockResolvedValueOnce([
+      { id: 'v-existing', asset_id: 'asset-3', date: '2025-01-10', amount: 2000, source: 'manual' },
+    ])
+    addAssetValue.mockResolvedValue({ id: 'val-2' })
+
+    const { user } = renderWithProviders(
+      <ProposalCard
+        toolCallId="call-backfill-retry"
+        data={{
+          kind: 'asset_purchase_backfill',
+          target: { id: 'asset-3', name: 'Gold Bar', currency: 'USD' },
+          changes: { purchase_date: '2025-01-10', purchase_price: 2000 },
+          values: [
+            { date: '2025-01-10', amount: 2000 },
+            { date: '2025-06-10', amount: 2200 },
+          ],
+        }}
+      />,
+    )
+
+    expect(screen.getByText('Backfill asset purchase history')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: /Apply/ }))
+
+    await waitFor(() =>
+      expect(updateAsset).toHaveBeenCalledWith('asset-3', {
+        purchase_date: '2025-01-10',
+        purchase_price: 2000,
+      }),
+    )
+    await waitFor(() => expect(addAssetValue).toHaveBeenCalledTimes(1))
+    expect(addAssetValue).toHaveBeenCalledWith('asset-3', { amount: 2200, date: '2025-06-10' })
   })
 })

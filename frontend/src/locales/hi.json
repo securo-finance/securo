@@ -3325,7 +3325,11 @@
         "update_budget": "बजट अपडेट करें",
         "delete_budget": "बजट हटाएँ",
         "update_transaction_notes": "लेन-देन के नोट्स संपादित करें",
-        "create_category_group": "श्रेणी समूह बनाएँ"
+        "create_category_group": "श्रेणी समूह बनाएँ",
+        "create_asset": "संपत्ति जोड़ें",
+        "update_asset": "संपत्ति अपडेट करें",
+        "archive_assets": "संपत्तियाँ संग्रहीत करें",
+        "asset_purchase_backfill": "संपत्ति खरीद इतिहास भरें"
       },
       "summary": {
         "categorize": "{{count}} लेन-देन → {{category}}",
@@ -3351,7 +3355,15 @@
         "manualAccountMoney": "{{label}}: {{amount}}",
         "manualAccountDate": "{{label}}: {{date}}",
         "manualAccountChange": "{{field}}: {{before}} → {{after}}",
-        "manualAccountNoChanges": "कोई बदलाव नहीं"
+        "manualAccountNoChanges": "कोई बदलाव नहीं",
+        "createAsset": "{{name}} · {{type}} · {{amount}}",
+        "updateAsset": "{{name}} → {{changes}}",
+        "archiveAssets": "{{count}} संपत्ति(याँ) संग्रहीत करें: {{names}}",
+        "unarchiveAssets": "{{count}} संपत्ति(याँ) पुनर्स्थापित करें: {{names}}",
+        "assetPurchaseBackfill": "{{name}}: {{details}}",
+        "assetBackfillPurchase": "{{date}} को {{amount}} की खरीद",
+        "assetBackfillValues": "{{count}} मूल्य स्नैपशॉट",
+        "regenerateGrowth": "वृद्धि इतिहास पुनः बनाएँ"
       }
     },
     "conversation": {
