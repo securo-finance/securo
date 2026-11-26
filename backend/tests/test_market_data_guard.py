@@ -133,6 +133,98 @@ async def test_search_is_cached_and_a_failed_search_is_not(fake_redis, yahoo):
     assert "market:yahoo:search:5:msft" not in fake_redis.data
 
 
+def test_a_search_yahoo_could_not_decode_is_a_failure_not_no_matches(fake_redis):
+    """yfinance hides a decode error and leaves the response empty.
+
+    That empty list used to be cached as "no matches" for an hour, for every
+    workspace, so a malformed answer from Yahoo looked like a wrong ticker.
+    """
+
+    class _Swallowed:
+        quotes: list = []
+        response: dict = {}
+
+    with patch("yfinance.Search", return_value=_Swallowed()):
+        assert YFinanceProvider._search_sync("apple", 5) is None
+
+    class _Empty:
+        quotes: list = []
+        response = {"quotes": [], "news": [], "lists": []}
+
+    with patch("yfinance.Search", return_value=_Empty()):
+        assert YFinanceProvider._search_sync("zzzz", 5) == []
+
+
+@pytest.mark.asyncio
+async def test_a_quote_yahoo_answered_without_a_price_is_not_cached(fake_redis, yahoo):
+    """A price that came back empty must not pin a 404 on the symbol for 15 minutes."""
+
+    def no_price(symbol: str):
+        yahoo["price"] += 1
+        return {"currency": "USD", "exchange": "NMS", "price": None, "quote_type": "EQUITY"}
+
+    provider = YFinanceProvider()
+    with patch.object(YFinanceProvider, "_price_sync", staticmethod(no_price)):
+        assert await provider.get_quote("AAPL") is None
+        assert await provider.get_quote("AAPL") is None
+    assert "market:yahoo:price:AAPL" not in fake_redis.data
+    # Not cached, so the ticker is asked again once Yahoo has an answer.
+    assert yahoo["price"] == 2
+
+
+@pytest.mark.asyncio
+async def test_a_batch_with_nothing_for_any_ticker_probes_yahoo_and_backs_off(
+    fake_redis, yahoo
+):
+    """A rate limit inside `yf.download` is invisible; the probe surfaces it."""
+
+    def refused(symbol: str):
+        yahoo["price"] += 1
+        raise MarketPriceRateLimitedError("429")
+
+    def empty(symbols: list[str]):
+        return {s: None for s in symbols}
+
+    with (
+        patch.object(YFinanceProvider, "_download_closes_sync", staticmethod(empty)),
+        patch.object(YFinanceProvider, "_price_sync", staticmethod(refused)),
+    ):
+        with pytest.raises(MarketPriceRateLimitedError):
+            await YFinanceProvider().get_latest_closes(["AAPL", "MSFT"])
+
+    assert yahoo["price"] == 1
+    assert fake_redis.data.get("market:yahoo:cooldown") == "1"
+
+
+@pytest.mark.asyncio
+async def test_a_batch_with_a_delisted_ticker_does_not_back_off(fake_redis, yahoo):
+    """Yahoo still answers, it just has nothing for that ticker: no cooldown."""
+
+    def empty(symbols: list[str]):
+        return {s: None for s in symbols}
+
+    with patch.object(YFinanceProvider, "_download_closes_sync", staticmethod(empty)):
+        closes = await YFinanceProvider().get_latest_closes(["GONE"])
+
+    assert closes == {"GONE": None}
+    assert "market:yahoo:cooldown" not in fake_redis.data
+
+
+@pytest.mark.asyncio
+async def test_a_rate_limit_downloading_the_batch_starts_the_cooldown(fake_redis):
+    """When `yf.download` does raise it, the cooldown starts and the caller is told."""
+    from yfinance.exceptions import YFRateLimitError
+
+    def refused(symbols: list[str]):
+        raise YFRateLimitError()
+
+    with patch.object(YFinanceProvider, "_download_closes_sync", staticmethod(refused)):
+        with pytest.raises(MarketPriceRateLimitedError):
+            await YFinanceProvider().get_latest_closes(["AAPL"])
+
+    assert fake_redis.data.get("market:yahoo:cooldown") == "1"
+
+
 @pytest.mark.asyncio
 async def test_yahoo_429_is_a_429_and_cached_tickers_keep_working(
     client, auth_headers, fake_redis, yahoo

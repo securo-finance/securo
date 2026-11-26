@@ -244,7 +244,7 @@ class YFinanceProvider(MarketPriceProvider):
             chunk = unique[i : i + self._BATCH_CHUNK_SIZE]
             try:
                 chunk_prices = await asyncio.to_thread(self._download_closes_sync, chunk)
-            except _rate_limit_exception_types():
+            except (_rate_limit_exception_types() + (MarketPriceRateLimitedError,)):
                 await market_data_guard.start_cooldown()
                 raise MarketPriceRateLimitedError(
                     "Yahoo Finance rate-limited the batch price download"
@@ -282,6 +282,16 @@ class YFinanceProvider(MarketPriceProvider):
                     if conv is not None and close is not None:
                         chunk_prices[sym] = close._replace(price=close.price * Decimal(str(conv[1])))
 
+            if not any(p is not None for p in chunk_prices.values()):
+                # `yf.download` records a per-ticker failure instead of
+                # raising it, so a rate limit inside the batch never reaches
+                # the handler above. One quote probe tells the two cases
+                # apart: if Yahoo is refusing, the probe raises and the whole
+                # instance backs off; if it answers, the batch simply found
+                # nothing (a delisted ticker, say) and the caller falls back
+                # to a per-holding quote.
+                await self._call_upstream(self._price_sync, chunk[0])
+
             out.update(chunk_prices)
         return out
 
@@ -293,7 +303,7 @@ class YFinanceProvider(MarketPriceProvider):
             "price",
             sym,
             market_data_guard.PRICE_TTL_SECONDS,
-            lambda: self._call_upstream(self._price_sync, sym),
+            lambda: self._price_for_cache(sym),
         )
         if raw is None:
             return None
@@ -327,6 +337,19 @@ class YFinanceProvider(MarketPriceProvider):
             logo_url=_logo_url_for(info.get("website")),
         )
 
+    async def _price_for_cache(self, symbol: str) -> Optional[dict]:
+        """The price payload, or ``None`` when it cannot be used.
+
+        ``cached`` does not store ``None``, so a quote Yahoo answered with no
+        price (``lastPrice`` and ``previousClose`` both empty) is retried on
+        the next request instead of pinning a 404 on the symbol for the whole
+        price TTL.
+        """
+        raw = await self._call_upstream(self._price_sync, symbol)
+        if not raw or raw.get("price") is None or not raw.get("currency"):
+            return None
+        return raw
+
     # ---- sync helpers (called via asyncio.to_thread) ----
 
     @staticmethod
@@ -346,11 +369,18 @@ class YFinanceProvider(MarketPriceProvider):
                 raise_errors=False,
             )
             quotes = getattr(result, "quotes", None)
+            response = getattr(result, "response", None)
             if isinstance(quotes, list):
+                if not quotes and not response:
+                    # yfinance hides a JSON decode failure (``hide_exceptions``
+                    # is on by default) and leaves its response empty instead
+                    # of raising. That is a failed search, not "no matches",
+                    # so it must not be cached as one for the whole search TTL.
+                    logger.warning("yfinance search returned no payload for %r", query)
+                    return None
                 return quotes
             # Defensive fallback for any future shape drift.
-            response = getattr(result, "response", None) or {}
-            return list(response.get("quotes") or [])
+            return list((response or {}).get("quotes") or [])
         except _rate_limit_exception_types():
             raise MarketPriceRateLimitedError("Yahoo Finance rate-limited the search")
         except Exception as e:  # pragma: no cover (upstream flakiness, not logic)
@@ -405,9 +435,15 @@ class YFinanceProvider(MarketPriceProvider):
                 threads=False,
                 auto_adjust=False,
                 group_by="ticker",
-                # raise_errors keeps us in control of exception handling.
-                # Swallowing upstream failures silently would leave callers
-                # unable to distinguish "no data" from "request blew up".
+                # `download` has no ``raise_errors`` argument: it catches each
+                # ticker's failure itself and returns an empty frame for it.
+                # A rate limit it does raise is re-raised below so the caller
+                # starts the shared cooldown; the one it swallows is caught by
+                # the probe in ``get_latest_closes``.
+            )
+        except _rate_limit_exception_types():
+            raise MarketPriceRateLimitedError(
+                "Yahoo Finance rate-limited the batch price download"
             )
         except Exception as e:  # pragma: no cover (upstream flakiness)
             logger.warning("yfinance batch download failed for %d symbols: %s", len(symbols), e)
