@@ -182,8 +182,12 @@ jobs:
               // test name held #1900 for nothing.
               // A test runs in CI, never in the app, and the code it covers
               // still meets every rule here. The path rules still read it.
-              [/^(?!backend\/tests\/)(?:.*\/)?[^/]*(auth|token|secret|credential|passkey|webauthn|oidc|password|login|permission)[^/]*\.(py|ts|tsx|js|jsx)$/i,
-                                                                      'auth or credentials'],
+              // The exception is the third element, a pattern of its own and
+              // case sensitive: inside the word rule it would inherit the `i`
+              // and let `backend/Tests/` or `Backend/tests/` through, which
+              // are not the test directory.
+              [/(^|\/)[^/]*(auth|token|secret|credential|passkey|webauthn|oidc|password|login|permission)[^/]*\.(py|ts|tsx|js|jsx)$/i,
+                                                                      'auth or credentials', /^backend\/tests\//],
               // Some tests are the gate themselves: the write permission
               // sweep is the one thing that catches a mutating route with no
               // gate, since `transactions.py` and its kind match no rule here,
@@ -455,8 +459,8 @@ jobs:
               for (const f of files) {
                 for (const p of [f.filename, f.previous_filename].filter(Boolean)) {
                   if (isDocumentation(p)) continue;
-                  for (const [re, what] of BLOCKED) {
-                    if (re.test(p)) {
+                  for (const [re, what, unless] of BLOCKED) {
+                    if (re.test(p) && !(unless && unless.test(p))) {
                       return skip(`\`${p}\` is in a part of the repository that is ` +
                         `never merged automatically (${what})`);
                     }

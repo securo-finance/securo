@@ -617,6 +617,8 @@ for (const file of [
   'backend/tests/test_invoice_schedule_author.py',
   'backend/tests/test_auth_api.py',
   'backend/tests/api_contract/test_access_tokens.py',
+  // The word is still compared regardless of case; only the directory is not.
+  'backend/tests/test_AUTH_api.py',
 ]) {
   scenario(`${file} is not held by the auth word rule`, async () => {
     const { merged, log } = await evaluate({ threads: [], files: [{ filename: file }] });
@@ -632,6 +634,10 @@ for (const [file, what] of [
   ['backend/app/services/access_token_service.py', 'auth or credentials'],
   ['frontend/src/components/access-token-dialog.test.tsx', 'auth or credentials'],
   ['backend/testsuite/test_auth.py', 'auth or credentials'],
+  // The directory is matched case sensitively, the word is not: these are not
+  // the test directory, and on main they were held.
+  ['backend/Tests/test_auth.py', 'auth or credentials'],
+  ['Backend/tests/test_auth.py', 'auth or credentials'],
   ['backend/tests/test_plugin_runner.py', 'executes third-party code'],
 ]) {
   scenario(`${file} still refuses as ${what}`, async () => {
