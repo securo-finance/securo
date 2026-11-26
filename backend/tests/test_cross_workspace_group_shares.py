@@ -626,28 +626,55 @@ async def test_cross_workspace_equivalent_categories_merge_across_views(
     food_bva = next(row for row in bva if row.category_id == viewer_food.id)
     assert food_bva.actual_amount == pytest.approx(90.0)
 
-    # 3b. Budget suggestions count months_with_data for mapped shared-only categories
+    # 3b. Budget suggestions count months_with_data from final monthly_net
+    #     (ignoring months where mapped shared shares net to zero)
+    from sqlalchemy import update as sa_update
+    from app.models.transaction_split import TransactionSplit
+
     viewer_transport = await _make_category(
         session, test_user, test_workspace, "Transport", "#0EA5E9"
     )
     guest_transport_pt = await _make_category(
         session, guest, guest_ws, "Transporte", "#38BDF8"
     )
-    prev_month = (month - timedelta(days=1)).replace(day=15)
-    prev_tx = await _record_split_expense(
-        session, guest, guest_ws, [me, friend], "120.00", "Shared taxi",
+    prev_month_first = (month - timedelta(days=1)).replace(day=1)
+    two_months_ago_first = (prev_month_first - timedelta(days=1)).replace(day=1)
+
+    # Two months ago: viewer share +40
+    older_tx = await _record_split_expense(
+        session, guest, guest_ws, [me, friend], "80.00", "Older shared taxi",
         category=guest_transport_pt,
     )
-    prev_tx.date = prev_month
+    older_tx.date = two_months_ago_first.replace(day=12)
+
+    # Previous month: +60 on day 10 and -60 on day 20 cancel out -> net 0
+    cancel_pos = await _record_split_expense(
+        session, guest, guest_ws, [me, friend], "120.00", "Shared taxi +60",
+        category=guest_transport_pt,
+    )
+    cancel_pos.date = prev_month_first.replace(day=10)
+    cancel_neg = await _record_split_expense(
+        session, guest, guest_ws, [me, friend], "120.00", "Shared taxi -60",
+        category=guest_transport_pt,
+    )
+    cancel_neg.date = prev_month_first.replace(day=20)
+    await session.execute(
+        sa_update(TransactionSplit)
+        .where(
+            TransactionSplit.transaction_id == cancel_neg.id,
+            TransactionSplit.group_member_id == me.id,
+        )
+        .values(share_amount=Decimal("-60.00"))
+    )
     await session.flush()
 
     suggestions = await budget_service.get_budget_suggestions(
-        session, test_workspace.id, test_user.id, month=month, months=1
+        session, test_workspace.id, test_user.id, month=month, months=2
     )
     transport_sugg = next(
         s for s in suggestions.suggestions if s.category_id == viewer_transport.id
     )
-    assert transport_sugg.total_spent == Decimal("60.00")
+    assert transport_sugg.total_spent == Decimal("40.00")
     assert transport_sugg.months_with_data == 1
 
     # 4. Category statement attributes mapped share to viewer_food, unmapped to uncategorized

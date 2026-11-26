@@ -741,10 +741,6 @@ async def get_budget_suggestions(
     for cat_uuid, d, net in daily_result.all():
         key = (str(cat_uuid), d.replace(day=1))
         monthly_net[key] = monthly_net.get(key, Decimal("0")) + (net or Decimal("0"))
-    months_with_data: dict[str, set] = {}
-    for (cat_id, month_start), net in monthly_net.items():
-        if net > 0:
-            months_with_data.setdefault(cat_id, set()).add(month_start)
 
     own_offset = await owner_split_offset_by_category(
         session,
@@ -805,8 +801,11 @@ async def get_budget_suggestions(
             month_start = d.replace(day=1)
             key = (cat_id, month_start)
             monthly_net[key] = monthly_net.get(key, Decimal("0")) + expense
-            if monthly_net[key] > 0:
-                months_with_data.setdefault(cat_id, set()).add(month_start)
+
+    months_with_data: dict[str, set] = {}
+    for (cat_id, month_start), net in monthly_net.items():
+        if net > 0:
+            months_with_data.setdefault(cat_id, set()).add(month_start)
 
     budget_map = await _build_budget_map(session, workspace_id, target)
     divisor = Decimal(len(analyzed))
