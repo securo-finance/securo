@@ -3663,7 +3663,7 @@
     "workspaces": {
       "pluggy": {
         "title": "Pluggy-clients per werkruimte",
-        "description": "Een werkruimte met een eigen client koppelt banken aan dat Pluggy-account. Andere gebruiken de bovenstaande gegevens.",
+        "description": "Een werkruimte met een eigen client koppelt banken aan dat Pluggy-account. Andere gebruiken de gegevens van de instantie.",
         "own": "Eigen client",
         "shared": "Gedeelde client",
         "invalid": "Niet leesbaar",
@@ -3738,7 +3738,8 @@
       "simplefin_enabled": "SimpleFIN inschakelen"
     },
     "instanceAccountChanged": "Werkruimten die deze gegevens gebruiken hebben koppelingen onder dit account. Geef die werkruimten eerst eigen gegevens, of verwijder hun koppelingen.",
-    "workspaceListError": "De werkruimten konden niet worden geladen."
+    "workspaceListError": "De werkruimten konden niet worden geladen.",
+    "workspacesTab": "Werkruimten"
   },
   "categoryLines": {
     "title": "Verdelen over categorieën",

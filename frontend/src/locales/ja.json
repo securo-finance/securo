@@ -3661,7 +3661,7 @@
     "workspaces": {
       "pluggy": {
         "title": "ワークスペースごとの Pluggy クライアント",
-        "description": "専用クライアントを持つワークスペースは、その Pluggy アカウントで銀行を接続します。それ以外は上記の認証情報を使用します。",
+        "description": "専用クライアントを持つワークスペースは、その Pluggy アカウントで銀行を接続します。それ以外はインスタンスの認証情報を使用します。",
         "own": "専用クライアント",
         "shared": "共有クライアント",
         "invalid": "読み取れません",
@@ -3736,7 +3736,8 @@
       "simplefin_enabled": "SimpleFINを有効にする"
     },
     "instanceAccountChanged": "この認証情報を使うワークスペースに、このアカウントの接続があります。先にそれらのワークスペースに専用の認証情報を設定するか、接続を削除してください。",
-    "workspaceListError": "ワークスペースを読み込めませんでした。"
+    "workspaceListError": "ワークスペースを読み込めませんでした。",
+    "workspacesTab": "ワークスペース"
   },
   "categoryLines": {
     "title": "カテゴリーで分割",

@@ -7,6 +7,7 @@ import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
 import { DeleteConfirmationDialog } from '@/components/delete-confirmation-dialog'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ProviderSettingsField } from '@/components/provider-settings-field'
 import { WorkspaceProviderCredentials } from '@/components/workspace-provider-credentials'
 import { admin, type ProviderSettingStatus } from '@/lib/api'
@@ -102,6 +103,56 @@ function ProviderEditor({ provider, name, description, icon, guideUrl, onClose }
       toast.error(error.message === 'accountChange' ? t('providerSettings.instanceAccountChanged') : t('common.error')),
   })
   const canSave = hasChanges && !hasBlankCredential && !cannotStoreSecrets && !save.isPending
+  // Providers that take workspace credentials list them in a tab of their own.
+  const workspaceFields = provider.workspace_fields?.length ? provider.workspace_fields : null
+
+  const credentialsForm = (
+    <form aria-label={name} onSubmit={(event) => { event.preventDefault(); if (canSave) save.mutate(undefined) }}>
+      <div className="space-y-6 px-5 py-6 sm:px-6">
+        {provider.redirect_uri && <RedirectUri value={provider.redirect_uri} />}
+        {!isSimplefin && (
+          <div className="space-y-1.5">
+            {/* Under tabs, the tab already says it. */}
+            {!workspaceFields && <h3 className="text-sm font-semibold">{t('providerSettings.catalog.credentialsTitle')}</h3>}
+            <p className="text-sm leading-relaxed text-muted-foreground">{t('providerSettings.catalog.credentialsDescription')}</p>
+          </div>
+        )}
+        {cannotStoreSecrets && (
+          <div role="alert" className="flex gap-3 rounded-lg border border-destructive/20 bg-destructive/5 p-3 text-sm leading-relaxed text-destructive">
+            <AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+            <p>{t('providerSettings.secretStorageUnavailable')}</p>
+          </div>
+        )}
+        {Object.entries(provider.fields).map(([key, field]) => (
+          <ProviderSettingsField
+            key={key}
+            fieldKey={key}
+            field={field}
+            value={draft[key]}
+            disabled={save.isPending || cannotStoreSecrets}
+            pending={save.isPending}
+            onChange={(value) => updateDraft(key, value)}
+            onReset={() => setResetField(key)}
+          />
+        ))}
+        {!isSimplefin && (
+          <p className="flex items-center gap-2 text-xs leading-relaxed text-muted-foreground">
+            <LockKeyhole className="size-3.5 shrink-0" aria-hidden="true" />
+            {t('providerSettings.catalog.securityNote')}
+          </p>
+        )}
+      </div>
+      <DialogFooter className="sticky bottom-0 border-t border-border/60 bg-background px-5 py-4 sm:px-6">
+        <Button type="button" variant="outline" className="h-10 shadow-none" disabled={save.isPending} onClick={onClose}>
+          {t('common.cancel')}
+        </Button>
+        <Button type="submit" className="h-10" disabled={!canSave}>
+          {save.isPending && <Loader2 className="size-4 animate-spin motion-reduce:animate-none" aria-hidden="true" />}
+          {t(`providerSettings.catalog.${save.isPending ? 'saving' : 'saveChanges'}`)}
+        </Button>
+      </DialogFooter>
+    </form>
+  )
 
   return (
     <DialogContent
@@ -126,57 +177,26 @@ function ProviderEditor({ provider, name, description, icon, guideUrl, onClose }
           </a>
         )}
       </DialogHeader>
-      <form aria-label={name} onSubmit={(event) => { event.preventDefault(); if (canSave) save.mutate(undefined) }}>
-        <div className="space-y-6 px-5 py-6 sm:px-6">
-          {provider.redirect_uri && <RedirectUri value={provider.redirect_uri} />}
-          {!isSimplefin && (
-            <div className="space-y-1.5">
-              <h3 className="text-sm font-semibold">{t('providerSettings.catalog.credentialsTitle')}</h3>
-              <p className="text-sm leading-relaxed text-muted-foreground">{t('providerSettings.catalog.credentialsDescription')}</p>
-            </div>
-          )}
-          {cannotStoreSecrets && (
-            <div role="alert" className="flex gap-3 rounded-lg border border-destructive/20 bg-destructive/5 p-3 text-sm leading-relaxed text-destructive">
-              <AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
-              <p>{t('providerSettings.secretStorageUnavailable')}</p>
-            </div>
-          )}
-          {Object.entries(provider.fields).map(([key, field]) => (
-            <ProviderSettingsField
-              key={key}
-              fieldKey={key}
-              field={field}
-              value={draft[key]}
-              disabled={save.isPending || cannotStoreSecrets}
-              pending={save.isPending}
-              onChange={(value) => updateDraft(key, value)}
-              onReset={() => setResetField(key)}
+      {workspaceFields ? (
+        <Tabs defaultValue="credentials" className="gap-0">
+          <div className="border-b border-border/60 px-5 sm:px-6">
+            <TabsList variant="line" className="h-11">
+              <TabsTrigger value="credentials">{t('providerSettings.catalog.credentialsTitle')}</TabsTrigger>
+              <TabsTrigger value="workspaces">{t('providerSettings.workspacesTab')}</TabsTrigger>
+            </TabsList>
+          </div>
+          <TabsContent value="credentials" className="mt-0">
+            {credentialsForm}
+          </TabsContent>
+          <TabsContent value="workspaces" className="mt-0">
+            <WorkspaceProviderCredentials
+              provider={provider.name}
+              fields={workspaceFields}
+              canStoreSecrets={provider.can_store_secrets}
             />
-          ))}
-          {!isSimplefin && (
-            <p className="flex items-center gap-2 text-xs leading-relaxed text-muted-foreground">
-              <LockKeyhole className="size-3.5 shrink-0" aria-hidden="true" />
-              {t('providerSettings.catalog.securityNote')}
-            </p>
-          )}
-        </div>
-        <DialogFooter className="sticky bottom-0 border-t border-border/60 bg-background px-5 py-4 sm:px-6">
-          <Button type="button" variant="outline" className="h-10 shadow-none" disabled={save.isPending} onClick={onClose}>
-            {t('common.cancel')}
-          </Button>
-          <Button type="submit" className="h-10" disabled={!canSave}>
-            {save.isPending && <Loader2 className="size-4 animate-spin motion-reduce:animate-none" aria-hidden="true" />}
-            {t(`providerSettings.catalog.${save.isPending ? 'saving' : 'saveChanges'}`)}
-          </Button>
-        </DialogFooter>
-      </form>
-      {provider.workspace_fields?.length ? (
-        <WorkspaceProviderCredentials
-          provider={provider.name}
-          fields={provider.workspace_fields}
-          canStoreSecrets={provider.can_store_secrets}
-        />
-      ) : null}
+          </TabsContent>
+        </Tabs>
+      ) : credentialsForm}
       {resetField && (
         <DeleteConfirmationDialog
           open

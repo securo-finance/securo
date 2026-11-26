@@ -3661,7 +3661,7 @@
     "workspaces": {
       "pluggy": {
         "title": "Pluggy-kliensek munkaterületenként",
-        "description": "A saját klienssel rendelkező munkaterület ezen a Pluggy-fiókon csatlakoztat bankokat. A többi a fenti adatokat használja.",
+        "description": "A saját klienssel rendelkező munkaterület ezen a Pluggy-fiókon csatlakoztat bankokat. A többi a példány adatait használja.",
         "own": "Saját kliens",
         "shared": "Közös kliens",
         "invalid": "Nem olvasható",
@@ -3736,7 +3736,8 @@
       "simplefin_enabled": "SimpleFIN engedélyezése"
     },
     "instanceAccountChanged": "Az ezeket a hitelesítő adatokat használó munkaterületeknek kapcsolataik vannak ezen a fiókon. Előbb adj nekik saját adatokat, vagy töröld a kapcsolataikat.",
-    "workspaceListError": "Nem sikerült betölteni a munkaterületeket."
+    "workspaceListError": "Nem sikerült betölteni a munkaterületeket.",
+    "workspacesTab": "Munkaterületek"
   },
   "categoryLines": {
     "title": "Felosztás kategóriákra",

@@ -3676,7 +3676,7 @@
     "workspaces": {
       "pluggy": {
         "title": "Clientes de Pluggy por espacio de trabajo",
-        "description": "Un espacio con cliente propio conecta bancos en esa cuenta de Pluggy. Los demás usan las credenciales anteriores.",
+        "description": "Un espacio con cliente propio conecta bancos en esa cuenta de Pluggy. Los demás usan las credenciales de la instancia.",
         "own": "Cliente propio",
         "shared": "Cliente compartido",
         "invalid": "No se puede leer",
@@ -3751,7 +3751,8 @@
       "simplefin_enabled": "Activar SimpleFIN"
     },
     "instanceAccountChanged": "Hay espacios de trabajo que usan estas credenciales con conexiones en esta cuenta. Primero, dales credenciales propias o elimina sus conexiones.",
-    "workspaceListError": "No se pudieron cargar los espacios de trabajo."
+    "workspaceListError": "No se pudieron cargar los espacios de trabajo.",
+    "workspacesTab": "Espacios de trabajo"
   },
   "categoryLines": {
     "title": "Dividir por categoría",

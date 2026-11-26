@@ -3661,7 +3661,7 @@
     "workspaces": {
       "pluggy": {
         "title": "Pluggy clients by workspace",
-        "description": "A workspace with its own client connects banks under that Pluggy account. Others use the credentials above.",
+        "description": "A workspace with its own client connects banks under that Pluggy account. Others use the instance credentials.",
         "own": "Own client",
         "shared": "Shared client",
         "invalid": "Cannot be read",
@@ -3736,7 +3736,8 @@
       "simplefin_enabled": "Enable SimpleFIN"
     },
     "instanceAccountChanged": "Workspaces using these credentials have connections under this account. Give those workspaces their own credentials, or delete their connections, first.",
-    "workspaceListError": "Couldn't load the workspaces."
+    "workspaceListError": "Couldn't load the workspaces.",
+    "workspacesTab": "Workspaces"
   },
   "categoryLines": {
     "title": "Split across categories",

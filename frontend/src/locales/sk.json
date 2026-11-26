@@ -3837,7 +3837,7 @@
     "workspaces": {
       "pluggy": {
         "title": "Klienti Pluggy podľa pracovného priestoru",
-        "description": "Priestor s vlastným klientom pripája banky cez tento účet Pluggy. Ostatné používajú vyššie uvedené údaje.",
+        "description": "Priestor s vlastným klientom pripája banky cez tento účet Pluggy. Ostatné používajú údaje inštancie.",
         "own": "Vlastný klient",
         "shared": "Zdieľaný klient",
         "invalid": "Nedá sa prečítať",
@@ -3912,7 +3912,8 @@
       "simplefin_enabled": "Zapnúť SimpleFIN"
     },
     "instanceAccountChanged": "Pracovné priestory, ktoré používajú tieto údaje, majú pod týmto účtom pripojenia. Najprv im dajte vlastné údaje alebo ich pripojenia odstráňte.",
-    "workspaceListError": "Pracovné priestory sa nepodarilo načítať."
+    "workspaceListError": "Pracovné priestory sa nepodarilo načítať.",
+    "workspacesTab": "Pracovné priestory"
   },
   "categoryLines": {
     "title": "Rozdeliť do kategórií",

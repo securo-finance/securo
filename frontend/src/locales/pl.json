@@ -3803,7 +3803,7 @@
     "workspaces": {
       "pluggy": {
         "title": "Klienci Pluggy według obszaru roboczego",
-        "description": "Obszar z własnym klientem łączy banki przez to konto Pluggy. Pozostałe używają powyższych danych.",
+        "description": "Obszar z własnym klientem łączy banki przez to konto Pluggy. Pozostałe używają danych instancji.",
         "own": "Własny klient",
         "shared": "Wspólny klient",
         "invalid": "Nie można odczytać",
@@ -3878,7 +3878,8 @@
       "simplefin_enabled": "Włącz SimpleFIN"
     },
     "instanceAccountChanged": "Obszary robocze korzystające z tych danych mają połączenia na tym koncie. Najpierw nadaj im własne dane uwierzytelniające albo usuń ich połączenia.",
-    "workspaceListError": "Nie udało się wczytać obszarów roboczych."
+    "workspaceListError": "Nie udało się wczytać obszarów roboczych.",
+    "workspacesTab": "Obszary robocze"
   },
   "categoryLines": {
     "title": "Podziel na kategorie",

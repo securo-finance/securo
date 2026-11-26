@@ -3676,7 +3676,7 @@
     "workspaces": {
       "pluggy": {
         "title": "Clients Pluggy par espace de travail",
-        "description": "Un espace doté de son propre client connecte les banques sur ce compte Pluggy. Les autres utilisent les identifiants ci-dessus.",
+        "description": "Un espace doté de son propre client connecte les banques sur ce compte Pluggy. Les autres utilisent les identifiants de l'instance.",
         "own": "Client propre",
         "shared": "Client partagé",
         "invalid": "Illisible",
@@ -3751,7 +3751,8 @@
       "simplefin_enabled": "Activer SimpleFIN"
     },
     "instanceAccountChanged": "Des espaces de travail qui utilisent ces identifiants ont des connexions sous ce compte. Donnez-leur d'abord leurs propres identifiants, ou supprimez leurs connexions.",
-    "workspaceListError": "Impossible de charger les espaces de travail."
+    "workspaceListError": "Impossible de charger les espaces de travail.",
+    "workspacesTab": "Espaces de travail"
   },
   "categoryLines": {
     "title": "Répartir par catégorie",

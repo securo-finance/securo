@@ -120,12 +120,16 @@ describe('provider settings', () => {
 
     await user.click(screen.getByRole('button', { name: 'Manage Pluggy' }))
     const dialog = screen.getByRole('dialog')
+    // The instance credentials open first; the workspaces have a tab of their own.
+    expect(within(dialog).getByRole('form', { name: 'Pluggy' })).toBeVisible()
+    await user.click(within(dialog).getByRole('tab', { name: 'Workspaces' }))
     expect(await within(dialog).findByRole('region', { name: 'Pluggy clients by workspace' })).toBeVisible()
     expect(within(dialog).getByText('Family')).toBeVisible()
     expect(admin.workspaceProviderCredentials).toHaveBeenCalledWith('pluggy')
     await user.click(within(dialog).getByRole('button', { name: 'Close' }))
 
     await user.click(screen.getByRole('button', { name: /Enable Banking/ }))
+    expect(screen.queryByRole('tab', { name: 'Workspaces' })).not.toBeInTheDocument()
     expect(screen.queryByText('Pluggy clients by workspace')).not.toBeInTheDocument()
     expect(admin.workspaceProviderCredentials).toHaveBeenCalledTimes(1)
   })
@@ -143,6 +147,7 @@ describe('provider settings', () => {
     await user.click(await screen.findByRole('button', { name: 'Manage Pluggy' }))
     const instance = screen.getByRole('form', { name: 'Pluggy' })
     await user.type(within(instance).getByLabelText('Client ID'), 'typed-but-not-saved')
+    await user.click(screen.getByRole('tab', { name: 'Workspaces' }))
     await user.click(await screen.findByRole('button', { name: 'Set client: Family' }))
     const family = screen.getByRole('form', { name: 'Family' })
     const [clientId, clientSecret] = Array.from(family.querySelectorAll('input'))

@@ -3662,7 +3662,7 @@
     "workspaces": {
       "pluggy": {
         "title": "Pluggy-Clients pro Arbeitsbereich",
-        "description": "Ein Arbeitsbereich mit eigenem Client verbindet Banken über dieses Pluggy-Konto. Andere nutzen die Zugangsdaten oben.",
+        "description": "Ein Arbeitsbereich mit eigenem Client verbindet Banken über dieses Pluggy-Konto. Andere nutzen die Zugangsdaten der Instanz.",
         "own": "Eigener Client",
         "shared": "Gemeinsamer Client",
         "invalid": "Nicht lesbar",
@@ -3737,7 +3737,8 @@
       "simplefin_enabled": "SimpleFIN aktivieren"
     },
     "instanceAccountChanged": "Arbeitsbereiche, die diese Zugangsdaten nutzen, haben Verbindungen unter diesem Konto. Gib ihnen zuerst eigene Zugangsdaten oder lösche ihre Verbindungen.",
-    "workspaceListError": "Die Arbeitsbereiche konnten nicht geladen werden."
+    "workspaceListError": "Die Arbeitsbereiche konnten nicht geladen werden.",
+    "workspacesTab": "Arbeitsbereiche"
   },
   "categoryLines": {
     "title": "Auf Kategorien aufteilen",

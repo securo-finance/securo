@@ -145,7 +145,7 @@ export function WorkspaceProviderCredentials({
   return (
     <section
       aria-labelledby={`workspace-credentials-${provider}`}
-      className="space-y-3 border-t border-border/60 px-5 py-6 sm:px-6"
+      className="space-y-3 px-5 py-6 sm:px-6"
     >
       <div className="space-y-1.5">
         <h3 id={`workspace-credentials-${provider}`} className="text-sm font-semibold">{text('title')}</h3>

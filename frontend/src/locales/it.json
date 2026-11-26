@@ -3676,7 +3676,7 @@
     "workspaces": {
       "pluggy": {
         "title": "Client Pluggy per area di lavoro",
-        "description": "Un'area con un proprio client collega le banche a quell'account Pluggy. Le altre usano le credenziali qui sopra.",
+        "description": "Un'area con un proprio client collega le banche a quell'account Pluggy. Le altre usano le credenziali dell'istanza.",
         "own": "Client proprio",
         "shared": "Client condiviso",
         "invalid": "Non leggibile",
@@ -3750,8 +3750,9 @@
       "enable_banking_private_key": "Chiave privata (PEM)",
       "simplefin_enabled": "Attiva SimpleFIN"
     },
-    "instanceAccountChanged": "Alcuni spazi di lavoro che usano queste credenziali hanno connessioni in questo account. Prima assegna loro credenziali proprie o elimina le loro connessioni.",
-    "workspaceListError": "Impossibile caricare gli spazi di lavoro."
+    "instanceAccountChanged": "Alcune aree di lavoro che usano queste credenziali hanno connessioni in questo account. Prima assegna loro credenziali proprie o elimina le loro connessioni.",
+    "workspaceListError": "Impossibile caricare le aree di lavoro.",
+    "workspacesTab": "Aree di lavoro"
   },
   "categoryLines": {
     "title": "Dividi per categoria",
