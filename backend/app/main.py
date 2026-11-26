@@ -3,9 +3,11 @@ import logging
 import os
 from contextlib import asynccontextmanager
 
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from fastapi.routing import APIRoute
+from sqlalchemy.exc import TimeoutError as PoolTimeoutError
 
 from app.api.accounts import router as accounts_router
 from app.api.budgets import router as budgets_router
@@ -158,6 +160,21 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# A request that finds no free connection waits for one and then fails with
+# SQLAlchemy's pool timeout. That is the instance being busy, not a bad
+# request, so it answers 503 with a sentence that says so, and the client knows
+# to retry. Without this it surfaced as a 500 carrying "QueuePool limit of size
+# 5 overflow 10 reached" (issue #1901).
+@app.exception_handler(PoolTimeoutError)
+async def database_pool_exhausted(request: Request, exc: PoolTimeoutError) -> JSONResponse:
+    logger.warning("Database pool exhausted on %s %s: %s", request.method, request.url.path, exc)
+    return JSONResponse(
+        status_code=503,
+        content={"detail": "The instance is at its database connection limit. Try again in a moment."},
+        headers={"Retry-After": "5"},
+    )
 
 # Auth routes — custom login/logout with 2FA support (mounted first to take precedence)
 app.include_router(
