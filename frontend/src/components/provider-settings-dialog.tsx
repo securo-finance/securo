@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
 import { DeleteConfirmationDialog } from '@/components/delete-confirmation-dialog'
 import { ProviderSettingsField } from '@/components/provider-settings-field'
+import { WorkspaceProviderCredentials } from '@/components/workspace-provider-credentials'
 import { admin, type ProviderSettingStatus } from '@/lib/api'
 
 type Props = {
@@ -104,7 +105,7 @@ function ProviderEditor({ provider, name, description, icon, guideUrl, onClose }
 
   return (
     <DialogContent
-      className="max-h-[calc(100dvh-2rem)] gap-0 overflow-y-auto p-0 sm:max-w-lg"
+      className={`max-h-[calc(100dvh-2rem)] gap-0 overflow-y-auto p-0 ${provider.workspace_fields?.length ? 'sm:max-w-xl' : 'sm:max-w-lg'}`}
       showCloseButton={!save.isPending}
       onInteractOutside={(event) => { if (save.isPending) event.preventDefault() }}
       onEscapeKeyDown={(event) => { if (save.isPending) event.preventDefault() }}
@@ -169,6 +170,13 @@ function ProviderEditor({ provider, name, description, icon, guideUrl, onClose }
           </Button>
         </DialogFooter>
       </form>
+      {provider.workspace_fields?.length ? (
+        <WorkspaceProviderCredentials
+          provider={provider.name}
+          fields={provider.workspace_fields}
+          canStoreSecrets={provider.can_store_secrets}
+        />
+      ) : null}
       {resetField && (
         <DeleteConfirmationDialog
           open

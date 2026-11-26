@@ -8,7 +8,6 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { ProviderSettingsDialog } from '@/components/provider-settings-dialog'
-import { WorkspaceProviderCredentials } from '@/components/workspace-provider-credentials'
 import { admin, type ProviderSettingStatus } from '@/lib/api'
 
 type Category = 'connections' | 'exchangeRates' | 'other'
@@ -107,7 +106,6 @@ export function ProviderSettings({ readOnly = false }: { readOnly?: boolean } = 
     <div className="mb-8 space-y-8">
       {categories.map((category) => {
         const items = data?.filter((provider) => (providers[provider.name]?.category ?? 'other') === category) ?? []
-        const perWorkspace = items.filter((provider) => provider.workspace_fields?.length)
         if (!items.length && (!isPending || category === 'other')) return null
         return (
           <section key={category} id={`provider-${category}`} aria-labelledby={`provider-${category}-heading`} className="scroll-mt-6 space-y-4">
@@ -138,15 +136,6 @@ export function ProviderSettings({ readOnly = false }: { readOnly?: boolean } = 
                 </ul>
               )}
             </div>
-            {perWorkspace.map((provider) => (
-              <WorkspaceProviderCredentials
-                key={provider.name}
-                provider={provider.name}
-                fields={provider.workspace_fields ?? []}
-                canStoreSecrets={provider.can_store_secrets}
-                readOnly={readOnly}
-              />
-            ))}
           </section>
         )
       })}

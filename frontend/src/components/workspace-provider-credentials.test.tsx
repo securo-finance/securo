@@ -85,14 +85,6 @@ describe('Pluggy clients by workspace', () => {
     expect(vi.mocked(toast.error).mock.calls[0][0]).not.toMatch(/connections/i)
   })
 
-  it('offers no changes on an instance the operator manages', async () => {
-    renderWithProviders(<WorkspaceProviderCredentials provider="pluggy" fields={FIELDS} canStoreSecrets readOnly />)
-
-    const row = (await screen.findByText('Mine')).closest('li') as HTMLElement
-    expect(within(row).queryAllByRole('button')).toHaveLength(0)
-    expect(within(row).getByText('Configured by Securo')).toBeInTheDocument()
-  })
-
   it('says when the workspaces could not be loaded, and retries', async () => {
     vi.mocked(admin.workspaceProviderCredentials).mockRejectedValueOnce(new Error('down'))
     const { user } = renderWithProviders(<WorkspaceProviderCredentials provider="pluggy" fields={FIELDS} canStoreSecrets />)

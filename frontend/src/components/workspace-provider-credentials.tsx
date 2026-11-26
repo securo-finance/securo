@@ -102,27 +102,25 @@ function CredentialsDialog({
 }
 
 /**
- * Which credentials each workspace uses for one provider. The provider's
- * fields come from the API (`workspace_fields`); its texts live under
- * `providerSettings.workspaces.<provider>`.
+ * Which credentials each workspace uses for one provider, shown in that
+ * provider's settings dialog. The fields come from the API
+ * (`workspace_fields`); the texts live under `providerSettings.workspaces.<provider>`.
  */
 export function WorkspaceProviderCredentials({
   provider,
   fields,
   canStoreSecrets,
-  readOnly = false,
 }: {
   provider: string
   fields: string[]
   canStoreSecrets: boolean
-  readOnly?: boolean
 }) {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
   const showError = useErrorToast(provider)
   const [editing, setEditing] = useState<WorkspaceProviderCredentialStatus | null>(null)
   const [removing, setRemoving] = useState<WorkspaceProviderCredentialStatus | null>(null)
-  const { data, isError, refetch } = useQuery({
+  const { data, isError, isPending, refetch } = useQuery({
     queryKey: queryKey(provider),
     queryFn: () => admin.workspaceProviderCredentials(provider),
   })
@@ -144,68 +142,59 @@ export function WorkspaceProviderCredentials({
     onSettled: () => setRemoving(null),
   })
 
-  const header = (
-    <div className="border-b border-border/40 px-4 py-4 sm:px-5">
-      <h3 className="text-sm font-semibold text-foreground">{text('title')}</h3>
-      <p className="mt-1 text-sm leading-relaxed text-muted-foreground">{text('description')}</p>
-    </div>
-  )
-
-  if (isError) {
-    return (
-      <div className="min-w-0 overflow-hidden rounded-xl border border-border/60 bg-card">
-        {header}
-        <div role="alert" className="flex flex-wrap items-center justify-between gap-3 px-4 py-4 sm:px-5">
+  return (
+    <section
+      aria-labelledby={`workspace-credentials-${provider}`}
+      className="space-y-3 border-t border-border/60 px-5 py-6 sm:px-6"
+    >
+      <div className="space-y-1.5">
+        <h3 id={`workspace-credentials-${provider}`} className="text-sm font-semibold">{text('title')}</h3>
+        <p className="text-sm leading-relaxed text-muted-foreground">{text('description')}</p>
+      </div>
+      {isError ? (
+        <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-destructive/20 bg-destructive/5 p-3">
           <p className="flex items-center gap-2 text-sm text-destructive">
             <AlertCircle className="size-4" aria-hidden="true" />
             {t('providerSettings.workspaceListError')}
           </p>
-          <Button variant="outline" className="h-9 shadow-none" onClick={() => void refetch()}>
+          <Button type="button" variant="outline" className="h-8 shadow-none" onClick={() => void refetch()}>
             {t('common.retry')}
           </Button>
         </div>
-      </div>
-    )
-  }
-
-  if (!data?.length) return null
-
-  return (
-    <div className="min-w-0 overflow-hidden rounded-xl border border-border/60 bg-card">
-      {header}
-      <ul className="divide-y divide-border/40">
-        {data.map((workspace) => (
-          <li key={workspace.workspace_id} className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-4 sm:px-5">
-            <div className="min-w-0 flex-1 basis-1/2">
-              <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
-                <p className="text-sm font-medium text-foreground">{workspace.name}</p>
-                {workspace.invalid ? (
-                  <Badge variant="outline" className="border-destructive/20 bg-destructive/5 text-destructive">
-                    <AlertCircle aria-hidden="true" />
-                    {text('invalid')}
-                  </Badge>
-                ) : workspace.has_credentials ? (
-                  <Badge variant="outline" className="border-primary/15 bg-primary/5 text-primary">
-                    <Check aria-hidden="true" />
-                    {text('own')}
-                  </Badge>
-                ) : (
-                  <Badge variant="outline" className="text-muted-foreground">{text('shared')}</Badge>
-                )}
+      ) : isPending ? (
+        <Loader2 className="size-4 animate-spin text-muted-foreground motion-reduce:animate-none" aria-label={t('common.loading')} />
+      ) : (
+        <ul className="divide-y divide-border/40 rounded-lg border border-border/60">
+          {data.map((workspace) => (
+            <li key={workspace.workspace_id} className="flex flex-wrap items-center gap-x-3 gap-y-2 px-3 py-3">
+              <div className="min-w-0 flex-1 basis-48">
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                  <p className="text-sm font-medium text-foreground">{workspace.name}</p>
+                  {workspace.invalid ? (
+                    <Badge variant="outline" className="border-destructive/20 bg-destructive/5 text-destructive">
+                      <AlertCircle aria-hidden="true" />
+                      {text('invalid')}
+                    </Badge>
+                  ) : workspace.has_credentials ? (
+                    <Badge variant="outline" className="border-primary/15 bg-primary/5 text-primary">
+                      <Check aria-hidden="true" />
+                      {text('own')}
+                    </Badge>
+                  ) : (
+                    <Badge variant="outline" className="text-muted-foreground">{text('shared')}</Badge>
+                  )}
+                </div>
+                <p className="mt-1 break-words text-xs text-muted-foreground">
+                  {workspace.owner_email && <>{workspace.owner_email} · </>}
+                  {text('connections', { count: workspace.connections })}
+                </p>
               </div>
-              <p className="mt-1 break-all text-xs text-muted-foreground">
-                {workspace.owner_email && <>{workspace.owner_email} · </>}
-                {text('connections', { count: workspace.connections })}
-              </p>
-            </div>
-            {readOnly ? (
-              <span className="text-xs font-medium text-primary">{t('admin.settings.managedReadOnly')}</span>
-            ) : (
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1.5">
                 {workspace.has_credentials && (
                   <Button
+                    type="button"
                     variant="ghost"
-                    className="h-9 shadow-none"
+                    className="h-8 shadow-none"
                     aria-label={`${text('remove')}: ${workspace.name}`}
                     onClick={() => setRemoving(workspace)}
                   >
@@ -213,8 +202,9 @@ export function WorkspaceProviderCredentials({
                   </Button>
                 )}
                 <Button
+                  type="button"
                   variant="outline"
-                  className="h-9 shadow-none"
+                  className="h-8 shadow-none"
                   disabled={!canStoreSecrets}
                   aria-label={`${text(workspace.has_credentials ? 'replace' : 'set')}: ${workspace.name}`}
                   onClick={() => setEditing(workspace)}
@@ -222,10 +212,10 @@ export function WorkspaceProviderCredentials({
                   {text(workspace.has_credentials ? 'replace' : 'set')}
                 </Button>
               </div>
-            )}
-          </li>
-        ))}
-      </ul>
+            </li>
+          ))}
+        </ul>
+      )}
       {editing && (
         <CredentialsDialog provider={provider} fields={fields} workspace={editing} onClose={() => setEditing(null)} />
       )}
@@ -239,6 +229,6 @@ export function WorkspaceProviderCredentials({
           onConfirm={() => remove.mutate(removing.workspace_id)}
         />
       )}
-    </div>
+    </section>
   )
 }
