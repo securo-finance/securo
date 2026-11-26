@@ -173,6 +173,11 @@ services:
     # knowledge base; harmless when AGENTS_ENABLED=false.
     image: ${DB_IMAGE:-docker.io/pgvector/pgvector:pg16}
     restart: unless-stopped
+    # JIT compilation costs more than it saves on the short, indexed queries
+    # Securo runs. On the hosted instance a plain GET /api/transactions went
+    # from 1222 ms to 229 ms with it off, and 100k-transaction workspaces
+    # followed (560 ms). DB_JIT=on restores the PostgreSQL default (#583).
+    command: ["postgres", "-c", "jit=${DB_JIT:-off}"]
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
