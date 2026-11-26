@@ -584,8 +584,17 @@ describe('ProposalCard manual asset proposals (#1260)', () => {
     expect(summary.textContent).toMatch(/\$100\.00\s*→\s*€120\.00/)
   })
 
-  it('archives multiple assets atomically via assets.archiveBatch', async () => {
-    archiveAssetsBatch.mockResolvedValue({ updated_count: 2 })
+  it('archives multiple assets atomically via assets.archiveBatch and tracks pending/retry/applied state', async () => {
+    let resolveSecond!: (value: { updated_count: number }) => void
+    archiveAssetsBatch
+      .mockRejectedValueOnce(new Error('temporary failure'))
+      .mockImplementationOnce(
+        () =>
+          new Promise<{ updated_count: number }>((resolve) => {
+            resolveSecond = resolve
+          }),
+      )
+
     const { user } = renderWithProviders(
       <ProposalCard
         toolCallId="call-archive-assets"
@@ -604,16 +613,37 @@ describe('ProposalCard manual asset proposals (#1260)', () => {
     expect(screen.getByText('Archive assets')).toBeInTheDocument()
     expect(screen.getByText(/Archive 2 asset\(s\): Car, Watch/)).toBeInTheDocument()
 
+    // First attempt rejects -> Apply stays available (not marked applied)
     await user.click(screen.getByRole('button', { name: /Apply/ }))
+    await waitFor(() => expect(toast.error).toHaveBeenCalled())
+    expect(screen.queryAllByText('applied')).toHaveLength(0)
+    expect(screen.getByRole('button', { name: /Apply/ })).toBeEnabled()
 
+    // Retry -> stays pending (disabled, not applied) until promise resolves
+    await user.click(screen.getByRole('button', { name: /Apply/ }))
     await waitFor(() =>
-      expect(archiveAssetsBatch).toHaveBeenCalledWith(['a1', 'a2'], true),
+      expect(archiveAssetsBatch).toHaveBeenLastCalledWith(['a1', 'a2'], true),
     )
+    expect(screen.getByRole('button', { name: /Apply/ })).toBeDisabled()
+    expect(screen.queryAllByText('applied')).toHaveLength(0)
+
+    await act(async () => {
+      resolveSecond({ updated_count: 2 })
+    })
+    await waitFor(() => expect(screen.getAllByText('applied').length).toBeGreaterThan(0))
     expect(updateAsset).not.toHaveBeenCalled()
   })
 
-  it('applies asset_purchase_backfill atomically via assets.backfill preserving 6-decimal values', async () => {
-    backfillAsset.mockResolvedValue({ asset: { id: 'asset-3' }, values_created: 2 })
+  it('applies asset_purchase_backfill atomically via assets.backfill and tracks pending/retry/applied state', async () => {
+    let resolveSecond!: (value: { asset: { id: string }; values_created: number }) => void
+    backfillAsset
+      .mockRejectedValueOnce(new Error('validation failed'))
+      .mockImplementationOnce(
+        () =>
+          new Promise<{ asset: { id: string }; values_created: number }>((resolve) => {
+            resolveSecond = resolve
+          }),
+      )
 
     const { user } = renderWithProviders(
       <ProposalCard
@@ -623,26 +653,40 @@ describe('ProposalCard manual asset proposals (#1260)', () => {
           target: { id: 'asset-3', name: 'Gold Bar', currency: 'USD' },
           changes: { purchase_date: '2025-01-10', purchase_price: 2000 },
           values: [
-            { date: '2025-01-10', amount: 100.001 },
-            { date: '2025-06-10', amount: 100.002 },
+            { date: '2025-01-10', amount: 100.000001 },
+            { date: '2025-06-10', amount: 100.000002 },
           ],
         }}
       />,
     )
 
     expect(screen.getByText('Backfill asset purchase history')).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: /Apply/ }))
 
+    // First attempt rejects -> error surfaced, Apply remains retryable
+    await user.click(screen.getByRole('button', { name: /Apply/ }))
+    await waitFor(() => expect(toast.error).toHaveBeenCalled())
+    expect(screen.queryAllByText('applied')).toHaveLength(0)
+    expect(screen.getByRole('button', { name: /Apply/ })).toBeEnabled()
+
+    // Retry -> pending until resolved, then applied
+    await user.click(screen.getByRole('button', { name: /Apply/ }))
     await waitFor(() =>
-      expect(backfillAsset).toHaveBeenCalledWith('asset-3', {
+      expect(backfillAsset).toHaveBeenLastCalledWith('asset-3', {
         purchase_date: '2025-01-10',
         purchase_price: 2000,
         values: [
-          { date: '2025-01-10', amount: 100.001 },
-          { date: '2025-06-10', amount: 100.002 },
+          { date: '2025-01-10', amount: 100.000001 },
+          { date: '2025-06-10', amount: 100.000002 },
         ],
       }),
     )
+    expect(screen.getByRole('button', { name: /Apply/ })).toBeDisabled()
+    expect(screen.queryAllByText('applied')).toHaveLength(0)
+
+    await act(async () => {
+      resolveSecond({ asset: { id: 'asset-3' }, values_created: 2 })
+    })
+    await waitFor(() => expect(screen.getAllByText('applied').length).toBeGreaterThan(0))
     expect(updateAsset).not.toHaveBeenCalled()
     expect(addAssetValue).not.toHaveBeenCalled()
   })

@@ -1633,12 +1633,12 @@ async def test_propose_asset_purchase_backfill_and_refusals(
         ).scalars().all()
     ) == 2
 
-    # 5. Distinct sub-cent 6-decimal amount on an existing date is preserved, then deduped on retry
+    # 5. Distinct 6th-decimal amount on an existing date is preserved, then deduped on retry
     distinct_res = await backfill_h(
         session=session,
         ctx=ext_ctx,
         asset_id=str(manual_usd.id),
-        values=[{"date": "2025-03-01", "amount": 2000.001}],
+        values=[{"date": "2025-03-01", "amount": 2000.000001}],
         apply=True,
     )
     assert distinct_res.get("applied") is True
@@ -1647,16 +1647,22 @@ async def test_propose_asset_purchase_backfill_and_refusals(
         session=session,
         ctx=ext_ctx,
         asset_id=str(manual_usd.id),
-        values=[{"date": "2025-03-01", "amount": 2000.001}],
+        values=[{"date": "2025-03-01", "amount": 2000.000001}],
         apply=True,
     )
     assert distinct_retry.get("applied") is True
     assert distinct_retry["values_created"] == 0
-    assert len(
-        (
-            await session.execute(select(AssetValue).where(AssetValue.asset_id == manual_usd.id))
-        ).scalars().all()
-    ) == 3
+    stored_vals = (
+        await session.execute(
+            select(AssetValue)
+            .where(AssetValue.asset_id == manual_usd.id, AssetValue.date == date(2025, 3, 1))
+            .order_by(AssetValue.amount)
+        )
+    ).scalars().all()
+    assert [v.amount for v in stored_vals] == [
+        Decimal("2000.000000"),
+        Decimal("2000.000001"),
+    ]
 
 
 async def test_propose_create_and_update_asset_accept_negative_growth_rate(
@@ -1764,6 +1770,38 @@ async def test_asset_update_date_validation_and_atomic_rest_routes(
     assert "purchase_date cannot be after sell_date" in bad_patch.json()["detail"]
     await session.refresh(manual_a)
     assert manual_a.purchase_date == date(2025, 1, 10)
+
+    # Unrelated rename on an asset with pre-existing inverted legacy dates is still allowed
+    legacy = Asset(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        name="Legacy Inverted",
+        type="valuable",
+        currency="USD",
+        valuation_method="manual",
+        source="manual",
+        purchase_date=date(2025, 7, 1),
+        sell_date=date(2025, 6, 1),
+    )
+    session.add(legacy)
+    await session.commit()
+    rename_legacy = await client.patch(
+        f"/api/assets/{legacy.id}",
+        headers=auth_headers,
+        json={"name": "Legacy Renamed"},
+    )
+    assert rename_legacy.status_code == 200
+    assert rename_legacy.json()["name"] == "Legacy Renamed"
+
+    # Snapshot amount exceeding Numeric(15, 6) range returns 422 instead of DB overflow
+    overflow_backfill = await client.post(
+        f"/api/assets/{manual_a.id}/backfill",
+        headers=auth_headers,
+        json={"values": [{"date": "2025-02-01", "amount": "1000000000"}]},
+    )
+    assert overflow_backfill.status_code == 422
+    assert "supported range" in overflow_backfill.json()["detail"]
 
     # Atomic archive: protected asset in batch rejects entire batch (manual_a unchanged)
     bad_archive = await client.post(

@@ -2,7 +2,7 @@ import logging
 import uuid
 from collections.abc import Sequence
 from datetime import date, datetime, timezone, timedelta
-from decimal import ROUND_DOWN, ROUND_HALF_UP, Decimal
+from decimal import ROUND_DOWN, ROUND_HALF_UP, Decimal, InvalidOperation
 from typing import Any, Optional, cast
 
 from fastapi import HTTPException, status
@@ -1247,6 +1247,7 @@ async def update_asset(
         select(Asset)
         .where(Asset.id == asset_id, Asset.workspace_id == workspace_id)
         .with_for_update()
+        .execution_options(populate_existing=True)
     )
     asset = result.scalar_one_or_none()
     if not asset:
@@ -1281,7 +1282,8 @@ async def update_asset(
         setattr(asset, key, value)
 
     if (
-        asset.purchase_date is not None
+        ("purchase_date" in update_data or "sell_date" in update_data)
+        and asset.purchase_date is not None
         and asset.sell_date is not None
         and asset.purchase_date > asset.sell_date
     ):
@@ -1368,6 +1370,7 @@ async def delete_asset(
         select(Asset)
         .where(Asset.id == asset_id, Asset.workspace_id == workspace_id)
         .with_for_update()
+        .execution_options(populate_existing=True)
     )
     asset = result.scalar_one_or_none()
     if not asset:
@@ -1435,6 +1438,7 @@ def _validate_manual_snapshot_asset(asset: Asset, tx_count: int) -> None:
 
 
 _ASSET_VALUE_QUANT = Decimal("0.000001")
+_ASSET_VALUE_MAX = Decimal("999999999.999999")
 
 
 async def set_assets_archived(
@@ -1456,6 +1460,7 @@ async def set_assets_archived(
                     Asset.workspace_id == workspace_id,
                 )
                 .with_for_update()
+                .execution_options(populate_existing=True)
             )
         )
         .scalars()
@@ -1508,6 +1513,7 @@ async def backfill_asset_purchase_history(
         select(Asset)
         .where(Asset.id == asset_id, Asset.workspace_id == workspace_id)
         .with_for_update()
+        .execution_options(populate_existing=True)
     )
     asset = result.scalar_one_or_none()
     if asset is None:
@@ -1536,7 +1542,13 @@ async def backfill_asset_purchase_history(
         seen_dates.add(dt)
         if not amt.is_finite() or amt < 0:
             raise ValueError("value amount must be a finite non-negative number")
-        normalized_values.append((dt, amt.quantize(_ASSET_VALUE_QUANT)))
+        try:
+            q_amt = amt.quantize(_ASSET_VALUE_QUANT)
+        except InvalidOperation as exc:
+            raise ValueError("value amount exceeds supported range") from exc
+        if q_amt > _ASSET_VALUE_MAX:
+            raise ValueError("value amount exceeds supported range")
+        normalized_values.append((dt, q_amt))
 
     existing_keys: set[tuple[date, Decimal]] = set()
     if seen_dates:
