@@ -1755,9 +1755,11 @@ async def get_account_balance_history(
 
     series = await _account_daily_balance_series(
         session, account_id, date_from, date_to, account.currency,
-        # A card's current balance counts authorized purchases, so the last
-        # point of its history has to match the accounts list.
-        include_pending=account.type == "credit_card",
+        # A manual card's current balance counts authorized purchases, so the
+        # last point of its history has to match the accounts list. A
+        # connected card's list balance is the provider snapshot, which never
+        # saw our recurring placeholders, so its history stays posted-only.
+        include_pending=account.type == "credit_card" and not account.connection_id,
     )
 
     if sign != 1.0:

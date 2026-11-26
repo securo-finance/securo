@@ -1759,6 +1759,36 @@ async def test_get_account_balance_history_credit_card_counts_pending(
 
 
 @pytest.mark.asyncio
+async def test_get_account_balance_history_connected_card_skips_pending(
+    session: AsyncSession, test_user, test_workspace, test_connection,
+):
+    """A connected card's history stays posted-only.
+
+    Its list balance is the provider snapshot, which never saw a recurring
+    placeholder; counting the pending placeholder would push the history
+    past the debt the provider reports.
+    """
+    account = await _make_account(
+        session, test_user.id, "CC Connected Pending",
+        acc_type="credit_card", balance="1000.00",
+        connection_id=test_connection.id, external_id="ext-cc-pending",
+    )
+    today = date.today()
+    await _add_txn(session, test_user.id, account.id, 1000, "debit", today)
+    await _add_txn(
+        session, test_user.id, account.id, 200, "debit", today,
+        source="recurring", status="pending",
+    )
+
+    history = await get_account_balance_history(
+        session, account.id, test_workspace.id,
+        date_from=today, date_to=today,
+    )
+    assert history is not None
+    assert history[-1]["balance"] == pytest.approx(1000.0)
+
+
+@pytest.mark.asyncio
 async def test_get_account_balance_history_credit_card_negated(
     session: AsyncSession, test_user, test_workspace, test_connection,
 ):
