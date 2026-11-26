@@ -937,7 +937,8 @@
     "fxRateUsed": "Kurz: {{rate}}",
     "refreshRates": "Obnovit kurzy",
     "ratesRefreshed": "Kurzy aktualizovány",
-    "ratesError": "Kurzy se nepodařilo aktualizovat"
+    "ratesError": "Kurzy se nepodařilo aktualizovat",
+    "budgetExhausted": "Rozpočet vyčerpán"
   },
   "transactions": {
     "title": "Transakce",
@@ -1699,7 +1700,29 @@
     "copySuccess": "Zkopírované rozpočty: {{count}}",
     "copyNothing": "Nebyly zkopírovány žádné rozpočty.",
     "copyError": "Rozpočty se nepodařilo zkopírovat.",
-    "copyEmptyHint": "Zkopírujte rozpočty z předchozího měsíce, abyste z nich začali."
+    "copyEmptyHint": "Zkopírujte rozpočty z předchozího měsíce, abyste z nich začali.",
+    "rolloverFor": "Převést nevyčerpaný rozpočet pro {{category}}",
+    "rolloverHint": "Převést nevyčerpané nebo překročené částky do dalšího měsíce",
+    "resetCarryover": "Vynulovat převod",
+    "resetCarryoverPending": "Čeká na vynulování",
+    "carryoverBreakdown": "Základ {{base}} {{carryover}} = K dispozici {{available}}",
+    "rolloverForecastTitle": "Převod a víceměsíční prognóza",
+    "rolloverForecastDescription": "Rozpis převodu pro {{month}} a předpokládaný zůstatek na další měsíce.",
+    "forecastHorizon": "Období prognózy",
+    "forecastMonthsOption": "{{count}} měsíců",
+    "rolloverSummaryTitle": "Měsíční přehled převodu",
+    "forecastTableTitle": "Víceměsíční prognóza",
+    "colMonth": "Měsíc",
+    "colBaseBudget": "Základní rozpočet",
+    "colCarryover": "Převod",
+    "colAvailable": "K dispozici",
+    "colProjectedSpend": "Odhadované výdaje",
+    "colRemaining": "Zbývá",
+    "colVariance": "Rozdíl",
+    "netSurplus": "Čistý přebytek",
+    "rolloverEnabled": "Převod",
+    "rolloverForecastEmpty": "Pro tento měsíc nejsou žádné rozpočtované kategorie.",
+    "rolloverForecastError": "Nepodařilo se načíst údaje o převodu a prognóze."
   },
   "goals": {
     "title": "Cíle",

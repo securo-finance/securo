@@ -919,7 +919,8 @@
     "ratesRefreshed": "Zaktualizowano kursy FX",
     "ratesError": "Nie udało się zaktualizować kursów FX",
     "cashBalance": "Gotówka",
-    "investmentAccounts": "Konta inwestycyjne"
+    "investmentAccounts": "Konta inwestycyjne",
+    "budgetExhausted": "Budżet wyczerpany"
   },
   "transactions": {
     "title": "Transakcje",
@@ -1668,7 +1669,29 @@
     "copySuccess": "Skopiowano budżety: {{count}}",
     "copyNothing": "Nie skopiowano żadnych budżetów.",
     "copyError": "Nie udało się skopiować budżetów.",
-    "copyEmptyHint": "Skopiuj budżety z poprzedniego miesiąca, aby od nich zacząć."
+    "copyEmptyHint": "Skopiuj budżety z poprzedniego miesiąca, aby od nich zacząć.",
+    "rolloverFor": "Przenieś niewykorzystany budżet dla {{category}}",
+    "rolloverHint": "Przenieś niewykorzystane lub przekroczone kwoty na kolejny miesiąc",
+    "resetCarryover": "Wyzeruj przeniesienie",
+    "resetCarryoverPending": "Oczekujące wyzerowanie",
+    "carryoverBreakdown": "Baza {{base}} {{carryover}} = Dostępne {{available}}",
+    "rolloverForecastTitle": "Przeniesienie i Prognoza Wielomiesięczna",
+    "rolloverForecastDescription": "Zestawienie przeniesienia dla {{month}} oraz prognozowane saldo na kolejne miesiące.",
+    "forecastHorizon": "Horyzont prognozy",
+    "forecastMonthsOption": "{{count}} mies.",
+    "rolloverSummaryTitle": "Podsumowanie przeniesienia miesiąca",
+    "forecastTableTitle": "Prognoza wielomiesięczna",
+    "colMonth": "Miesiąc",
+    "colBaseBudget": "Budżet bazowy",
+    "colCarryover": "Przeniesienie",
+    "colAvailable": "Dostępne",
+    "colProjectedSpend": "Planowane wydatki",
+    "colRemaining": "Pozostało",
+    "colVariance": "Różnica",
+    "netSurplus": "Nadwyżka netto",
+    "rolloverEnabled": "Przeniesienie",
+    "rolloverForecastEmpty": "Brak kategorii z budżetem na ten miesiąc.",
+    "rolloverForecastError": "Nie udało się wczytać danych przeniesienia i prognozy."
   },
   "goals": {
     "title": "Cele",

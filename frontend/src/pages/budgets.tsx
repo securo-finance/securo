@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { AlertCircle, CalendarIcon, Copy as CopyIcon, Repeat, Sparkles } from 'lucide-react'
+import { AlertCircle, ArrowRightLeft, CalendarIcon, ChevronDown, ChevronUp, Copy as CopyIcon, Repeat, Sparkles } from 'lucide-react'
 import { format } from 'date-fns'
 import { useDisplayLocale } from '@/hooks/use-display-locale'
 import { monthLabel, monthRange, shiftMonth } from '@/lib/month-utils'
@@ -31,7 +31,7 @@ import { useEffectiveTimezone } from '@/hooks/use-timezone'
 import { resolveDateFnsLocale } from '@/lib/date-fns-locale'
 import { budgetDisplayAmount, parseBudgetDraft, planBudgetChange, type BudgetOperation } from '@/lib/budget-settings-utils'
 import { todayInTimezone } from '@/lib/date-utils'
-import { formatAmountInput, formatCurrency } from '@/lib/format'
+import { formatAmountInput, formatCurrency, ltrAmount } from '@/lib/format'
 import type { BudgetSuggestion, Category } from '@/types'
 
 /** Months of history shown per category; suggestion amounts come from the backend average. */
@@ -102,6 +102,8 @@ export default function BudgetsPage() {
   const [focusedCategoryId, setFocusedCategoryId] = useState<string | null>(null)
   const [suggestOpen, setSuggestOpen] = useState(false)
   const [copyOpen, setCopyOpen] = useState(false)
+  const [forecastOpen, setForecastOpen] = useState(false)
+  const [forecastMonths, setForecastMonths] = useState<3 | 6 | 12>(6)
   const [suggestMonths, setSuggestMonths] = useState(3)
   const [suggestRecurring, setSuggestRecurring] = useState(false)
   const [suggestEdits, setSuggestEdits] = useState<Record<string, { checked: boolean; amount: string }>>({})
@@ -116,13 +118,30 @@ export default function BudgetsPage() {
     setSearchParams(next)
   }
   // Drafts are per month: switching month starts from what is saved there.
-  type DraftState = { month: string; drafts: Record<string, string>; recurring: Record<string, boolean> }
-  const emptyDrafts = (): DraftState => ({ month: selectedMonth, drafts: {}, recurring: {} })
+  type DraftState = {
+    month: string
+    drafts: Record<string, string>
+    recurring: Record<string, boolean>
+    rollover: Record<string, boolean>
+    resetRollover: Record<string, boolean>
+  }
+  const emptyDrafts = (): DraftState => ({
+    month: selectedMonth,
+    drafts: {},
+    recurring: {},
+    rollover: {},
+    resetRollover: {},
+  })
   const [draftState, setDraftState] = useState<DraftState>(emptyDrafts)
   const current = draftState.month === selectedMonth ? draftState : emptyDrafts()
   const drafts = current.drafts
 
   const fmt = (amount: number) => mask(formatCurrency(amount, userCurrency, locale))
+  const fmtSigned = (amount: number) => {
+    const formatted = formatCurrency(Math.abs(amount), userCurrency, locale)
+    const signed = amount > 0 ? `+${formatted}` : amount < 0 ? `-${formatted}` : formatted
+    return mask(ltrAmount(signed))
+  }
 
   const { data: budgetsList, isLoading: budgetsLoading, isFetching: budgetsFetching, isError: budgetsError, error: budgetsLoadError, refetch: refetchBudgets } = useQuery({
     queryKey: ['budgets', selectedMonth],
@@ -162,10 +181,38 @@ export default function BudgetsPage() {
     queryKey: ['budgets', 'history', selectedMonth],
     queryFn: async () => Promise.all(historyMonthKeys.map((key) => budgetsApi.comparison(`${key}-01`))),
   })
+  const { data: comparisonData } = useQuery({
+    queryKey: ['budgets', 'comparison', selectedMonth],
+    queryFn: () => budgetsApi.comparison(monthParam),
+  })
+  const {
+    data: rolloverSummary,
+    isPending: rolloverSummaryPending,
+    isError: rolloverSummaryError,
+    refetch: refetchRolloverSummary,
+  } = useQuery({
+    queryKey: ['budgets', 'rollover-summary', selectedMonth],
+    queryFn: () => budgetsApi.rolloverSummary(monthParam),
+    enabled: forecastOpen,
+  })
+  const {
+    data: forecastData,
+    isPending: forecastPending,
+    isError: forecastError,
+    refetch: refetchForecast,
+  } = useQuery({
+    queryKey: ['budgets', 'forecast', selectedMonth, forecastMonths],
+    queryFn: () => budgetsApi.forecast(monthParam, forecastMonths),
+    enabled: forecastOpen,
+  })
 
   const budgetByCategory = useMemo(
     () => new Map((budgetsList ?? []).map((budget) => [budget.category_id, budget])),
     [budgetsList],
+  )
+  const comparisonByCategory = useMemo(
+    () => new Map((comparisonData ?? []).map((row) => [row.category_id, row])),
+    [comparisonData],
   )
   const savedAmount = (categoryId: string) => {
     const budget = budgetByCategory.get(categoryId)
@@ -174,6 +221,8 @@ export default function BudgetsPage() {
   const draftFor = (categoryId: string) => drafts[categoryId] ?? (savedAmount(categoryId) > 0 ? formatAmountInput(savedAmount(categoryId), locale) : '')
   // New budgets repeat every month unless switched off, like the old add dialog's default.
   const recurringFor = (categoryId: string) => current.recurring[categoryId] ?? budgetByCategory.get(categoryId)?.is_recurring ?? true
+  const rolloverFor = (categoryId: string) => current.rollover[categoryId] ?? budgetByCategory.get(categoryId)?.rollover ?? false
+  const resetRolloverFor = (categoryId: string) => current.resetRollover[categoryId] ?? false
   const parsedDraftFor = (categoryId: string) => parseBudgetDraft(draftFor(categoryId), locale)
   const planFor = (categoryId: string) => {
     const amount = parsedDraftFor(categoryId)
@@ -182,6 +231,8 @@ export default function BudgetsPage() {
       categoryId,
       amount,
       recurring: recurringFor(categoryId),
+      rollover: rolloverFor(categoryId),
+      resetRollover: resetRolloverFor(categoryId),
       current: budgetByCategory.get(categoryId),
       series: (budgetSeries ?? []).filter((budget) => budget.category_id === categoryId),
       month: monthParam,
@@ -202,7 +253,12 @@ export default function BudgetsPage() {
 
   // Only plan categories the user edited in this month. Merely opening a
   // month must never turn stored zero tombstones into delete operations.
-  const dirtyCategoryIds = new Set([...Object.keys(drafts), ...Object.keys(current.recurring)])
+  const dirtyCategoryIds = new Set([
+    ...Object.keys(drafts),
+    ...Object.keys(current.recurring),
+    ...Object.keys(current.rollover),
+    ...Object.keys(current.resetRollover),
+  ])
   const operations = allCategories.flatMap((category) => dirtyCategoryIds.has(category.id) ? planFor(category.id) : [])
   const changedCategories = new Set(allCategories.filter((category) => dirtyCategoryIds.has(category.id) && planFor(category.id).length > 0).map((category) => category.id))
   const invalidCategories = new Set(allCategories.filter((category) => parsedDraftFor(category.id) === null).map((category) => category.id))
@@ -225,6 +281,10 @@ export default function BudgetsPage() {
     updateDrafts((state) => ({ drafts: { ...state.drafts, [categoryId]: value } }))
   const toggleRecurring = (categoryId: string) =>
     updateDrafts((state) => ({ recurring: { ...state.recurring, [categoryId]: !recurringFor(categoryId) } }))
+  const toggleRollover = (categoryId: string) =>
+    updateDrafts((state) => ({ rollover: { ...state.rollover, [categoryId]: !rolloverFor(categoryId) } }))
+  const toggleResetRollover = (categoryId: string) =>
+    updateDrafts((state) => ({ resetRollover: { ...state.resetRollover, [categoryId]: !resetRolloverFor(categoryId) } }))
 
   const saveMutation = useMutation({
     mutationFn: async (planned: BudgetOperation[]) => {
@@ -264,7 +324,7 @@ export default function BudgetsPage() {
   const historyLabels = [...historyMonthKeys].reverse().map((key) => monthLabel(key, uiLocale))
 
   return (
-    <div className={canWrite ? 'pb-28' : undefined}>
+    <div className={canWrite && operations.length > 0 ? 'pb-32' : undefined}>
       <PageHeader
         section={t('nav.groupSetup')}
         title={t('budgets.settingsTitle')}
@@ -362,11 +422,16 @@ export default function BudgetsPage() {
                   const values = history ? [...history].reverse().map((rows) => rows.find((row) => row.category_id === category.id)?.actual_amount ?? 0) : []
                   const changed = changedCategories.has(category.id)
                   const recurring = recurringFor(category.id)
+                  const rollover = rolloverFor(category.id)
+                  const resetPending = resetRolloverFor(category.id)
                   const spent = spendingByCategory.get(category.id) ?? 0
-                  // Preview the valid draft limit, just like the live total below.
+                  // Preview the valid draft limit + active carryover, just like the live total below.
                   // No edit is persisted until the user presses Save.
                   const limit = parsedDraftFor(category.id)
-                  const percentage = limit !== null && limit > 0 ? Math.round(spent / limit * 1000) / 10 : 0
+                  const savedCarryover = comparisonByCategory.get(category.id)?.carryover_amount ?? 0
+                  const activeCarryover = rollover && limit !== null && limit > 0 && !resetPending ? savedCarryover : 0
+                  const available = limit !== null ? limit + activeCarryover : null
+                  const percentage = available !== null && available > 0 ? Math.round(spent / available * 1000) / 10 : 0
                   return (
                     <div key={category.id} className="grid grid-cols-[minmax(0,1fr)_auto_auto] md:grid-cols-[minmax(0,1fr)_auto_minmax(8rem,12rem)_auto_8rem] items-center gap-x-2 gap-y-2 md:gap-x-3 px-4 sm:px-5 py-2.5">
                       <div className="col-start-1 row-start-1 flex min-w-0 items-center gap-3">
@@ -396,21 +461,55 @@ export default function BudgetsPage() {
                           {t('budgets.spending')}{' '}
                           <span className="text-sm font-normal tabular-nums text-foreground break-words">{spendingAvailable ? fmt(spent) : '—'}</span>
                         </p>
-                        {spendingAvailable && limit !== null && limit > 0 && (
-                          <BudgetSpendingProgress categoryName={category.name} percentage={percentage} budgetAmount={limit} currency={userCurrency} showBudgetLabel={false} />
+                        {spendingAvailable && available !== null && available > 0 && (
+                          <BudgetSpendingProgress categoryName={category.name} percentage={percentage} budgetAmount={available} currency={userCurrency} showBudgetLabel={false} />
+                        )}
+                        {limit !== null && limit > 0 && (savedCarryover !== 0 || resetPending) && (
+                          <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-muted-foreground tabular-nums">
+                            <span>
+                              {t('budgets.carryoverBreakdown', {
+                                base: fmt(limit),
+                                carryover: fmtSigned(activeCarryover),
+                                available: fmt(available ?? limit),
+                              })}
+                            </span>
+                            {canWrite && savedCarryover !== 0 && (
+                              <button
+                                type="button"
+                                aria-pressed={resetPending}
+                                onClick={() => toggleResetRollover(category.id)}
+                                className={`underline underline-offset-2 transition-colors ${resetPending ? 'text-primary font-medium' : 'text-muted-foreground hover:text-foreground'}`}
+                              >
+                                {resetPending ? t('budgets.resetCarryoverPending') : t('budgets.resetCarryover')}
+                              </button>
+                            )}
+                          </div>
                         )}
                       </div>
-                      <button
-                        type="button"
-                        aria-pressed={recurring}
-                        aria-label={t('budgets.repeatEveryMonthFor', { category: category.name })}
-                        title={t('budgets.repeatEveryMonth')}
-                        disabled={!canWrite}
-                        onClick={() => toggleRecurring(category.id)}
-                        className={`col-start-2 row-start-1 md:col-start-4 p-1.5 rounded-md transition-colors disabled:opacity-60 ${recurring ? 'text-primary bg-primary/10 hover:bg-primary/15' : 'text-muted-foreground/60 hover:text-foreground hover:bg-muted'}`}
-                      >
-                        <Repeat size={13} />
-                      </button>
+                      <div className="col-start-2 row-start-1 md:col-start-4 flex items-center gap-1">
+                        <button
+                          type="button"
+                          aria-pressed={recurring}
+                          aria-label={t('budgets.repeatEveryMonthFor', { category: category.name })}
+                          title={t('budgets.repeatEveryMonth')}
+                          disabled={!canWrite}
+                          onClick={() => toggleRecurring(category.id)}
+                          className={`p-1.5 rounded-md transition-colors disabled:opacity-60 ${recurring ? 'text-primary bg-primary/10 hover:bg-primary/15' : 'text-muted-foreground/60 hover:text-foreground hover:bg-muted'}`}
+                        >
+                          <Repeat size={13} />
+                        </button>
+                        <button
+                          type="button"
+                          aria-pressed={rollover}
+                          aria-label={t('budgets.rolloverFor', { category: category.name })}
+                          title={t('budgets.rolloverHint')}
+                          disabled={!canWrite}
+                          onClick={() => toggleRollover(category.id)}
+                          className={`p-1.5 rounded-md transition-colors disabled:opacity-60 ${rollover ? 'text-primary bg-primary/10 hover:bg-primary/15' : 'text-muted-foreground/60 hover:text-foreground hover:bg-muted'}`}
+                        >
+                          <ArrowRightLeft size={13} />
+                        </button>
+                      </div>
                       <div className={`col-start-3 row-start-1 md:col-start-5 flex w-24 md:w-32 min-w-0 items-center rounded-lg border bg-card px-2.5 focus-within:ring-2 focus-within:ring-primary ${invalidCategories.has(category.id) ? 'border-destructive' : changed ? 'border-primary/60' : 'border-border'}`}>
                         <span className="text-xs text-muted-foreground">{formatCurrency(0, userCurrency, locale).replace(/[\d.,\s]/g, '')}</span>
                         <input
@@ -436,6 +535,215 @@ export default function BudgetsPage() {
           ))
         )}
       </SectionCard>
+
+      {/* Save bar: docked beneath the budget list when clean so it never occludes
+          the forecast panel below, and fixed to the viewport bottom once edits are
+          staged (matching the transactions bulk-action bar) so Save stays in reach
+          while editing a long list. */}
+      {canWrite && allCategories.length > 0 && !budgetsLoading && !categoriesLoading && !groupsLoading && !budgetsError && !categoriesError && !groupsError && budgetsList && budgetSeries && categoriesList && groupsList && (
+        <div
+          data-testid="budget-save-bar"
+          className={cn(
+            operations.length > 0
+              ? [
+                  'fixed bottom-0 start-0 end-0 z-40',
+                  'transition-[left] duration-300 ease-in-out motion-reduce:transition-none',
+                  sidebarCollapsed ? 'lg:start-16' : 'lg:start-60',
+                ]
+              : 'mt-4',
+          )}
+        >
+          <div className={cn(operations.length > 0 && 'mx-auto max-w-7xl px-3 md:px-6 pb-4 md:pb-6')}>
+            <div className={cn(
+              'flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between bg-card border border-border rounded-2xl px-4 py-3',
+              operations.length > 0 ? 'shadow-xl' : 'shadow-sm',
+            )}>
+              <div className="text-sm tabular-nums">
+                <span className="font-semibold text-foreground">{t('budgets.total', { amount: fmt(totalBudget) })}</span>
+              </div>
+              <div className="flex flex-wrap items-center gap-3">
+                <Button variant="outline" size="sm" disabled={operations.length === 0 || saveMutation.isPending} onClick={() => setDraftState(emptyDrafts())}>
+                  {t('common.cancel')}
+                </Button>
+                <Button size="sm" disabled={operations.length === 0 || invalidCategories.size > 0 || saveMutation.isPending} onClick={() => saveMutation.mutate(operations)}>
+                  {t('common.save')}
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="mt-6">
+        <SectionCard>
+          <div className={cn('px-4 sm:px-5 py-4 flex flex-wrap items-center justify-between gap-2', forecastOpen && 'border-b border-border')}>
+            <button
+              type="button"
+              aria-expanded={forecastOpen}
+              aria-controls="budget-rollover-forecast-panel"
+              onClick={() => setForecastOpen((open) => !open)}
+              className="flex flex-1 items-center justify-between gap-3 text-start focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary rounded-md"
+            >
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-foreground">{t('budgets.rolloverForecastTitle')}</p>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  {t('budgets.rolloverForecastDescription', { month: monthTitle })}
+                </p>
+              </div>
+              {forecastOpen ? (
+                <ChevronUp size={16} className="shrink-0 text-muted-foreground" />
+              ) : (
+                <ChevronDown size={16} className="shrink-0 text-muted-foreground" />
+              )}
+            </button>
+          </div>
+
+          {forecastOpen && (
+            <div id="budget-rollover-forecast-panel" className="p-4 sm:p-5 space-y-6">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <span className="text-xs font-medium text-muted-foreground">{t('budgets.forecastHorizon')}</span>
+                <div className="inline-flex items-center gap-1" role="group" aria-label={t('budgets.forecastHorizon')}>
+                  {([3, 6, 12] as const).map((months) => (
+                    <Button
+                      key={months}
+                      type="button"
+                      size="sm"
+                      variant={forecastMonths === months ? 'default' : 'outline'}
+                      aria-pressed={forecastMonths === months}
+                      onClick={() => setForecastMonths(months)}
+                      className="h-7 px-2.5 text-xs"
+                    >
+                      {t('budgets.forecastMonthsOption', { count: months })}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  {t('budgets.rolloverSummaryTitle')}
+                </p>
+                {rolloverSummaryError ? (
+                  <div role="alert" className="flex items-center justify-between gap-3 py-3 text-sm text-destructive">
+                    <span>{t('budgets.rolloverForecastError')}</span>
+                    <Button type="button" variant="outline" size="sm" onClick={() => { void refetchRolloverSummary() }}>
+                      {t('common.retry')}
+                    </Button>
+                  </div>
+                ) : rolloverSummaryPending || !rolloverSummary ? (
+                  <div className="space-y-2">
+                    <Skeleton className="h-8 w-full" />
+                    <Skeleton className="h-8 w-full" />
+                  </div>
+                ) : rolloverSummary.categories.length === 0 ? (
+                  <p className="text-sm text-muted-foreground py-4">{t('budgets.rolloverForecastEmpty')}</p>
+                ) : (
+                  <div className="overflow-x-auto rounded-lg border border-border">
+                    <table className="w-full text-xs">
+                      <thead className="bg-muted/40 text-muted-foreground">
+                        <tr>
+                          <th className="px-3 py-2 text-start font-medium">{t('budgets.category')}</th>
+                          <th className="px-3 py-2 text-end font-medium">{t('budgets.colBaseBudget')}</th>
+                          <th className="px-3 py-2 text-end font-medium">{t('budgets.colCarryover')}</th>
+                          <th className="px-3 py-2 text-end font-medium">{t('budgets.colAvailable')}</th>
+                          <th className="px-3 py-2 text-end font-medium">{t('budgets.colProjectedSpend')}</th>
+                          <th className="px-3 py-2 text-end font-medium">{t('budgets.colRemaining')}</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-border">
+                        {rolloverSummary.categories.map((cat) => (
+                          <tr key={cat.category_id}>
+                            <td className="px-3 py-2 text-start font-medium text-foreground">
+                              <span>{cat.category_name}</span>
+                              {cat.rollover_enabled && (
+                                <span className="ms-2 inline-flex items-center rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">
+                                  {t('budgets.rolloverEnabled')}
+                                </span>
+                              )}
+                            </td>
+                            <td className="px-3 py-2 text-end tabular-nums text-foreground">{fmt(cat.budgeted)}</td>
+                            <td className="px-3 py-2 text-end tabular-nums text-muted-foreground">{fmtSigned(cat.carryover_in)}</td>
+                            <td className="px-3 py-2 text-end tabular-nums font-medium text-foreground">{fmt(cat.effective_budget)}</td>
+                            <td className="px-3 py-2 text-end tabular-nums text-foreground">{fmt(cat.projected_spent)}</td>
+                            <td className={`px-3 py-2 text-end tabular-nums font-medium ${cat.remaining < 0 ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
+                              {fmtSigned(cat.remaining)}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                      <tfoot className="border-t border-border bg-muted/20 font-semibold">
+                        <tr>
+                          <td className="px-3 py-2 text-start text-foreground">{t('budgets.netSurplus')}</td>
+                          <td className="px-3 py-2 text-end tabular-nums text-foreground">{fmt(rolloverSummary.total_budgeted)}</td>
+                          <td className="px-3 py-2 text-end tabular-nums text-muted-foreground">{fmtSigned(rolloverSummary.total_carryover)}</td>
+                          <td className="px-3 py-2 text-end tabular-nums text-foreground">{fmt(rolloverSummary.total_effective_budget)}</td>
+                          <td className="px-3 py-2 text-end tabular-nums text-foreground">{fmt(rolloverSummary.total_projected_spent)}</td>
+                          <td className={`px-3 py-2 text-end tabular-nums ${rolloverSummary.net_surplus < 0 ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
+                            {fmtSigned(rolloverSummary.net_surplus)}
+                          </td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  {t('budgets.forecastTableTitle')}
+                </p>
+                {forecastError ? (
+                  <div role="alert" className="flex items-center justify-between gap-3 py-3 text-sm text-destructive">
+                    <span>{t('budgets.rolloverForecastError')}</span>
+                    <Button type="button" variant="outline" size="sm" onClick={() => { void refetchForecast() }}>
+                      {t('common.retry')}
+                    </Button>
+                  </div>
+                ) : forecastPending || !forecastData ? (
+                  <div className="space-y-2">
+                    <Skeleton className="h-8 w-full" />
+                    <Skeleton className="h-8 w-full" />
+                  </div>
+                ) : forecastData.items.length === 0 ? (
+                  <p className="text-sm text-muted-foreground py-4">{t('budgets.rolloverForecastEmpty')}</p>
+                ) : (
+                  <div className="overflow-x-auto rounded-lg border border-border">
+                    <table className="w-full text-xs">
+                      <thead className="bg-muted/40 text-muted-foreground">
+                        <tr>
+                          <th className="px-3 py-2 text-start font-medium">{t('budgets.colMonth')}</th>
+                          <th className="px-3 py-2 text-end font-medium">{t('budgets.colBaseBudget')}</th>
+                          <th className="px-3 py-2 text-end font-medium">{t('budgets.colCarryover')}</th>
+                          <th className="px-3 py-2 text-end font-medium">{t('budgets.colAvailable')}</th>
+                          <th className="px-3 py-2 text-end font-medium">{t('budgets.colProjectedSpend')}</th>
+                          <th className="px-3 py-2 text-end font-medium">{t('budgets.colVariance')}</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-border">
+                        {forecastData.items.map((item) => {
+                          const label = monthLabel(item.month.slice(0, 7), uiLocale).replace(/^\p{L}/u, (letter) => letter.toLocaleUpperCase(uiLocale))
+                          return (
+                            <tr key={item.month}>
+                              <td className="px-3 py-2 text-start font-medium text-foreground">{label}</td>
+                              <td className="px-3 py-2 text-end tabular-nums text-foreground">{fmt(item.projected_budget)}</td>
+                              <td className="px-3 py-2 text-end tabular-nums text-muted-foreground">{fmtSigned(item.carryover_balance)}</td>
+                              <td className="px-3 py-2 text-end tabular-nums font-medium text-foreground">{fmt(item.effective_budget)}</td>
+                              <td className="px-3 py-2 text-end tabular-nums text-foreground">{fmt(item.projected_spend)}</td>
+                              <td className={`px-3 py-2 text-end tabular-nums font-medium ${item.projected_variance < 0 ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
+                                {fmtSigned(item.projected_variance)}
+                              </td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </SectionCard>
+      </div>
 
       <Dialog open={suggestOpen} onOpenChange={(open) => { setSuggestOpen(open); if (!open) setSuggestEdits({}) }}>
         <DialogContent>
@@ -512,33 +820,7 @@ export default function BudgetsPage() {
         targetRefreshing={budgetsFetching}
       />
 
-      {/* Save bar: same fixed placement as the transactions bulk-action bar, so it
-          stays in reach while editing a long list. */}
-      {canWrite && allCategories.length > 0 && !budgetsLoading && !categoriesLoading && !groupsLoading && !budgetsError && !categoriesError && !groupsError && budgetsList && budgetSeries && categoriesList && groupsList && (
-        <div className={cn(
-          'fixed bottom-0 start-0 end-0 z-40',
-          'transition-[left] duration-300 ease-in-out motion-reduce:transition-none',
-          sidebarCollapsed ? 'lg:start-16' : 'lg:start-60',
-        )}>
-          <div className="mx-auto max-w-7xl px-3 md:px-6 pb-4 md:pb-6">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between bg-card border border-border shadow-xl rounded-2xl px-4 py-3">
-              <div className="text-sm tabular-nums">
-                <span className="font-semibold text-foreground">{t('budgets.total', { amount: fmt(totalBudget) })}</span>
-              </div>
-              <div className="flex flex-wrap items-center gap-3">
-                <Button variant="outline" size="sm" disabled={operations.length === 0 || saveMutation.isPending} onClick={() => setDraftState(emptyDrafts())}>
-                  {t('common.cancel')}
-                </Button>
-                <Button size="sm" disabled={operations.length === 0 || invalidCategories.size > 0 || saveMutation.isPending} onClick={() => saveMutation.mutate(operations)}>
-                  {t('common.save')}
-                </Button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Render after the fixed Save bar so its backdrop also covers those controls. */}
+      {/* Render after the Save bar so its backdrop also covers those controls. */}
       {drillDownCategoryId !== null && (
         <TransactionDrillDown
           useViewerShare={activeAccountIds === null}

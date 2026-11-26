@@ -909,7 +909,8 @@
     "fxRateUsed": "Taxa de câmbio: {{rate}}",
     "refreshRates": "Atualizar taxas de câmbio",
     "ratesRefreshed": "Taxas de câmbio atualizadas",
-    "ratesError": "Erro ao atualizar taxas de câmbio"
+    "ratesError": "Erro ao atualizar taxas de câmbio",
+    "budgetExhausted": "Orçamento esgotado"
   },
   "transactions": {
     "title": "Transações",
@@ -1619,7 +1620,29 @@
     "copySuccess": "Orçamentos copiados: {{count}}",
     "copyNothing": "Nenhum orçamento foi copiado.",
     "copyError": "Não foi possível copiar os orçamentos.",
-    "copyEmptyHint": "Copie os orçamentos de um mês anterior para começar a partir deles."
+    "copyEmptyHint": "Copie os orçamentos de um mês anterior para começar a partir deles.",
+    "rolloverFor": "Transferir saldo do orçamento de {{category}}",
+    "rolloverHint": "Levar valores não gastos ou excedidos para o próximo mês",
+    "resetCarryover": "Zerar saldo acumulado",
+    "resetCarryoverPending": "Zerar saldo pendente",
+    "carryoverBreakdown": "Base {{base}} {{carryover}} = Disponível {{available}}",
+    "rolloverForecastTitle": "Transferência e Previsão Mensal",
+    "rolloverForecastDescription": "Detalhamento do saldo acumulado de {{month}} e projeção para os próximos meses.",
+    "forecastHorizon": "Horizonte de previsão",
+    "forecastMonthsOption": "{{count}} meses",
+    "rolloverSummaryTitle": "Resumo de transferência do mês",
+    "forecastTableTitle": "Previsão para vários meses",
+    "colMonth": "Mês",
+    "colBaseBudget": "Orçamento base",
+    "colCarryover": "Transferido",
+    "colAvailable": "Disponível",
+    "colProjectedSpend": "Gasto projetado",
+    "colRemaining": "Restante",
+    "colVariance": "Saldo",
+    "netSurplus": "Saldo líquido",
+    "rolloverEnabled": "Transferência",
+    "rolloverForecastEmpty": "Nenhuma categoria orçada neste mês.",
+    "rolloverForecastError": "Não foi possível carregar os dados de transferência e previsão."
   },
   "goals": {
     "title": "Metas",

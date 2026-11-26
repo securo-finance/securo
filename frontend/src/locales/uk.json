@@ -917,7 +917,8 @@
     "ratesRefreshed": "Курси валют оновлено",
     "ratesError": "Не вдалося оновити курси валют",
     "cashBalance": "Готівка",
-    "investmentAccounts": "Інвестиційні рахунки"
+    "investmentAccounts": "Інвестиційні рахунки",
+    "budgetExhausted": "Бюджет вичерпано"
   },
   "transactions": {
     "title": "Транзакції",
@@ -1636,7 +1637,29 @@
     "copySuccess": "Скопійовано бюджетів: {{count}}",
     "copyNothing": "Жодного бюджету не скопійовано.",
     "copyError": "Не вдалося скопіювати бюджети.",
-    "copyEmptyHint": "Скопіюйте бюджети попереднього місяця, щоб почати з них."
+    "copyEmptyHint": "Скопіюйте бюджети попереднього місяця, щоб почати з них.",
+    "rolloverFor": "Перенести залишок бюджету для {{category}}",
+    "rolloverHint": "Переносити невитрачені або перевищені суми на наступний місяць",
+    "resetCarryover": "Скинути перенесення",
+    "resetCarryoverPending": "Скидання заплановано",
+    "carryoverBreakdown": "База {{base}} {{carryover}} = Доступно {{available}}",
+    "rolloverForecastTitle": "Перенесення та прогноз на кілька місяців",
+    "rolloverForecastDescription": "Деталізація перенесення за {{month}} та прогноз балансу на кілька місяців.",
+    "forecastHorizon": "Горизонт прогнозу",
+    "forecastMonthsOption": "{{count}} міс.",
+    "rolloverSummaryTitle": "Зведення перенесення за місяць",
+    "forecastTableTitle": "Прогноз на кілька місяців",
+    "colMonth": "Місяць",
+    "colBaseBudget": "Базовий бюджет",
+    "colCarryover": "Перенесення",
+    "colAvailable": "Доступно",
+    "colProjectedSpend": "Очікувані витрати",
+    "colRemaining": "Залишок",
+    "colVariance": "Різниця",
+    "netSurplus": "Чистий профіцит",
+    "rolloverEnabled": "Перенесення",
+    "rolloverForecastEmpty": "У цьому місяці немає категорій з бюджетом.",
+    "rolloverForecastError": "Не вдалося завантажити дані про перенесення та прогноз."
   },
   "goals": {
     "title": "Цілі",

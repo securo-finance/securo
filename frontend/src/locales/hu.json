@@ -907,7 +907,8 @@
     "fxRateUsed": "Árfolyam: {{rate}}",
     "refreshRates": "Árfolyamok frissítése",
     "ratesRefreshed": "Árfolyamok frissítve",
-    "ratesError": "Nem sikerült frissíteni az árfolyamokat"
+    "ratesError": "Nem sikerült frissíteni az árfolyamokat",
+    "budgetExhausted": "Keret kimerült"
   },
   "transactions": {
     "title": "Tranzakciók",
@@ -1613,7 +1614,29 @@
     "copySuccess": "Másolt költségvetések: {{count}}",
     "copyNothing": "Nem másolódott költségvetés.",
     "copyError": "A költségvetéseket nem sikerült másolni.",
-    "copyEmptyHint": "Másold egy előző hónap költségvetéseit, hogy azokból indulj."
+    "copyEmptyHint": "Másold egy előző hónap költségvetéseit, hogy azokból indulj.",
+    "rolloverFor": "Fel nem használt keret átvitele: {{category}}",
+    "rolloverHint": "A fel nem használt vagy túllépett összegek átvitele a következő hónapra",
+    "resetCarryover": "Átvitel nullázása",
+    "resetCarryoverPending": "Nullázás függőben",
+    "carryoverBreakdown": "Alap {{base}} {{carryover}} = Elérhető {{available}}",
+    "rolloverForecastTitle": "Átvitel és többhónapos előrejelzés",
+    "rolloverForecastDescription": "{{month}} átviteli bontása és többhónapos egyenleg-előrejelzés.",
+    "forecastHorizon": "Előrejelzési időtáv",
+    "forecastMonthsOption": "{{count}} hónap",
+    "rolloverSummaryTitle": "Havi átviteli összesítő",
+    "forecastTableTitle": "Többhónapos előrejelzés",
+    "colMonth": "Hónap",
+    "colBaseBudget": "Alapkeret",
+    "colCarryover": "Átvitel",
+    "colAvailable": "Elérhető",
+    "colProjectedSpend": "Várható költés",
+    "colRemaining": "Maradék",
+    "colVariance": "Eltérés",
+    "netSurplus": "Nettó többlet",
+    "rolloverEnabled": "Átvitel",
+    "rolloverForecastEmpty": "Ebben a hónapban nincsenek költségkerettel rendelkező kategóriák.",
+    "rolloverForecastError": "Nem sikerült betölteni az átviteli és előrejelzési adatokat."
   },
   "goals": {
     "title": "Célok",

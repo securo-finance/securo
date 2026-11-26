@@ -909,7 +909,8 @@
     "ratesRefreshed": "Taxas de câmbio atualizadas",
     "ratesError": "Erro ao atualizar taxas de câmbio",
     "cashBalance": "Caixa",
-    "investmentAccounts": "Contas de investimento"
+    "investmentAccounts": "Contas de investimento",
+    "budgetExhausted": "Orçamento esgotado"
   },
   "transactions": {
     "title": "Transações",
@@ -1618,7 +1619,29 @@
     "copySuccess": "Orçamentos copiados: {{count}}",
     "copyNothing": "Nenhum orçamento foi copiado.",
     "copyError": "Não foi possível copiar os orçamentos.",
-    "copyEmptyHint": "Copie os orçamentos de um mês anterior para começar a partir deles."
+    "copyEmptyHint": "Copie os orçamentos de um mês anterior para começar a partir deles.",
+    "rolloverFor": "Transitar saldo do orçamento de {{category}}",
+    "rolloverHint": "Transportar valores não gastos ou excedidos para o mês seguinte",
+    "resetCarryover": "Repor saldo transitado",
+    "resetCarryoverPending": "Reposição de saldo pendente",
+    "carryoverBreakdown": "Base {{base}} {{carryover}} = Disponível {{available}}",
+    "rolloverForecastTitle": "Transição e Previsão Mensal",
+    "rolloverForecastDescription": "Detalhe do saldo transitado de {{month}} e projeção plurimensal.",
+    "forecastHorizon": "Horizonte de previsão",
+    "forecastMonthsOption": "{{count}} meses",
+    "rolloverSummaryTitle": "Resumo de transição do mês",
+    "forecastTableTitle": "Previsão plurimensal",
+    "colMonth": "Mês",
+    "colBaseBudget": "Orçamento base",
+    "colCarryover": "Transitado",
+    "colAvailable": "Disponível",
+    "colProjectedSpend": "Despesa projetada",
+    "colRemaining": "Restante",
+    "colVariance": "Variação",
+    "netSurplus": "Excedente líquido",
+    "rolloverEnabled": "Transição",
+    "rolloverForecastEmpty": "Nenhuma categoria orçamentada para este mês.",
+    "rolloverForecastError": "Não foi possível carregar os dados de transição e previsão."
   },
   "goals": {
     "title": "Objetivos",

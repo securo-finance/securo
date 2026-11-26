@@ -592,6 +592,7 @@ async def _owner_split_rows(
     extra_filters: tuple = (),
     primary_currency: Optional[str] = None,
     stamped_members_only: bool = False,
+    include_report_date: bool = False,
 ):
     """One row per posted split transaction of the user's: the non-owner
     shares summed in the row's own currency, next to what is needed to
@@ -607,7 +608,9 @@ async def _owner_split_rows(
     from app.services.viewer_currency import viewer_currency
 
     date_col = reporting_date_col("accrual" if use_effective_date else "cash")
+    lead = (date_col.label("report_date"),) if include_report_date else ()
     columns = (
+        *lead,
         Transaction.id,
         Transaction.category_id,
         Transaction.type,
@@ -644,7 +647,7 @@ async def _owner_split_rows(
         viewer = await viewer_currency(session, primary_currency) if primary_currency else None
         if stamped_members_only:
             row_filters += (Transaction.amount_primary.is_not(None),)
-        rows += await member_split_rows(session, user_id, row_filters, viewer)
+        rows += await member_split_rows(session, user_id, row_filters, viewer, lead=lead)
     return rows
 
 
@@ -665,7 +668,7 @@ async def _others_share_in_primary(
     the aggregation resolved, found or not, so a day with no rate is looked
     up once rather than once per row.
     """
-    _id, _cat, _type, currency, amount, amount_primary, tx_date, others = row
+    _id, _cat, _type, currency, amount, amount_primary, tx_date, others = tuple(row)[-8:]
     others = Decimal(str(others or 0))
     if not others:
         return None
@@ -761,6 +764,45 @@ async def owner_split_offset_by_category(
             continue
         totals[row.category_id] = totals.get(row.category_id, Decimal("0")) + share
     return {cat_id: float(total) for cat_id, total in totals.items()}
+
+
+async def owner_split_offset_by_category_monthly(
+    session: AsyncSession,
+    user_id: uuid.UUID,
+    range_start: date,
+    range_end: date,
+    use_effective_date: bool = False,
+    primary_currency: Optional[str] = None,
+    workspace_id: Optional[uuid.UUID] = None,
+) -> dict[date, dict[Optional[uuid.UUID], Decimal]]:
+    """Batched monthly variant of :func:`owner_split_offset_by_category`.
+
+    Returns ``{month_start: {category_id: Decimal}}`` across ``[range_start, range_end)``.
+    """
+    rows = await _owner_split_rows(
+        session,
+        user_id,
+        range_start,
+        range_end,
+        use_effective_date,
+        workspace_id,
+        extra_filters=(Transaction.type == "debit",),
+        primary_currency=primary_currency,
+        include_report_date=True,
+    )
+    rates: dict[tuple[str, date], Optional[Decimal]] = {}
+    monthly: dict[date, dict[Optional[uuid.UUID], Decimal]] = {}
+    for row in rows:
+        share = await _others_share_in_primary(session, row, primary_currency, rates)
+        if share is None:
+            continue
+        eff_date = row.report_date if row.report_date is not None else row.date
+        if isinstance(eff_date, str):
+            eff_date = date.fromisoformat(eff_date)
+        m_start = eff_date.replace(day=1)
+        bucket = monthly.setdefault(m_start, {})
+        bucket[row.category_id] = bucket.get(row.category_id, Decimal("0")) + share
+    return monthly
 
 
 async def forecast_owner_share_fractions(
@@ -1216,3 +1258,57 @@ async def matching_foreign_category_ids(
         for fid, vcat in resolved.items()
         if vcat is not None and vcat.id in target_ids
     }
+
+
+async def viewer_shared_spending_by_category_monthly(
+    session: AsyncSession,
+    user_id: uuid.UUID,
+    range_start: date,
+    range_end: date,
+    use_effective_date: bool = False,
+    primary_currency: Optional[str] = None,
+    exclude_workspace_id: Optional[uuid.UUID] = None,
+) -> dict[date, dict[Optional[uuid.UUID], Decimal]]:
+    """Batched monthly variant of :func:`viewer_shared_spending_by_category`.
+
+    Returns ``{month_start: {category_id (uuid|None): Decimal}}`` across
+    ``[range_start, range_end)``.
+    """
+    from app.models.transaction_split import TransactionSplit
+
+    date_col = reporting_date_col("accrual" if use_effective_date else "cash")
+    where = (
+        *_viewer_shared_filters(
+            user_id, range_start, range_end, use_effective_date, exclude_workspace_id
+        ),
+        Transaction.type == "debit",
+    )
+    monthly: dict[date, dict[Optional[uuid.UUID], Decimal]] = {}
+    if primary_currency is not None:
+        totals = await viewer_shares_in_primary(
+            session, (Transaction.category_id, date_col), where, primary_currency
+        )
+        for (cat_id, r_date), (_income, expense) in totals.items():
+            if not expense:
+                continue
+            eff_date = date.fromisoformat(r_date) if isinstance(r_date, str) else r_date
+            m_start = eff_date.replace(day=1)
+            bucket = monthly.setdefault(m_start, {})
+            bucket[cat_id] = bucket.get(cat_id, Decimal("0")) + expense
+        return monthly
+
+    result = await session.execute(
+        select(Transaction.category_id, date_col, func.sum(TransactionSplit.share_amount))
+        .select_from(TransactionSplit)
+        .join(Transaction, TransactionSplit.transaction_id == Transaction.id)
+        .where(*where)
+        .group_by(Transaction.category_id, date_col)
+    )
+    for cat_id, r_date, total in result.all():
+        if not total:
+            continue
+        eff_date = date.fromisoformat(r_date) if isinstance(r_date, str) else r_date
+        m_start = eff_date.replace(day=1)
+        bucket = monthly.setdefault(m_start, {})
+        bucket[cat_id] = bucket.get(cat_id, Decimal("0")) + Decimal(str(total))
+    return monthly

@@ -1,6 +1,10 @@
 import axios from 'axios'
 import type { LayoutItem } from '@/lib/library'
-import { normalizeBudgetComparisonRows } from '@/lib/budget-settings-utils'
+import {
+  normalizeBudgetComparisonRows,
+  normalizeBudgetForecast,
+  normalizeBudgetRolloverSummary,
+} from '@/lib/budget-settings-utils'
 import type { AxiosResponse } from 'axios'
 import { markDataChanged } from '@/lib/data-changed'
 import type { NumberFormat, DateFormat } from '@/lib/format'
@@ -65,6 +69,8 @@ import type {
   ProjectedTransaction,
   TransactionCalendarResponse,
   Budget,
+  BudgetForecastResponse,
+  BudgetRolloverSummary,
   BudgetVsActual,
   BudgetSuggestionResponse,
   Rule,
@@ -1541,11 +1547,26 @@ export const budgets = {
     })
     return data
   },
-  create: async (budget: { category_id: string; amount: number; month: string; is_recurring?: boolean }): Promise<Budget> => {
+  create: async (budget: {
+    category_id: string
+    amount: number
+    month: string
+    is_recurring?: boolean
+    rollover?: boolean
+    reset_rollover?: boolean
+  }): Promise<Budget> => {
     const { data } = await api.post('/budgets', budget)
     return data
   },
-  update: async (id: string, budget: { amount?: number; effective_month?: string }): Promise<Budget> => {
+  update: async (
+    id: string,
+    budget: {
+      amount?: number
+      effective_month?: string
+      rollover?: boolean
+      reset_rollover?: boolean
+    },
+  ): Promise<Budget> => {
     const { data } = await api.patch(`/budgets/${id}`, budget)
     return data
   },
@@ -1556,6 +1577,16 @@ export const budgets = {
     const { data } = await api.get('/budgets/comparison', { params: { month } })
     return normalizeBudgetComparisonRows(data)
   },
+  rolloverSummary: async (month: string): Promise<BudgetRolloverSummary> => {
+    const { data } = await api.get('/budgets/rollover-summary', { params: { month } })
+    return normalizeBudgetRolloverSummary(data)
+  },
+  forecast: async (startMonth: string, months = 6): Promise<BudgetForecastResponse> => {
+    const { data } = await api.get('/budgets/forecast', {
+      params: { start_month: startMonth, months },
+    })
+    return normalizeBudgetForecast(data)
+  },
   suggestions: async (month: string, months: number): Promise<BudgetSuggestionResponse> => {
     const { data } = await api.get('/budgets/suggestions', { params: { month, months } })
     return data
@@ -1563,7 +1594,9 @@ export const budgets = {
   createBatch: async (payload: {
     month: string
     is_recurring: boolean
-    items: { category_id: string; amount: number }[]
+    rollover?: boolean
+    reset_rollover?: boolean
+    items: { category_id: string; amount: number; rollover?: boolean; reset_rollover?: boolean }[]
   }): Promise<Budget[]> => {
     const { data } = await api.post('/budgets/batch', payload)
     return data

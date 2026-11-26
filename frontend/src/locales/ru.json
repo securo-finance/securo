@@ -917,7 +917,8 @@
     "ratesRefreshed": "Курсы валют обновлены",
     "ratesError": "Не удалось обновить курсы валют",
     "cashBalance": "Наличные",
-    "investmentAccounts": "Инвестиционные счета"
+    "investmentAccounts": "Инвестиционные счета",
+    "budgetExhausted": "Бюджет исчерпан"
   },
   "transactions": {
     "title": "Транзакции",
@@ -1636,7 +1637,29 @@
     "copySuccess": "Скопировано бюджетов: {{count}}",
     "copyNothing": "Ни один бюджет не был скопирован.",
     "copyError": "Не удалось скопировать бюджеты.",
-    "copyEmptyHint": "Скопируйте бюджеты предыдущего месяца, чтобы начать с них."
+    "copyEmptyHint": "Скопируйте бюджеты предыдущего месяца, чтобы начать с них.",
+    "rolloverFor": "Перенести остаток бюджета для {{category}}",
+    "rolloverHint": "Переносить неизрасходованные или превышенные суммы на следующий месяц",
+    "resetCarryover": "Сбросить перенос",
+    "resetCarryoverPending": "Сброс запланирован",
+    "carryoverBreakdown": "База {{base}} {{carryover}} = Доступно {{available}}",
+    "rolloverForecastTitle": "Перенос и прогноз на несколько месяцев",
+    "rolloverForecastDescription": "Детализация переноса за {{month}} и прогноз баланса на несколько месяцев.",
+    "forecastHorizon": "Горизонт прогноза",
+    "forecastMonthsOption": "{{count}} мес.",
+    "rolloverSummaryTitle": "Сводка переноса за месяц",
+    "forecastTableTitle": "Прогноз на несколько месяцев",
+    "colMonth": "Месяц",
+    "colBaseBudget": "Базовый бюджет",
+    "colCarryover": "Перенос",
+    "colAvailable": "Доступно",
+    "colProjectedSpend": "Ожидаемые расходы",
+    "colRemaining": "Остаток",
+    "colVariance": "Разница",
+    "netSurplus": "Чистый профицит",
+    "rolloverEnabled": "Перенос",
+    "rolloverForecastEmpty": "В этом месяце нет категорий с бюджетом.",
+    "rolloverForecastError": "Не удалось загрузить данные о переносе и прогнозе."
   },
   "goals": {
     "title": "Цели",

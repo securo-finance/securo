@@ -910,7 +910,8 @@
     "ratesRefreshed": "Tipos FX actualizados",
     "ratesError": "No se pudo actualizar los tipos FX",
     "cashBalance": "Efectivo",
-    "investmentAccounts": "Cuentas de inversión"
+    "investmentAccounts": "Cuentas de inversión",
+    "budgetExhausted": "Presupuesto agotado"
   },
   "transactions": {
     "title": "Transacciones",
@@ -1619,7 +1620,29 @@
     "copySuccess": "Presupuestos copiados: {{count}}",
     "copyNothing": "No se copió ningún presupuesto.",
     "copyError": "No se pudieron copiar los presupuestos.",
-    "copyEmptyHint": "Copia los presupuestos de un mes anterior para empezar a partir de ellos."
+    "copyEmptyHint": "Copia los presupuestos de un mes anterior para empezar a partir de ellos.",
+    "rolloverFor": "Transferir saldo del presupuesto de {{category}}",
+    "rolloverHint": "Trasladar los importes no gastados o excedidos al mes siguiente",
+    "resetCarryover": "Restablecer saldo acumulado",
+    "resetCarryoverPending": "Reinicio de saldo pendiente",
+    "carryoverBreakdown": "Base {{base}} {{carryover}} = Disponible {{available}}",
+    "rolloverForecastTitle": "Traspaso y Previsión Mensual",
+    "rolloverForecastDescription": "Desglose del saldo acumulado de {{month}} y previsión de varios meses.",
+    "forecastHorizon": "Horizonte de previsión",
+    "forecastMonthsOption": "{{count}} meses",
+    "rolloverSummaryTitle": "Resumen de traspaso del mes",
+    "forecastTableTitle": "Previsión de varios meses",
+    "colMonth": "Mes",
+    "colBaseBudget": "Presupuesto base",
+    "colCarryover": "Traspasado",
+    "colAvailable": "Disponible",
+    "colProjectedSpend": "Gasto proyectado",
+    "colRemaining": "Restante",
+    "colVariance": "Variación",
+    "netSurplus": "Superávit neto",
+    "rolloverEnabled": "Traspaso",
+    "rolloverForecastEmpty": "No hay categorías presupuestadas para este mes.",
+    "rolloverForecastError": "No se pudieron cargar los datos de traspaso y previsión."
   },
   "goals": {
     "title": "Objetivos",

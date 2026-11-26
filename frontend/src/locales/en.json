@@ -907,7 +907,8 @@
     "fxRateUsed": "FX rate: {{rate}}",
     "refreshRates": "Refresh FX rates",
     "ratesRefreshed": "FX rates updated",
-    "ratesError": "Failed to update FX rates"
+    "ratesError": "Failed to update FX rates",
+    "budgetExhausted": "Budget exhausted"
   },
   "transactions": {
     "title": "Transactions",
@@ -1613,7 +1614,29 @@
     "copySuccess": "Budgets copied: {{count}}",
     "copyNothing": "No budgets were copied.",
     "copyError": "Could not copy the budgets.",
-    "copyEmptyHint": "Copy a previous month's budgets to start from them."
+    "copyEmptyHint": "Copy a previous month's budgets to start from them.",
+    "rolloverFor": "Rollover unused budget for {{category}}",
+    "rolloverHint": "Carry unused or overspent amounts into next month",
+    "resetCarryover": "Reset carryover",
+    "resetCarryoverPending": "Carryover reset pending",
+    "carryoverBreakdown": "Base {{base}} {{carryover}} = Available {{available}}",
+    "rolloverForecastTitle": "Rollover & Multi-Month Forecast",
+    "rolloverForecastDescription": "Carryover breakdown for {{month}} and projected multi-month balance.",
+    "forecastHorizon": "Forecast horizon",
+    "forecastMonthsOption": "{{count}} months",
+    "rolloverSummaryTitle": "Month rollover summary",
+    "forecastTableTitle": "Multi-month forecast",
+    "colMonth": "Month",
+    "colBaseBudget": "Base budget",
+    "colCarryover": "Carryover",
+    "colAvailable": "Available",
+    "colProjectedSpend": "Projected spend",
+    "colRemaining": "Remaining",
+    "colVariance": "Variance",
+    "netSurplus": "Net surplus",
+    "rolloverEnabled": "Rollover",
+    "rolloverForecastEmpty": "No budgeted categories for this month.",
+    "rolloverForecastError": "Could not load rollover and forecast data."
   },
   "goals": {
     "title": "Goals",

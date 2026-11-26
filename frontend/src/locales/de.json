@@ -907,7 +907,8 @@
     "ratesRefreshed": "Wechselkurse aktualisiert",
     "ratesError": "Fehler beim Aktualisieren der Wechselkurse",
     "cashBalance": "Liquide Mittel",
-    "investmentAccounts": "Anlagekonten"
+    "investmentAccounts": "Anlagekonten",
+    "budgetExhausted": "Budget erschöpft"
   },
   "transactions": {
     "title": "Transaktionen",
@@ -1614,7 +1615,29 @@
     "copySuccess": "Budgets kopiert: {{count}}",
     "copyNothing": "Es wurden keine Budgets kopiert.",
     "copyError": "Die Budgets konnten nicht kopiert werden.",
-    "copyEmptyHint": "Kopiere die Budgets eines früheren Monats, um damit zu starten."
+    "copyEmptyHint": "Kopiere die Budgets eines früheren Monats, um damit zu starten.",
+    "rolloverFor": "Ungenutztes Budget für {{category}} übertragen",
+    "rolloverHint": "Nicht genutzte oder überschrittene Beträge in den nächsten Monat übertragen",
+    "resetCarryover": "Übertrag zurücksetzen",
+    "resetCarryoverPending": "Zurücksetzen ausstehend",
+    "carryoverBreakdown": "Basis {{base}} {{carryover}} = Verfügbar {{available}}",
+    "rolloverForecastTitle": "Übertrag & Mehrmonatsprognose",
+    "rolloverForecastDescription": "Übertragsaufschlüsselung für {{month}} und prognostizierter Mehrmonatssaldo.",
+    "forecastHorizon": "Prognosezeitraum",
+    "forecastMonthsOption": "{{count}} Monate",
+    "rolloverSummaryTitle": "Monatliche Übertragsübersicht",
+    "forecastTableTitle": "Mehrmonatsprognose",
+    "colMonth": "Monat",
+    "colBaseBudget": "Basisbudget",
+    "colCarryover": "Übertrag",
+    "colAvailable": "Verfügbar",
+    "colProjectedSpend": "Geplante Ausgaben",
+    "colRemaining": "Verbleibend",
+    "colVariance": "Abweichung",
+    "netSurplus": "Nettoüberschuss",
+    "rolloverEnabled": "Übertrag",
+    "rolloverForecastEmpty": "Keine budgetierten Kategorien für diesen Monat.",
+    "rolloverForecastError": "Übertrags- und Prognosedaten konnten nicht geladen werden."
   },
   "goals": {
     "title": "Ziele",

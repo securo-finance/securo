@@ -910,7 +910,8 @@
     "ratesRefreshed": "Tassi di cambio aggiornati",
     "ratesError": "Impossibile aggiornare i tassi di cambio",
     "cashBalance": "Liquidità",
-    "investmentAccounts": "Conti di investimento"
+    "investmentAccounts": "Conti di investimento",
+    "budgetExhausted": "Budget esaurito"
   },
   "transactions": {
     "title": "Transazioni",
@@ -1619,7 +1620,29 @@
     "copySuccess": "Budget copiati: {{count}}",
     "copyNothing": "Nessun budget è stato copiato.",
     "copyError": "Impossibile copiare i budget.",
-    "copyEmptyHint": "Copia i budget di un mese precedente per iniziare da quelli."
+    "copyEmptyHint": "Copia i budget di un mese precedente per iniziare da quelli.",
+    "rolloverFor": "Riporta il budget inutilizzato per {{category}}",
+    "rolloverHint": "Riporta gli importi non spesi o in eccesso al mese successivo",
+    "resetCarryover": "Azzera riporto",
+    "resetCarryoverPending": "Azzeramento in sospeso",
+    "carryoverBreakdown": "Base {{base}} {{carryover}} = Disponibile {{available}}",
+    "rolloverForecastTitle": "Riporto e Previsione Plurimensile",
+    "rolloverForecastDescription": "Dettaglio del riporto per {{month}} e saldo previsto su più mesi.",
+    "forecastHorizon": "Orizzonte di previsione",
+    "forecastMonthsOption": "{{count}} mesi",
+    "rolloverSummaryTitle": "Riepilogo riporto del mese",
+    "forecastTableTitle": "Previsione su più mesi",
+    "colMonth": "Mese",
+    "colBaseBudget": "Budget base",
+    "colCarryover": "Riporto",
+    "colAvailable": "Disponibile",
+    "colProjectedSpend": "Spesa prevista",
+    "colRemaining": "Rimanente",
+    "colVariance": "Scostamento",
+    "netSurplus": "Avanzo netto",
+    "rolloverEnabled": "Riporto",
+    "rolloverForecastEmpty": "Nessuna categoria con budget per questo mese.",
+    "rolloverForecastError": "Impossibile caricare i dati di riporto e previsione."
   },
   "goals": {
     "title": "Obiettivi",

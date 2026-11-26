@@ -16,7 +16,18 @@ const api = vi.hoisted(() => ({
   dashboard: { spendingByCategory: vi.fn(), projectedTransactions: vi.fn() },
   transactions: { list: vi.fn() },
   admin: { accountingMode: vi.fn() },
-  budgets: { list: vi.fn(), comparison: vi.fn(), suggestions: vi.fn(), createBatch: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn(), copyMonth: vi.fn() },
+  budgets: {
+    list: vi.fn(),
+    comparison: vi.fn(),
+    rolloverSummary: vi.fn(),
+    forecast: vi.fn(),
+    suggestions: vi.fn(),
+    createBatch: vi.fn(),
+    create: vi.fn(),
+    update: vi.fn(),
+    delete: vi.fn(),
+    copyMonth: vi.fn(),
+  },
   categories: { listIncludingHidden: vi.fn() },
   categoryGroups: { listIncludingHidden: vi.fn() },
 }))
@@ -61,17 +72,18 @@ function category(id: string, name: string, is_hidden = false): Category {
   return { id, user_id: 'u', group_id: 'g', name, icon: 'circle-help', color: '#000', is_system: false, is_hidden, treat_as_transfer: false, is_ignored: false }
 }
 
-function comparisonRow(categoryId: string, actual: number): BudgetVsActual {
+function comparisonRow(categoryId: string, actual: number, overrides: Partial<BudgetVsActual> = {}): BudgetVsActual {
   return {
     category_id: categoryId, category_name: categoryId, category_icon: 'x', category_color: '#000', group_id: null, group_name: null,
     budget_amount: null, actual_amount: actual, projected_amount: actual, prev_month_amount: 0, projected_prev_month_amount: 0,
-    percentage_used: null, is_recurring: false,
+    percentage_used: null, is_recurring: false, rollover: false, reset_rollover: false, carryover_amount: 0, effective_budget_amount: null,
+    ...overrides,
   }
 }
 
-const rent: Budget = { id: 'b-rent', user_id: 'u', category_id: 'rent', amount: 900, month: '2026-08-01', is_recurring: true }
-const hiddenBudget: Budget = { id: 'b-hidden', user_id: 'u', category_id: 'hidden', amount: 120, month: '2026-08-01', is_recurring: true }
-const foodTombstone: Budget = { id: 'b-food-zero', user_id: 'u', category_id: 'food', amount: 0, month: '2026-09-01', is_recurring: true }
+const rent: Budget = { id: 'b-rent', user_id: 'u', category_id: 'rent', amount: 900, month: '2026-08-01', is_recurring: true, rollover: false, reset_rollover: false }
+const hiddenBudget: Budget = { id: 'b-hidden', user_id: 'u', category_id: 'hidden', amount: 120, month: '2026-08-01', is_recurring: true, rollover: false, reset_rollover: false }
+const foodTombstone: Budget = { id: 'b-food-zero', user_id: 'u', category_id: 'food', amount: 0, month: '2026-09-01', is_recurring: true, rollover: false, reset_rollover: false }
 
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ['Date'] })
@@ -104,6 +116,41 @@ beforeEach(() => {
     '2026-08-01': [comparisonRow('food', 2000)],
     '2026-07-01': [comparisonRow('food', 340)],
   }[month] ?? []))
+  api.budgets.rolloverSummary.mockResolvedValue({
+    month: '2026-10-01',
+    total_budgeted: 900,
+    total_spent: 450,
+    total_projected_spent: 450,
+    net_surplus: 450,
+    total_carryover: 0,
+    total_effective_budget: 900,
+    categories: [
+      {
+        category_id: 'rent',
+        category_name: 'Rent',
+        budgeted: 900,
+        actual_spent: 450,
+        projected_spent: 450,
+        remaining: 450,
+        carryover_eligible: true,
+        rollover_enabled: false,
+        reset_rollover: false,
+        carryover_in: 0,
+        effective_budget: 900,
+      },
+    ],
+  })
+  api.budgets.forecast.mockImplementation(async (_start: string, months = 6) => ({
+    forecast_months: months,
+    items: Array.from({ length: months }, (_, i) => ({
+      month: `2026-${String(10 + i).padStart(2, '0')}-01`,
+      projected_budget: 900,
+      projected_spend: 450,
+      projected_variance: 450,
+      carryover_balance: 0,
+      effective_budget: 900,
+    })),
+  }))
   api.budgets.update.mockResolvedValue(rent)
   api.budgets.create.mockResolvedValue(rent)
 })
@@ -139,10 +186,10 @@ describe('Budget settings page', () => {
     await user.click(screen.getByRole('button', { name: t('common.save') }))
 
     await waitFor(() => {
-      expect(api.budgets.create).toHaveBeenCalledWith({ category_id: 'hidden', amount: 120, month: '2026-10-01', is_recurring: false })
-      expect(api.budgets.update).toHaveBeenCalledWith('b-hidden', { amount: 0, effective_month: '2026-11-01' })
+      expect(api.budgets.create).toHaveBeenCalledWith({ category_id: 'hidden', amount: 120, month: '2026-10-01', is_recurring: false, rollover: false })
+      expect(api.budgets.update).toHaveBeenCalledWith('b-hidden', { amount: 0, effective_month: '2026-11-01', rollover: false })
     })
-    expect(api.budgets.update).toHaveBeenCalledWith('b-rent', { amount: 950, effective_month: '2026-10-01' })
+    expect(api.budgets.update).toHaveBeenCalledWith('b-rent', { amount: 950, effective_month: '2026-10-01', rollover: false })
     expect(api.budgets.delete).not.toHaveBeenCalledWith('b-food-zero')
   })
 
@@ -289,7 +336,7 @@ describe('Budget spending in the inline editor', () => {
 
     await user.click(screen.getByRole('button', { name: t('common.save') }))
     await waitFor(() => expect(api.budgets.update).toHaveBeenCalledWith('b-rent', {
-      amount: 600, effective_month: selectedMonth,
+      amount: 600, effective_month: selectedMonth, rollover: false,
     }))
     expect(api.budgets.update).toHaveBeenCalledTimes(1)
   })
@@ -526,7 +573,7 @@ describe('Budget spending in the inline editor', () => {
 
     await user.click(screen.getByRole('button', { name: t('common.save') }))
     await waitFor(() => expect(api.budgets.update).toHaveBeenCalledWith('b-rent', {
-      amount: 1200, effective_month: selectedMonth,
+      amount: 1200, effective_month: selectedMonth, rollover: false,
     }))
   })
 
@@ -662,5 +709,145 @@ describe('Copying the previous month', () => {
     await screen.findByRole('textbox', { name: t('budgets.budgetFor', { category: 'Rent' }) })
 
     expect(screen.queryByRole('button', { name: t('budgets.copyAction') })).not.toBeInTheDocument()
+  })
+})
+
+describe('Rollover controls and multi-month forecast panel', () => {
+  it('stages rollover toggles, renders Base + Carryover = Available, and allows resetting carryover', async () => {
+    api.budgets.list.mockResolvedValue([{ ...rent, rollover: true }])
+    api.budgets.comparison.mockImplementation(async (month: string) => {
+      if (month === '2026-10-01') {
+        return [
+          comparisonRow('rent', 450, {
+            budget_amount: 900,
+            rollover: true,
+            carryover_amount: 100,
+            effective_budget_amount: 1000,
+            percentage_used: 45,
+          }),
+        ]
+      }
+      return []
+    })
+    mockSpending(450)
+    const { user } = renderWithProviders(<BudgetsPage />)
+
+    await screen.findByText('$450.00')
+    // Available = 900 + 100 = 1000 -> 450 / 1000 = 45%
+    expect(budgetRow().getByRole('progressbar')).toHaveAttribute('aria-valuenow', '45')
+    expect(budgetRow().getByText(t('budgets.carryoverBreakdown', {
+      base: '$900.00',
+      carryover: '+$100.00',
+      available: '$1,000.00',
+    }))).toBeInTheDocument()
+
+    const rolloverBtn = screen.getByRole('button', { name: t('budgets.rolloverFor', { category: 'Rent' }) })
+    expect(rolloverBtn).toHaveAttribute('aria-pressed', 'true')
+
+    // Click Reset carryover: previews Available = Base (450 / 900 = 50%) before Save
+    const resetBtn = budgetRow().getByRole('button', { name: t('budgets.resetCarryover') })
+    await user.click(resetBtn)
+    expect(budgetRow().getByRole('progressbar')).toHaveAttribute('aria-valuenow', '50')
+    expectNoBudgetWrites()
+
+    await user.click(screen.getByRole('button', { name: t('common.save') }))
+    await waitFor(() => expect(api.budgets.update).toHaveBeenCalledWith('b-rent', {
+      amount: 900, effective_month: selectedMonth, rollover: true, reset_rollover: true,
+    }))
+  })
+
+  it('toggles rollover on an existing budget without changing amount and restores on Cancel', async () => {
+    mockSpending(450)
+    const { user } = renderWithProviders(<BudgetsPage />)
+    await screen.findByText('$450.00')
+
+    const rolloverBtn = screen.getByRole('button', { name: t('budgets.rolloverFor', { category: 'Rent' }) })
+    expect(rolloverBtn).toHaveAttribute('aria-pressed', 'false')
+    await user.click(rolloverBtn)
+    expect(rolloverBtn).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('button', { name: t('common.save') })).toBeEnabled()
+
+    await user.click(screen.getByRole('button', { name: t('common.cancel') }))
+    expect(rolloverBtn).toHaveAttribute('aria-pressed', 'false')
+    expect(screen.getByRole('button', { name: t('common.save') })).toBeDisabled()
+
+    await user.click(rolloverBtn)
+    await user.click(screen.getByRole('button', { name: t('common.save') }))
+    await waitFor(() => expect(api.budgets.update).toHaveBeenCalledWith('b-rent', {
+      amount: 900, effective_month: selectedMonth, rollover: true,
+    }))
+  })
+
+  it('disables rollover toggle and hides reset carryover for read-only viewer while keeping forecast accessible', async () => {
+    api.canWrite = false
+    api.budgets.list.mockResolvedValue([{ ...rent, rollover: true }])
+    api.budgets.comparison.mockImplementation(async (month: string) => {
+      if (month === '2026-10-01') {
+        return [comparisonRow('rent', 450, { budget_amount: 900, rollover: true, carryover_amount: 100, effective_budget_amount: 1000 })]
+      }
+      return []
+    })
+    mockSpending(450)
+
+    const { user } = renderWithProviders(<BudgetsPage />)
+    await screen.findByText('$450.00')
+
+    expect(screen.getByRole('button', { name: t('budgets.rolloverFor', { category: 'Rent' }) })).toBeDisabled()
+    expect(budgetRow().queryByRole('button', { name: t('budgets.resetCarryover') })).not.toBeInTheDocument()
+
+    const toggle = screen.getByRole('button', { name: new RegExp(t('budgets.rolloverForecastTitle')) })
+    expect(toggle).toHaveAttribute('aria-expanded', 'false')
+    expect(api.budgets.rolloverSummary).not.toHaveBeenCalled()
+    expect(api.budgets.forecast).not.toHaveBeenCalled()
+
+    await user.click(toggle)
+    expect(toggle).toHaveAttribute('aria-expanded', 'true')
+    await waitFor(() => {
+      expect(api.budgets.rolloverSummary).toHaveBeenCalledWith('2026-10-01')
+      expect(api.budgets.forecast).toHaveBeenCalledWith('2026-10-01', 6)
+    })
+    expect(await screen.findByText(t('budgets.rolloverSummaryTitle'))).toBeInTheDocument()
+    expect(screen.getByText(t('budgets.forecastTableTitle'))).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: t('budgets.forecastMonthsOption', { count: 12 }) }))
+    await waitFor(() => expect(api.budgets.forecast).toHaveBeenCalledWith('2026-10-01', 12))
+  })
+
+  it('masks carryover breakdown and forecast panel amounts in privacy mode', async () => {
+    api.privacyMode = true
+    api.mask.mockImplementation(() => '••••')
+    api.budgets.list.mockResolvedValue([{ ...rent, rollover: true }])
+    api.budgets.comparison.mockImplementation(async (month: string) => {
+      if (month === '2026-10-01') {
+        return [comparisonRow('rent', 450, { budget_amount: 900, rollover: true, carryover_amount: 100, effective_budget_amount: 1000 })]
+      }
+      return []
+    })
+    mockSpending(450)
+
+    const { user } = renderWithProviders(<BudgetsPage />)
+    await screen.findByRole('textbox', { name: t('budgets.budgetFor', { category: 'Rent' }) })
+    await user.click(screen.getByRole('button', { name: new RegExp(t('budgets.rolloverForecastTitle')) }))
+    await screen.findByText(t('budgets.rolloverSummaryTitle'))
+
+    expect(screen.queryByText('$900.00')).not.toBeInTheDocument()
+    expect(screen.queryByText('+$100.00')).not.toBeInTheDocument()
+    expect(screen.queryByText('$1,000.00')).not.toBeInTheDocument()
+  })
+
+  it('keeps the save bar docked when clean so it never overlaps the forecast panel, and fixes it when dirty', async () => {
+    mockSpending(450)
+    const { user } = renderWithProviders(<BudgetsPage />)
+    await screen.findByText('$450.00')
+
+    const saveBar = screen.getByTestId('budget-save-bar')
+    expect(saveBar).not.toHaveClass('fixed')
+    expect(saveBar).toHaveClass('mt-4')
+
+    await user.click(screen.getByRole('button', { name: t('budgets.rolloverFor', { category: 'Rent' }) }))
+    expect(saveBar).toHaveClass('fixed', 'bottom-0')
+
+    await user.click(screen.getByRole('button', { name: t('common.cancel') }))
+    expect(saveBar).not.toHaveClass('fixed')
   })
 })

@@ -23,15 +23,18 @@ from app.schemas.budget import (
     BudgetUpdate,
     BudgetVsActual,
 )
-from app.services.viewer_currency import viewer_currency
+from app.services.viewer_currency import ViewerCurrency, viewer_currency
 from app.services._query_filters import (
     counts_as_user_pnl,
     forecast_owner_share_fractions,
     line_category_id,
     line_primary_or_amount,
     owner_split_offset_by_category,
+    owner_split_offset_by_category_monthly,
     reporting_date_col,
+    reporting_date_value,
     user_pnl_parts,
+    viewer_shared_spending_by_category_monthly,
     with_category_lines,
 )
 from app.services.admin_service import get_credit_card_accounting_mode
@@ -41,6 +44,13 @@ from app.services.dashboard_service import (
 )
 from app.services.fx_rate_service import convert
 from app.core.config import get_settings
+
+MAX_ROLLOVER_LOOKBACK_MONTHS = 24
+_CENT = Decimal("0.01")
+
+
+def _q(value: Decimal) -> Decimal:
+    return value.quantize(_CENT, rounding=ROUND_HALF_UP)
 
 
 async def _primary_currency(session: AsyncSession, user_id: uuid.UUID) -> str:
@@ -97,14 +107,18 @@ async def budget_reads(
 
 async def _build_budget_map(
     session: AsyncSession, workspace_id: uuid.UUID, month_start: date
-) -> dict[str, tuple[Decimal, bool, Optional[str]]]:
-    """Build a map of category_id -> (amount, is_recurring, currency) for the given month.
+) -> dict[str, tuple[Decimal, bool, Optional[str], bool, bool]]:
+    """Build a map of category_id -> (amount, is_recurring, currency, rollover, reset_rollover).
 
     Resolution order:
     1. Month-specific override (is_recurring=false, month=M) takes priority
     2. Most recent recurring default (is_recurring=true, month<=M) as fallback
+
+    For recurring rows, ``reset_rollover`` applies ONLY in the exact month
+    where ``Budget.month == month_start`` so a one-month boundary reset does
+    not clear carryover in every subsequent month.
     """
-    budget_map: dict[str, tuple[Decimal, bool, Optional[str]]] = {}
+    budget_map: dict[str, tuple[Decimal, bool, Optional[str], bool, bool]] = {}
 
     # Query 1: Get effective recurring defaults (most recent per category where month <= M)
     # Use a subquery to get the max month per category for recurring budgets
@@ -135,20 +149,35 @@ async def _build_budget_map(
             Budget.workspace_id == workspace_id,
             Budget.is_recurring == True,  # noqa: E712
         )
+        .order_by(Budget.created_at.asc(), Budget.id.asc())
     )
     for b in recurring_result.scalars().all():
-        budget_map[str(b.category_id)] = (b.amount, True, b.currency)
+        budget_map[str(b.category_id)] = (
+            b.amount,
+            True,
+            b.currency,
+            bool(b.rollover),
+            bool(b.reset_rollover and b.month == month_start),
+        )
 
     # Query 2: Month-specific overrides (take priority over recurring)
     overrides_result = await session.execute(
-        select(Budget).where(
+        select(Budget)
+        .where(
             Budget.workspace_id == workspace_id,
             Budget.is_recurring == False,  # noqa: E712
             Budget.month == month_start,
         )
+        .order_by(Budget.created_at.asc(), Budget.id.asc())
     )
     for b in overrides_result.scalars().all():
-        budget_map[str(b.category_id)] = (b.amount, False, b.currency)
+        budget_map[str(b.category_id)] = (
+            b.amount,
+            False,
+            b.currency,
+            bool(b.rollover),
+            bool(b.reset_rollover),
+        )
 
     return budget_map
 
@@ -203,10 +232,28 @@ async def get_budgets(
             Budget.is_recurring == True,  # noqa: E712
         )
     )
-    recurring = [
-        b for b in recurring_result.scalars().all()
-        if str(b.category_id) not in override_category_ids
-    ]
+    recurring: list[Budget] = []
+    for b in recurring_result.scalars().all():
+        if str(b.category_id) in override_category_ids:
+            continue
+        if b.reset_rollover and b.month != month_start:
+            # Project reset_rollover=False for inherited recurring rows without
+            # mutating the session-tracked ORM instance in the identity map.
+            b = Budget(
+                id=b.id,
+                user_id=b.user_id,
+                workspace_id=b.workspace_id,
+                category_id=b.category_id,
+                amount=b.amount,
+                month=b.month,
+                is_recurring=b.is_recurring,
+                rollover=b.rollover,
+                reset_rollover=False,
+                currency=b.currency,
+                amount_primary=b.amount_primary,
+                created_at=b.created_at,
+            )
+        recurring.append(b)
 
     return sorted(overrides + recurring, key=lambda b: b.month, reverse=True)
 
@@ -251,6 +298,8 @@ async def create_budget(
         currency=await _primary_currency(session, user_id),
         month=data.month.replace(day=1),
         is_recurring=data.is_recurring,
+        rollover=data.rollover,
+        reset_rollover=data.reset_rollover,
     )
     session.add(budget)
     try:
@@ -291,6 +340,10 @@ async def update_budget(
                 currency=currency,
                 month=effective,
                 is_recurring=True,
+                rollover=data.rollover if data.rollover is not None else budget.rollover,
+                reset_rollover=(
+                    data.reset_rollover if data.reset_rollover is not None else False
+                ),
             )
             session.add(new_budget)
             await session.commit()
@@ -351,6 +404,7 @@ async def get_budget_vs_actual(
 
     if not all_categories:
         return []
+    category_by_id = {str(category.id): category for category, _ in all_categories}
 
     # Get budgets for this month (with recurring resolution)
     budget_map = await _build_budget_map(session, workspace_id, month_start)
@@ -599,30 +653,50 @@ async def get_budget_vs_actual(
         if total <= 0:
             del projected_prev_spending_map[cat_id]
 
+    carryover_map = await _compute_carryover_map(
+        session,
+        workspace_id,
+        user_id,
+        month_start,
+        budget_map,
+        category_by_id,
+        primary_currency,
+        accounting_mode,
+        viewer=viewer,
+    )
+
     comparisons = []
     for category, group in all_categories:
         cat_id = str(category.id)
-        actual = spending_map.get(cat_id, Decimal("0"))
-        projected = projected_spending_map.get(cat_id, Decimal("0"))
-        prev_actual = prev_spending_map.get(cat_id, Decimal("0"))
-        projected_prev = projected_prev_spending_map.get(cat_id, Decimal("0"))
+        actual = _q(Decimal(str(spending_map.get(cat_id, Decimal("0.00")))))
+        projected = _q(Decimal(str(projected_spending_map.get(cat_id, Decimal("0.00")))))
+        prev_actual = _q(Decimal(str(prev_spending_map.get(cat_id, Decimal("0.00")))))
+        projected_prev = _q(Decimal(str(projected_prev_spending_map.get(cat_id, Decimal("0.00")))))
         budget_entry = budget_map.get(cat_id)
         budget_amount = None
         is_recurring = False
+        rollover = False
+        reset_rollover = False
         if budget_entry:
-            amount, is_recurring, currency = budget_entry
+            amount, is_recurring, currency, rollover, reset_rollover = budget_entry
             # Spending is in the viewer's currency, so the limit is too.
-            budget_amount = await amount_in_currency(
-                session, amount, currency, primary_currency, month_start
+            budget_amount = _q(
+                await amount_in_currency(
+                    session, amount, currency, primary_currency, month_start
+                )
             )
+        carryover_amount = _q(carryover_map.get(cat_id, Decimal("0.00")))
+        effective_budget_amount = (
+            _q(budget_amount + carryover_amount) if budget_amount is not None else None
+        )
 
         # Skip categories with no spending in either month and no budget
         if actual == 0 and projected == 0 and prev_actual == 0 and projected_prev == 0 and budget_amount is None:
             continue
 
         percentage = None
-        if budget_amount and budget_amount > 0:
-            percentage = round(float(projected / budget_amount * 100), 1)
+        if effective_budget_amount is not None and effective_budget_amount > 0:
+            percentage = round(float(projected / effective_budget_amount * 100), 1)
 
         comparisons.append(BudgetVsActual(
             category_id=category.id,
@@ -638,9 +712,364 @@ async def get_budget_vs_actual(
             projected_prev_month_amount=projected_prev,
             percentage_used=percentage,
             is_recurring=is_recurring,
+            rollover=rollover,
+            reset_rollover=reset_rollover,
+            carryover_amount=carryover_amount,
+            effective_budget_amount=effective_budget_amount,
         ))
 
     return sorted(comparisons, key=lambda x: float(x.actual_amount), reverse=True)
+
+
+async def _resolve_budget_maps_in_range(
+    session: AsyncSession,
+    workspace_id: uuid.UUID,
+    range_start: date,
+    range_end: date,
+) -> dict[date, dict[str, tuple[Decimal, bool, Optional[str], bool, bool]]]:
+    """Resolve effective budgets per category for every month in ``[range_start, range_end)`` in 2 queries."""
+    start = range_start.replace(day=1)
+    end = range_end.replace(day=1)
+    months: list[date] = []
+    cur = start
+    while cur < end:
+        months.append(cur)
+        cur = _add_months(cur, 1)
+    if not months:
+        return {}
+
+    recurring_result = await session.execute(
+        select(Budget)
+        .where(
+            Budget.workspace_id == workspace_id,
+            Budget.is_recurring == True,  # noqa: E712
+            Budget.month < end,
+        )
+        .order_by(Budget.month.asc(), Budget.created_at.asc(), Budget.id.asc())
+    )
+    recurring_by_cat: dict[str, list[Budget]] = {}
+    for b in recurring_result.scalars().all():
+        recurring_by_cat.setdefault(str(b.category_id), []).append(b)
+
+    overrides_result = await session.execute(
+        select(Budget)
+        .where(
+            Budget.workspace_id == workspace_id,
+            Budget.is_recurring == False,  # noqa: E712
+            Budget.month >= start,
+            Budget.month < end,
+        )
+        .order_by(Budget.created_at.asc(), Budget.id.asc())
+    )
+    overrides_by_month: dict[date, list[Budget]] = {}
+    for b in overrides_result.scalars().all():
+        overrides_by_month.setdefault(b.month, []).append(b)
+
+    maps: dict[date, dict[str, tuple[Decimal, bool, Optional[str], bool, bool]]] = {
+        m: {} for m in months
+    }
+    for cat_id, rec_rows in recurring_by_cat.items():
+        idx = -1
+        for m in months:
+            while idx + 1 < len(rec_rows) and rec_rows[idx + 1].month <= m:
+                idx += 1
+            if idx >= 0:
+                b = rec_rows[idx]
+                maps[m][cat_id] = (
+                    b.amount,
+                    True,
+                    b.currency,
+                    bool(b.rollover),
+                    bool(b.reset_rollover and b.month == m),
+                )
+
+    for m, ov_rows in overrides_by_month.items():
+        if m not in maps:
+            continue
+        for b in ov_rows:
+            maps[m][str(b.category_id)] = (
+                b.amount,
+                False,
+                b.currency,
+                bool(b.rollover),
+                bool(b.reset_rollover),
+            )
+
+    return maps
+
+
+async def _compute_monthly_spending_map(
+    session: AsyncSession,
+    workspace_id: uuid.UUID,
+    user_id: uuid.UUID,
+    needed_months: set[date],
+    category_by_id: dict[str, Category],
+    primary_currency: str,
+    accounting_mode: str,
+    viewer: Optional[ViewerCurrency] = None,
+) -> dict[date, dict[str, Decimal]]:
+    """Compute batched 5-layer monthly net spending per category for ``needed_months``.
+
+    Applies the same base as ``get_budget_vs_actual``: accrual/cash reporting
+    dates, viewer currency conversion, owner split offsets, shared workspace
+    shares, and ``app_today()`` cutoff so recurring/forecast projections only
+    apply to months with ``month_end > app_today()``.
+    """
+    if not needed_months:
+        return {}
+
+    if viewer is None:
+        viewer = await viewer_currency(session, primary_currency)
+
+    min_start = min(needed_months)
+    max_end = _add_months(max(needed_months), 1)
+    today = app_today()
+    report_date = reporting_date_col(accounting_mode)
+
+    # Layer 1: Local posted PnL rolled up by month in Python before net > 0 clamp
+    daily_result = await session.execute(
+        with_category_lines(
+            select(
+                line_category_id(),
+                report_date,
+                func.sum(
+                    case(
+                        (Transaction.type == "debit", line_primary_or_amount(viewer)),
+                        (Transaction.type == "credit", -line_primary_or_amount(viewer)),
+                        else_=0,
+                    )
+                ),
+            ).select_from(Transaction)
+        )
+        .where(
+            Transaction.workspace_id == workspace_id,
+            report_date >= min_start,
+            report_date < max_end,
+            line_category_id().isnot(None),
+            report_date <= today,
+            Transaction.status == "posted",
+            counts_as_user_pnl(line_category_id()),
+        )
+        .group_by(line_category_id(), report_date)
+    )
+    raw_posted: dict[date, dict[str, Decimal]] = {}
+    for cat_uuid, d, net in daily_result.all():
+        if isinstance(d, str):
+            d = date.fromisoformat(d)
+        m_start = d.replace(day=1)
+        if m_start not in needed_months:
+            continue
+        bucket = raw_posted.setdefault(m_start, {})
+        cat_id = str(cat_uuid)
+        bucket[cat_id] = bucket.get(cat_id, Decimal("0")) + Decimal(str(net or 0))
+
+    spending_by_month: dict[date, dict[str, Decimal]] = {}
+    for m_start, cat_totals in raw_posted.items():
+        for cat_id, net in cat_totals.items():
+            if net > 0:
+                spending_by_month.setdefault(m_start, {})[cat_id] = net
+
+    # Layer 2: Subtract non-owner shares on owner-side split transactions
+    own_offsets = await owner_split_offset_by_category_monthly(
+        session,
+        user_id,
+        min_start,
+        max_end,
+        use_effective_date=(accounting_mode == "accrual"),
+        primary_currency=primary_currency,
+        workspace_id=workspace_id,
+    )
+    for m_start, cat_offsets in own_offsets.items():
+        if m_start not in needed_months:
+            continue
+        m_map = spending_by_month.get(m_start)
+        if not m_map:
+            continue
+        for cat_uuid, total in cat_offsets.items():
+            if cat_uuid is None:
+                continue
+            cat_id = str(cat_uuid)
+            if cat_id in m_map:
+                m_map[cat_id] -= Decimal(str(total))
+                if m_map[cat_id] <= 0:
+                    m_map.pop(cat_id)
+
+    # Layer 3: Cross-workspace shared spending in primary currency
+    shared_monthly = await viewer_shared_spending_by_category_monthly(
+        session,
+        user_id,
+        min_start,
+        max_end,
+        use_effective_date=(accounting_mode == "accrual"),
+        primary_currency=primary_currency,
+        exclude_workspace_id=workspace_id,
+    )
+    for m_start, cat_totals in shared_monthly.items():
+        if m_start not in needed_months:
+            continue
+        for cat_uuid, total in cat_totals.items():
+            if cat_uuid is None:
+                continue
+            cat_id = str(cat_uuid)
+            cat_obj = category_by_id.get(cat_id)
+            if cat_obj is None or cat_obj.treat_as_transfer or cat_obj.is_ignored:
+                continue
+            m_map = spending_by_month.setdefault(m_start, {})
+            m_map[cat_id] = m_map.get(cat_id, Decimal("0")) + Decimal(str(total))
+
+    # Layers 4 & 5: Recurring & forecast projections only when month_end > app_today()
+    proj_months = {m for m in needed_months if _add_months(m, 1) > today}
+    if proj_months:
+        p_start = min(proj_months)
+        p_end = _add_months(max(proj_months), 1)
+        projections = await _get_recurring_projections(
+            session,
+            workspace_id,
+            p_start,
+            p_end,
+            accounting_mode=accounting_mode,
+        )
+        for proj in projections:
+            if proj["type"] != "debit" or not proj["category_id"]:
+                continue
+            m_start = proj["date"].replace(day=1)
+            if m_start not in proj_months:
+                continue
+            cat_id = str(proj["category_id"])
+            converted, _ = await convert(
+                session, Decimal(str(proj["amount"])), proj["currency"], primary_currency,
+            )
+            m_map = spending_by_month.setdefault(m_start, {})
+            m_map[cat_id] = m_map.get(cat_id, Decimal("0")) + converted
+
+        forecast_transactions = await _get_forecast_transactions(
+            session,
+            workspace_id,
+            p_start,
+            p_end,
+            range_date_col=report_date,
+        )
+        forecast_fractions = await forecast_owner_share_fractions(
+            session, user_id, forecast_transactions
+        )
+        for tx in forecast_transactions:
+            if tx.type != "debit":
+                continue
+            m_start = reporting_date_value(tx, accounting_mode).replace(day=1)
+            if m_start not in proj_months:
+                continue
+            parts = [part for part in user_pnl_parts(tx) if part[0] is not None]
+            if not parts:
+                continue
+            amount = await viewer.convert(
+                session, tx.user_id, tx.amount_primary, tx.date,
+                currency=tx.currency, amount=tx.amount,
+            )
+            if amount is not None:
+                converted = abs(Decimal(str(amount)))
+            else:
+                converted, _ = await convert(
+                    session, Decimal(str(abs(tx.amount))), tx.currency, primary_currency,
+                )
+            converted *= forecast_fractions.get(tx.id, 1)
+            m_map = spending_by_month.setdefault(m_start, {})
+            for part_category_id, _, ratio in parts:
+                cat_id = str(part_category_id)
+                m_map[cat_id] = m_map.get(cat_id, Decimal("0")) + converted * ratio
+
+        for m_start in proj_months:
+            m_map = spending_by_month.get(m_start)
+            if not m_map:
+                continue
+            for cat_id, total in list(m_map.items()):
+                if total <= 0:
+                    del m_map[cat_id]
+
+    for m_start in list(spending_by_month.keys()):
+        m_map = spending_by_month[m_start]
+        for cat_id in list(m_map.keys()):
+            quantized = _q(m_map[cat_id])
+            if quantized <= 0:
+                del m_map[cat_id]
+            else:
+                m_map[cat_id] = quantized
+
+    return spending_by_month
+
+
+async def _compute_carryover_map(
+    session: AsyncSession,
+    workspace_id: uuid.UUID,
+    user_id: uuid.UUID,
+    target_month: date,
+    target_budget_map: dict[str, tuple[Decimal, bool, Optional[str], bool, bool]],
+    category_by_id: dict[str, Category],
+    primary_currency: str,
+    accounting_mode: str,
+    viewer: Optional[ViewerCurrency] = None,
+) -> dict[str, Decimal]:
+    """Compute carryover entering ``target_month`` for opt-in rollover categories.
+
+    Returns ``{}`` with zero extra queries when no category in ``target_budget_map``
+    has ``amount > 0``, ``rollover=True``, and ``reset_rollover=False``.
+    """
+    candidates = [
+        cat_id
+        for cat_id, (amt, _rec, _cur, rollover, reset) in target_budget_map.items()
+        if amt > 0 and rollover and not reset
+    ]
+    if not candidates:
+        return {}
+
+    lookback_start = _add_months(target_month, -MAX_ROLLOVER_LOOKBACK_MONTHS)
+    budget_maps = await _resolve_budget_maps_in_range(
+        session, workspace_id, lookback_start, target_month
+    )
+
+    chain_by_cat: dict[str, list[date]] = {}
+    for cat_id in candidates:
+        months_list: list[date] = []
+        for offset in range(1, MAX_ROLLOVER_LOOKBACK_MONTHS + 1):
+            m = _add_months(target_month, -offset)
+            entry = budget_maps.get(m, {}).get(cat_id)
+            if entry is None:
+                break
+            b_amt, _b_rec, _b_cur, b_rollover, b_reset = entry
+            if b_amt <= 0 or not b_rollover:
+                break
+            months_list.append(m)
+            if b_reset:
+                break
+        if months_list:
+            chain_by_cat[cat_id] = months_list
+
+    all_needed_months = {m for months_list in chain_by_cat.values() for m in months_list}
+    if not all_needed_months:
+        return {}
+
+    spending_by_month = await _compute_monthly_spending_map(
+        session,
+        workspace_id,
+        user_id,
+        all_needed_months,
+        category_by_id,
+        primary_currency,
+        accounting_mode,
+        viewer=viewer,
+    )
+
+    carryover_map: dict[str, Decimal] = {}
+    for cat_id, months_list in chain_by_cat.items():
+        carry = Decimal("0.00")
+        for m in reversed(months_list):
+            b_amt, _b_rec, b_cur, _b_rollover, _b_reset = budget_maps[m][cat_id]
+            base = _q(
+                await amount_in_currency(session, b_amt, b_cur, primary_currency, m)
+            )
+            spend = _q(spending_by_month.get(m, {}).get(cat_id, Decimal("0.00")))
+            carry = _q(carry + base - spend)
+        carryover_map[cat_id] = carry
+    return carryover_map
 
 
 def _add_months(d: date, n: int) -> date:
@@ -872,6 +1301,12 @@ async def create_budgets_batch(
                 currency=currency,
                 month=month,
                 is_recurring=data.is_recurring,
+                rollover=item.rollover if item.rollover is not None else data.rollover,
+                reset_rollover=(
+                    item.reset_rollover
+                    if item.reset_rollover is not None
+                    else data.reset_rollover
+                ),
             )
         )
     if not budgets:
@@ -950,14 +1385,19 @@ async def copy_monthly_budgets(
     multiplier = Decimal("1.0") + (adjustment_percentage / Decimal("100.0"))
     changed: list[Budget] = []
 
-    # A copy keeps the source limit's currency, so it is the same limit.
-    for cat_id, (amount, _is_recurring, currency) in source_map.items():
+    # A copy keeps the source limit's currency and rollover preference.
+    for cat_id, (amount, _is_recurring, currency, rollover, _reset_rollover) in source_map.items():
         new_amount = (amount * multiplier).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
         if new_amount > MAX_BUDGET_AMOUNT:
             raise ValueError("Adjusted budget amount is too large")
         if cat_id in target_map and (
             not overwrite_existing
-            or (target_map[cat_id][0], target_map[cat_id][2]) == (new_amount, currency)
+            or (
+                target_map[cat_id][0],
+                target_map[cat_id][2],
+                target_map[cat_id][3],
+            )
+            == (new_amount, currency, rollover)
         ):
             continue
         overrides = target_overrides.get(cat_id)
@@ -965,6 +1405,8 @@ async def copy_monthly_budgets(
             for override in overrides:
                 override.amount = new_amount
                 override.currency = currency
+                override.rollover = rollover
+                override.reset_rollover = False
                 changed.append(override)
         else:
             new_budget = Budget(
@@ -975,6 +1417,8 @@ async def copy_monthly_budgets(
                 currency=currency,
                 month=target_first,
                 is_recurring=False,
+                rollover=rollover,
+                reset_rollover=False,
             )
             db.add(new_budget)
             changed.append(new_budget)
@@ -997,25 +1441,35 @@ async def get_budget_rollover_summary(
     the recurring and planned transactions still due that month), so a month
     in progress or in the future isn't reported as mostly unspent.
 
-    Only categories with a budget that month are included, in the list and in
-    the totals: ``net_surplus`` is the headroom left across the budget, not
-    the whole month's result, so spending in unbudgeted categories never
-    turns it into a deficit.
+    Only categories with a positive budget that month are included, in the list
+    and in the totals: ``net_surplus`` is the headroom left across the effective
+    budget (base + carryover), so spending in unbudgeted categories or cleared
+    zero tombstones never turns it into a deficit.
     """
     vs_actuals = await get_budget_vs_actual(db, workspace_id, user_id, month)
     total_budgeted = Decimal("0.00")
+    total_carryover = Decimal("0.00")
+    total_effective_budget = Decimal("0.00")
     total_spent = Decimal("0.00")
     total_projected = Decimal("0.00")
     categories_summary = []
 
     for item in vs_actuals:
-        if item.budget_amount is None:
+        if item.budget_amount is None or item.budget_amount <= 0:
             continue
-        budgeted = item.budget_amount
-        spent = item.actual_amount
-        projected = item.projected_amount
-        remaining = budgeted - projected
+        budgeted = _q(item.budget_amount)
+        carryover_in = _q(item.carryover_amount)
+        effective_budget = _q(
+            item.effective_budget_amount
+            if item.effective_budget_amount is not None
+            else budgeted + carryover_in
+        )
+        spent = _q(item.actual_amount)
+        projected = _q(item.projected_amount)
+        remaining = _q(effective_budget - projected)
         total_budgeted += budgeted
+        total_carryover += carryover_in
+        total_effective_budget += effective_budget
         total_spent += spent
         total_projected += projected
         categories_summary.append({
@@ -1026,14 +1480,20 @@ async def get_budget_rollover_summary(
             "projected_spent": projected,
             "remaining": remaining,
             "carryover_eligible": remaining > Decimal("0.00"),
+            "rollover_enabled": item.rollover,
+            "reset_rollover": item.reset_rollover,
+            "carryover_in": carryover_in,
+            "effective_budget": effective_budget,
         })
 
     return {
         "month": month.replace(day=1),
-        "total_budgeted": total_budgeted,
-        "total_spent": total_spent,
-        "total_projected_spent": total_projected,
-        "net_surplus": total_budgeted - total_projected,
+        "total_budgeted": _q(total_budgeted),
+        "total_spent": _q(total_spent),
+        "total_projected_spent": _q(total_projected),
+        "net_surplus": _q(total_effective_budget - total_projected),
+        "total_carryover": _q(total_carryover),
+        "total_effective_budget": _q(total_effective_budget),
         "categories": categories_summary,
     }
 
@@ -1045,21 +1505,107 @@ async def get_multi_month_forecast(
     start_month: date,
     num_months: int = 6,
 ) -> dict:
-    items = []
-    m_date = start_month.replace(day=1)
+    start = start_month.replace(day=1)
+    if num_months <= 0:
+        return {"forecast_months": num_months, "items": []}
 
+    cats_result = await db.execute(
+        select(Category).where(Category.workspace_id == workspace_id)
+    )
+    category_by_id = {str(c.id): c for c in cats_result.scalars().all()}
+    if not category_by_id:
+        items = []
+        m_date = start
+        for _ in range(num_months):
+            items.append({
+                "month": m_date,
+                "projected_budget": Decimal("0.00"),
+                "carryover_balance": Decimal("0.00"),
+                "effective_budget": Decimal("0.00"),
+                "projected_spend": Decimal("0.00"),
+                "projected_variance": Decimal("0.00"),
+            })
+            m_date = _add_months(m_date, 1)
+        return {"forecast_months": num_months, "items": items}
+
+    primary_currency = await _primary_currency(db, user_id)
+    viewer = await viewer_currency(db, primary_currency)
+    accounting_mode = await get_credit_card_accounting_mode(db)
+
+    end = _add_months(start, num_months)
+    horizon_budget_maps = await _resolve_budget_maps_in_range(db, workspace_id, start, end)
+    start_budget_map = horizon_budget_maps.get(start, {})
+
+    running_carryover = await _compute_carryover_map(
+        db,
+        workspace_id,
+        user_id,
+        start,
+        start_budget_map,
+        category_by_id,
+        primary_currency,
+        accounting_mode,
+        viewer=viewer,
+    )
+
+    active_months = {
+        m
+        for m, bmap in horizon_budget_maps.items()
+        if any(entry[0] > 0 and cat_id in category_by_id for cat_id, entry in bmap.items())
+    }
+    spending_by_month = await _compute_monthly_spending_map(
+        db,
+        workspace_id,
+        user_id,
+        active_months,
+        category_by_id,
+        primary_currency,
+        accounting_mode,
+        viewer=viewer,
+    )
+
+    items = []
+    m_date = start
     for _ in range(num_months):
-        summary = await get_budget_rollover_summary(db, workspace_id, user_id, m_date)
+        bmap = horizon_budget_maps.get(m_date, {})
+        m_spend_map = spending_by_month.get(m_date, {})
+        total_base = Decimal("0.00")
+        total_carryover = Decimal("0.00")
+        total_effective = Decimal("0.00")
+        total_spend = Decimal("0.00")
+        next_carryover: dict[str, Decimal] = {}
+
+        for cat_id, (base, _rec, base_cur, r_rollover, r_reset) in bmap.items():
+            if cat_id not in category_by_id or base <= 0:
+                continue
+            base_q = _q(
+                await amount_in_currency(db, base, base_cur, primary_currency, m_date)
+            )
+            carry_in = (
+                Decimal("0.00")
+                if (not r_rollover or r_reset)
+                else _q(running_carryover.get(cat_id, Decimal("0.00")))
+            )
+            eff = _q(base_q + carry_in)
+            spend = _q(m_spend_map.get(cat_id, Decimal("0.00")))
+            variance = _q(eff - spend)
+            total_base += base_q
+            total_carryover += carry_in
+            total_effective += eff
+            total_spend += spend
+            if r_rollover:
+                next_carryover[cat_id] = variance
+
+        running_carryover = next_carryover
         items.append({
             "month": m_date,
-            "projected_budget": summary["total_budgeted"],
-            "projected_spend": summary["total_projected_spent"],
-            "projected_variance": summary["net_surplus"],
+            "projected_budget": _q(total_base),
+            "carryover_balance": _q(total_carryover),
+            "effective_budget": _q(total_effective),
+            "projected_spend": _q(total_spend),
+            "projected_variance": _q(total_effective - total_spend),
         })
-        if m_date.month == 12:
-            m_date = m_date.replace(year=m_date.year + 1, month=1)
-        else:
-            m_date = m_date.replace(month=m_date.month + 1)
+        m_date = _add_months(m_date, 1)
 
     return {
         "forecast_months": num_months,

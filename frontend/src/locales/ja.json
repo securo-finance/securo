@@ -907,7 +907,8 @@
     "ratesRefreshed": "為替レートを更新しました",
     "ratesError": "為替レートの更新に失敗しました",
     "cashBalance": "現金",
-    "investmentAccounts": "投資口座"
+    "investmentAccounts": "投資口座",
+    "budgetExhausted": "予算超過"
   },
   "transactions": {
     "title": "取引",
@@ -1613,7 +1614,29 @@
     "copySuccess": "コピーした予算: {{count}}",
     "copyNothing": "コピーされた予算はありません。",
     "copyError": "予算をコピーできませんでした。",
-    "copyEmptyHint": "前の月の予算をコピーして、そこから始めましょう。"
+    "copyEmptyHint": "前の月の予算をコピーして、そこから始めましょう。",
+    "rolloverFor": "{{category}}の未使用予算を繰り越す",
+    "rolloverHint": "未使用額または超過額を翌月に繰り越します",
+    "resetCarryover": "繰越をリセット",
+    "resetCarryoverPending": "リセット保留中",
+    "carryoverBreakdown": "基本 {{base}} {{carryover}} = 利用可能 {{available}}",
+    "rolloverForecastTitle": "繰越と複数月予測",
+    "rolloverForecastDescription": "{{month}}の繰越内訳と複数月の残高予測。",
+    "forecastHorizon": "予測期間",
+    "forecastMonthsOption": "{{count}}か月",
+    "rolloverSummaryTitle": "月別繰越サマリー",
+    "forecastTableTitle": "複数月予測",
+    "colMonth": "月",
+    "colBaseBudget": "基本予算",
+    "colCarryover": "繰越額",
+    "colAvailable": "利用可能額",
+    "colProjectedSpend": "予測支出",
+    "colRemaining": "残額",
+    "colVariance": "差額",
+    "netSurplus": "純余剰",
+    "rolloverEnabled": "繰越",
+    "rolloverForecastEmpty": "この月の予算設定カテゴリはありません。",
+    "rolloverForecastError": "繰越および予測データを読み込めませんでした。"
   },
   "goals": {
     "title": "目標",
