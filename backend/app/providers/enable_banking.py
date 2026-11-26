@@ -101,6 +101,11 @@ TERMINAL_SESSION_STATUSES = frozenset(
 # moved money, and a held or scheduled one has not settled yet.
 SKIPPED_TRANSACTION_STATUSES = frozenset({"CNCL", "RJCT"})
 PENDING_TRANSACTION_STATUSES = frozenset({"PDNG", "PENDING", "HOLD", "SCHD"})
+# "Other". Some banks (BNP Paribas Fortis) send a card authorization as OTHR
+# with no entry_reference, then the booked entry a day later as BOOK. An OTHR
+# entry without a reference has not settled, so it is pending; one with a
+# reference stays posted (#1918).
+UNSETTLED_WITHOUT_REFERENCE_STATUSES = frozenset({"OTHR"})
 # What `_iter_transactions` yields for a skipped entry: it is never imported.
 CANCELLED_STATUS = "cancelled"
 
@@ -1592,7 +1597,10 @@ class EnableBankingProvider(BankProvider):
                 raw_status = (raw.get("status") or "").upper()
                 if raw_status in SKIPPED_TRANSACTION_STATUSES:
                     yield raw, CANCELLED_STATUS
-                elif raw_status in PENDING_TRANSACTION_STATUSES:
+                elif raw_status in PENDING_TRANSACTION_STATUSES or (
+                    raw_status in UNSETTLED_WITHOUT_REFERENCE_STATUSES
+                    and not (raw.get("entry_reference") or "").strip()
+                ):
                     yield raw, "pending"
                 else:
                     yield raw, "posted"
