@@ -3738,7 +3738,8 @@
     },
     "instanceAccountChanged": "Arbeitsbereiche, die diese Zugangsdaten nutzen, haben Verbindungen unter diesem Konto. Gib ihnen zuerst eigene Zugangsdaten oder lösche ihre Verbindungen.",
     "workspaceListError": "Die Arbeitsbereiche konnten nicht geladen werden.",
-    "workspacesTab": "Arbeitsbereiche"
+    "workspacesTab": "Arbeitsbereiche",
+    "workspaceCreatedBy": "Erstellt von {{email}}"
   },
   "categoryLines": {
     "title": "Auf Kategorien aufteilen",

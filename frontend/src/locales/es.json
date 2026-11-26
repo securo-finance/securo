@@ -3752,7 +3752,8 @@
     },
     "instanceAccountChanged": "Hay espacios de trabajo que usan estas credenciales con conexiones en esta cuenta. Primero, dales credenciales propias o elimina sus conexiones.",
     "workspaceListError": "No se pudieron cargar los espacios de trabajo.",
-    "workspacesTab": "Espacios de trabajo"
+    "workspacesTab": "Espacios de trabajo",
+    "workspaceCreatedBy": "Creado por {{email}}"
   },
   "categoryLines": {
     "title": "Dividir por categoría",

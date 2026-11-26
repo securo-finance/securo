@@ -19,7 +19,7 @@ vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
 const shared: WorkspaceProviderCredentialStatus = {
   workspace_id: 'ws-shared',
   name: 'Mom',
-  owner_email: 'mom@example.com',
+  creator_email: 'mom@example.com',
   connections: 0,
   has_credentials: false,
   invalid: false,
@@ -92,6 +92,28 @@ describe('Pluggy clients by workspace', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent("Couldn't load the workspaces.")
     await user.click(screen.getByRole('button', { name: 'Retry' }))
     expect(await screen.findByText('Mine')).toBeInTheDocument()
+  })
+
+  it('names the workspace creator, not an owner', async () => {
+    renderWithProviders(<WorkspaceProviderCredentials provider="pluggy" fields={FIELDS} canStoreSecrets />)
+    expect(await screen.findAllByText(/Created by mom@example.com/)).toHaveLength(2)
+  })
+
+  it('offers no changes while the instance credentials are saving', async () => {
+    renderWithProviders(<WorkspaceProviderCredentials provider="pluggy" fields={FIELDS} canStoreSecrets disabled />)
+    expect(await screen.findByRole('button', { name: 'Set client: Mom' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Replace: Mine' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Remove: Mine' })).toBeDisabled()
+  })
+
+  it('refreshes the connection picker after a save', async () => {
+    const { user, queryClient } = renderWithProviders(
+      <WorkspaceProviderCredentials provider="pluggy" fields={FIELDS} canStoreSecrets />,
+    )
+    const invalidate = vi.spyOn(queryClient, 'invalidateQueries')
+    await user.click(await screen.findByRole('button', { name: 'Remove: Mine' }))
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: /delete/i }))
+    await waitFor(() => expect(invalidate).toHaveBeenCalledWith({ queryKey: ['connections', 'providers'] }))
   })
 
   it('blocks saving when the instance cannot store secrets', async () => {

@@ -3737,7 +3737,8 @@
     },
     "instanceAccountChanged": "この認証情報を使うワークスペースに、このアカウントの接続があります。先にそれらのワークスペースに専用の認証情報を設定するか、接続を削除してください。",
     "workspaceListError": "ワークスペースを読み込めませんでした。",
-    "workspacesTab": "ワークスペース"
+    "workspacesTab": "ワークスペース",
+    "workspaceCreatedBy": "作成者: {{email}}"
   },
   "categoryLines": {
     "title": "カテゴリーで分割",

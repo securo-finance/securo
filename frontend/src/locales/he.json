@@ -3767,7 +3767,8 @@
     },
     "instanceAccountChanged": "לסביבות עבודה שמשתמשות בפרטי גישה אלה יש חיבורים תחת חשבון זה. קודם הגדירו להן פרטי גישה משלהן, או מחקו את החיבורים שלהן.",
     "workspaceListError": "לא ניתן היה לטעון את סביבות העבודה.",
-    "workspacesTab": "סביבות עבודה"
+    "workspacesTab": "סביבות עבודה",
+    "workspaceCreatedBy": "נוצר על ידי {{email}}"
   },
   "categoryLines": {
     "title": "חלוקה בין קטגוריות",

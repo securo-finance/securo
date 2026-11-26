@@ -3739,7 +3739,8 @@
     },
     "instanceAccountChanged": "Werkruimten die deze gegevens gebruiken hebben koppelingen onder dit account. Geef die werkruimten eerst eigen gegevens, of verwijder hun koppelingen.",
     "workspaceListError": "De werkruimten konden niet worden geladen.",
-    "workspacesTab": "Werkruimten"
+    "workspacesTab": "Werkruimten",
+    "workspaceCreatedBy": "Aangemaakt door {{email}}"
   },
   "categoryLines": {
     "title": "Verdelen over categorieën",

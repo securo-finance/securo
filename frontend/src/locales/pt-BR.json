@@ -3752,7 +3752,8 @@
     },
     "instanceAccountChanged": "Workspaces que usam estas credenciais têm conexões nesta conta. Dê credenciais próprias a esses workspaces, ou exclua as conexões deles, antes.",
     "workspaceListError": "Não foi possível carregar os workspaces.",
-    "workspacesTab": "Workspaces"
+    "workspacesTab": "Workspaces",
+    "workspaceCreatedBy": "Criado por {{email}}"
   },
   "categoryLines": {
     "title": "Dividir por categoria",

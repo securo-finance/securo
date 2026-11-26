@@ -159,7 +159,8 @@ class WorkspaceProviderCredentialRead(BaseModel):
 
     workspace_id: uuid.UUID
     name: str
-    owner_email: Optional[str] = None
+    #: Who created the workspace, not necessarily who owns it now.
+    creator_email: Optional[str] = None
     connections: int
     has_credentials: bool
     invalid: bool

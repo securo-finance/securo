@@ -3737,7 +3737,8 @@
     },
     "instanceAccountChanged": "Az ezeket a hitelesítő adatokat használó munkaterületeknek kapcsolataik vannak ezen a fiókon. Előbb adj nekik saját adatokat, vagy töröld a kapcsolataikat.",
     "workspaceListError": "Nem sikerült betölteni a munkaterületeket.",
-    "workspacesTab": "Munkaterületek"
+    "workspacesTab": "Munkaterületek",
+    "workspaceCreatedBy": "Létrehozta: {{email}}"
   },
   "categoryLines": {
     "title": "Felosztás kategóriákra",

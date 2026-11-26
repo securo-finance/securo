@@ -6,7 +6,7 @@ Saved values override environment variables field by field. Leaving a field blan
 
 An in-app Enable Banking private key overrides `ENABLE_BANKING_PRIVATE_KEY_FILE`. If a saved credential can no longer be decrypted, the status reports it as invalid and the provider stays unavailable until an administrator replaces or removes it. An invalid saved value never silently falls back to a different environment credential.
 
-A workspace can use its own Pluggy client: set it under **Admin Settings → Bank connections → Pluggy → Manage**, in **Pluggy clients by workspace** below the instance credentials. Workspaces without one use the instance credentials above, so set a workspace's client before anyone connects a bank there. A Pluggy connection only exists under the client that created it, so changing a workspace to a different client ID, or removing its client, is refused while the workspace has Pluggy connections; delete those first. Replacing the secret for the same client ID is always allowed. A saved workspace client that can no longer be decrypted makes Pluggy unavailable in that workspace; it never falls back to the instance client. The connection picker shows each workspace what its own credentials allow. On a managed instance ([ADR 0045](adr/0045-managed-instance.md)) workspace clients are read-only, like the instance credentials. They live in `workspace_provider_credentials` (migration `136`), are not part of workspace backups, and rolling back past `136` drops them. See [ADR 0049](adr/0049-workspace-provider-credentials.md).
+A workspace can use its own Pluggy client: set it under **Admin Settings → Bank connections → Pluggy → Manage**, on the **Workspaces** tab. Workspaces without one use the instance credentials, so set a workspace's client before anyone connects a bank there. A Pluggy connection only exists under the client that created it, so changing a workspace to a different client ID, or removing its client, is refused while the workspace has Pluggy connections; delete those first. Replacing the secret for the same client ID is always allowed. A saved workspace client that can no longer be decrypted makes Pluggy unavailable in that workspace; it never falls back to the instance client. The connection picker shows each workspace what its own credentials allow. On a managed instance ([ADR 0045](adr/0045-managed-instance.md)) workspace clients are read-only, like the instance credentials. They live in `workspace_provider_credentials` (migration `136`), are not part of workspace backups, and rolling back past `136` drops them (see below). See [ADR 0049](adr/0049-workspace-provider-credentials.md).
 
 Workspaces without their own client use the instance one, so changing the instance client ID, or removing it so a different environment client applies, is refused too while any of those workspaces has Pluggy connections. Give those workspaces their own client first, or delete their connections.
 
@@ -33,3 +33,12 @@ Rolling back past `113` shrinks `app_settings.value` to 2000 characters again, a
    ```
 
 4. Run `alembic downgrade 112`, then deploy the older version.
+
+Rolling back past `136` drops `workspace_provider_credentials`. The connections of a workspace that had its own client stay, but older versions sync every workspace with the instance client, under which those connections don't exist, so they stop syncing. Before rolling back, find the workspaces that would be affected, by id only:
+
+```sql
+SELECT DISTINCT c.workspace_id FROM workspace_provider_credentials c
+JOIN bank_connections b ON b.workspace_id = c.workspace_id AND b.provider = 'pluggy';
+```
+
+For each one, either delete its Pluggy connections and connect the banks again after the rollback, under the instance client, or don't roll back past `136`. Then run `alembic downgrade 135`.

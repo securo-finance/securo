@@ -3913,7 +3913,8 @@
     },
     "instanceAccountChanged": "Pracovné priestory, ktoré používajú tieto údaje, majú pod týmto účtom pripojenia. Najprv im dajte vlastné údaje alebo ich pripojenia odstráňte.",
     "workspaceListError": "Pracovné priestory sa nepodarilo načítať.",
-    "workspacesTab": "Pracovné priestory"
+    "workspacesTab": "Pracovné priestory",
+    "workspaceCreatedBy": "Vytvoril(a) {{email}}"
   },
   "categoryLines": {
     "title": "Rozdeliť do kategórií",

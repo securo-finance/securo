@@ -2221,7 +2221,7 @@ export interface ProviderSettingStatus {
 export interface WorkspaceProviderCredentialStatus {
   workspace_id: string
   name: string
-  owner_email: string | null
+  creator_email: string | null
   connections: number
   has_credentials: boolean
   invalid: boolean

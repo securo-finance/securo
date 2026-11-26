@@ -53,7 +53,7 @@ from app.providers.base import (
     SessionExpiredError,
     TransactionData,
 )
-from app.services.provider_settings import resolve_settings
+from app.services.provider_settings import ensure_account_unchanged, resolve_settings
 from app.services import oauth_state
 from app.services import admin_service
 from app.services import category_line_service, notification_service, reconciliation_service, recurring_match_service
@@ -2152,8 +2152,12 @@ async def handle_oauth_callback(
     if not provider_name:
         raise ValueError("OAuth callback missing provider")
 
-    provider = get_provider(provider_name, settings=await resolve_settings(session, workspace_id))
+    used_settings = await resolve_settings(session, workspace_id)
+    provider = get_provider(provider_name, settings=used_settings)
     connection_data = await provider.handle_oauth_callback(code)
+    # The connection exists under the account the provider was built with; an
+    # admin may have moved the workspace since. Holds the lock until it commits.
+    await ensure_account_unchanged(session, provider_name, workspace_id, used_settings)
 
     if existing_reconnect is None:
         existing_reconnect = await _connection_holding_these_accounts(

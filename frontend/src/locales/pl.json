@@ -3879,7 +3879,8 @@
     },
     "instanceAccountChanged": "Obszary robocze korzystające z tych danych mają połączenia na tym koncie. Najpierw nadaj im własne dane uwierzytelniające albo usuń ich połączenia.",
     "workspaceListError": "Nie udało się wczytać obszarów roboczych.",
-    "workspacesTab": "Obszary robocze"
+    "workspacesTab": "Obszary robocze",
+    "workspaceCreatedBy": "Utworzone przez {{email}}"
   },
   "categoryLines": {
     "title": "Podziel na kategorie",

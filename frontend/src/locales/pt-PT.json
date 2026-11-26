@@ -3751,7 +3751,8 @@
     },
     "instanceAccountChanged": "Há áreas de trabalho que usam estas credenciais com ligações nesta conta. Primeiro, dê credenciais próprias a essas áreas de trabalho ou elimine as ligações delas.",
     "workspaceListError": "Não foi possível carregar as áreas de trabalho.",
-    "workspacesTab": "Áreas de trabalho"
+    "workspacesTab": "Áreas de trabalho",
+    "workspaceCreatedBy": "Criado por {{email}}"
   },
   "categoryLines": {
     "title": "Dividir por categoria",

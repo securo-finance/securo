@@ -203,6 +203,7 @@ function ProviderEditor({ provider, name, description, icon, guideUrl, onClose }
               provider={provider.name}
               fields={workspaceFields}
               canStoreSecrets={provider.can_store_secrets}
+              disabled={save.isPending}
             />
           </TabsContent>
         </Tabs>

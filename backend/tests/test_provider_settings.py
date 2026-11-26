@@ -912,6 +912,79 @@ async def test_resolving_for_a_workspace_the_session_is_not_bound_to_is_refused(
 
 
 @pytest.mark.asyncio
+async def test_every_account_change_takes_the_provider_lock(session, test_user, monkeypatch):
+    """The instance change, a workspace set and a workspace remove read what
+    the others write, so each takes the per-provider lock before reading."""
+    from app.services import provider_settings
+
+    monkeypatch.setattr(get_settings(), "pluggy_client_id", "instance-client")
+    monkeypatch.setattr(get_settings(), "pluggy_client_secret", SecretStr("instance-secret"))
+    mom = await _workspace_with_pluggy_connection(session, test_user, connected=False)
+    events = []
+    real_lock = provider_settings.lock_provider_accounts
+
+    async def lock(session, provider):
+        events.append(("lock", provider))
+        await real_lock(session, provider)
+
+    monkeypatch.setattr(provider_settings, "lock_provider_accounts", lock)
+    # Every query the service makes goes through one of these.
+    for name in ("execute", "scalar", "scalars", "get"):
+        real = getattr(session, name)
+
+        def recording(*args, _real=real, _name=name, **kwargs):
+            events.append(("read", _name))
+            return _real(*args, **kwargs)
+
+        monkeypatch.setattr(session, name, recording)
+
+    for change in (
+        provider_settings.set_workspace_credentials(session, "pluggy", mom.id, _pluggy_values()["values"]),
+        provider_settings.remove_workspace_credentials(session, "pluggy", mom.id),
+        provider_settings.update_provider(session, "pluggy", {"pluggy_client_id": "other-client"}),
+    ):
+        events.clear()
+        await change
+        assert events[0] == ("lock", "pluggy"), events
+
+
+@pytest.mark.asyncio
+async def test_connection_saved_after_its_account_changed_is_refused(
+    session, test_user, test_workspace, monkeypatch
+):
+    """An admin moves the workspace to another client while a user is in the
+    Pluggy widget: the item belongs to the old client, so it isn't saved."""
+    from sqlalchemy import func
+
+    from app.providers.base import ConnectionData
+    from app.providers.pluggy import PluggyProvider
+    from app.services import connection_service
+    from app.services.provider_settings import ProviderAccountChangeError, set_workspace_credentials
+
+    monkeypatch.setattr(get_settings(), "pluggy_client_id", "instance-client")
+    monkeypatch.setattr(get_settings(), "pluggy_client_secret", SecretStr("instance-secret"))
+    workspace_id, user_id = test_workspace.id, test_user.id
+
+    async def callback(self, code):
+        # The admin's change lands while the provider talks to Pluggy.
+        await set_workspace_credentials(session, "pluggy", workspace_id, _pluggy_values()["values"])
+        return ConnectionData(
+            external_id=code, institution_name="Banco", credentials={"item_id": code}, accounts=[]
+        )
+
+    with patch.object(PluggyProvider, "handle_oauth_callback", callback):
+        with pytest.raises(ProviderAccountChangeError):
+            await connection_service.handle_oauth_callback(
+                session, workspace_id, user_id, "item-9", provider_name="pluggy"
+            )
+    await session.rollback()
+    saved = await session.scalar(
+        select(func.count()).select_from(BankConnection).where(BankConnection.external_id == "item-9")
+    )
+    assert saved == 0
+
+
+@pytest.mark.asyncio
 async def test_pluggy_keeps_a_separate_api_key_per_client(session, clean_db):
     from app.providers.pluggy import PluggyProvider
 

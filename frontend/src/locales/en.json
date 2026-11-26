@@ -3737,7 +3737,8 @@
     },
     "instanceAccountChanged": "Workspaces using these credentials have connections under this account. Give those workspaces their own credentials, or delete their connections, first.",
     "workspaceListError": "Couldn't load the workspaces.",
-    "workspacesTab": "Workspaces"
+    "workspacesTab": "Workspaces",
+    "workspaceCreatedBy": "Created by {{email}}"
   },
   "categoryLines": {
     "title": "Split across categories",

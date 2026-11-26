@@ -3752,7 +3752,8 @@
     },
     "instanceAccountChanged": "Alcune aree di lavoro che usano queste credenziali hanno connessioni in questo account. Prima assegna loro credenziali proprie o elimina le loro connessioni.",
     "workspaceListError": "Impossibile caricare le aree di lavoro.",
-    "workspacesTab": "Aree di lavoro"
+    "workspacesTab": "Aree di lavoro",
+    "workspaceCreatedBy": "Creato da {{email}}"
   },
   "categoryLines": {
     "title": "Dividi per categoria",

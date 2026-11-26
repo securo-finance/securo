@@ -1,10 +1,11 @@
 """Write-only instance credentials and uncached runtime resolution."""
 
+import hashlib
 import uuid
 from dataclasses import dataclass
 
 from pydantic import SecretStr
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.services.crypto import decrypt, encrypt
@@ -59,6 +60,45 @@ _WORKSPACE_FIELDS = {field for spec in WORKSPACE_PROVIDERS.values() for field in
 
 class ProviderAccountChangeError(ValueError):
     """The change would strand connections created under another provider account."""
+
+
+def _lock_key(provider: str) -> int:
+    digest = hashlib.blake2b(f"securo:provider-account:{provider}".encode(), digest_size=8).digest()
+    return int.from_bytes(digest, "big", signed=True)
+
+
+async def lock_provider_accounts(session: AsyncSession, provider: str) -> None:
+    """Serialize everything that decides or depends on a provider's account.
+
+    Changing the instance account, a workspace's own values, and saving a new
+    connection each read what the others write. A transaction lock per
+    provider makes them run one after another, so a check never passes on a
+    state another transaction is about to change. It is held until commit.
+    """
+    if provider not in WORKSPACE_PROVIDERS:
+        return
+    if session.get_bind().dialect.name != "postgresql":
+        return
+    await session.execute(text("SELECT pg_advisory_xact_lock(:key)"), {"key": _lock_key(provider)})
+
+
+async def ensure_account_unchanged(
+    session: AsyncSession, provider: str, workspace_id: uuid.UUID, used: Settings
+) -> None:
+    """Before a new connection is saved: is the workspace still on the account it was made under?
+
+    The lock is then held until the connection commits, so an admin can't
+    move the workspace to another account in between.
+    """
+    spec = WORKSPACE_PROVIDERS.get(provider)
+    if spec is None:
+        return
+    await lock_provider_accounts(session, provider)
+    current = getattr(await resolve_settings(session, workspace_id), spec.account_field)
+    if current != getattr(used, spec.account_field):
+        raise ProviderAccountChangeError(
+            "The provider account changed while connecting. Connect the bank again."
+        )
 
 
 def can_store_secrets() -> bool:
@@ -224,6 +264,7 @@ async def update_provider(session: AsyncSession, provider: str, values: dict) ->
             raise SecretStorageUnavailable(
                 "Set a unique SECRET_KEY of at least 32 characters before saving credentials"
             )
+    await lock_provider_accounts(session, provider)
     await _ensure_fallback_keeps_account(session, provider, values)
     for key, value in values.items():
         row = await session.get(AppSetting, key)
@@ -265,7 +306,7 @@ async def workspace_provider_status(session: AsyncSession, provider: str) -> lis
         {
             "workspace_id": workspace_id,
             "name": name,
-            "owner_email": email,
+            "creator_email": email,
             "connections": counts.get(workspace_id, 0),
             "has_credentials": workspace_id in saved,
             "invalid": not all(decrypt(value) for value in saved.get(workspace_id, [])),
@@ -306,6 +347,7 @@ async def set_workspace_credentials(
     session: AsyncSession, provider: str, workspace_id: uuid.UUID, values: dict
 ) -> None:
     spec = _workspace_provider(provider)
+    await lock_provider_accounts(session, provider)
     await _active_workspace(session, workspace_id)
     await row_security.bind_workspace(session, workspace_id)
     if set(values) != set(spec.fields):
@@ -336,6 +378,7 @@ async def remove_workspace_credentials(
     session: AsyncSession, provider: str, workspace_id: uuid.UUID
 ) -> None:
     spec = _workspace_provider(provider)
+    await lock_provider_accounts(session, provider)
     await _active_workspace(session, workspace_id)
     await row_security.bind_workspace(session, workspace_id)
     # Without its own values the workspace falls back to the instance account.

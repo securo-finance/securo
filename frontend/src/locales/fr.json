@@ -3752,7 +3752,8 @@
     },
     "instanceAccountChanged": "Des espaces de travail qui utilisent ces identifiants ont des connexions sous ce compte. Donnez-leur d'abord leurs propres identifiants, ou supprimez leurs connexions.",
     "workspaceListError": "Impossible de charger les espaces de travail.",
-    "workspacesTab": "Espaces de travail"
+    "workspacesTab": "Espaces de travail",
+    "workspaceCreatedBy": "Créé par {{email}}"
   },
   "categoryLines": {
     "title": "Répartir par catégorie",

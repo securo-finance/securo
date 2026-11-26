@@ -3929,7 +3929,8 @@
     },
     "instanceAccountChanged": "Pracovní prostory, které používají tyto údaje, mají pod tímto účtem připojení. Nejdřív jim dejte vlastní údaje, nebo jejich připojení smažte.",
     "workspaceListError": "Pracovní prostory se nepodařilo načíst.",
-    "workspacesTab": "Pracovní prostory"
+    "workspacesTab": "Pracovní prostory",
+    "workspaceCreatedBy": "Vytvořil(a) {{email}}"
   },
   "categoryLines": {
     "title": "Rozdělit do kategorií",

@@ -110,7 +110,7 @@ describe('provider settings', () => {
       { ...pluggy, name: 'enable_banking', workspace_fields: null },
     ])
     vi.mocked(admin.workspaceProviderCredentials).mockResolvedValue([{
-      workspace_id: 'ws-1', name: 'Family', owner_email: null, connections: 0, has_credentials: false, invalid: false,
+      workspace_id: 'ws-1', name: 'Family', creator_email: null, connections: 0, has_credentials: false, invalid: false,
     }])
     const { user } = renderWithProviders(<ProviderSettings />)
 
@@ -139,7 +139,7 @@ describe('provider settings', () => {
       { ...pluggy, workspace_fields: ['pluggy_client_id', 'pluggy_client_secret'] },
     ])
     vi.mocked(admin.workspaceProviderCredentials).mockResolvedValue([{
-      workspace_id: 'ws-1', name: 'Family', owner_email: null, connections: 0, has_credentials: false, invalid: false,
+      workspace_id: 'ws-1', name: 'Family', creator_email: null, connections: 0, has_credentials: false, invalid: false,
     }])
     vi.mocked(admin.setWorkspaceProviderCredentials).mockResolvedValue()
     const { user } = renderWithProviders(<ProviderSettings />)

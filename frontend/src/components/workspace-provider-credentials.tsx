@@ -53,6 +53,8 @@ function CredentialsDialog({
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: queryKey(provider) })
+      // The connection picker answers per workspace.
+      void queryClient.invalidateQueries({ queryKey: ['connections', 'providers'] })
       toast.success(t('admin.settings.updated'))
       onClose()
     },
@@ -110,10 +112,13 @@ export function WorkspaceProviderCredentials({
   provider,
   fields,
   canStoreSecrets,
+  disabled = false,
 }: {
   provider: string
   fields: string[]
   canStoreSecrets: boolean
+  /** While the instance credentials save; the dialog closes when they do. */
+  disabled?: boolean
 }) {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
@@ -136,6 +141,8 @@ export function WorkspaceProviderCredentials({
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: queryKey(provider) })
+      // The connection picker answers per workspace.
+      void queryClient.invalidateQueries({ queryKey: ['connections', 'providers'] })
       toast.success(t('admin.settings.updated'))
     },
     onError: showError,
@@ -185,7 +192,7 @@ export function WorkspaceProviderCredentials({
                   )}
                 </div>
                 <p className="mt-1 break-words text-xs text-muted-foreground">
-                  {workspace.owner_email && <>{workspace.owner_email} · </>}
+                  {workspace.creator_email && <>{t('providerSettings.workspaceCreatedBy', { email: workspace.creator_email })} · </>}
                   {text('connections', { count: workspace.connections })}
                 </p>
               </div>
@@ -195,6 +202,7 @@ export function WorkspaceProviderCredentials({
                     type="button"
                     variant="ghost"
                     className="h-8 shadow-none"
+                    disabled={disabled}
                     aria-label={`${text('remove')}: ${workspace.name}`}
                     onClick={() => setRemoving(workspace)}
                   >
@@ -205,7 +213,7 @@ export function WorkspaceProviderCredentials({
                   type="button"
                   variant="outline"
                   className="h-8 shadow-none"
-                  disabled={!canStoreSecrets}
+                  disabled={disabled || !canStoreSecrets}
                   aria-label={`${text(workspace.has_credentials ? 'replace' : 'set')}: ${workspace.name}`}
                   onClick={() => setEditing(workspace)}
                 >
