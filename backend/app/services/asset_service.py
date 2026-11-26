@@ -54,7 +54,10 @@ GrossValueRecord = tuple[date, Decimal, Optional[Decimal]]  # (date, net, gross)
 SplitRecord = tuple[date, int, int]  # (date, old_units, new_units)
 
 
-# The order holdings list in: placed ones by position, then unplaced (0) by name.
+# The order holdings list in. Asset.position counts from 1 within a wallet, and
+# 0 means nobody placed the holding yet: those list after the placed ones, by
+# name, so a new or moved holding lands at the end of an order someone set,
+# whichever path created it.
 _LIST_ORDER = (Asset.position == 0, Asset.position, Asset.name, Asset.id)
 
 
