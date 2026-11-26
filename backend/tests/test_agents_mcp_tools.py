@@ -1881,3 +1881,79 @@ async def test_asset_update_date_validation_and_atomic_rest_routes(
     assert ok_archive.json()["updated_count"] == 1
     await session.refresh(manual_a)
     assert manual_a.is_archived is True
+
+
+async def test_asset_write_locks_refresh_stale_identity_map_rows(
+    session: AsyncSession,
+    test_user,
+    test_workspace,
+):
+    """Locked selects must pass populate_existing=True so concurrent changes
+    committed after an earlier load in the same session cannot bypass guards."""
+    from sqlalchemy import select, update as sa_update
+    from app.models.asset import Asset
+    from app.schemas.asset import AssetUpdate
+    from app.services import asset_service
+
+    asset_id = uuid.uuid4()
+    ws_id = test_workspace.id
+    uid = test_user.id
+    asset = Asset(
+        id=asset_id,
+        user_id=uid,
+        workspace_id=ws_id,
+        name="Locked Asset",
+        type="valuable",
+        currency="USD",
+        valuation_method="manual",
+        source="manual",
+        purchase_date=date(2025, 1, 10),
+        sell_date=date(2025, 12, 31),
+    )
+    session.add(asset)
+    await session.commit()
+
+    # Load into the session identity map (stale sell_date = 2025-12-31 in memory)
+    loaded = (
+        await session.execute(select(Asset).where(Asset.id == asset_id))
+    ).scalar_one()
+    assert loaded.sell_date == date(2025, 12, 31)
+
+    # Simulate another writer moving sell_date earlier without updating ORM identity map
+    await session.execute(
+        sa_update(Asset)
+        .where(Asset.id == asset_id)
+        .values(sell_date=date(2025, 3, 1))
+        .execution_options(synchronize_session=False)
+    )
+    assert loaded.sell_date == date(2025, 12, 31)
+
+    with pytest.raises(ValueError, match="purchase_date cannot be after sell_date"):
+        await asset_service.update_asset(
+            session,
+            asset_id,
+            ws_id,
+            uid,
+            AssetUpdate(purchase_date=date(2025, 4, 1)),
+        )
+    await session.rollback()
+
+    # Re-apply the out-of-band update and verify backfill_asset_purchase_history refreshes too
+    loaded = (
+        await session.execute(select(Asset).where(Asset.id == asset_id))
+    ).scalar_one()
+    assert loaded.sell_date == date(2025, 12, 31)
+    await session.execute(
+        sa_update(Asset)
+        .where(Asset.id == asset_id)
+        .values(sell_date=date(2025, 3, 1))
+        .execution_options(synchronize_session=False)
+    )
+    with pytest.raises(ValueError, match="purchase_date cannot be after sell_date"):
+        await asset_service.backfill_asset_purchase_history(
+            session,
+            asset_id,
+            ws_id,
+            uid,
+            purchase_date=date(2025, 4, 1),
+        )
