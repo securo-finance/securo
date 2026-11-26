@@ -3661,19 +3661,21 @@
   },
   "providerSettings": {
     "workspaces": {
-      "title": "Pluggy-clients per werkruimte",
-      "description": "Een werkruimte met een eigen client koppelt banken aan dat Pluggy-account. Andere gebruiken de bovenstaande gegevens.",
-      "own": "Eigen client",
-      "shared": "Gedeelde client",
-      "invalid": "Niet leesbaar",
-      "connections": "Pluggy-koppelingen: {{count}}",
-      "set": "Client instellen",
-      "replace": "Vervangen",
-      "remove": "Verwijderen",
-      "removeTitle": "Pluggy-client van {{workspace}} verwijderen?",
-      "removeDescription": "Deze werkruimte gebruikt voor nieuwe bewerkingen weer de gedeelde gegevens.",
-      "dialogDescription": "Deze gegevens gelden alleen voor deze werkruimte. Stel ze in voordat iemand hier een bank koppelt.",
-      "clientChanged": "Deze werkruimte heeft koppelingen onder een andere Pluggy-client. Verwijder die koppelingen eerst."
+      "pluggy": {
+        "title": "Pluggy-clients per werkruimte",
+        "description": "Een werkruimte met een eigen client koppelt banken aan dat Pluggy-account. Andere gebruiken de bovenstaande gegevens.",
+        "own": "Eigen client",
+        "shared": "Gedeelde client",
+        "invalid": "Niet leesbaar",
+        "connections": "Pluggy-koppelingen: {{count}}",
+        "set": "Client instellen",
+        "replace": "Vervangen",
+        "remove": "Verwijderen",
+        "removeTitle": "Pluggy-client van {{workspace}} verwijderen?",
+        "removeDescription": "Deze werkruimte gebruikt voor nieuwe bewerkingen weer de gedeelde gegevens.",
+        "dialogDescription": "Deze gegevens gelden alleen voor deze werkruimte. Stel ze in voordat iemand hier een bank koppelt.",
+        "clientChanged": "Deze werkruimte heeft koppelingen onder een andere Pluggy-client. Verwijder die koppelingen eerst."
+      }
     },
     "catalog": {
       "setupGuide": "Installatiehandleiding",

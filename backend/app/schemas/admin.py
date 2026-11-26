@@ -152,7 +152,7 @@ class ProviderSettingRead(BaseModel):
     redirect_uri: Optional[str] = None
 
 
-class WorkspacePluggyRead(BaseModel):
+class WorkspaceProviderCredentialRead(BaseModel):
     """Credential values and ciphertext are intentionally excluded."""
 
     workspace_id: uuid.UUID

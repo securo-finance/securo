@@ -7,9 +7,10 @@ import { AlertCircle, ArrowRightLeft, Cable, Check, ChevronRight, Landmark, Link
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
-import { PluggyWorkspaceClients } from '@/components/pluggy-workspace-clients'
 import { ProviderSettingsDialog } from '@/components/provider-settings-dialog'
+import { WorkspaceProviderCredentials } from '@/components/workspace-provider-credentials'
 import { admin, type ProviderSettingStatus } from '@/lib/api'
+import { WORKSPACE_PROVIDERS } from '@/lib/workspace-providers'
 
 type Category = 'connections' | 'exchangeRates' | 'other'
 type ProviderPresentation = { name: string; category: Category; description: string; icon: LucideIcon }
@@ -107,7 +108,7 @@ export function ProviderSettings({ readOnly = false }: { readOnly?: boolean } = 
     <div className="mb-8 space-y-8">
       {categories.map((category) => {
         const items = data?.filter((provider) => (providers[provider.name]?.category ?? 'other') === category) ?? []
-        const pluggy = items.find((provider) => provider.name === 'pluggy')
+        const perWorkspace = items.filter((provider) => provider.name in WORKSPACE_PROVIDERS)
         if (!items.length && (!isPending || category === 'other')) return null
         return (
           <section key={category} id={`provider-${category}`} aria-labelledby={`provider-${category}-heading`} className="scroll-mt-6 space-y-4">
@@ -138,7 +139,14 @@ export function ProviderSettings({ readOnly = false }: { readOnly?: boolean } = 
                 </ul>
               )}
             </div>
-            {pluggy && <PluggyWorkspaceClients canStoreSecrets={pluggy.can_store_secrets} readOnly={readOnly} />}
+            {perWorkspace.map((provider) => (
+              <WorkspaceProviderCredentials
+                key={provider.name}
+                provider={provider.name}
+                canStoreSecrets={provider.can_store_secrets}
+                readOnly={readOnly}
+              />
+            ))}
           </section>
         )
       })}

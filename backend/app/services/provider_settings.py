@@ -1,6 +1,7 @@
 """Write-only instance credentials and uncached runtime resolution."""
 
 import uuid
+from dataclasses import dataclass
 
 from pydantic import SecretStr
 from sqlalchemy import delete, func, select
@@ -28,11 +29,34 @@ class SecretStorageUnavailable(ValueError):
     """SECRET_KEY is too weak to encrypt saved credentials."""
 
 
-WORKSPACE_PLUGGY_FIELDS = PROVIDER_FIELDS["pluggy"]
+@dataclass(frozen=True)
+class WorkspaceProvider:
+    """A provider whose credentials a workspace can replace with its own.
+
+    `account_field` names the account the provider's connections are created
+    under (a Pluggy client, say). A workspace with connections of this
+    provider can't move to another account: the provider only knows those
+    connections under the account that created them.
+    """
+
+    fields: tuple[str, ...]
+    account_field: str
 
 
-class PluggyClientChangeError(ValueError):
-    """The change would strand connections created under another Pluggy client."""
+#: Providers that take credentials per workspace. To add one, list it here with
+#: its fields from PROVIDER_FIELDS, cache anything keyed by credentials per
+#: account rather than per process, and give it a block of texts in the
+#: frontend (`WORKSPACE_PROVIDERS` in `frontend/src/lib/workspace-providers.ts`).
+WORKSPACE_PROVIDERS: dict[str, WorkspaceProvider] = {
+    "pluggy": WorkspaceProvider(fields=PROVIDER_FIELDS["pluggy"], account_field="pluggy_client_id"),
+}
+
+
+_WORKSPACE_FIELDS = {field for spec in WORKSPACE_PROVIDERS.values() for field in spec.fields}
+
+
+class ProviderAccountChangeError(ValueError):
+    """The change would strand connections created under another provider account."""
 
 
 def can_store_secrets() -> bool:
@@ -68,7 +92,8 @@ def _resolve(overrides: dict[str, str]) -> Settings:
 async def _workspace_overrides(session: AsyncSession, workspace_id: uuid.UUID) -> dict[str, str]:
     rows = await session.execute(
         select(WorkspaceProviderCredential.key, WorkspaceProviderCredential.value).where(
-            WorkspaceProviderCredential.workspace_id == workspace_id
+            WorkspaceProviderCredential.workspace_id == workspace_id,
+            WorkspaceProviderCredential.key.in_(_WORKSPACE_FIELDS),
         )
     )
     return {key: value for key, value in rows.all()}
@@ -156,11 +181,19 @@ async def update_provider(session: AsyncSession, provider: str, values: dict) ->
     return next(item for item in await provider_status(session) if item["name"] == provider)
 
 
-async def workspace_pluggy_status(session: AsyncSession) -> list[dict]:
-    """Which Pluggy client each workspace uses. Never returns a value or ciphertext."""
+def _workspace_provider(provider: str) -> WorkspaceProvider:
+    try:
+        return WORKSPACE_PROVIDERS[provider]
+    except KeyError:
+        raise LookupError("Provider does not take workspace credentials") from None
+
+
+async def workspace_provider_status(session: AsyncSession, provider: str) -> list[dict]:
+    """Which credentials each workspace uses for `provider`. Never returns a value or ciphertext."""
+    spec = _workspace_provider(provider)
     connections = (
         select(BankConnection.workspace_id, func.count().label("total"))
-        .where(BankConnection.provider == "pluggy")
+        .where(BankConnection.provider == provider)
         .group_by(BankConnection.workspace_id)
         .subquery()
     )
@@ -172,7 +205,9 @@ async def workspace_pluggy_status(session: AsyncSession) -> list[dict]:
         .order_by(Workspace.name)
     )
     saved = await session.execute(
-        select(WorkspaceProviderCredential.workspace_id, WorkspaceProviderCredential.value)
+        select(WorkspaceProviderCredential.workspace_id, WorkspaceProviderCredential.value).where(
+            WorkspaceProviderCredential.key.in_(spec.fields)
+        )
     )
     readable: dict[uuid.UUID, bool] = {}
     for workspace_id, value in saved.all():
@@ -197,29 +232,34 @@ async def _active_workspace(session: AsyncSession, workspace_id: uuid.UUID) -> W
     return workspace
 
 
-async def _ensure_keeps_pluggy_client(
-    session: AsyncSession, workspace_id: uuid.UUID, next_client_id: str
+async def _ensure_keeps_account(
+    session: AsyncSession,
+    provider: str,
+    workspace_id: uuid.UUID,
+    next_account: str,
 ) -> None:
-    # A Pluggy item only exists under the client that created it. An unreadable
+    # A connection only exists under the account that created it. An unreadable
     # current value stays replaceable, or the workspace could never recover.
-    current = (await resolve_settings(session, workspace_id)).pluggy_client_id
-    if not current or current == next_client_id:
+    field = WORKSPACE_PROVIDERS[provider].account_field
+    current = getattr(await resolve_settings(session, workspace_id), field)
+    if not current or current == next_account:
         return
     connected = await session.scalar(
         select(func.count())
         .select_from(BankConnection)
-        .where(BankConnection.workspace_id == workspace_id, BankConnection.provider == "pluggy")
+        .where(BankConnection.workspace_id == workspace_id, BankConnection.provider == provider)
     )
     if connected:
-        raise PluggyClientChangeError("Workspace has connections under another Pluggy client")
+        raise ProviderAccountChangeError("Workspace has connections under another account")
 
 
-async def set_workspace_pluggy_credentials(
-    session: AsyncSession, workspace_id: uuid.UUID, values: dict
+async def set_workspace_credentials(
+    session: AsyncSession, provider: str, workspace_id: uuid.UUID, values: dict
 ) -> None:
+    spec = _workspace_provider(provider)
     await _active_workspace(session, workspace_id)
-    if set(values) != set(WORKSPACE_PLUGGY_FIELDS):
-        raise ValueError("Both the client id and the client secret are required")
+    if set(values) != set(spec.fields):
+        raise ValueError("Every credential field of the provider is required")
     for value in values.values():
         if not isinstance(value, str) or not value.strip() or len(value) > 16000:
             raise ValueError("Credentials must be nonempty strings of at most 16000 characters")
@@ -227,7 +267,9 @@ async def set_workspace_pluggy_credentials(
         raise SecretStorageUnavailable(
             "Set a unique SECRET_KEY of at least 32 characters before saving credentials"
         )
-    await _ensure_keeps_pluggy_client(session, workspace_id, values["pluggy_client_id"].strip())
+    await _ensure_keeps_account(
+        session, provider, workspace_id, values[spec.account_field].strip()
+    )
     for key, value in values.items():
         row = await session.get(WorkspaceProviderCredential, (workspace_id, key))
         stored = encrypt(value.strip())
@@ -240,16 +282,18 @@ async def set_workspace_pluggy_credentials(
     await session.commit()
 
 
-async def remove_workspace_pluggy_credentials(
-    session: AsyncSession, workspace_id: uuid.UUID
+async def remove_workspace_credentials(
+    session: AsyncSession, provider: str, workspace_id: uuid.UUID
 ) -> None:
+    spec = _workspace_provider(provider)
     await _active_workspace(session, workspace_id)
-    await _ensure_keeps_pluggy_client(
-        session, workspace_id, (await resolve_settings(session)).pluggy_client_id
-    )
+    # Without its own values the workspace falls back to the instance account.
+    instance_account = getattr(await resolve_settings(session), spec.account_field)
+    await _ensure_keeps_account(session, provider, workspace_id, instance_account)
     await session.execute(
         delete(WorkspaceProviderCredential).where(
-            WorkspaceProviderCredential.workspace_id == workspace_id
+            WorkspaceProviderCredential.workspace_id == workspace_id,
+            WorkspaceProviderCredential.key.in_(spec.fields),
         )
     )
     await session.commit()

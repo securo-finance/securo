@@ -3674,19 +3674,21 @@
   },
   "providerSettings": {
     "workspaces": {
-      "title": "Clients Pluggy par espace de travail",
-      "description": "Un espace doté de son propre client connecte les banques sur ce compte Pluggy. Les autres utilisent les identifiants ci-dessus.",
-      "own": "Client propre",
-      "shared": "Client partagé",
-      "invalid": "Illisible",
-      "connections": "Connexions Pluggy : {{count}}",
-      "set": "Définir le client",
-      "replace": "Remplacer",
-      "remove": "Supprimer",
-      "removeTitle": "Supprimer le client Pluggy de {{workspace}} ?",
-      "removeDescription": "Cet espace reviendra aux identifiants partagés pour les nouvelles opérations.",
-      "dialogDescription": "Ces identifiants ne s'appliquent qu'à cet espace. Définissez-les avant que quiconque y connecte une banque.",
-      "clientChanged": "Cet espace a des connexions sous un autre client Pluggy. Supprimez d'abord ces connexions."
+      "pluggy": {
+        "title": "Clients Pluggy par espace de travail",
+        "description": "Un espace doté de son propre client connecte les banques sur ce compte Pluggy. Les autres utilisent les identifiants ci-dessus.",
+        "own": "Client propre",
+        "shared": "Client partagé",
+        "invalid": "Illisible",
+        "connections": "Connexions Pluggy : {{count}}",
+        "set": "Définir le client",
+        "replace": "Remplacer",
+        "remove": "Supprimer",
+        "removeTitle": "Supprimer le client Pluggy de {{workspace}} ?",
+        "removeDescription": "Cet espace reviendra aux identifiants partagés pour les nouvelles opérations.",
+        "dialogDescription": "Ces identifiants ne s'appliquent qu'à cet espace. Définissez-les avant que quiconque y connecte une banque.",
+        "clientChanged": "Cet espace a des connexions sous un autre client Pluggy. Supprimez d'abord ces connexions."
+      }
     },
     "catalog": {
       "connectionsTitle": "Connexions bancaires",

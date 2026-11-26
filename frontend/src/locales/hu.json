@@ -3659,19 +3659,21 @@
   },
   "providerSettings": {
     "workspaces": {
-      "title": "Pluggy-kliensek munkaterületenként",
-      "description": "A saját klienssel rendelkező munkaterület ezen a Pluggy-fiókon csatlakoztat bankokat. A többi a fenti adatokat használja.",
-      "own": "Saját kliens",
-      "shared": "Közös kliens",
-      "invalid": "Nem olvasható",
-      "connections": "Pluggy-kapcsolatok: {{count}}",
-      "set": "Kliens beállítása",
-      "replace": "Csere",
-      "remove": "Eltávolítás",
-      "removeTitle": "Eltávolítja a(z) {{workspace}} Pluggy-kliensét?",
-      "removeDescription": "Ez a munkaterület az új műveleteknél ismét a közös adatokat használja.",
-      "dialogDescription": "Ezek az adatok csak erre a munkaterületre érvényesek. Állítsa be őket, mielőtt valaki bankot csatlakoztat itt.",
-      "clientChanged": "Ennek a munkaterületnek másik Pluggy-kliensben vannak kapcsolatai. Először törölje ezeket."
+      "pluggy": {
+        "title": "Pluggy-kliensek munkaterületenként",
+        "description": "A saját klienssel rendelkező munkaterület ezen a Pluggy-fiókon csatlakoztat bankokat. A többi a fenti adatokat használja.",
+        "own": "Saját kliens",
+        "shared": "Közös kliens",
+        "invalid": "Nem olvasható",
+        "connections": "Pluggy-kapcsolatok: {{count}}",
+        "set": "Kliens beállítása",
+        "replace": "Csere",
+        "remove": "Eltávolítás",
+        "removeTitle": "Eltávolítja a(z) {{workspace}} Pluggy-kliensét?",
+        "removeDescription": "Ez a munkaterület az új műveleteknél ismét a közös adatokat használja.",
+        "dialogDescription": "Ezek az adatok csak erre a munkaterületre érvényesek. Állítsa be őket, mielőtt valaki bankot csatlakoztat itt.",
+        "clientChanged": "Ennek a munkaterületnek másik Pluggy-kliensben vannak kapcsolatai. Először törölje ezeket."
+      }
     },
     "catalog": {
       "setupGuide": "Beállítási útmutató",

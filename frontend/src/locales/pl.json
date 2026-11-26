@@ -3801,19 +3801,21 @@
   },
   "providerSettings": {
     "workspaces": {
-      "title": "Klienci Pluggy według obszaru roboczego",
-      "description": "Obszar z własnym klientem łączy banki przez to konto Pluggy. Pozostałe używają powyższych danych.",
-      "own": "Własny klient",
-      "shared": "Wspólny klient",
-      "invalid": "Nie można odczytać",
-      "connections": "Połączenia Pluggy: {{count}}",
-      "set": "Ustaw klienta",
-      "replace": "Zastąp",
-      "remove": "Usuń",
-      "removeTitle": "Usunąć klienta Pluggy obszaru {{workspace}}?",
-      "removeDescription": "Ten obszar wróci do wspólnych danych przy nowych operacjach.",
-      "dialogDescription": "Te dane dotyczą tylko tego obszaru. Ustaw je, zanim ktoś połączy tu bank.",
-      "clientChanged": "Ten obszar ma połączenia w innym kliencie Pluggy. Najpierw usuń te połączenia."
+      "pluggy": {
+        "title": "Klienci Pluggy według obszaru roboczego",
+        "description": "Obszar z własnym klientem łączy banki przez to konto Pluggy. Pozostałe używają powyższych danych.",
+        "own": "Własny klient",
+        "shared": "Wspólny klient",
+        "invalid": "Nie można odczytać",
+        "connections": "Połączenia Pluggy: {{count}}",
+        "set": "Ustaw klienta",
+        "replace": "Zastąp",
+        "remove": "Usuń",
+        "removeTitle": "Usunąć klienta Pluggy obszaru {{workspace}}?",
+        "removeDescription": "Ten obszar wróci do wspólnych danych przy nowych operacjach.",
+        "dialogDescription": "Te dane dotyczą tylko tego obszaru. Ustaw je, zanim ktoś połączy tu bank.",
+        "clientChanged": "Ten obszar ma połączenia w innym kliencie Pluggy. Najpierw usuń te połączenia."
+      }
     },
     "catalog": {
       "setupGuide": "Instrukcja konfiguracji",

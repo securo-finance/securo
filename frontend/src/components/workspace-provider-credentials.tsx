@@ -10,83 +10,82 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { DeleteConfirmationDialog } from '@/components/delete-confirmation-dialog'
-import { admin, type WorkspacePluggyStatus } from '@/lib/api'
+import { admin, type WorkspaceProviderCredentialStatus } from '@/lib/api'
+import { WORKSPACE_PROVIDERS } from '@/lib/workspace-providers'
 
-const QUERY_KEY = ['admin', 'pluggy-workspaces']
+const queryKey = (provider: string) => ['admin', 'workspace-credentials', provider]
 
 // Do not retain Axios errors containing the credential request body.
 function credentialError(error: unknown) {
   const detail = (error as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail
-  return new Error(detail === 'pluggy_client_change' ? 'clientChange' : 'failed')
+  return new Error(detail === 'provider_account_change' ? 'accountChange' : 'failed')
 }
 
-function useErrorToast() {
+function useErrorToast(provider: string) {
   const { t } = useTranslation()
   return (error: Error) =>
-    toast.error(error.message === 'clientChange' ? t('providerSettings.workspaces.clientChanged') : t('common.error'))
+    toast.error(error.message === 'accountChange' ? t(`providerSettings.workspaces.${provider}.clientChanged`) : t('common.error'))
 }
 
-function ClientDialog({ workspace, onClose }: { workspace: WorkspacePluggyStatus; onClose: () => void }) {
+function CredentialsDialog({
+  provider,
+  workspace,
+  onClose,
+}: {
+  provider: string
+  workspace: WorkspaceProviderCredentialStatus
+  onClose: () => void
+}) {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
-  const showError = useErrorToast()
-  const [clientId, setClientId] = useState('')
-  const [clientSecret, setClientSecret] = useState('')
+  const showError = useErrorToast(provider)
+  const { fields } = WORKSPACE_PROVIDERS[provider]
+  const [values, setValues] = useState<Record<string, string>>(() => Object.fromEntries(fields.map((field) => [field, ''])))
 
   const save = useMutation({
     gcTime: 0,
     mutationFn: async () => {
       try {
-        await admin.setWorkspacePluggyClient(workspace.workspace_id, clientId, clientSecret)
+        await admin.setWorkspaceProviderCredentials(provider, workspace.workspace_id, values)
       } catch (error) {
         throw credentialError(error)
       }
     },
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: QUERY_KEY })
+      void queryClient.invalidateQueries({ queryKey: queryKey(provider) })
       toast.success(t('admin.settings.updated'))
       onClose()
     },
     onError: showError,
   })
-  const canSave = Boolean(clientId.trim() && clientSecret.trim()) && !save.isPending
+  const canSave = fields.every((field) => values[field].trim()) && !save.isPending
 
   return (
     <Dialog open onOpenChange={(open) => { if (!open && !save.isPending) onClose() }}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>{workspace.name}</DialogTitle>
-          <DialogDescription>{t('providerSettings.workspaces.dialogDescription')}</DialogDescription>
+          <DialogDescription>{t(`providerSettings.workspaces.${provider}.dialogDescription`)}</DialogDescription>
         </DialogHeader>
         <form
           aria-label={workspace.name}
           className="space-y-4"
           onSubmit={(event) => { event.preventDefault(); if (canSave) save.mutate() }}
         >
-          <div className="space-y-2">
-            <Label htmlFor="workspace-pluggy-client-id">{t('providerSettings.fields.pluggy_client_id')}</Label>
-            <Input
-              id="workspace-pluggy-client-id"
-              type="password"
-              autoComplete="new-password"
-              spellCheck={false}
-              disabled={save.isPending}
-              value={clientId}
-              onChange={(event) => setClientId(event.target.value)}
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="workspace-pluggy-client-secret">{t('providerSettings.fields.pluggy_client_secret')}</Label>
-            <Input
-              id="workspace-pluggy-client-secret"
-              type="password"
-              autoComplete="new-password"
-              spellCheck={false}
-              disabled={save.isPending}
-              value={clientSecret}
-              onChange={(event) => setClientSecret(event.target.value)}
-            />
-          </div>
+          {fields.map((field) => (
+            <div key={field} className="space-y-2">
+              <Label htmlFor={`workspace-${field}`}>{t(`providerSettings.fields.${field}`)}</Label>
+              <Input
+                id={`workspace-${field}`}
+                type="password"
+                autoComplete="new-password"
+                spellCheck={false}
+                disabled={save.isPending}
+                value={values[field]}
+                onChange={(event) => setValues((current) => ({ ...current, [field]: event.target.value }))}
+              />
+            </div>
+          ))}
           <DialogFooter>
             <Button type="button" variant="outline" disabled={save.isPending} onClick={onClose}>
               {t('common.cancel')}
@@ -102,24 +101,36 @@ function ClientDialog({ workspace, onClose }: { workspace: WorkspacePluggyStatus
   )
 }
 
-export function PluggyWorkspaceClients({ canStoreSecrets, readOnly = false }: { canStoreSecrets: boolean; readOnly?: boolean }) {
+export function WorkspaceProviderCredentials({
+  provider,
+  canStoreSecrets,
+  readOnly = false,
+}: {
+  provider: string
+  canStoreSecrets: boolean
+  readOnly?: boolean
+}) {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
-  const showError = useErrorToast()
-  const [editing, setEditing] = useState<WorkspacePluggyStatus | null>(null)
-  const [removing, setRemoving] = useState<WorkspacePluggyStatus | null>(null)
-  const { data } = useQuery({ queryKey: QUERY_KEY, queryFn: admin.workspacePluggyClients })
+  const showError = useErrorToast(provider)
+  const [editing, setEditing] = useState<WorkspaceProviderCredentialStatus | null>(null)
+  const [removing, setRemoving] = useState<WorkspaceProviderCredentialStatus | null>(null)
+  const { data } = useQuery({
+    queryKey: queryKey(provider),
+    queryFn: () => admin.workspaceProviderCredentials(provider),
+  })
+  const text = (key: string, options?: Record<string, unknown>) => t(`providerSettings.workspaces.${provider}.${key}`, options)
 
   const remove = useMutation({
     mutationFn: async (workspaceId: string) => {
       try {
-        await admin.removeWorkspacePluggyClient(workspaceId)
+        await admin.removeWorkspaceProviderCredentials(provider, workspaceId)
       } catch (error) {
         throw credentialError(error)
       }
     },
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: QUERY_KEY })
+      void queryClient.invalidateQueries({ queryKey: queryKey(provider) })
       toast.success(t('admin.settings.updated'))
     },
     onError: showError,
@@ -131,8 +142,8 @@ export function PluggyWorkspaceClients({ canStoreSecrets, readOnly = false }: { 
   return (
     <div className="min-w-0 overflow-hidden rounded-xl border border-border/60 bg-card">
       <div className="border-b border-border/40 px-4 py-4 sm:px-5">
-        <h3 className="text-sm font-semibold text-foreground">{t('providerSettings.workspaces.title')}</h3>
-        <p className="mt-1 text-sm leading-relaxed text-muted-foreground">{t('providerSettings.workspaces.description')}</p>
+        <h3 className="text-sm font-semibold text-foreground">{text('title')}</h3>
+        <p className="mt-1 text-sm leading-relaxed text-muted-foreground">{text('description')}</p>
       </div>
       <ul className="divide-y divide-border/40">
         {data.map((workspace) => (
@@ -143,56 +154,56 @@ export function PluggyWorkspaceClients({ canStoreSecrets, readOnly = false }: { 
                 {workspace.invalid ? (
                   <Badge variant="outline" className="border-destructive/20 bg-destructive/5 text-destructive">
                     <AlertCircle aria-hidden="true" />
-                    {t('providerSettings.workspaces.invalid')}
+                    {text('invalid')}
                   </Badge>
                 ) : workspace.has_credentials ? (
                   <Badge variant="outline" className="border-primary/15 bg-primary/5 text-primary">
                     <Check aria-hidden="true" />
-                    {t('providerSettings.workspaces.own')}
+                    {text('own')}
                   </Badge>
                 ) : (
-                  <Badge variant="outline" className="text-muted-foreground">{t('providerSettings.workspaces.shared')}</Badge>
+                  <Badge variant="outline" className="text-muted-foreground">{text('shared')}</Badge>
                 )}
               </div>
               <p className="mt-1 break-all text-xs text-muted-foreground">
                 {workspace.owner_email && <>{workspace.owner_email} · </>}
-                {t('providerSettings.workspaces.connections', { count: workspace.connections })}
+                {text('connections', { count: workspace.connections })}
               </p>
             </div>
             {readOnly ? (
               <span className="text-xs font-medium text-primary">{t('admin.settings.managedReadOnly')}</span>
             ) : (
-            <div className="flex items-center gap-2">
-              {workspace.has_credentials && (
+              <div className="flex items-center gap-2">
+                {workspace.has_credentials && (
+                  <Button
+                    variant="ghost"
+                    className="h-9 shadow-none"
+                    aria-label={`${text('remove')}: ${workspace.name}`}
+                    onClick={() => setRemoving(workspace)}
+                  >
+                    {text('remove')}
+                  </Button>
+                )}
                 <Button
-                  variant="ghost"
+                  variant="outline"
                   className="h-9 shadow-none"
-                  aria-label={`${t('providerSettings.workspaces.remove')}: ${workspace.name}`}
-                  onClick={() => setRemoving(workspace)}
+                  disabled={!canStoreSecrets}
+                  aria-label={`${text(workspace.has_credentials ? 'replace' : 'set')}: ${workspace.name}`}
+                  onClick={() => setEditing(workspace)}
                 >
-                  {t('providerSettings.workspaces.remove')}
+                  {text(workspace.has_credentials ? 'replace' : 'set')}
                 </Button>
-              )}
-              <Button
-                variant="outline"
-                className="h-9 shadow-none"
-                disabled={!canStoreSecrets}
-                aria-label={`${t(`providerSettings.workspaces.${workspace.has_credentials ? 'replace' : 'set'}`)}: ${workspace.name}`}
-                onClick={() => setEditing(workspace)}
-              >
-                {t(`providerSettings.workspaces.${workspace.has_credentials ? 'replace' : 'set'}`)}
-              </Button>
-            </div>
+              </div>
             )}
           </li>
         ))}
       </ul>
-      {editing && <ClientDialog workspace={editing} onClose={() => setEditing(null)} />}
+      {editing && <CredentialsDialog provider={provider} workspace={editing} onClose={() => setEditing(null)} />}
       {removing && (
         <DeleteConfirmationDialog
           open
-          title={t('providerSettings.workspaces.removeTitle', { workspace: removing.name })}
-          description={t('providerSettings.workspaces.removeDescription')}
+          title={text('removeTitle', { workspace: removing.name })}
+          description={text('removeDescription')}
           isPending={remove.isPending}
           onClose={() => setRemoving(null)}
           onConfirm={() => remove.mutate(removing.workspace_id)}

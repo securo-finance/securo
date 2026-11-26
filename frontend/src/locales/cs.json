@@ -3851,19 +3851,21 @@
   },
   "providerSettings": {
     "workspaces": {
-      "title": "Klienti Pluggy podle pracovního prostoru",
-      "description": "Prostor s vlastním klientem připojuje banky přes tento účet Pluggy. Ostatní používají výše uvedené údaje.",
-      "own": "Vlastní klient",
-      "shared": "Sdílený klient",
-      "invalid": "Nelze přečíst",
-      "connections": "Připojení Pluggy: {{count}}",
-      "set": "Nastavit klienta",
-      "replace": "Nahradit",
-      "remove": "Odebrat",
-      "removeTitle": "Odebrat klienta Pluggy prostoru {{workspace}}?",
-      "removeDescription": "Tento prostor bude pro nové operace znovu používat sdílené údaje.",
-      "dialogDescription": "Tyto údaje platí pouze pro tento prostor. Nastavte je dříve, než zde někdo připojí banku.",
-      "clientChanged": "Tento prostor má připojení pod jiným klientem Pluggy. Nejprve tato připojení odstraňte."
+      "pluggy": {
+        "title": "Klienti Pluggy podle pracovního prostoru",
+        "description": "Prostor s vlastním klientem připojuje banky přes tento účet Pluggy. Ostatní používají výše uvedené údaje.",
+        "own": "Vlastní klient",
+        "shared": "Sdílený klient",
+        "invalid": "Nelze přečíst",
+        "connections": "Připojení Pluggy: {{count}}",
+        "set": "Nastavit klienta",
+        "replace": "Nahradit",
+        "remove": "Odebrat",
+        "removeTitle": "Odebrat klienta Pluggy prostoru {{workspace}}?",
+        "removeDescription": "Tento prostor bude pro nové operace znovu používat sdílené údaje.",
+        "dialogDescription": "Tyto údaje platí pouze pro tento prostor. Nastavte je dříve, než zde někdo připojí banku.",
+        "clientChanged": "Tento prostor má připojení pod jiným klientem Pluggy. Nejprve tato připojení odstraňte."
+      }
     },
     "catalog": {
       "setupGuide": "Průvodce nastavením",

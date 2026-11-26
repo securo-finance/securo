@@ -3674,19 +3674,21 @@
   },
   "providerSettings": {
     "workspaces": {
-      "title": "Clientes Pluggy por workspace",
-      "description": "Um workspace com cliente próprio conecta bancos nessa conta Pluggy. Os demais usam as credenciais acima.",
-      "own": "Cliente próprio",
-      "shared": "Cliente compartilhado",
-      "invalid": "Não pode ser lido",
-      "connections": "Conexões Pluggy: {{count}}",
-      "set": "Definir cliente",
-      "replace": "Substituir",
-      "remove": "Remover",
-      "removeTitle": "Remover o cliente Pluggy de {{workspace}}?",
-      "removeDescription": "Este workspace voltará a usar as credenciais compartilhadas nas novas operações.",
-      "dialogDescription": "Estas credenciais valem apenas para este workspace. Defina-as antes de alguém conectar um banco aqui.",
-      "clientChanged": "Este workspace tem conexões em outro cliente Pluggy. Exclua essas conexões primeiro."
+      "pluggy": {
+        "title": "Clientes Pluggy por workspace",
+        "description": "Um workspace com cliente próprio conecta bancos nessa conta Pluggy. Os demais usam as credenciais acima.",
+        "own": "Cliente próprio",
+        "shared": "Cliente compartilhado",
+        "invalid": "Não pode ser lido",
+        "connections": "Conexões Pluggy: {{count}}",
+        "set": "Definir cliente",
+        "replace": "Substituir",
+        "remove": "Remover",
+        "removeTitle": "Remover o cliente Pluggy de {{workspace}}?",
+        "removeDescription": "Este workspace voltará a usar as credenciais compartilhadas nas novas operações.",
+        "dialogDescription": "Estas credenciais valem apenas para este workspace. Defina-as antes de alguém conectar um banco aqui.",
+        "clientChanged": "Este workspace tem conexões em outro cliente Pluggy. Exclua essas conexões primeiro."
+      }
     },
     "catalog": {
       "setupGuide": "Guia de configuração",

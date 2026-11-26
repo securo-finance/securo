@@ -3659,19 +3659,21 @@
   },
   "providerSettings": {
     "workspaces": {
-      "title": "ワークスペースごとの Pluggy クライアント",
-      "description": "専用クライアントを持つワークスペースは、その Pluggy アカウントで銀行を接続します。それ以外は上記の認証情報を使用します。",
-      "own": "専用クライアント",
-      "shared": "共有クライアント",
-      "invalid": "読み取れません",
-      "connections": "Pluggy 接続: {{count}}",
-      "set": "クライアントを設定",
-      "replace": "置き換え",
-      "remove": "削除",
-      "removeTitle": "{{workspace}} の Pluggy クライアントを削除しますか?",
-      "removeDescription": "このワークスペースは、新しい操作で共有の認証情報に戻ります。",
-      "dialogDescription": "この認証情報はこのワークスペースにのみ適用されます。銀行を接続する前に設定してください。",
-      "clientChanged": "このワークスペースには別の Pluggy クライアントの接続があります。先にそれらの接続を削除してください。"
+      "pluggy": {
+        "title": "ワークスペースごとの Pluggy クライアント",
+        "description": "専用クライアントを持つワークスペースは、その Pluggy アカウントで銀行を接続します。それ以外は上記の認証情報を使用します。",
+        "own": "専用クライアント",
+        "shared": "共有クライアント",
+        "invalid": "読み取れません",
+        "connections": "Pluggy 接続: {{count}}",
+        "set": "クライアントを設定",
+        "replace": "置き換え",
+        "remove": "削除",
+        "removeTitle": "{{workspace}} の Pluggy クライアントを削除しますか?",
+        "removeDescription": "このワークスペースは、新しい操作で共有の認証情報に戻ります。",
+        "dialogDescription": "この認証情報はこのワークスペースにのみ適用されます。銀行を接続する前に設定してください。",
+        "clientChanged": "このワークスペースには別の Pluggy クライアントの接続があります。先にそれらの接続を削除してください。"
+      }
     },
     "catalog": {
       "setupGuide": "設定ガイド",
