@@ -2023,6 +2023,36 @@ def _flat_entry(status: str, amount: str) -> dict:
 
 
 @pytest.mark.asyncio
+async def test_get_transactions_maps_unreferenced_othr_entry_to_pending(eb_keys):
+    """BNP Paribas Fortis sends a card authorization as OTHR with no
+    entry_reference and books it a day later. Stored as posted, the hold
+    and the booked entry both stayed (#1918)."""
+    provider = EnableBankingProvider()
+    page = {
+        "transactions": [
+            _flat_entry("OTHR", "1.00"),
+            {**_flat_entry("OTHR", "2.00"), "entry_reference": "  "},
+            {**_flat_entry("OTHR", "3.00"), "entry_reference": "REF-3"},
+        ],
+        "continuation_key": "",
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=page)
+
+    with _patch_client(provider, handler):
+        txns = await provider.get_transactions(
+            {"session_id": "sess-x"}, "acc-1", date(2026, 5, 1)
+        )
+
+    assert [(t.amount, t.status) for t in txns] == [
+        (Decimal("1.00"), "pending"),
+        (Decimal("2.00"), "pending"),
+        (Decimal("3.00"), "posted"),
+    ]
+
+
+@pytest.mark.asyncio
 async def test_get_transactions_maps_every_flat_status(eb_keys):
     """A cancelled or rejected entry moved no money, so it is skipped; a held
     or scheduled one has not settled, so it is pending (#1232)."""
