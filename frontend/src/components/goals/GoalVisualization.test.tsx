@@ -227,6 +227,43 @@ it.each([
   })
 })
 
+it('keeps the month labels distinct on a short x-axis window', async () => {
+  mocks.goals.list.mockResolvedValue([
+    { ...fixtures()[1], created_at: today + 'T12:00:00Z' },
+  ])
+  mocks.history.mockResolvedValue({ points: [{ date: today, amount: 2700 }], notes: [] })
+  const { user } = renderWithProviders(<GoalsPage />)
+  const region = await screen.findByRole('region', { name: 'Progress for House Fund' })
+  await user.click(within(region).getByRole('button'))
+  await waitFor(() => {
+    const labels = Array.from(region.querySelectorAll('.recharts-xAxis-tick-labels text')).map(
+      node => node.textContent,
+    )
+    expect(labels).toEqual(['Oct 21', 'Nov 1', 'Dec 1'])
+  })
+})
+
+it('moves the target label off the axis when the target is zero', async () => {
+  mocks.goals.list.mockResolvedValue([
+    { ...fixtures()[0], target_amount: 0, current_amount: 500 },
+  ])
+  mocks.history.mockResolvedValue({
+    points: [
+      { date: '2026-09-30', amount: 400 },
+      { date: '2026-10-31', amount: 450 },
+    ],
+    notes: [],
+  })
+  renderWithProviders(<GoalsPage />)
+  const region = await screen.findByRole('region', { name: 'Progress for Server Fund' })
+  await waitFor(() => {
+    const label = within(region)
+      .getByText('Target')
+      .closest('text')
+    expect(label?.getAttribute('text-anchor')).toBe('end')
+  })
+})
+
 it('anchors the x-axis one month before creation even when history starts later', async () => {
   mocks.goals.list.mockResolvedValue([{ ...fixtures()[0], created_at: '2026-03-15T12:00:00Z' }])
   renderWithProviders(<GoalsPage />)

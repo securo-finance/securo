@@ -92,8 +92,41 @@ describe('existing history APIs', () => {
       goal({ tracking_type: 'asset', asset_id: 'studio' }, today),
       today,
     )
-    expect(result.points).toEqual([{ date: today, amount: 8000 }])
-    expect(api.assets.valueTrend).toHaveBeenCalledWith('studio')
+    expect(result.points).toEqual([
+      { date: '2026-02-01', amount: 100 },
+      { date: today, amount: 8000 },
+    ])
+    expect(api.assets.valueTrend).toHaveBeenCalledWith('studio', 10)
+  })
+
+  it('carries the last valuation from before the window into its start', async () => {
+    api.assets.valueTrend.mockResolvedValue([
+      { date: '2025-07-28', amount: 3900 },
+      { date: '2025-11-28', amount: 4200 },
+      { date: '2026-01-28', amount: 4800 },
+    ])
+    const result = await loadGoalHistory(
+      goal({ tracking_type: 'asset', asset_id: 'studio' }, today),
+      today,
+    )
+    expect(result.points).toEqual([{ date: '2026-02-01', amount: 4800 }])
+    expect(result.notes).toEqual(['reconstructed'])
+  })
+
+  it('requests the whole goal window from the value-trend API', async () => {
+    await loadGoalHistory(
+      goal(
+        {
+          tracking_type: 'asset',
+          asset_id: 'studio',
+          created_at: '2016-01-05T12:00:00Z',
+        },
+        today,
+      ),
+      today,
+    )
+    // Ten years, capped at the endpoint's limit, instead of the 12-month default.
+    expect(api.assets.valueTrend).toHaveBeenCalledWith('studio', 120)
   })
 
   it('uses weekly report totals for only the selected wallet, starting at an older goal creation date', async () => {

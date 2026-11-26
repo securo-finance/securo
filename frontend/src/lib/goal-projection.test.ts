@@ -1,7 +1,15 @@
-import { goalHistoryStart } from './goal-projection'
 import { describe, expect, it } from 'vitest'
 import { goal } from '@/test/goal-fixtures'
-import { calendarMonthAfter, cleanHistory, projectGoal } from './goal-projection'
+import {
+  axisTicks,
+  calendarMonthAfter,
+  carryForward,
+  cleanHistory,
+  goalHistoryStart,
+  historyMonths,
+  projectGoal,
+  targetLabelSide,
+} from './goal-projection'
 
 const today = '2026-11-21'
 describe('goal projection', () => {
@@ -79,6 +87,73 @@ it.each([
   { today: '2024-02-29', expected: '2014-03-01' },
 ])('caps history at ten years on $today', ({ today, expected }) => {
   expect(goalHistoryStart(goal({ created_at: '1995-01-01T00:00:00Z' }, today), today)).toBe(expected)
+})
+
+describe('goal history window', () => {
+  it.each([
+    { from: '2026-02-01', to: '2026-11-21', months: 10 },
+    { from: '2016-11-21', to: '2026-11-21', months: 120 },
+    { from: '2016-01-01', to: '2026-11-21', months: 120 },
+    { from: '2026-11-01', to: '2026-11-21', months: 1 },
+  ])('counts $months months between $from and $to', ({ from, to, months }) => {
+    expect(historyMonths(from, to)).toBe(months)
+  })
+
+  it('carries the last valuation before the window forward to its start', () => {
+    expect(
+      carryForward(
+        [
+          { date: '2026-01-28', amount: 4800 },
+          { date: '2025-11-28', amount: 4200 },
+        ],
+        '2026-02-01',
+      ),
+    ).toEqual([
+      { date: '2026-01-28', amount: 4800 },
+      { date: '2025-11-28', amount: 4200 },
+      { date: '2026-02-01', amount: 4800 },
+    ])
+  })
+
+  it('leaves points untouched when a valuation already starts the window', () => {
+    const points = [{ date: '2026-02-01', amount: 5000 }]
+    expect(carryForward(points, '2026-02-01')).toBe(points)
+  })
+
+  it('adds nothing without a valid valuation before the window', () => {
+    expect(carryForward([{ date: 'invalid', amount: 10 }], '2026-02-01')).toEqual([
+      { date: 'invalid', amount: 10 },
+    ])
+    expect(carryForward([], '2026-02-01')).toEqual([])
+  })
+})
+
+describe('goal chart axis', () => {
+  it('keeps the month labels of a short window distinct', () => {
+    const ticks = axisTicks('2026-10-21', '2026-12-01')
+    const labels = ticks.map(time => new Date(time).toISOString().slice(0, 10))
+    expect(labels).toEqual(['2026-10-21', '2026-11-01', '2026-12-01'])
+    expect(new Set(labels.map(label => label.slice(0, 7))).size).toBe(labels.length)
+  })
+
+  it('thins a ten-year window to at most six ticks and keeps both ends', () => {
+    const ticks = axisTicks('2016-11-21', '2026-11-21')
+    expect(ticks.length).toBeLessThanOrEqual(6)
+    expect(ticks[0]).toBe(Date.parse('2016-11-21T00:00:00Z'))
+    expect(ticks.at(-1)).toBe(Date.parse('2026-11-21T00:00:00Z'))
+  })
+
+  it('falls back to the start for an empty or inverted range', () => {
+    expect(axisTicks('2026-11-21', '2026-11-21')).toEqual([Date.parse('2026-11-21T00:00:00Z')])
+  })
+
+  it.each([
+    { target: 0, floor: 0, side: 'insideTopRight' },
+    { target: 0, floor: -100, side: 'insideTopLeft' },
+    { target: 6000, floor: 0, side: 'insideTopLeft' },
+  ])('places a target of $target above a floor of $floor at $side', ({ target, floor, side }) => {
+    expect(targetLabelSide(target, floor)).toBe(side)
+  })
 })
 
 it('interpolates weekly debt progress and keeps a short final interval', () => {
