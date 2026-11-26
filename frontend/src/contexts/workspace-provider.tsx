@@ -8,6 +8,11 @@ import { reconnectDelay } from '@/lib/reconnect-delay'
 import type { Workspace } from '@/types'
 import { WorkspaceContext } from '@/contexts/workspace-context'
 
+// How stale the cached list may be before an administrator's status change
+// (a suspension, or a reactivation that re-enables writes) is picked up the
+// next time the tab comes back into view.
+const STATUS_REFRESH_MS = 30_000
+
 
 export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const { user, token, isLoading: authLoading } = useAuth()
@@ -27,14 +32,19 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   // result, so an older request that fails late cannot flag a list a newer
   // one already brought back, or clear it.
   const loadGeneration = useRef(0)
+  // When the list last came back, so a background refresh on focus cannot
+  // hammer the server while the person alt-tabs.
+  const lastLoadedAt = useRef(0)
   const queryClient = useQueryClient()
 
-  const loadWorkspaces = useCallback(async () => {
+  const loadWorkspaces = useCallback(async (options?: { background?: boolean }) => {
+    const background = options?.background ?? false
     const load = ++loadGeneration.current
-    setLoadingList(true)
+    if (!background) setLoadingList(true)
     try {
       const fetched = await workspacesApi.list()
       if (load !== loadGeneration.current) return
+      lastLoadedAt.current = Date.now()
       setLoadFailed(false)
       setFailedLoads(0)
       setList(fetched)
@@ -65,7 +75,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       }
       setList([])
     } finally {
-      if (load === loadGeneration.current) setLoadingList(false)
+      if (load === loadGeneration.current && !background) setLoadingList(false)
     }
   }, [])
 
@@ -120,6 +130,28 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     }, reconnectDelay(failedLoads))
     return () => window.clearTimeout(timer)
   }, [loadFailed, user, token, failedLoads, loadWorkspaces])
+
+  // The list is fetched once per sign-in, so a status changed elsewhere in the
+  // meantime (a suspension, or a reactivation that re-enables writes) would
+  // only show after a reload. Ask again when the tab comes back into view,
+  // throttled and in the background so the shell never flashes its loading
+  // state for a refresh nobody asked for (#1875).
+  useEffect(() => {
+    // While the list could not be fetched, the retry effects above already
+    // reload on the same events: adding a second request would only race them.
+    if (!user || !token || loadFailed) return
+    const refreshIfStale = () => {
+      if (document.visibilityState === 'hidden') return
+      if (Date.now() - lastLoadedAt.current < STATUS_REFRESH_MS) return
+      void loadWorkspaces({ background: true })
+    }
+    window.addEventListener('focus', refreshIfStale)
+    document.addEventListener('visibilitychange', refreshIfStale)
+    return () => {
+      window.removeEventListener('focus', refreshIfStale)
+      document.removeEventListener('visibilitychange', refreshIfStale)
+    }
+  }, [user, token, loadFailed, loadWorkspaces])
 
   const switchWorkspace = useCallback(
     async (id: string) => {

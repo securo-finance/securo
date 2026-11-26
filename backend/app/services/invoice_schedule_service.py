@@ -1150,6 +1150,14 @@ async def generate_due(
     # can be suspended in between. Nothing writes into a suspended workspace
     # (ADR 0049), and issuing an invoice writes: the run ends here, with
     # nothing emitted and the cursor where it was.
+    #
+    # The schedule lock serializes two runs of the same agreement, not the
+    # administrator: a suspension committing between this check and the
+    # caller's commit still lands after an invoice. The window is the emission
+    # itself and is accepted — the next run's select already leaves the
+    # workspace out. Locking the workspace row here would close it, at the
+    # cost of holding that row for the whole emission (and the archive step
+    # that follows commits separately, after the lock is gone anyway).
     if await is_suspended(session, schedule.workspace_id):
         return []
     emitted: list[Invoice] = []

@@ -185,6 +185,45 @@ describe('loading', () => {
     }
   })
 
+  it('picks up a status changed elsewhere when the tab comes back into view', async () => {
+    // Another administrator reactivates the workspace while the tab is in the
+    // background. The cached list still says suspended, so writes stay
+    // disabled until a reload — unless coming back into view refreshes it.
+    vi.useFakeTimers()
+    try {
+      workspacesApi.list
+        .mockResolvedValueOnce([makeWorkspace({ role: 'owner', status: 'suspended' })])
+        .mockResolvedValueOnce([makeWorkspace({ role: 'owner', status: 'active' })])
+      const { result } = renderHook(() => useWorkspace(), { wrapper })
+      await act(async () => { await vi.advanceTimersByTimeAsync(0) })
+      expect(result.current.canWrite).toBe(false)
+
+      await act(async () => { await vi.advanceTimersByTimeAsync(30_001) })
+      await act(async () => {
+        window.dispatchEvent(new Event('focus'))
+        await vi.advanceTimersByTimeAsync(0)
+      })
+
+      expect(result.current.canWrite).toBe(true)
+      expect(workspacesApi.list).toHaveBeenCalledTimes(2)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('does not refresh on focus when the list was just loaded', async () => {
+    workspacesApi.list.mockResolvedValue([makeWorkspace()])
+
+    const { result } = await renderWorkspace()
+    expect(workspacesApi.list).toHaveBeenCalledTimes(1)
+
+    act(() => { window.dispatchEvent(new Event('focus')) })
+    await act(async () => {})
+
+    expect(workspacesApi.list).toHaveBeenCalledTimes(1)
+    expect(result.current.canWrite).toBe(true)
+  })
+
   it('stops the automatic loads when the provider unmounts', async () => {
     vi.useFakeTimers()
     try {

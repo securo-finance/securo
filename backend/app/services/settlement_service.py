@@ -411,14 +411,21 @@ async def replace_receiver_settlements(
     # The rows being replaced can sit in a group of another workspace, which a
     # linked member reaches from here. A suspended workspace is never written
     # to (ADR 0049), and deleting is writing: checked before the delete, which
-    # otherwise ran even for a payback that names no payer.
-    replaced_in = set(
-        await session.scalars(
-            select(GroupSettlement.workspace_id).where(
-                GroupSettlement.receiver_transaction_id == transaction.id
+    # otherwise ran even for a payback that names no payer. Two workspaces are
+    # in play: the one the settlement was recorded from, and the one that owns
+    # its group, which can be the suspended one.
+    replaced_in = {
+        workspace
+        for row in (
+            await session.execute(
+                select(GroupSettlement.workspace_id, Group.workspace_id)
+                .select_from(GroupSettlement)
+                .join(Group, Group.id == GroupSettlement.group_id)
+                .where(GroupSettlement.receiver_transaction_id == transaction.id)
             )
-        )
-    )
+        ).all()
+        for workspace in row
+    }
     for settled_workspace_id in replaced_in:
         await require_not_suspended(session, settled_workspace_id)
     await session.execute(
@@ -479,6 +486,11 @@ async def update_settlement(
     settlement = result.scalar_one_or_none()
     if not settlement:
         return None
+
+    # The row can sit in the workspace that recorded it (the payer's), not in
+    # the group's, and a mutation writes into both (ADR 0049).
+    if settlement.workspace_id != group.workspace_id:
+        await require_not_suspended(session, settlement.workspace_id)
 
     # Caller must currently own the settlement (linked member of the
     # original from_member, or the group owner).
@@ -548,6 +560,10 @@ async def delete_settlement(
     settlement = result.scalar_one_or_none()
     if not settlement:
         return False
+    # The row can sit in the workspace that recorded it (the payer's), not in
+    # the group's, and a deletion writes into both (ADR 0049).
+    if settlement.workspace_id != group.workspace_id:
+        await require_not_suspended(session, settlement.workspace_id)
     if not await _can_settle_from(session, group, user_id, settlement.from_member_id):
         raise PermissionError("You can only delete settlements you created")
     # The payer's debit (when made from `account_id`) and the receiver's

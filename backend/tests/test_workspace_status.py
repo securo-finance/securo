@@ -8,6 +8,7 @@ import pytest
 from fastapi import HTTPException
 from sqlalchemy import func, select
 
+from app.models.account import Account
 from app.models.asset import Asset
 from app.models.asset_value import AssetValue
 from app.models.bank_connection import BankConnection
@@ -279,6 +280,76 @@ async def test_replacing_a_payback_does_not_write_into_a_suspended_group(
             TransactionPaybackInput(), test_workspace.id, test_user.id,
         )
     assert refused.value.detail == SUSPENDED_DETAIL
+    assert await session.get(GroupSettlement, settlement_id) is not None
+
+
+async def test_clearing_a_payback_checks_the_group_workspace_too(
+    session, test_user, test_workspace
+):
+    """The settlement records the workspace it was written from (the owner's
+    second workspace), while its group lives in another. Suspending the
+    group's workspace must stop the replacement even though the row's own
+    workspace is still active (#1875 review)."""
+    group, _payer, _payer_ws, data = await _shared_group(session, test_user, test_workspace)
+    # The group's owner also belongs to a second workspace, and records the
+    # payback from there with their own incoming credit (the only way
+    # `create_settlement` lets the writer and the receiver differ).
+    other = await workspace_service.create_workspace(
+        session, name="Other", creator=test_user, self_membership=True
+    )
+    other_account = Account(
+        id=uuid.uuid4(), user_id=test_user.id, workspace_id=other.id,
+        name="Cash", type="checking", currency="BRL", balance=Decimal("0"),
+    )
+    session.add(other_account)
+    credit = Transaction(
+        id=uuid.uuid4(), user_id=test_user.id, workspace_id=other.id,
+        account_id=other_account.id, description="Received", amount=Decimal("10.00"),
+        currency="BRL", type="credit", source="manual", date=date.today(),
+    )
+    session.add(credit)
+    await session.flush()
+    settlement = await settlement_service.create_settlement(
+        session, group.id, other.id, test_user.id,
+        data.model_copy(update={"receiver_transaction_id": credit.id}),
+    )
+    assert settlement is not None
+    assert settlement.workspace_id == other.id
+    settlement_id, credit_id = settlement.id, credit.id
+    # The group's workspace goes away; the row's own does not.
+    test_workspace.status = "suspended"
+    await session.commit()
+    with pytest.raises(HTTPException) as refused:
+        await settlement_service.replace_receiver_settlements(
+            session, await session.get(Transaction, credit_id),
+            TransactionPaybackInput(), other.id, test_user.id,
+        )
+    assert refused.value.detail == SUSPENDED_DETAIL
+    assert await session.get(GroupSettlement, settlement_id) is not None
+
+
+async def test_editing_and_deleting_a_settlement_from_a_suspended_workspace_are_refused(
+    session, test_user, test_workspace
+):
+    """The payer records the settlement from their own workspace; the owner
+    of an active group must not edit or delete that row once the payer's
+    workspace is suspended (#1875 review)."""
+    group, payer, payer_ws, data = await _shared_group(session, test_user, test_workspace)
+    settlement = await settlement_service.create_settlement(
+        session, group.id, payer_ws.id, payer.id, data
+    )
+    assert settlement is not None
+    settlement_id = settlement.id
+    payer_ws.status = "suspended"
+    await session.commit()
+    where = (session, group.id, settlement_id, test_workspace.id, test_user.id)
+    for attempt in (
+        settlement_service.update_settlement(*where, GroupSettlementUpdate(amount=Decimal("4"))),
+        settlement_service.delete_settlement(*where),
+    ):
+        with pytest.raises(HTTPException) as refused:
+            await attempt
+        assert refused.value.detail == SUSPENDED_DETAIL
     assert await session.get(GroupSettlement, settlement_id) is not None
 
 
