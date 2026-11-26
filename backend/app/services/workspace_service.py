@@ -13,6 +13,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
+from app.core.row_security import bind_workspace
 from app.models.user import User
 from app.models.workspace import (
     MANAGER_VIRTUAL_ROLE,
@@ -75,6 +76,7 @@ async def create_personal_workspace_for_user(
     )
     session.add(workspace)
     await session.flush()
+    await bind_workspace(session, workspace.id, user.id)
 
     membership = WorkspaceMember(
         workspace_id=workspace.id,
@@ -249,6 +251,7 @@ async def create_workspace(
     )
     session.add(workspace)
     await session.flush()
+    await bind_workspace(session, workspace.id, creator.id)
     if self_membership:
         session.add(
             WorkspaceMember(

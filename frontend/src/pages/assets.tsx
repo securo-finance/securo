@@ -1,4 +1,21 @@
-import { useState, useMemo, useEffect, useRef, useId } from 'react'
+import { useState, useMemo, useEffect, useRef, useId, type ButtonHTMLAttributes, type ReactNode } from 'react'
+import {
+  closestCenter,
+  DndContext,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from '@dnd-kit/core'
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
 import { useTranslation } from 'react-i18next'
 import { useDisplayLocale, useDateLocale } from '@/hooks/use-display-locale'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -8,6 +25,13 @@ import { dateTickFormatter, localDateString, todayInTimezone } from '@/lib/date-
 import { useEffectiveTimezone } from '@/hooks/use-timezone'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
@@ -34,6 +58,8 @@ import {
   ChevronDown,
   ChevronUp,
   ChevronRight,
+  EllipsisVertical,
+  GripVertical,
   RefreshCw,
   Wallet,
   FolderInput,
@@ -71,6 +97,7 @@ import { getAssetValuePrimary, getPortfolioShare, getPortfolioTotalPrimary } fro
 import { formatTransactionTotal, getTransactionTotalCurrency } from '@/lib/asset-transaction-total'
 import { MAX_SPLIT_UNITS, canRecordSplit, formatSplitRatio, parseSplitUnits } from '@/lib/asset-split'
 import { formatCurrency } from '@/lib/format'
+import { applyWalletOrder } from '@/lib/wallet-order'
 
 // Renders a logo image when one is available, falling back to the asset's
 // type-based Lucide icon on missing URL or broken image. Uses the type's
@@ -179,6 +206,38 @@ function assetTypeFromQuoteType(quoteType: string | null | undefined): string {
 const VALUATION_METHODS = ['manual', 'growth_rule', 'market_price'] as const
 const GROWTH_TYPES = ['percentage', 'absolute'] as const
 const GROWTH_FREQUENCIES = ['daily', 'weekly', 'monthly', 'yearly'] as const
+
+type DragHandleProps = ButtonHTMLAttributes<HTMLButtonElement> & {
+  ref: (element: HTMLElement | null) => void
+}
+
+function SortableWalletSection({
+  id,
+  disabled,
+  children,
+}: {
+  id: string
+  disabled: boolean
+  children: (dragHandle: DragHandleProps) => ReactNode
+}) {
+  const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } = useSortable({
+    id,
+    disabled,
+  })
+
+  return (
+    <div
+      ref={setNodeRef}
+      // Translate only: scaling would squash a wallet into its neighbour's height.
+      style={{ transform: CSS.Translate.toString(transform), transition }}
+      className={`space-y-2 rounded-xl ${
+        isDragging ? 'relative z-20 bg-background/90 opacity-75 shadow-xl ring-2 ring-primary/30' : ''
+      }`}
+    >
+      {children({ ...attributes, ...listeners, ref: setActivatorNodeRef })}
+    </div>
+  )
+}
 
 // Column template shared by the holdings table header + rows so they align:
 // Ativo · Quant. · Preço Médio · Preço Atual · Rentab. · Saldo · % · actions.
@@ -643,6 +702,29 @@ export default function AssetsPage() {
     },
     onError: (e) => toast.error(assetErrorMessage(e, t('common.error'))),
   })
+
+  const reorderWalletsMutation = useMutation({
+    mutationFn: (groupIds: string[]) => assetGroups.reorder(groupIds),
+    onMutate: async (groupIds) => {
+      await queryClient.cancelQueries({ queryKey: ['asset-groups'], exact: true })
+      const previous = queryClient.getQueryData<AssetGroup[]>(['asset-groups'])
+      if (previous) {
+        queryClient.setQueryData(['asset-groups'], applyWalletOrder(previous, groupIds))
+      }
+      return { previous }
+    },
+    onError: (error, _groupIds, context) => {
+      if (context?.previous) queryClient.setQueryData(['asset-groups'], context.previous)
+      toast.error(assetErrorMessage(error, t('common.error')))
+    },
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ['asset-groups'] }),
+  })
+
+  const walletSensors = useSensors(
+    // A few pixels of travel before a drag starts, so a click on the handle stays a click.
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  )
 
   const moveAssetMutation = useMutation({
     mutationFn: ({ id, groupId }: { id: string; groupId: string | null }) =>
@@ -1370,7 +1452,25 @@ export default function AssetsPage() {
     }
   }
 
-  function renderWalletSection(wallet: AssetGroup, walletAssets: Asset[]) {
+  function moveWallet(from: number, to: number) {
+    if (from === to || from < 0 || to < 0 || to >= sortedWallets.length) return
+    reorderWalletsMutation.mutate(arrayMove(sortedWallets.map(wallet => wallet.id), from, to))
+  }
+
+  function handleWalletDragEnd({ active, over }: DragEndEvent) {
+    if (!over || reorderWalletsMutation.isPending) return
+    moveWallet(
+      sortedWallets.findIndex(wallet => wallet.id === active.id),
+      sortedWallets.findIndex(wallet => wallet.id === over.id),
+    )
+  }
+
+  function renderWalletSection(
+    wallet: AssetGroup,
+    walletAssets: Asset[],
+    walletIndex: number,
+    dragHandle: DragHandleProps,
+  ) {
     const isCollapsed = collapsedWallets.has(wallet.id)
     const isSynced = wallet.source !== 'manual'
     // Sum in the user's primary currency. Fall back to the wallet's own
@@ -1399,8 +1499,21 @@ export default function AssetsPage() {
       !!wallet.institution_name && wallet.institution_name !== wallet.name
 
     return (
-      <div key={wallet.id} className="space-y-2">
+      <>
         <div className="flex items-center gap-3 px-1">
+          {canWrite && sortedWallets.length > 1 && (
+            <button
+              {...dragHandle}
+              // Marked aria-disabled by the sortable while saving, never `disabled`:
+              // that would drop keyboard focus right after a drop.
+              type="button"
+              className="-me-1 touch-none cursor-grab rounded-md p-1 text-muted-foreground/60 transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:cursor-grabbing aria-disabled:cursor-default aria-disabled:opacity-30"
+              aria-label={t('assets.reorderWallet', { name: wallet.name })}
+              title={t('assets.reorderWallet', { name: wallet.name })}
+            >
+              <GripVertical size={15} />
+            </button>
+          )}
           <button
             onClick={() => toggleWalletCollapse(wallet.id)}
             className="flex items-center gap-2 flex-1 min-w-0 group"
@@ -1442,24 +1555,49 @@ export default function AssetsPage() {
             ))}
           </div>
           {canWrite && (
-            <>
-              <button
-                onClick={() => openEditWallet(wallet)}
-                className="p-1 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
-                title={t('assets.editWallet')}
-              >
-                <Pencil size={12} />
-              </button>
-              {!isSynced && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
                 <button
-                  onClick={() => setDeletingWalletId(wallet.id)}
-                  className="p-1 rounded-lg text-muted-foreground hover:text-rose-600 hover:bg-rose-50 transition-colors"
-                  title={t('assets.deleteWallet')}
+                  type="button"
+                  className="rounded-lg p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                  aria-label={`${t('common.more')}: ${wallet.name}`}
+                  title={t('common.more')}
                 >
-                  <Trash2 size={12} />
+                  <EllipsisVertical size={14} />
                 </button>
-              )}
-            </>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-44">
+                {sortedWallets.length > 1 && (
+                  <>
+                    <DropdownMenuItem
+                      disabled={walletIndex === 0 || reorderWalletsMutation.isPending}
+                      onSelect={() => moveWallet(walletIndex, walletIndex - 1)}
+                    >
+                      <ChevronUp />
+                      {t('assets.moveWalletUp')}
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      disabled={walletIndex === sortedWallets.length - 1 || reorderWalletsMutation.isPending}
+                      onSelect={() => moveWallet(walletIndex, walletIndex + 1)}
+                    >
+                      <ChevronDown />
+                      {t('assets.moveWalletDown')}
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                  </>
+                )}
+                <DropdownMenuItem onSelect={() => openEditWallet(wallet)}>
+                  <Pencil />
+                  {t('assets.editWallet')}
+                </DropdownMenuItem>
+                {!isSynced && (
+                  <DropdownMenuItem variant="destructive" onSelect={() => setDeletingWalletId(wallet.id)}>
+                    <Trash2 />
+                    {t('assets.deleteWallet')}
+                  </DropdownMenuItem>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
           )}
         </div>
         {!isCollapsed && walletAssets.length > 0 && (
@@ -1472,7 +1610,7 @@ export default function AssetsPage() {
             {t('assets.emptyWallet')}
           </div>
         )}
-      </div>
+      </>
     )
   }
 
@@ -1620,7 +1758,19 @@ export default function AssetsPage() {
           {/* Wallets (active assets grouped) */}
           {(sortedWallets.length > 0 || ungroupedAssets.length > 0) && (
             <div className="space-y-4">
-              {sortedWallets.map(w => renderWalletSection(w, assetsByGroup.get(w.id) ?? []))}
+              <DndContext sensors={walletSensors} collisionDetection={closestCenter} onDragEnd={handleWalletDragEnd}>
+                <SortableContext items={sortedWallets.map(w => w.id)} strategy={verticalListSortingStrategy}>
+                  {sortedWallets.map((w, index) => (
+                    <SortableWalletSection
+                      key={w.id}
+                      id={w.id}
+                      disabled={!canWrite || sortedWallets.length < 2 || reorderWalletsMutation.isPending}
+                    >
+                      {(dragHandle) => renderWalletSection(w, assetsByGroup.get(w.id) ?? [], index, dragHandle)}
+                    </SortableWalletSection>
+                  ))}
+                </SortableContext>
+              </DndContext>
 
               {ungroupedAssets.length > 0 && (
                 <div className="space-y-2">

@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from app.core.config import get_settings
 from app.core.feature_flags import feature_flag
 from app.core.redis import close_redis
+from app.core.row_security import maker_for_row, workspace_makers
 from app.models.plugin_connection import PluginConnection, PluginConnectionRoutine
 from app.plugins import connections, runner
 from app.services.workspace_status_service import is_suspended
@@ -86,8 +87,11 @@ async def run_due_routines(session: AsyncSession) -> int:
 async def _sync_due() -> int:
     engine, session_maker = _session_maker()
     try:
-        async with session_maker() as session:
-            return await sync_due(session) + await run_due_routines(session)
+        ran = 0
+        for maker in await workspace_makers(session_maker):
+            async with maker() as session:
+                ran += await sync_due(session) + await run_due_routines(session)
+        return ran
     finally:
         await engine.dispose()
         # Each task runs in its own event loop: don't leave a client bound to this one.
@@ -97,7 +101,8 @@ async def _sync_due() -> int:
 async def _sync_one(connection_id: str) -> None:
     engine, session_maker = _session_maker()
     try:
-        async with session_maker() as session:
+        maker = await maker_for_row(session_maker, "plugin_connections", uuid.UUID(connection_id))
+        async with maker() as session:
             connection = await session.get(PluginConnection, uuid.UUID(connection_id))
             if (
                 connection is not None
@@ -133,7 +138,8 @@ async def _run_routines_of(
     engine, session_maker = _session_maker()
     busy: list[str] = []
     try:
-        async with session_maker() as session:
+        maker = await maker_for_row(session_maker, "plugin_connections", uuid.UUID(connection_id))
+        async with maker() as session:
             connection = await session.get(PluginConnection, uuid.UUID(connection_id))
             if connection is None or await is_suspended(session, connection.workspace_id):
                 return []

@@ -9,7 +9,12 @@ from app.core.workspace_context import (
     current_workspace,
     current_writable_workspace,
 )
-from app.schemas.asset_group import AssetGroupCreate, AssetGroupRead, AssetGroupUpdate
+from app.schemas.asset_group import (
+    AssetGroupCreate,
+    AssetGroupRead,
+    AssetGroupReorder,
+    AssetGroupUpdate,
+)
 from app.services import asset_group_service
 
 router = APIRouter(prefix="/api/asset-groups", tags=["asset-groups"])
@@ -30,6 +35,20 @@ async def create_group(
     session: AsyncSession = Depends(get_async_session),
 ):
     return await asset_group_service.create_group(session, ctx.workspace.id, ctx.user_id, data)
+
+
+@router.put("/order", status_code=status.HTTP_204_NO_CONTENT)
+async def reorder_groups(
+    data: AssetGroupReorder,
+    ctx: WorkspaceContext = Depends(current_writable_workspace),
+    session: AsyncSession = Depends(get_async_session),
+):
+    reordered = await asset_group_service.reorder_groups(session, ctx.workspace.id, data.group_ids)
+    if not reordered:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="One or more groups not found",
+        )
 
 
 @router.patch("/{group_id}", response_model=AssetGroupRead)
