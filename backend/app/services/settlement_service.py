@@ -408,6 +408,19 @@ async def replace_receiver_settlements(
         raise ValueError("This credit was created by a settlement; change it from the group")
     if transaction.user_id != user_id:
         raise ValueError("Only the transaction's owner can record its payback")
+    # The rows being replaced can sit in a group of another workspace, which a
+    # linked member reaches from here. A suspended workspace is never written
+    # to (ADR 0049), and deleting is writing: checked before the delete, which
+    # otherwise ran even for a payback that names no payer.
+    replaced_in = set(
+        await session.scalars(
+            select(GroupSettlement.workspace_id).where(
+                GroupSettlement.receiver_transaction_id == transaction.id
+            )
+        )
+    )
+    for settled_workspace_id in replaced_in:
+        await require_not_suspended(session, settled_workspace_id)
     await session.execute(
         delete(GroupSettlement).where(GroupSettlement.receiver_transaction_id == transaction.id)
     )

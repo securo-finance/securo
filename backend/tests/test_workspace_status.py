@@ -11,14 +11,18 @@ from sqlalchemy import func, select
 from app.models.asset import Asset
 from app.models.asset_value import AssetValue
 from app.models.bank_connection import BankConnection
+from app.models.group_settlement import GroupSettlement
 from app.models.plugin_connection import PluginConnection, PluginConnectionRoutine
 from app.models.recurring_transaction import RecurringTransaction
 from app.models.transaction import Transaction
 from app.models.user import User
+from app.providers.market_price import LatestClose
 from app.schemas.group import GroupCreate, GroupMemberCreate
 from app.schemas.group_settlement import GroupSettlementCreate, GroupSettlementUpdate
+from app.schemas.transaction import TransactionPaybackInput
 from app.services import (
     group_service,
+    invoice_schedule_service,
     recurring_transaction_service,
     settlement_service,
     workspace_service,
@@ -247,6 +251,37 @@ async def test_a_linked_member_cannot_settle_into_it(session, test_user, test_wo
     ) == [settlement]
 
 
+async def test_replacing_a_payback_does_not_write_into_a_suspended_group(
+    session, test_user, test_workspace, test_account
+):
+    """The replaced settlements may belong to a suspended workspace, while
+    the credit being saved lives in an active one: the delete is refused
+    before it happens, not after (#1875 review)."""
+    group, _payer, _payer_ws, data = await _shared_group(session, test_user, test_workspace)
+    credit = Transaction(
+        id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+        account_id=test_account.id, description="Received", amount=Decimal("10.00"),
+        currency="BRL", type="credit", source="manual", date=date.today(),
+    )
+    session.add(credit)
+    await session.flush()
+    settlement = await settlement_service.create_settlement(
+        session, group.id, test_workspace.id, test_user.id,
+        data.model_copy(update={"receiver_transaction_id": credit.id}),
+    )
+    assert settlement is not None
+    settlement_id, credit_id = settlement.id, credit.id
+    test_workspace.status = "suspended"
+    await session.commit()
+    with pytest.raises(HTTPException) as refused:
+        await settlement_service.replace_receiver_settlements(
+            session, await session.get(Transaction, credit_id),
+            TransactionPaybackInput(), test_workspace.id, test_user.id,
+        )
+    assert refused.value.detail == SUSPENDED_DETAIL
+    assert await session.get(GroupSettlement, settlement_id) is not None
+
+
 @pytest.mark.parametrize("status,picked", [("suspended", False), ("active", True)])
 async def test_a_settlement_credit_skips_its_accounts(
     session, test_user, test_workspace, test_account, status, picked
@@ -430,6 +465,47 @@ async def test_the_invoice_job(session, test_user, test_workspace, status, calls
     assert len(await due_schedule_ids(session)) == calls
 
 
+async def test_the_invoice_job_rechecks_the_workspace_before_emitting(
+    session, test_user, test_workspace
+):
+    """The job's select ran while the workspace was active; the suspension
+    lands before the row is locked. Nothing is emitted into it."""
+    from app.models.invoice import Invoice
+    from app.models.invoice_schedule import InvoiceSchedule
+    from app.models.payee import Payee
+
+    payee = Payee(id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id, name="ACME")
+    session.add(payee)
+    await session.flush()
+    schedule = InvoiceSchedule(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        payee_id=payee.id,
+        status="active",
+        origin="local",
+        currency="BRL",
+        name="Retainer",
+        frequency="monthly",
+        start_date=date.today(),
+    )
+    session.add(schedule)
+    await session.commit()
+    # What the job did first: it picked the schedule while the workspace was
+    # active, and loaded it.
+    schedule_id = schedule.id
+    assert await due_schedule_ids(session) == [schedule_id]
+    loaded = await session.get(InvoiceSchedule, schedule_id)
+    test_workspace.status = "suspended"
+    await session.commit()
+
+    assert await invoice_schedule_service.generate_due(session, loaded) == []
+    count = await session.scalar(
+        select(func.count()).select_from(Invoice).where(Invoice.schedule_id == schedule_id)
+    )
+    assert count == 0
+
+
 def _asset(user, workspace_id, **kw):
     return Asset(
         id=uuid.uuid4(), user_id=user.id, workspace_id=workspace_id, name="A", type="other",
@@ -456,14 +532,21 @@ async def test_the_growth_job(session, test_user, test_workspace, status, calls)
 
 @pytest.mark.parametrize("status,asked", [("suspended", 0), ("active", 1)])
 async def test_the_price_job(session, test_user, test_workspace, status, asked):
-    session.add(_asset(test_user, test_workspace.id, valuation_method="market_price", ticker="TEST"))
+    asset = _asset(test_user, test_workspace.id, valuation_method="market_price", ticker="TEST")
+    session.add(asset)
     test_workspace.status = status
     await session.commit()
+    asset_id = asset.id
     provider = AsyncMock()
-    provider.get_latest_closes.return_value = {}
+    # A real close, so the run has a price to write: the assertions below are
+    # about what lands in the row, not only about the provider being asked.
+    provider.get_latest_closes.return_value = {"TEST": LatestClose(Decimal("42.50"), date.today())}
     provider.get_quote.return_value = None
     await refresh_all_market_prices(session, market_provider=provider)
     assert provider.get_latest_closes.await_count == asked
+    stored = await session.get(Asset, asset_id)
+    # The scheduled sweep leaves a suspended workspace out of its writes too.
+    assert stored.last_price == (Decimal("42.50") if asked else None)
 
 
 async def test_a_row_without_a_workspace_is_not_dropped(session):

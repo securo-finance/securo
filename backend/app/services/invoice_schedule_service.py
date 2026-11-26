@@ -70,7 +70,7 @@ from app.models.workspace import Workspace
 from app.services import invoice_archive, invoice_service, reconciliation_service
 from app.services.invoice_service import InvoiceError
 from app.services.recurring_transaction_service import _advance_date
-from app.services.workspace_status_service import in_active_workspace
+from app.services.workspace_status_service import in_active_workspace, is_suspended
 
 logger = logging.getLogger(__name__)
 
@@ -1143,9 +1143,15 @@ async def generate_due(
         attribute_names=[
             "status", "frequency", "start_date", "end_type", "end_date",
             "end_count", "next_sequence", "payee_id", "currency", "user_id",
-            "payment_terms_days", "notes", "custom_fields", "terms",
+            "workspace_id", "payment_terms_days", "notes", "custom_fields", "terms",
         ],
     )
+    # The job picks its schedules before this one is locked, so the workspace
+    # can be suspended in between. Nothing writes into a suspended workspace
+    # (ADR 0049), and issuing an invoice writes: the run ends here, with
+    # nothing emitted and the cursor where it was.
+    if await is_suspended(session, schedule.workspace_id):
+        return []
     emitted: list[Invoice] = []
     try:
         while len(emitted) < MAX_PERIODS_PER_RUN:

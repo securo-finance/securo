@@ -21,14 +21,21 @@ const home: AdminWorkspace = {
   status_changed_at: null,
   owners: ['owner@example.com'],
 }
+const suspendedHome: AdminWorkspace = { ...home, status: 'suspended' }
 
 beforeEach(() => {
   vi.clearAllMocks()
   vi.mocked(admin.listWorkspaces).mockResolvedValue({ items: [home], total: 1 })
-  vi.mocked(admin.updateWorkspaceStatus).mockResolvedValue({ ...home, status: 'suspended' })
+  vi.mocked(admin.updateWorkspaceStatus).mockResolvedValue(suspendedHome)
 })
 
-it('asks before suspending', async () => {
+it('asks before suspending, then shows what the server says', async () => {
+  // The screen reads the list again after the change; that second answer is
+  // the suspended workspace, and the row must follow it.
+  vi.mocked(admin.listWorkspaces)
+    .mockResolvedValueOnce({ items: [home], total: 1 })
+    .mockResolvedValue({ items: [suspendedHome], total: 1 })
+
   const { user } = renderWithProviders(<WorkspaceStatusSettings />)
   await user.click(await screen.findByRole('button', { name: 'Suspend Home' }))
   expect(admin.updateWorkspaceStatus).not.toHaveBeenCalled()
@@ -38,17 +45,22 @@ it('asks before suspending', async () => {
   await waitFor(() => expect(admin.updateWorkspaceStatus).toHaveBeenCalledWith('w1', 'suspended'))
   await waitFor(() => expect(refresh).toHaveBeenCalled())
   expect(admin.listWorkspaces).toHaveBeenCalledTimes(2)
+  expect(await screen.findByRole('button', { name: 'Reactivate Home' })).toBeVisible()
+  expect(screen.queryByRole('button', { name: 'Suspend Home' })).not.toBeInTheDocument()
 })
 
-it('reactivates a suspended workspace', async () => {
-  vi.mocked(admin.listWorkspaces).mockResolvedValue({
-    items: [{ ...home, status: 'suspended' }],
-    total: 1,
-  })
+it('reactivates a suspended workspace and drops the badge', async () => {
+  vi.mocked(admin.listWorkspaces)
+    .mockResolvedValueOnce({ items: [suspendedHome], total: 1 })
+    .mockResolvedValue({ items: [home], total: 1 })
+  vi.mocked(admin.updateWorkspaceStatus).mockResolvedValue(home)
+
   const { user } = renderWithProviders(<WorkspaceStatusSettings />)
   expect(await screen.findByText('Suspended')).toBeVisible()
   await user.click(screen.getByRole('button', { name: 'Reactivate Home' }))
   await waitFor(() => expect(admin.updateWorkspaceStatus).toHaveBeenCalledWith('w1', 'active'))
+  expect(await screen.findByRole('button', { name: 'Suspend Home' })).toBeVisible()
+  expect(screen.queryByText('Suspended')).not.toBeInTheDocument()
 })
 
 it('searches on the server and says when there are more', async () => {
