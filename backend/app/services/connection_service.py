@@ -3287,9 +3287,10 @@ async def _find_synced_duplicate(
             Transaction.date
             >= txn_data.date - timedelta(days=3 + _EB_HOLD_SETTLE_DAYS),
             # A row stored before the provider read the value date keeps the
-            # later booking date; its payload date is checked below.
+            # booking date, up to `MAX_VALUE_DATE_LEAD` after the date its
+            # payload gives; that payload date is checked below.
             Transaction.date
-            <= txn_data.date + timedelta(days=3 + _EB_HOLD_SETTLE_DAYS),
+            <= txn_data.date + timedelta(days=3) + MAX_VALUE_DATE_LEAD,
             Transaction.amount == txn_data.amount,
             Transaction.type == txn_data.type,
             Transaction.external_id != txn_data.external_id,

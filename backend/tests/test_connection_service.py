@@ -3720,6 +3720,42 @@ async def test_sync_connection_enable_banking_adopts_a_row_booked_days_after_its
 
 
 @pytest.mark.asyncio
+async def test_sync_connection_enable_banking_rekeys_a_row_booked_a_week_after_its_value_date(
+    session: AsyncSession, test_user, test_workspace,
+):
+    """Review on #1868: a row stored while the booking date came first sits
+    up to `MAX_VALUE_DATE_LEAD` after the date its payload gives, and a
+    refetch that moves the dates shifts the entry up to three days further.
+    Here the stored row is nine days after the refetched entry, so the query
+    has to reach that far for the payload check to see it."""
+    conn, account = await _eb_account(session, test_user.id, test_workspace.id)
+    account_id = account.id
+    entry_ref = "2026-09-10.1"
+    first = _eb_txn({
+        **_eb_late_ref_payload(entry_ref),
+        "booking_date": "2026-09-10", "value_date": "2026-09-03",
+    })
+    held = _eb_late_ref_row(test_user.id, test_workspace.id, account, first)
+    # The row was dated the way the provider read the payload before #664.
+    held.date = date(2026, 9, 10)
+    session.add(held)
+    await session.commit()
+    held_id = held.id
+
+    refetched = _eb_txn({
+        **_eb_late_ref_payload(entry_ref),
+        "booking_date": "2026-09-08", "value_date": "2026-09-01",
+    })
+    assert refetched.date == date(2026, 9, 1)
+    assert refetched.external_id != first.external_id
+    await _sync_eb(session, conn, test_workspace.id, test_user.id, [refetched])
+
+    rows = await _account_rows(session, account_id)
+    assert [row.id for row in rows] == [held_id]
+    assert rows[0].external_id == refetched.external_id
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "held_fields",
     [{"remittance": "COMPRA TARJ. FARMACIA SOL"}, {"currency": "USD"}],
