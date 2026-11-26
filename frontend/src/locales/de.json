@@ -3024,6 +3024,9 @@
     },
     "settings": {
       "title": "Administrator-Einstellungen",
+      "managedTitle": "Diese Instanz wird von Securo verwaltet",
+      "managedDesc": "Die Einstellungen der Instanz auf dieser Seite legt der Betreiber der Instanz fest. Sie gelten für alle und können hier nicht geändert werden.",
+      "managedReadOnly": "Von Securo konfiguriert",
       "registrationTitle": "Registrierung",
       "registration": "Benutzerregistrierung erlauben",
       "registrationDesc": "Wenn deaktiviert, können nur Administratoren neue Benutzerkonten erstellen.",

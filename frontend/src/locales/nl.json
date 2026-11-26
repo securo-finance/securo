@@ -3025,6 +3025,9 @@
     },
     "settings": {
       "title": "Beheerdersinstellingen",
+      "managedTitle": "Deze instantie wordt beheerd door Securo",
+      "managedDesc": "De instellingen van de instantie op deze pagina worden bepaald door wie de instantie beheert. Ze gelden voor iedereen en kunnen hier niet worden gewijzigd.",
+      "managedReadOnly": "Geconfigureerd door Securo",
       "registrationTitle": "Registratie",
       "registration": "Sta gebruikersregistratie toe",
       "registrationDesc": "Indien uitgeschakeld, kunnen alleen beheerders nieuwe gebruikersaccounts maken.",

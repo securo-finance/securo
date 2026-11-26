@@ -49,6 +49,8 @@ x-backend-env: &backend-env
   LOCAL_AUTH_ENABLED: ${LOCAL_AUTH_ENABLED:-true}
   # No default, so an unset value leaves backend/.env and the app default to decide.
   REGISTRATION_ENABLED:
+  # No default, same reason: unset keeps the app default (off).
+  MANAGED_INSTANCE:
   REDIS_URL: redis://redis:6379/0
   BANK_SYNC_MIN_INTERVAL_HOURS: ${BANK_SYNC_MIN_INTERVAL_HOURS:-4}
   OPENEXCHANGERATES_APP_ID: ${OPENEXCHANGERATES_APP_ID:-}

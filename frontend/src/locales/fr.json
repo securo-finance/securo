@@ -3038,6 +3038,9 @@
     },
     "settings": {
       "title": "Paramètres d'administration",
+      "managedTitle": "Cette instance est gérée par Securo",
+      "managedDesc": "Les paramètres de l'instance sur cette page sont définis par l'exploitant de l'instance. Ils s'appliquent à tous et ne peuvent pas être modifiés ici.",
+      "managedReadOnly": "Configuré par Securo",
       "registrationTitle": "Inscription",
       "registration": "Autoriser l'inscription des utilisateurs",
       "registrationDesc": "Lorsque désactivé, seuls les administrateurs peuvent créer de nouveaux comptes utilisateurs.",

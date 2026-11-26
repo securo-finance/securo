@@ -2122,6 +2122,14 @@ export const accountantExport = {
 }
 
 // Admin
+
+/** What the admin screen may change on this instance (ADR 0045). */
+export interface InstanceMode {
+  managed: boolean
+  locked_settings: string[]
+  locked_providers: boolean
+}
+
 export interface ProviderSettingStatus {
   name: string
   configured: boolean
@@ -2191,6 +2199,10 @@ export const admin = {
   },
   accessLog: async (params?: { user_id?: string; page?: number; limit?: number }): Promise<AdminAccessLogList> => {
     const { data } = await api.get('/admin/access-log', { params })
+    return data
+  },
+  instanceMode: async (): Promise<InstanceMode> => {
+    const { data } = await api.get('/admin/instance-mode')
     return data
   },
   providerSettings: async (): Promise<ProviderSettingStatus[]> => {

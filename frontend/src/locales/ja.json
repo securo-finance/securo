@@ -3023,6 +3023,9 @@
     },
     "settings": {
       "title": "管理者設定",
+      "managedTitle": "このインスタンスは Securo が管理しています",
+      "managedDesc": "このページのインスタンス設定はインスタンスの運営者が決めます。すべての利用者に適用され、ここでは変更できません。",
+      "managedReadOnly": "Securo により設定済み",
       "registrationTitle": "登録",
       "registration": "ユーザー登録を許可",
       "registrationDesc": "無効にすると、管理者のみが新しいユーザーアカウントを作成できます。",
