@@ -138,12 +138,13 @@ export function GoalVisualization({ goal }: { goal: Goal }) {
   )
   // y-max = 10% above the target, current amount, or highest historical value,
   // whichever is largest
-  // If goal target <= 90, set y-max = 100.
+  // Use 100 only when the value is at most 90.
   const peak = chart.reduce(
     (max, point) => Math.max(max, point.actual ?? 0, point.projected ?? 0),
     Math.max(Number(goal.target_amount), Number(goal.current_amount)),
   )
-  const ceiling = Number(goal.target_amount) <= 90 ? 100 : peak * 1.1
+  const paddedPeak = peak * 1.1
+  const ceiling = paddedPeak > 90 ? paddedPeak : 100
 
   // y-min = 10% below the target, current amount, or lowest historical value
   // whichever is lowest

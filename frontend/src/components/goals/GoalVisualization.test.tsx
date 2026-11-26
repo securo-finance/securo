@@ -239,24 +239,27 @@ it('anchors the x-axis one month before creation even when history starts later'
   })
 })
 
-it.each([-500, 0, 89, 90])('sets the y-axis maximum to 100 for a target of %s', async target => {
-  mocks.goals.list.mockResolvedValue([
-    { ...fixtures()[0], target_amount: target, current_amount: -2700 },
-  ])
-  mocks.history.mockResolvedValue({
-    points: [
-      { date: '2026-09-30', amount: -5000 },
-      { date: '2026-10-31', amount: -3000 },
-    ],
-    notes: [],
-  })
-  renderWithProviders(<GoalsPage />)
-  const region = await screen.findByRole('region', { name: 'Progress for Server Fund' })
-  await waitFor(() => {
-    expect(region.querySelector('path.recharts-line-curve')).toBeTruthy()
-    expect(within(region).getByText('100')).toBeVisible()
-  })
-})
+it.each([-500, 0, 81.81])(
+  'uses 100 when the padded peak is at most 90 for target %s',
+  async target => {
+    mocks.goals.list.mockResolvedValue([
+      { ...fixtures()[0], target_amount: target, current_amount: -2700 },
+    ])
+    mocks.history.mockResolvedValue({
+      points: [
+        { date: '2026-09-30', amount: -5000 },
+        { date: '2026-10-31', amount: -3000 },
+      ],
+      notes: [],
+    })
+    renderWithProviders(<GoalsPage />)
+    const region = await screen.findByRole('region', { name: 'Progress for Server Fund' })
+    await waitFor(() => {
+      expect(region.querySelector('path.recharts-line-curve')).toBeTruthy()
+      expect(within(region).getByText('100')).toBeVisible()
+    })
+  },
+)
 
 it.each([
   { historical: 500, current: 2700, target: 6000, bottom: '450' },
@@ -312,3 +315,30 @@ it('uses the padded ceiling when the target is just above 90', async () => {
     expect(within(region).getByText('100.1')).toBeVisible()
   })
 })
+
+it.each([
+  { target: 50, current: 5000, history: 9000, top: '9.9K' },
+  { target: 50, current: 10000, history: 9000, top: '11K' },
+  { target: 81.82, current: 50, history: 40, top: '90' },
+  { target: 90, current: 50, history: 40, top: '99' },
+])(
+  'uses the padded peak for target $target, current $current, history $history',
+  async ({ target, current, history, top }) => {
+    mocks.goals.list.mockResolvedValue([
+      { ...fixtures()[0], target_amount: target, current_amount: current },
+    ])
+    mocks.history.mockResolvedValue({
+      points: [
+        { date: '2026-09-30', amount: history },
+        { date: '2026-10-31', amount: history - 10 },
+      ],
+      notes: [],
+    })
+    renderWithProviders(<GoalsPage />)
+    const region = await screen.findByRole('region', { name: 'Progress for Server Fund' })
+    await waitFor(() => {
+      expect(region.querySelector('path.recharts-line-curve')).toBeTruthy()
+      expect(within(region).getByText(top)).toBeVisible()
+    })
+  },
+)
