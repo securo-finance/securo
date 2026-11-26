@@ -3,10 +3,10 @@ import {
   closestCenter,
   DndContext,
   KeyboardSensor,
-  PointerSensor,
   useSensor,
   useSensors,
   type DragEndEvent,
+  type DraggableSyntheticListeners,
 } from '@dnd-kit/core'
 import {
   arrayMove,
@@ -97,6 +97,7 @@ import { getAssetValuePrimary, getPortfolioShare, getPortfolioTotalPrimary } fro
 import { formatTransactionTotal, getTransactionTotalCurrency } from '@/lib/asset-transaction-total'
 import { MAX_SPLIT_UNITS, canRecordSplit, formatSplitRatio, parseSplitUnits } from '@/lib/asset-split'
 import { formatCurrency } from '@/lib/format'
+import { SurfacePointerSensor } from '@/lib/drag-surface'
 import { applyWalletOrder, compareWallets, placeInOrder } from '@/lib/manual-order'
 
 // Renders a logo image when one is available, falling back to the asset's
@@ -211,7 +212,14 @@ type DragHandleProps = ButtonHTMLAttributes<HTMLButtonElement> & {
   ref: (element: HTMLElement | null) => void
 }
 
-/** A wallet or a holding that is moved by the drag handle it hands its children. */
+/**
+ * How a sortable wallet or holding is picked up: the `handle` (keyboard, touch,
+ * and its label for screen readers) and the `surface`, the row or header a
+ * mouse can drag from anywhere but its text and menus.
+ */
+type DragParts = { handle: DragHandleProps; surface: DraggableSyntheticListeners }
+
+/** A wallet or a holding, moved by the parts it hands its children. */
 function Sortable({
   id,
   disabled,
@@ -221,7 +229,7 @@ function Sortable({
   id: string
   disabled: boolean
   className: string
-  children: (dragHandle: DragHandleProps) => ReactNode
+  children: (drag: DragParts) => ReactNode
 }) {
   const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } = useSortable({
     id,
@@ -237,7 +245,7 @@ function Sortable({
         isDragging ? 'relative z-20 bg-background/90 opacity-75 shadow-xl ring-2 ring-primary/30' : ''
       }`}
     >
-      {children({ ...attributes, ...listeners, ref: setActivatorNodeRef })}
+      {children({ handle: { ...attributes, ref: setActivatorNodeRef }, surface: listeners })}
     </div>
   )
 }
@@ -747,7 +755,7 @@ export default function AssetsPage() {
 
   const sortSensors = useSensors(
     // A few pixels of travel before a drag starts, so a click on the handle stays a click.
-    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(SurfacePointerSensor, { activationConstraint: { distance: 6 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   )
 
@@ -1153,7 +1161,7 @@ export default function AssetsPage() {
   function renderHoldingRow(
     asset: Asset,
     variant: 'holding' | 'sold' = 'holding',
-    order?: { rows: Asset[]; dragHandle: DragHandleProps },
+    order?: { rows: Asset[]; drag: DragParts },
   ) {
     const config = getTypeConfig(asset.type)
     const Icon = config.icon
@@ -1186,6 +1194,7 @@ export default function AssetsPage() {
       <>
         <AssetRowContextMenu actions={actions}>
         <div
+          {...order?.drag.surface}
           className="grid items-center gap-2 px-3 py-3 cursor-pointer hover:bg-muted/20 transition-colors text-sm"
           style={{ gridTemplateColumns: variant === 'sold' ? SOLD_GRID : HOLDINGS_GRID }}
           onClick={() => setExpandedId(isExpanded ? null : asset.id)}
@@ -1194,7 +1203,7 @@ export default function AssetsPage() {
           <div className="flex items-center gap-2.5 min-w-0">
             {order && (
               <button
-                {...order.dragHandle}
+                {...order.drag.handle}
                 type="button"
                 // A click on the handle is not a click on the row.
                 onClick={(e) => e.stopPropagation()}
@@ -1441,7 +1450,7 @@ export default function AssetsPage() {
         <SortableContext items={rows.map(row => row.id)} strategy={verticalListSortingStrategy}>
           {rows.map((row) => (
             <Sortable key={row.id} id={row.id} disabled={reorderHoldingsMutation.isPending} className={rowClass}>
-              {(dragHandle) => renderHoldingRow(row, variant, { rows, dragHandle })}
+              {(drag) => renderHoldingRow(row, variant, { rows, drag })}
             </Sortable>
           ))}
         </SortableContext>
@@ -1566,7 +1575,7 @@ export default function AssetsPage() {
     wallet: AssetGroup,
     walletAssets: Asset[],
     walletIndex: number,
-    dragHandle: DragHandleProps,
+    drag: DragParts,
   ) {
     const isCollapsed = collapsedWallets.has(wallet.id)
     const isSynced = wallet.source !== 'manual'
@@ -1597,10 +1606,10 @@ export default function AssetsPage() {
 
     return (
       <>
-        <div className="flex items-center gap-3 px-1">
+        <div {...drag.surface} className="flex items-center gap-3 px-1">
           {canWrite && sortedWallets.length > 1 && (
             <button
-              {...dragHandle}
+              {...drag.handle}
               // Marked aria-disabled by the sortable while saving, never `disabled`:
               // that would drop keyboard focus right after a drop.
               type="button"
@@ -1861,10 +1870,12 @@ export default function AssetsPage() {
                     <Sortable
                       key={w.id}
                       id={w.id}
-                      disabled={reorderWalletsMutation.isPending}
+                      // The header drags without the handle, so it must not for a
+                      // viewer or a single wallet.
+                      disabled={!canWrite || sortedWallets.length < 2 || reorderWalletsMutation.isPending}
                       className="space-y-2 rounded-xl"
                     >
-                      {(dragHandle) => renderWalletSection(w, assetsByGroup.get(w.id) ?? [], index, dragHandle)}
+                      {(drag) => renderWalletSection(w, assetsByGroup.get(w.id) ?? [], index, drag)}
                     </Sortable>
                   ))}
                 </SortableContext>
