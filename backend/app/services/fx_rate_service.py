@@ -214,6 +214,23 @@ async def sync_rates(
     return count
 
 
+async def _lock_day(session: AsyncSession, target: date) -> None:
+    """One provider fetch per day at a time, until the transaction ends.
+
+    Two administrator refreshes of the same day would otherwise both count no
+    stored rate before either commits, and both spend a provider call: the app
+    id is the instance's, so that is twice the shared quota for one day
+    (issue #636). PostgreSQL only, in the same shape as the import lock in
+    `asset_import_service.py`: SQLite, which the tests use, serialises writers
+    itself.
+    """
+    if session.bind is None or session.bind.dialect.name != "postgresql":
+        return
+    await session.execute(
+        select(func.pg_advisory_xact_lock(func.hashtext(f"fx-refresh:{target}")))
+    )
+
+
 async def sync_rates_for_refresh(
     session: AsyncSession, target: date
 ) -> tuple[int, bool]:
@@ -224,6 +241,7 @@ async def sync_rates_for_refresh(
     stored must not cost the shared quota. Returns the number of stored or
     synced rates and whether the provider was skipped.
     """
+    await _lock_day(session, target)
     stored = await session.scalar(
         select(func.count()).select_from(FxRate).where(FxRate.date == target)
     ) or 0
