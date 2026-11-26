@@ -152,6 +152,17 @@ class ProviderSettingRead(BaseModel):
     redirect_uri: Optional[str] = None
 
 
+class WorkspacePluggyRead(BaseModel):
+    """Credential values and ciphertext are intentionally excluded."""
+
+    workspace_id: uuid.UUID
+    name: str
+    owner_email: Optional[str] = None
+    connections: int
+    has_credentials: bool
+    invalid: bool
+
+
 class TimezoneSettingRead(BaseModel):
     #: The timezone in use, after fallbacks.
     timezone: str

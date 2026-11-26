@@ -3659,6 +3659,21 @@
     }
   },
   "providerSettings": {
+    "workspaces": {
+      "title": "Pluggy-Clients pro Arbeitsbereich",
+      "description": "Ein Arbeitsbereich mit eigenem Client verbindet Banken über dieses Pluggy-Konto. Andere nutzen die Zugangsdaten oben.",
+      "own": "Eigener Client",
+      "shared": "Gemeinsamer Client",
+      "invalid": "Nicht lesbar",
+      "connections": "Pluggy-Verbindungen: {{count}}",
+      "set": "Client festlegen",
+      "replace": "Ersetzen",
+      "remove": "Entfernen",
+      "removeTitle": "Pluggy-Client von {{workspace}} entfernen?",
+      "removeDescription": "Dieser Arbeitsbereich nutzt für neue Vorgänge wieder die gemeinsamen Zugangsdaten.",
+      "dialogDescription": "Diese Zugangsdaten gelten nur für diesen Arbeitsbereich. Lege sie fest, bevor hier jemand eine Bank verbindet.",
+      "clientChanged": "Dieser Arbeitsbereich hat Verbindungen unter einem anderen Pluggy-Client. Lösche diese Verbindungen zuerst."
+    },
     "catalog": {
       "connectionsTitle": "Bankverbindungen",
       "connectionsDescription": "Wähle aus, wie Bankkonten mit dieser Instanz verbunden werden.",

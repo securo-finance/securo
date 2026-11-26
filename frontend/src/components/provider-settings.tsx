@@ -7,6 +7,7 @@ import { AlertCircle, ArrowRightLeft, Cable, Check, ChevronRight, Landmark, Link
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
+import { PluggyWorkspaceClients } from '@/components/pluggy-workspace-clients'
 import { ProviderSettingsDialog } from '@/components/provider-settings-dialog'
 import { admin, type ProviderSettingStatus } from '@/lib/api'
 
@@ -106,6 +107,7 @@ export function ProviderSettings({ readOnly = false }: { readOnly?: boolean } = 
     <div className="mb-8 space-y-8">
       {categories.map((category) => {
         const items = data?.filter((provider) => (providers[provider.name]?.category ?? 'other') === category) ?? []
+        const pluggy = items.find((provider) => provider.name === 'pluggy')
         if (!items.length && (!isPending || category === 'other')) return null
         return (
           <section key={category} id={`provider-${category}`} aria-labelledby={`provider-${category}-heading`} className="scroll-mt-6 space-y-4">
@@ -136,6 +138,7 @@ export function ProviderSettings({ readOnly = false }: { readOnly?: boolean } = 
                 </ul>
               )}
             </div>
+            {pluggy && <PluggyWorkspaceClients canStoreSecrets={pluggy.can_store_secrets} readOnly={readOnly} />}
           </section>
         )
       })}

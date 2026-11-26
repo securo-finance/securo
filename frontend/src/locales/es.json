@@ -3673,6 +3673,21 @@
     }
   },
   "providerSettings": {
+    "workspaces": {
+      "title": "Clientes de Pluggy por espacio de trabajo",
+      "description": "Un espacio con cliente propio conecta bancos en esa cuenta de Pluggy. Los demás usan las credenciales anteriores.",
+      "own": "Cliente propio",
+      "shared": "Cliente compartido",
+      "invalid": "No se puede leer",
+      "connections": "Conexiones de Pluggy: {{count}}",
+      "set": "Definir cliente",
+      "replace": "Reemplazar",
+      "remove": "Eliminar",
+      "removeTitle": "¿Eliminar el cliente de Pluggy de {{workspace}}?",
+      "removeDescription": "Este espacio volverá a usar las credenciales compartidas en las nuevas operaciones.",
+      "dialogDescription": "Estas credenciales solo se aplican a este espacio. Defínelas antes de que alguien conecte un banco aquí.",
+      "clientChanged": "Este espacio tiene conexiones con otro cliente de Pluggy. Elimina primero esas conexiones."
+    },
     "catalog": {
       "connectionsTitle": "Conexiones bancarias",
       "connectionsDescription": "Elige cómo se conectan las cuentas bancarias a esta instancia.",

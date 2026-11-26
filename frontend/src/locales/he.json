@@ -3688,6 +3688,21 @@
     }
   },
   "providerSettings": {
+    "workspaces": {
+      "title": "לקוחות Pluggy לפי סביבת עבודה",
+      "description": "סביבת עבודה עם לקוח משלה מחברת בנקים תחת חשבון Pluggy זה. האחרות משתמשות בפרטי הגישה שלמעלה.",
+      "own": "לקוח משלה",
+      "shared": "לקוח משותף",
+      "invalid": "לא ניתן לקריאה",
+      "connections": "חיבורי Pluggy: {{count}}",
+      "set": "הגדרת לקוח",
+      "replace": "החלפה",
+      "remove": "הסרה",
+      "removeTitle": "להסיר את לקוח ה-Pluggy של {{workspace}}?",
+      "removeDescription": "סביבת עבודה זו תחזור להשתמש בפרטי הגישה המשותפים בפעולות חדשות.",
+      "dialogDescription": "פרטי גישה אלה חלים רק על סביבת עבודה זו. הגדירו אותם לפני שמישהו מחבר כאן בנק.",
+      "clientChanged": "לסביבת עבודה זו יש חיבורים תחת לקוח Pluggy אחר. מחקו קודם את החיבורים האלה."
+    },
     "catalog": {
       "setupGuide": "מדריך הגדרה",
       "connectionsTitle": "חיבורי בנק",

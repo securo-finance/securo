@@ -7,7 +7,7 @@ import { renderWithProviders } from '@/test/utils'
 import { ProviderSettings } from './provider-settings'
 
 vi.mock('@/lib/api', () => ({
-  admin: { providerSettings: vi.fn(), updateProviderSettings: vi.fn() },
+  admin: { providerSettings: vi.fn(), updateProviderSettings: vi.fn(), workspacePluggyClients: vi.fn().mockResolvedValue([]) },
 }))
 
 const pluggy: ProviderSettingStatus = {

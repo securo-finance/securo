@@ -34,6 +34,7 @@ from app.schemas.admin import (
     InstanceModeRead,
     ProviderSettingRead,
     TimezoneSettingRead,
+    WorkspacePluggyRead,
     clean_reason,
 )
 from app.services import admin_service
@@ -235,6 +236,60 @@ async def update_provider_settings(
         raise HTTPException(status_code=409, detail=str(exc)) from None
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid provider settings") from None
+
+
+@router.get("/provider-settings/pluggy/workspaces", response_model=list[WorkspacePluggyRead])
+async def get_workspace_pluggy_settings(
+    session: AsyncSession = Depends(get_async_session),
+    _user: User = Depends(current_superuser),
+):
+    return await provider_settings.workspace_pluggy_status(session)
+
+
+@router.put(
+    "/provider-settings/pluggy/workspaces/{workspace_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def set_workspace_pluggy_settings(
+    workspace_id: uuid.UUID,
+    request: Request,
+    session: AsyncSession = Depends(get_async_session),
+    _user: User = Depends(current_superuser),
+):
+    _refuse_managed_write("pluggy")
+    # Parse explicitly so schema validation errors cannot echo submitted secrets.
+    try:
+        body = await request.json()
+        if not isinstance(body, dict) or set(body) != {"values"} or not isinstance(body["values"], dict):
+            raise ValueError("Invalid provider settings")
+        await provider_settings.set_workspace_pluggy_credentials(session, workspace_id, body["values"])
+    except LookupError:
+        raise HTTPException(status_code=404, detail="Workspace not found") from None
+    except provider_settings.PluggyClientChangeError:
+        raise HTTPException(status_code=409, detail="pluggy_client_change") from None
+    except provider_settings.SecretStorageUnavailable as exc:
+        # Fixed server-side text, never the submitted values.
+        raise HTTPException(status_code=409, detail=str(exc)) from None
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid provider settings") from None
+
+
+@router.delete(
+    "/provider-settings/pluggy/workspaces/{workspace_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def remove_workspace_pluggy_settings(
+    workspace_id: uuid.UUID,
+    session: AsyncSession = Depends(get_async_session),
+    _user: User = Depends(current_superuser),
+):
+    _refuse_managed_write("pluggy")
+    try:
+        await provider_settings.remove_workspace_pluggy_credentials(session, workspace_id)
+    except LookupError:
+        raise HTTPException(status_code=404, detail="Workspace not found") from None
+    except provider_settings.PluggyClientChangeError:
+        raise HTTPException(status_code=409, detail="pluggy_client_change") from None
 
 
 @router.patch("/settings/{key}", response_model=AppSettingRead)

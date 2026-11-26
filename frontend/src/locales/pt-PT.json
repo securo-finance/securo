@@ -3672,6 +3672,21 @@
     }
   },
   "providerSettings": {
+    "workspaces": {
+      "title": "Clientes Pluggy por área de trabalho",
+      "description": "Uma área de trabalho com cliente próprio liga bancos nessa conta Pluggy. As restantes usam as credenciais acima.",
+      "own": "Cliente próprio",
+      "shared": "Cliente partilhado",
+      "invalid": "Não é possível ler",
+      "connections": "Ligações Pluggy: {{count}}",
+      "set": "Definir cliente",
+      "replace": "Substituir",
+      "remove": "Remover",
+      "removeTitle": "Remover o cliente Pluggy de {{workspace}}?",
+      "removeDescription": "Esta área de trabalho voltará a usar as credenciais partilhadas nas novas operações.",
+      "dialogDescription": "Estas credenciais aplicam-se apenas a esta área de trabalho. Defina-as antes de alguém ligar um banco aqui.",
+      "clientChanged": "Esta área de trabalho tem ligações noutro cliente Pluggy. Elimine primeiro essas ligações."
+    },
     "catalog": {
       "setupGuide": "Guia de configuração",
       "connectionsTitle": "Ligações bancárias",

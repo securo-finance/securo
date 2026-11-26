@@ -2216,6 +2216,15 @@ export interface ProviderSettingStatus {
   redirect_uri?: string | null
 }
 
+export interface WorkspacePluggyStatus {
+  workspace_id: string
+  name: string
+  owner_email: string | null
+  connections: number
+  has_credentials: boolean
+  invalid: boolean
+}
+
 export interface TimezoneSetting {
   /** The timezone in use, after fallbacks. */
   timezone: string
@@ -2296,6 +2305,18 @@ export const admin = {
   ): Promise<ProviderSettingStatus> => {
     const { data } = await api.patch(`/admin/provider-settings/${encodeURIComponent(provider)}`, { values })
     return data
+  },
+  workspacePluggyClients: async (): Promise<WorkspacePluggyStatus[]> => {
+    const { data } = await api.get('/admin/provider-settings/pluggy/workspaces')
+    return data
+  },
+  setWorkspacePluggyClient: async (workspaceId: string, clientId: string, clientSecret: string): Promise<void> => {
+    await api.put(`/admin/provider-settings/pluggy/workspaces/${encodeURIComponent(workspaceId)}`, {
+      values: { pluggy_client_id: clientId, pluggy_client_secret: clientSecret },
+    })
+  },
+  removeWorkspacePluggyClient: async (workspaceId: string): Promise<void> => {
+    await api.delete(`/admin/provider-settings/pluggy/workspaces/${encodeURIComponent(workspaceId)}`)
   },
   getSetting: async (key: string): Promise<AppSetting> => {
     const { data } = await api.get(`/admin/settings/${key}`)

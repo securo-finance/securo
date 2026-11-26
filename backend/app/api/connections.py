@@ -57,7 +57,7 @@ async def create_connect_token(
     """Create a connect token for widget-based bank connection flows."""
     try:
         token_data = await connection_service.create_connect_token(
-            data.provider, ctx.user_id, session=session
+            data.provider, ctx.user_id, session=session, workspace_id=ctx.workspace.id
         )
         return ConnectTokenResponse(**token_data)
     except ValueError as e:
@@ -115,7 +115,9 @@ async def list_provider_institutions(
     session: AsyncSession = Depends(get_async_session),
 ):
     try:
-        return await connection_service.list_provider_institutions(provider, country, session=session)
+        return await connection_service.list_provider_institutions(
+            provider, country, session=session, workspace_id=ctx.workspace.id
+        )
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     except Exception as e:
@@ -283,7 +285,8 @@ async def get_reconnect_token(
 
     try:
         token_data = await connection_service.create_connect_token(
-            connection.provider, ctx.user_id, item_id=item_id, session=session
+            connection.provider, ctx.user_id, item_id=item_id, session=session,
+            workspace_id=ctx.workspace.id,
         )
         return ReconnectTokenResponse(**token_data)
     except Exception as e:

@@ -739,9 +739,8 @@ class PluggyProvider(BankProvider):
     3. Widget returns an Item ID which is used as the connection identifier
     """
 
-    _api_key: Optional[str] = None
-    _api_key_expires_at: float = 0
-    _credential_key: tuple[str, str] | None = None
+    # Workspaces can use different Pluggy clients, so keys are cached per client.
+    _api_keys: dict[tuple[str, str], tuple[str, float]] = {}
 
     @property
     def name(self) -> str:
@@ -760,8 +759,9 @@ class PluggyProvider(BankProvider):
         now = time.time()
         settings = self.settings
         credential_key = (settings.pluggy_client_id, settings.pluggy_client_secret.get_secret_value())
-        if self._credential_key == credential_key and self._api_key and (self._api_key_expires_at - now) > 300:
-            return self._api_key
+        cached = self._api_keys.get(credential_key)
+        if cached and (cached[1] - now) > 300:
+            return cached[0]
 
         async with httpx.AsyncClient(timeout=30.0) as client:
             resp = await client.post(
@@ -774,12 +774,11 @@ class PluggyProvider(BankProvider):
             resp.raise_for_status()
             data = resp.json()
 
-        PluggyProvider._api_key = data["apiKey"]
-        PluggyProvider._credential_key = credential_key
         # Pluggy API keys last 2 hours
-        PluggyProvider._api_key_expires_at = now + 7200
-        # Another credential rotation may finish authentication before this
-        # coroutine resumes; return the token from this request's credentials.
+        # A rotated secret replaces the client's earlier entry instead of piling up.
+        for stale in [key for key in PluggyProvider._api_keys if key[0] == credential_key[0]]:
+            del PluggyProvider._api_keys[stale]
+        PluggyProvider._api_keys[credential_key] = (data["apiKey"], now + 7200)
         return data["apiKey"]
 
     async def _headers(self) -> dict:
