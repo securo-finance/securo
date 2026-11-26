@@ -209,6 +209,25 @@ describe('Holding row actions menu', () => {
     expect(api.assets.update.mock.calls[0][0]).toBe('asset-manual')
   })
 
+  it('does not send the stored valuation method when editing', async () => {
+    api.assets.list.mockResolvedValue([MANUAL])
+    api.assets.update.mockResolvedValue(MANUAL)
+    renderWithProviders(<AssetsPage />)
+    await screen.findByText('Old Car')
+
+    openMenu('Old Car')
+    fireEvent.click(await screen.findByRole('menuitem', { name: t('common.edit') }))
+    const dialog = await screen.findByRole('dialog')
+    fireEvent.click(within(dialog).getByRole('button', { name: t('common.save') }))
+
+    await waitFor(() => expect(api.assets.update).toHaveBeenCalled())
+    // An edit cannot change the method (the buttons are disabled and the
+    // service drops the field), so sending the stored value back would only
+    // let a row outside the accepted set fail every later save with a 422.
+    expect(api.assets.update.mock.calls[0][1]).not.toHaveProperty('valuation_method')
+    expect(api.assets.update.mock.calls[0][1]).toMatchObject({ name: 'Old Car' })
+  })
+
   it('asks for confirmation before deleting', async () => {
     api.assets.list.mockResolvedValue([MANUAL])
     renderWithProviders(<AssetsPage />)

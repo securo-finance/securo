@@ -5,13 +5,19 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+#: How an asset's current value is kept: recorded by hand, projected by a
+#: growth rule, or read from the market through its ticker. The jobs, the
+#: import and the screens know only these three, so anything else is refused
+#: when it arrives instead of being stored and never priced.
+AssetValuationMethod = Literal["manual", "growth_rule", "market_price"]
+
 
 class AssetCreate(BaseModel):
     name: str
     type: str
     currency: str = "USD"
     units: Optional[Decimal] = None
-    valuation_method: str = "manual"
+    valuation_method: AssetValuationMethod = "manual"
     purchase_date: Optional[_date] = None
     purchase_price: Optional[Decimal] = None
     sell_date: Optional[_date] = None
@@ -53,7 +59,7 @@ class AssetUpdate(BaseModel):
     type: Optional[str] = None
     currency: Optional[str] = None
     units: Optional[Decimal] = None
-    valuation_method: Optional[str] = None
+    valuation_method: Optional[AssetValuationMethod] = None
     purchase_date: Optional[_date] = None
     purchase_price: Optional[Decimal] = None
     sell_date: Optional[_date] = None
