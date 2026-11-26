@@ -176,7 +176,13 @@ jobs:
               // directories. Access tokens, passkeys, the MCP server's own
               // auth and the OAuth state are credentials too, and none of
               // them carry "auth" in the name at the right place.
-              [/(^|\/)[^/]*(auth|token|secret|credential|passkey|webauthn|oidc|password|login|permission)[^/]*\.(py|ts|tsx|js|jsx)$/i,
+              //
+              // A backend test is left out of this word rule only: its name
+              // says what it checks, not what it changes, and "author" or
+              // "permission" in a test name held #1900 and #1043 for nothing.
+              // A test runs in CI, never in the app, and the code it covers
+              // still meets every rule here. The path rules still read it.
+              [/^(?!backend\/tests\/)(?:.*\/)?[^/]*(auth|token|secret|credential|passkey|webauthn|oidc|password|login|permission)[^/]*\.(py|ts|tsx|js|jsx)$/i,
                                                                       'auth or credentials'],
               // CI and the repository configuration are not application code:
               // a pull request that can edit them can edit this file and take

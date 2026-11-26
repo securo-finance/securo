@@ -611,6 +611,65 @@ scenario('a service named for a sync still refuses as sync or plugin', async () 
   assert.ok(log.includes('(sync or plugin)'), `expected the old reason: ${log}`);
 });
 
+// A backend test's name says what it checks. "author" in
+// test_invoice_schedule_author.py held #1900 and "permission" in
+// test_write_permission_coverage.py held #1043, with no auth code in either.
+for (const file of [
+  'backend/tests/test_invoice_schedule_author.py',
+  'backend/tests/test_write_permission_coverage.py',
+  'backend/tests/test_auth_api.py',
+  'backend/tests/api_contract/test_access_tokens.py',
+]) {
+  scenario(`${file} is not held by the auth word rule`, async () => {
+    const { merged, log } = await evaluate({ threads: [], files: [{ filename: file }] });
+    assert.ok(merged, `expected a merge, got: ${log}`);
+  });
+}
+
+// Only the word rule skips tests: the code a test sits beside is still read,
+// the same word outside backend/tests/ still refuses, and the path rules
+// still read a test.
+for (const [file, what] of [
+  ['backend/app/core/auth.py', 'auth or secrets'],
+  ['backend/app/services/access_token_service.py', 'auth or credentials'],
+  ['frontend/src/components/access-token-dialog.test.tsx', 'auth or credentials'],
+  ['backend/testsuite/test_auth.py', 'auth or credentials'],
+  ['backend/tests/test_plugin_runner.py', 'executes third-party code'],
+]) {
+  scenario(`${file} still refuses as ${what}`, async () => {
+    const { merged, log } = await evaluate({ threads: [], files: [{ filename: file }] });
+    assert.ok(!merged, `expected a refusal, got a merge: ${log}`);
+    assert.ok(log.includes(`(${what})`), `expected the reason "${what}": ${log}`);
+  });
+}
+
+// A test that comes with the code it covers is still held by that code.
+scenario('a test beside an auth file still refuses for the auth file', async () => {
+  const { merged, log } = await evaluate({
+    threads: [],
+    files: [
+      { filename: 'backend/tests/test_access_tokens.py' },
+      { filename: 'backend/app/services/access_token_service.py' },
+    ],
+  });
+  assert.ok(!merged, `expected a refusal, got a merge: ${log}`);
+  assert.ok(log.includes('access_token_service.py'), log);
+});
+
+// Renaming a file into backend/tests/ does not take it out of the rule: the
+// old path is read too.
+scenario('an auth file renamed into backend/tests still refuses', async () => {
+  const { merged, log } = await evaluate({
+    threads: [],
+    files: [{
+      filename: 'backend/tests/fixtures/access_token_service.py',
+      previous_filename: 'backend/app/services/access_token_service.py',
+    }],
+  });
+  assert.ok(!merged, `expected a refusal, got a merge: ${log}`);
+  assert.ok(log.includes('(auth or credentials)'), log);
+});
+
 scenario('a frontend page outside every group still merges', async () => {
   const { merged, log } = await evaluate({
     threads: [],
