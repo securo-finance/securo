@@ -11,7 +11,7 @@ import random
 
 import pytest
 import pytest_asyncio
-from sqlalchemy import select
+from sqlalchemy import select, text
 
 from app.models.asset_group import AssetGroup
 from app.services import asset_group_service
@@ -53,8 +53,13 @@ async def test_overlapping_reorders_all_succeed(
         async with postgres_sessions() as own:
             return await asset_group_service.reorder_groups(own, test_workspace.id, order)
 
+    orders = []
     for _ in range(ROUNDS):
-        orders = [shuffler.sample(ids, len(ids)) for _ in range(CONCURRENT)]
+        orders = []
+        while len(orders) < CONCURRENT:
+            order = shuffler.sample(ids, len(ids))
+            if order != ids:
+                orders.append(order)
         results = await asyncio.gather(
             *(reorder(order) for order in orders), return_exceptions=True
         )
@@ -70,4 +75,54 @@ async def test_overlapping_reorders_all_succeed(
             )
         ).all()
     assert [position for _, position in rows] == list(range(WALLETS))
-    assert {group_id for group_id, _ in rows} == set(ids)
+    saved = [group_id for group_id, _ in rows]
+    # The last reorder to commit wins, so the saved order is one of the last
+    # round's submissions, none of which is the order the wallets started in.
+    assert saved != ids
+    assert saved in orders
+
+
+@pytest.mark.asyncio
+async def test_reorder_keeps_database_order_for_tied_positions(
+    session, test_user, test_workspace
+):
+    """Wallets that tie on position keep the order the database sorts them in.
+
+    An ICU collation sorts "abc" before "ABC"; Python's code-point order puts
+    "ABC" first. Reordering two of three tied wallets has to fill the slots
+    the database shows, leaving "ABC" in the middle.
+    """
+    connection = await session.connection()
+    schema = connection.sync_connection.get_execution_options()[
+        "schema_translate_map"
+    ][None]
+    await session.execute(
+        text(
+            f'ALTER TABLE "{schema}".asset_groups '
+            'ALTER COLUMN name TYPE varchar(100) COLLATE "und-x-icu"'
+        )
+    )
+    await session.commit()
+
+    by_name = {
+        name: AssetGroup(
+            user_id=test_user.id, workspace_id=test_workspace.id,
+            name=name, position=0,
+        )
+        for name in ("bbc", "ABC", "abc")
+    }
+    session.add_all(by_name.values())
+    await session.commit()
+
+    assert await asset_group_service.reorder_groups(
+        session, test_workspace.id, [by_name["bbc"].id, by_name["abc"].id]
+    )
+
+    names = (
+        await session.execute(
+            select(AssetGroup.name)
+            .where(AssetGroup.workspace_id == test_workspace.id)
+            .order_by(AssetGroup.position)
+        )
+    ).scalars().all()
+    assert names == ["bbc", "ABC", "abc"]
