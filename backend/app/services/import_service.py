@@ -1222,21 +1222,12 @@ async def import_transactions(
     total_credit = sum(t.amount for t in included if t.type == "credit")
     total_debit = sum(t.amount for t in included if t.type == "debit")
 
-    # Create import log first to get its ID
-    import_log = ImportLog(
-        user_id=user_id,
-        workspace_id=workspace_id,
-        account_id=account_id,
-        filename=filename,
-        format=detected_format,
-        transaction_count=len(included),
-        total_credit=total_credit,
-        total_debit=total_debit,
-    )
-    session.add(import_log)
-    await session.flush()  # Get the import_log.id
-
-    # Look up account currency for fallback
+    # Lock the connection, then the account, before writing anything that
+    # points at the account. Inserting the import log takes a key-share lock
+    # on the account row (its foreign key); two imports that both held that
+    # share and then asked for the update lock deadlocked, and Postgres
+    # aborted one of them with a 500 (#613). Locked first, a second import
+    # of the same account waits here for the first to commit.
     account_result = await session.execute(select(Account).where(Account.id == account_id))
     account = account_result.scalar_one_or_none()
     if account and account.connection_id:
@@ -1251,6 +1242,19 @@ async def import_transactions(
         )
         account = account_result.scalar_one()
     account_currency = account.currency if account else get_settings().default_currency
+
+    import_log = ImportLog(
+        user_id=user_id,
+        workspace_id=workspace_id,
+        account_id=account_id,
+        filename=filename,
+        format=detected_format,
+        transaction_count=len(included),
+        total_credit=total_credit,
+        total_debit=total_debit,
+    )
+    session.add(import_log)
+    await session.flush()  # Get the import_log.id
 
     # Build category name → id map scoped to the workspace, on the same terms
     # the preview used: hidden categories excluded, names matched
