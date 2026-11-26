@@ -1502,6 +1502,7 @@ def test_build_transaction_description_prefers_remittance_over_counterparty():
         ["mandatereference:,creditorid:,remittanceinformation:KAUFUMSATZ 23.11 Google Pay"],
         ["mandatereference:4M5J,creditorid:DE98ZZZ09999999999,remittanceinformation:KAUFUMSATZ 23.11 Google Pay"],
         ["MandateReference:,CreditorId:,", "RemittanceInformation:KAUFUMSATZ 23.11 Google Pay"],
+        ["mandatereference:ABC,DEF,creditorid:DE98ZZZ09999999999,remittanceinformation:KAUFUMSATZ 23.11 Google Pay"],
     ],
 )
 def test_build_transaction_description_strips_ing_sepa_key_prefix(remittance):

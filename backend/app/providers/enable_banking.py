@@ -274,7 +274,7 @@ def _join_remittance(value: Any) -> str:
 # empty keys included. Only the text after the last key reads as a
 # description.
 _ING_SEPA_PREFIX = re.compile(
-    r"^\s*mandatereference:[^,]*,\s*creditorid:[^,]*,\s*remittanceinformation:",
+    r"^\s*mandatereference:.*?,\s*creditorid:[^,]*,\s*remittanceinformation:",
     re.IGNORECASE,
 )
 
