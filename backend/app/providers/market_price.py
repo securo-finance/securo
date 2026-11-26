@@ -538,21 +538,39 @@ class YFinanceProvider(MarketPriceProvider):
 
         try:
             info = yf.Ticker(symbol).info or {}
+            # Everything below reads a third-party payload, so it stays inside
+            # the handler: a malformed field must not fail a quote whose price
+            # is already in hand.
+            name = info.get("longName") or info.get("shortName") or None
+            quote_type = info.get("quoteType")
+            website = info.get("website") or None
+            metadata = {
+                "name": name if isinstance(name, str) else None,
+                "quote_type": (
+                    quote_type.upper()
+                    if isinstance(quote_type, str) and quote_type
+                    else None
+                ),
+                # Yahoo's `info["website"]` is the source of truth for the
+                # company domain, from which we build the logo URL. Missing
+                # for most crypto/indices — caller will just skip the logo.
+                "website": website if isinstance(website, str) else None,
+            }
         except _rate_limit_exception_types():
             raise MarketPriceRateLimitedError(
                 f"Yahoo Finance rate-limited while reading {symbol}"
             )
-        except Exception as e:  # pragma: no cover
+        except Exception as e:
             logger.warning("yfinance info failed for %s: %s", symbol, e)
             return None
-        return {
-            "name": info.get("longName") or info.get("shortName") or None,
-            "quote_type": (info.get("quoteType") or "").upper() or None,
-            # Yahoo's `info["website"]` is the source of truth for the
-            # company domain, from which we build the logo URL. Missing
-            # for most crypto/indices — caller will just skip the logo.
-            "website": info.get("website") or None,
-        }
+        if not any(metadata.values()):
+            # yfinance hides a failed quoteSummary by returning an `info` with
+            # nothing usable (e.g. {"trailingPegRatio": None}). That is a
+            # failure, not metadata: return None so the day-long cache stays
+            # out of it and the next request tries again.
+            logger.warning("yfinance info for %s had no usable fields", symbol)
+            return None
+        return metadata
 
 
 # Asset logos reuse the shared favicon helper. Kept as a module-local alias so

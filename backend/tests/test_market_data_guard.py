@@ -249,8 +249,9 @@ async def test_a_rate_limit_mid_batch_keeps_the_chunks_already_priced(fake_redis
 
     # The priced chunk survives, the one that never answered stays None so the
     # caller falls back per holding (where the cooldown halts it).
-    assert closes["AAPL"] is not None
-    assert closes["AAPL"].price == Decimal("190.5")
+    priced = closes["AAPL"]
+    assert priced is not None
+    assert priced.price == Decimal("190.5")
     assert closes["MSFT"] is None
     assert fake_redis.data.get("market:yahoo:cooldown") == "1"
 
@@ -268,6 +269,8 @@ async def test_a_rate_limit_beside_priced_tickers_starts_the_cooldown(fake_redis
         }
 
     def refused(symbol: str):
+        # Probing the priced ticker would hide the refusal, so pin the symbol.
+        assert symbol == "MSFT"
         yahoo["price"] += 1
         raise MarketPriceRateLimitedError("429")
 
@@ -279,7 +282,9 @@ async def test_a_rate_limit_beside_priced_tickers_starts_the_cooldown(fake_redis
 
     # The priced ticker survives and the unanswered one is probed, so the
     # partial batch starts the cooldown instead of looking like a quiet sweep.
-    assert closes["AAPL"].price == Decimal("190.5")
+    priced = closes["AAPL"]
+    assert priced is not None
+    assert priced.price == Decimal("190.5")
     assert closes["MSFT"] is None
     assert yahoo["price"] == 1
     assert fake_redis.data.get("market:yahoo:cooldown") == "1"
@@ -303,7 +308,9 @@ async def test_a_denied_probe_keeps_the_chunks_already_priced(fake_redis, yahoo)
     ):
         closes = await YFinanceProvider().get_latest_closes(["AAPL", "GONE"])
 
-    assert closes["AAPL"].price == Decimal("190.5")
+    priced = closes["AAPL"]
+    assert priced is not None
+    assert priced.price == Decimal("190.5")
     assert closes["GONE"] is None
     assert yahoo["price"] == 0
     # Our own cap is not Yahoo refusing: no cooldown is started for it.
@@ -368,3 +375,27 @@ async def test_redis_down_lets_lookups_through(yahoo):
     with patch("app.core.redis.get_redis", _down):
         quote = await YFinanceProvider().get_quote("AAPL")
     assert quote is not None and quote.price == 190.5
+
+
+def test_an_info_with_no_usable_fields_is_a_failure_not_metadata():
+    """yfinance hides a failed quoteSummary as a dict of nulls; do not cache it."""
+
+    class _Ticker:
+        def __init__(self, symbol: str) -> None:
+            self.info = {"trailingPegRatio": None}
+
+    with patch("yfinance.Ticker", _Ticker):
+        assert YFinanceProvider._info_sync("AAPL") is None
+
+
+def test_malformed_metadata_keeps_the_usable_fields():
+    """A wrongly typed field in `info` must not raise out of the display lookup."""
+
+    class _Ticker:
+        def __init__(self, symbol: str) -> None:
+            self.info = {"longName": "Apple Inc.", "quoteType": 123, "website": 42}
+
+    with patch("yfinance.Ticker", _Ticker):
+        info = YFinanceProvider._info_sync("AAPL")
+
+    assert info == {"name": "Apple Inc.", "quote_type": None, "website": None}
