@@ -231,6 +231,7 @@ class Account(_Model):
     """The last four characters only, never the full number."""
     shared_balance_group: str | None = Field(default=None, max_length=100)
     stable_external_id: ExternalId | None = None
+    account_fingerprint: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
     institution_external_id: ExternalId | None = None
     institution_name: str | None = Field(default=None, max_length=255)
     institution_logo: str | None = Field(default=None, pattern=KEY_PATTERN)

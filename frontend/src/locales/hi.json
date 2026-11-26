@@ -1476,7 +1476,15 @@
     "disconnectAlsoDelete": "खाते और लेन-देन भी हटाएँ",
     "disconnectedKept": "बैंक डिस्कनेक्ट हो गया। खाते और इतिहास रखे गए।",
     "removeConnection": "कनेक्शन हटाएँ",
-    "connectionDisconnected": "डिस्कनेक्ट है। फिर से सिंक करने के लिए दोबारा जोड़ें"
+    "connectionDisconnected": "डिस्कनेक्ट है। फिर से सिंक करने के लिए दोबारा जोड़ें",
+    "jointAccount": "संयुक्त खाता",
+    "jointSecondaryFeed": "संयुक्त · द्वितीयक फ़ीड",
+    "pendingLinkCandidateTitle": "संभावित संयुक्त खाता मिलान",
+    "pendingLinkCandidateDesc": "इस कनेक्शन को \"{{account}}\" से मेल खाने वाला खाता मिला (पहले से {{connection}} से सिंक)। एक संयुक्त खाते के रूप में लिंक करें या अलग रखें?",
+    "confirmJointAccount": "संयुक्त खाते के रूप में लिंक करें",
+    "keepSeparateAccount": "अलग रखें",
+    "jointAccountConfirmed": "खाते संयुक्त खाते के रूप में लिंक हो गए",
+    "jointAccountKeptSeparate": "अलग खातों के रूप में रखा गया"
   },
   "loans": {
     "title": "ऋण अनुबंध",

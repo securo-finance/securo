@@ -10,6 +10,7 @@ const api = vi.hoisted(() => ({
   connectionsList: vi.fn(),
   sync: vi.fn(),
   deleteConnection: vi.fn(),
+  resolveAccountLink: vi.fn(),
   pluginsInstalled: vi.fn(),
   pluginConnections: vi.fn(),
   pluginUpdateValues: vi.fn(),
@@ -33,6 +34,7 @@ vi.mock('@/lib/api', () => ({
     getProviders: vi.fn().mockResolvedValue([]),
     sync: api.sync,
     delete: api.deleteConnection,
+    resolveAccountLink: api.resolveAccountLink,
     getReauthUrl: vi.fn(),
   },
   currencies: { list: vi.fn().mockResolvedValue([]) },
@@ -362,6 +364,91 @@ describe('AccountsPage disconnect dialog', () => {
     await user.click(screen.getByRole('button', { name: t('accounts.removeConnection') }))
 
     expect(api.deleteConnection).toHaveBeenCalledExactlyOnceWith('conn-d', { keepAccounts: false })
+  })
+})
+
+describe('AccountsPage joint accounts & pending links', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    api.pluginsInstalled.mockResolvedValue([])
+    api.pluginConnections.mockResolvedValue([])
+    api.resolveAccountLink.mockResolvedValue({
+      id: 'link-1',
+      account_id: 'acc-1',
+      connection_id: 'conn-2',
+      external_id: 'ext-2',
+      is_primary_feed: false,
+      status: 'active',
+      created_at: '2026-10-01T00:00:00Z',
+    })
+  })
+
+  it('shows joint accounts under secondary connection cards and badges primary/secondary feeds', async () => {
+    const link1 = {
+      id: 'link-1',
+      account_id: 'acc-1',
+      connection_id: 'conn-1',
+      external_id: 'ext-1',
+      is_primary_feed: true,
+      status: 'active' as const,
+      created_at: '2026-10-01T00:00:00Z',
+    }
+    const link2 = {
+      id: 'link-2',
+      account_id: 'acc-1',
+      connection_id: 'conn-2',
+      external_id: 'ext-2',
+      is_primary_feed: false,
+      status: 'active' as const,
+      created_at: '2026-10-02T00:00:00Z',
+    }
+    const sharedAcc = {
+      ...makeAccount('conn-1'),
+      connection_links: [link1, link2],
+    }
+    api.accountsList.mockImplementation((includeClosed: boolean) =>
+      Promise.resolve(includeClosed ? [] : [sharedAcc]),
+    )
+    api.connectionsList.mockResolvedValue([
+      makeConnection({ id: 'conn-1', institution_name: 'Bank A', account_links: [link1] }),
+      makeConnection({ id: 'conn-2', institution_name: 'Bank A (Partner)', account_links: [link2] }),
+    ])
+
+    renderWithProviders(<AccountsPage />, { route: '/accounts' })
+
+    expect(await screen.findByText(t('accounts.jointAccount'))).toBeInTheDocument()
+    expect(screen.getByText(t('accounts.jointSecondaryFeed'))).toBeInTheDocument()
+    expect(screen.queryByText(t('accounts.noAccountsFound'))).not.toBeInTheDocument()
+  })
+
+  it('renders pending link candidates and calls resolveAccountLink on confirm or reject', async () => {
+    const pendingLink = {
+      id: 'link-pending',
+      account_id: 'acc-1',
+      connection_id: 'conn-2',
+      external_id: 'ext-2',
+      is_primary_feed: false,
+      status: 'pending' as const,
+      created_at: '2026-10-02T00:00:00Z',
+    }
+    api.accountsList.mockImplementation((includeClosed: boolean) =>
+      Promise.resolve(includeClosed ? [] : [makeAccount('conn-1')]),
+    )
+    api.connectionsList.mockResolvedValue([
+      makeConnection({ id: 'conn-1', institution_name: 'Primary Bank' }),
+      makeConnection({ id: 'conn-2', institution_name: 'Partner Bank', account_links: [pendingLink] }),
+    ])
+    const { user } = renderWithProviders(<AccountsPage />, { route: '/accounts' })
+
+    const banner = await screen.findByTestId('pending-account-links')
+    expect(banner).toHaveTextContent('Healthy Checking')
+    expect(banner).toHaveTextContent('Primary Bank')
+
+    await user.click(within(banner).getByRole('button', { name: t('accounts.confirmJointAccount') }))
+    expect(api.resolveAccountLink).toHaveBeenCalledWith('conn-2', 'link-pending', 'confirm')
+
+    await user.click(within(banner).getByRole('button', { name: t('accounts.keepSeparateAccount') }))
+    expect(api.resolveAccountLink).toHaveBeenCalledWith('conn-2', 'link-pending', 'reject')
   })
 })
 

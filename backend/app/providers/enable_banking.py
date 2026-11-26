@@ -39,6 +39,7 @@ from app.providers.base import (
     SessionExpiredError,
     TransactionData,
     default_oauth_redirect_uri,
+    hash_account_identifier,
     mask_last4,
 )
 from app.providers.psu import current_psu_context
@@ -494,18 +495,34 @@ DEFAULT_PSU_HEADERS = ("Psu-Ip-Address", "Psu-User-Agent")
 ACCOUNT_DETAILS_KEY = "account_details"
 
 
+def _stable_account_id(raw: dict) -> Optional[str]:
+    """Session-independent account identifier from an Enable Banking payload."""
+    ident = raw.get("identification_hash")
+    if isinstance(ident, str) and ident.strip():
+        return ident.strip()
+    hashes = raw.get("identification_hashes")
+    if isinstance(hashes, list):
+        for entry in hashes:
+            if isinstance(entry, str) and entry.strip():
+                return entry.strip()
+    return None
+
+
 def _details_summary(raw: dict) -> dict[str, Optional[str]]:
     """The part of an account's details payload the sync uses.
 
-    The masked number is kept rather than the identifier itself, so the cache
-    holds nothing the account row does not already show.
+    The masked number and keyed HMAC fingerprint are kept rather than the
+    identifier itself, so the cache holds nothing the account row does not
+    already show and never exposes a raw IBAN.
     """
     name = raw.get("display_name") or raw.get("product") or raw.get("name")
+    ident = _account_identifier(raw)
     return {
         "name": name if isinstance(name, str) else None,
         "cash_account_type": raw.get("cash_account_type"),
         "currency": raw.get("currency"),
-        "masked_number": mask_last4(_account_identifier(raw)),
+        "masked_number": mask_last4(ident),
+        "account_fingerprint": hash_account_identifier("enable_banking", ident),
     }
 
 
@@ -1013,7 +1030,11 @@ class EnableBankingProvider(BankProvider):
             # authorization code is single-use, so failing here would make a
             # reconnect start over at the bank. The next sync reads the balance.
             accounts.append(
-                await self._build_account(raw_acc, tolerate_presence_refusal=True)
+                await self._build_account(
+                    raw_acc,
+                    _stable_account_id(raw_acc),
+                    tolerate_presence_refusal=True,
+                )
             )
             uid = raw_acc.get("uid") or raw_acc.get("account_uid")
             if uid:
@@ -1093,6 +1114,7 @@ class EnableBankingProvider(BankProvider):
             or raw.get("name")
             or "Account"
         )
+        ident = _account_identifier(raw)
         return AccountData(
             external_id=uid,
             name=name,
@@ -1101,10 +1123,11 @@ class EnableBankingProvider(BankProvider):
             currency=currency,
             credit_limit=credit_limit,
             available_credit=available_credit,
-            masked_number=mask_last4(_account_identifier(raw)),
+            masked_number=mask_last4(ident),
             # From the session payload: `uid` is scoped to one session, this
             # hash is what lets a later session find the same account again.
             stable_external_id=stable_external_id,
+            account_fingerprint=hash_account_identifier("enable_banking", ident),
         )
 
     async def _build_cached_account(
@@ -1129,6 +1152,8 @@ class EnableBankingProvider(BankProvider):
         )
         masked = cached.get("masked_number")
         account.masked_number = masked if isinstance(masked, str) else None
+        fp = cached.get("account_fingerprint")
+        account.account_fingerprint = fp if isinstance(fp, str) else None
         return account
 
     # ----- account / transaction fetches -----
@@ -1190,9 +1215,10 @@ class EnableBankingProvider(BankProvider):
         # in the same payload we just fetched, so carry it through; otherwise a
         # reconnect re-keys every account and the sync duplicates them all.
         stable_external_ids = {
-            entry.get("uid"): entry.get("identification_hash")
+            uid: _stable_account_id(entry)
             for entry in (data.get("accounts_data") or [])
-            if isinstance(entry, dict) and entry.get("uid")
+            if isinstance(entry, dict)
+            and (uid := entry.get("uid") or entry.get("account_uid"))
         }
         # A background sync names known accounts from the cached details:
         # banks cap unattended calls per endpoint (often 4 a day), and some do

@@ -1482,7 +1482,15 @@
     "disconnectAlsoDelete": "Supprimer aussi les comptes et les transactions",
     "disconnectedKept": "Banque déconnectée. Les comptes et l'historique ont été conservés.",
     "removeConnection": "Supprimer la connexion",
-    "connectionDisconnected": "Déconnectée. Reconnectez pour synchroniser à nouveau"
+    "connectionDisconnected": "Déconnectée. Reconnectez pour synchroniser à nouveau",
+    "jointAccount": "Compte joint",
+    "jointSecondaryFeed": "Joint · flux secondaire",
+    "pendingLinkCandidateTitle": "Correspondance possible de compte joint",
+    "pendingLinkCandidateDesc": "Cette connexion a trouvé un compte correspondant à « {{account}} » (déjà synchronisé via {{connection}}). Les lier comme compte joint ou les garder séparés ?",
+    "confirmJointAccount": "Lier comme compte joint",
+    "keepSeparateAccount": "Garder séparé",
+    "jointAccountConfirmed": "Comptes liés comme compte joint",
+    "jointAccountKeptSeparate": "Conservés comme comptes séparés"
   },
   "loans": {
     "title": "Contrat de prêt",

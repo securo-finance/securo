@@ -1482,7 +1482,15 @@
     "disconnectAlsoDelete": "Eliminar también cuentas y transacciones",
     "disconnectedKept": "Banco desconectado. Se conservaron las cuentas y el historial.",
     "removeConnection": "Eliminar conexión",
-    "connectionDisconnected": "Desconectada. Vuelve a conectar para sincronizar"
+    "connectionDisconnected": "Desconectada. Vuelve a conectar para sincronizar",
+    "jointAccount": "Cuenta conjunta",
+    "jointSecondaryFeed": "Conjunta · origen secundario",
+    "pendingLinkCandidateTitle": "Posible coincidencia de cuenta conjunta",
+    "pendingLinkCandidateDesc": "Esta conexión encontró una cuenta que coincide con \"{{account}}\" (ya sincronizada mediante {{connection}}). ¿Vincularlas como cuenta conjunta o mantenerlas separadas?",
+    "confirmJointAccount": "Vincular como conjunta",
+    "keepSeparateAccount": "Mantener separada",
+    "jointAccountConfirmed": "Cuentas vinculadas como cuenta conjunta",
+    "jointAccountKeptSeparate": "Mantenidas como cuentas separadas"
   },
   "loans": {
     "title": "Contrato del préstamo",

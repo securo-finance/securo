@@ -1,3 +1,5 @@
+import hashlib
+import hmac
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import date
@@ -55,6 +57,57 @@ def mask_last4(value: Optional[str]) -> Optional[str]:
     return cleaned[-4:]
 
 
+def hash_account_identifier(
+    provider: str, raw_id: Optional[str], *, min_length: int = 6
+) -> Optional[str]:
+    """Keyed HMAC-SHA256 fingerprint of a bank-assigned account identifier.
+
+    Used to match the same underlying account across re-authorizations or two
+    co-owners' separate bank connections (joint accounts) without persisting
+    raw IBANs or account numbers. Returns None for missing, masked, trivial, or
+    too-short inputs so unrelated credit cards sharing a 4-digit tail are never
+    merged.
+    """
+    if not raw_id or not isinstance(raw_id, str):
+        return None
+    stripped = raw_id.strip()
+    if "*" in stripped or "XXXX" in stripped.upper():
+        return None
+    cleaned = "".join(ch for ch in stripped if ch.isalnum()).upper()
+    if len(cleaned) < min_length or len(set(cleaned)) <= 1:
+        return None
+    from app.core.config import get_settings
+
+    secret = get_settings().secret_key.get_secret_value()
+    if not secret:
+        return None
+    msg = f"account-fingerprint:v1:{provider.strip().lower()}:{cleaned}".encode("utf-8")
+    return hmac.new(secret.encode("utf-8"), msg, hashlib.sha256).hexdigest()
+
+
+def hash_plugin_account_fingerprint(
+    provider: str, plugin_fingerprint: Optional[str]
+) -> Optional[str]:
+    """Server-HMAC a plugin-supplied account fingerprint with ``secret_key`` and ``provider``.
+
+    Plugins run without access to ``SECRET_KEY`` and emit an unkeyed 64-hex
+    digest. Re-HMACing on the host binds the fingerprint to this instance and
+    plugin provider so a plugin cannot forge a native or cross-plugin match.
+    """
+    if not plugin_fingerprint or not isinstance(plugin_fingerprint, str):
+        return None
+    cleaned = plugin_fingerprint.strip().lower()
+    if not cleaned:
+        return None
+    from app.core.config import get_settings
+
+    secret = get_settings().secret_key.get_secret_value()
+    if not secret:
+        return None
+    msg = f"plugin-account-fingerprint:v1:{provider.strip().lower()}:{cleaned}".encode("utf-8")
+    return hmac.new(secret.encode("utf-8"), msg, hashlib.sha256).hexdigest()
+
+
 @dataclass
 class ReservedBalanceData:
     """Funds an institution holds reserved/earmarked inside an account.
@@ -102,6 +155,10 @@ class AccountData:
     # survives (EB's `identification_hash`), and the sync uses it to rebind the
     # existing row to the new uid instead of duplicating the account.
     stable_external_id: Optional[str] = None
+    # Keyed HMAC-SHA256 digest of a provider account identifier (IBAN, branch/
+    # account number) computed by `hash_account_identifier`. Enables safe cross-
+    # connection joint-account matching without storing raw account numbers.
+    account_fingerprint: Optional[str] = None
     # Per-account institution override (SimpleFIN — issue #345). None = same
     # as connection. The external id is the provider's stable org id
     # (SimpleFIN conn_id) so a renamed bank updates its row instead of

@@ -23,6 +23,7 @@ from app.providers.base import (
     RefreshOutcome,
     ReservedBalanceData,
     TransactionData,
+    hash_account_identifier,
     mask_last4,
 )
 from app.providers.pluggy_constants import pluggy_icon_for_compe
@@ -706,6 +707,10 @@ def _build_account_data(acc: dict, type_mapper) -> AccountData:
         )
 
     account_currency = acc.get("currencyCode", "USD")
+    raw_number = acc.get("number")
+    account_fingerprint = hash_account_identifier(
+        "pluggy", raw_number if isinstance(raw_number, str) else None
+    )
 
     return AccountData(
         external_id=acc["id"],
@@ -721,8 +726,9 @@ def _build_account_data(acc: dict, type_mapper) -> AccountData:
         card_level=card_level,
         # Brazil has no IBAN; Pluggy's `number` is the branch/account number
         # (or the card number for credit cards), which serves the same purpose.
-        masked_number=mask_last4(acc.get("number")),
+        masked_number=mask_last4(raw_number),
         shared_balance_group=shared_balance_group,
+        account_fingerprint=account_fingerprint,
         auto_invested_balance=(
             Decimal(0) if account_type == "credit_card" else _auto_invested_portion(acc)
         ),

@@ -1499,7 +1499,15 @@
     "disconnectAlsoDelete": "Также удалить счета и транзакции",
     "disconnectedKept": "Банк отключён. Счета и история сохранены.",
     "removeConnection": "Удалить подключение",
-    "connectionDisconnected": "Отключено. Подключите снова, чтобы синхронизировать"
+    "connectionDisconnected": "Отключено. Подключите снова, чтобы синхронизировать",
+    "jointAccount": "Совместный счёт",
+    "jointSecondaryFeed": "Совместный · резервный канал",
+    "pendingLinkCandidateTitle": "Возможное совпадение совместного счёта",
+    "pendingLinkCandidateDesc": "Это подключение нашло счёт, совпадающий с «{{account}}» (уже синхронизирован через {{connection}}). Объединить как совместный счёт или оставить отдельно?",
+    "confirmJointAccount": "Объединить как совместный",
+    "keepSeparateAccount": "Оставить отдельно",
+    "jointAccountConfirmed": "Счета объединены как совместный счёт",
+    "jointAccountKeptSeparate": "Сохранены как отдельные счета"
   },
   "loans": {
     "title": "Кредитный договор",

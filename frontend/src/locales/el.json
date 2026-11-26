@@ -1122,7 +1122,15 @@
     "disconnectAlsoDelete": "Διαγραφή και των λογαριασμών και των συναλλαγών",
     "disconnectedKept": "Η τράπεζα αποσυνδέθηκε. Οι λογαριασμοί και το ιστορικό διατηρήθηκαν.",
     "removeConnection": "Κατάργηση σύνδεσης",
-    "connectionDisconnected": "Αποσυνδεδεμένη. Συνδέστε ξανά για συγχρονισμό"
+    "connectionDisconnected": "Αποσυνδεδεμένη. Συνδέστε ξανά για συγχρονισμό",
+    "jointAccount": "Κοινός λογαριασμός",
+    "jointSecondaryFeed": "Κοινός · δευτερεύουσα ροή",
+    "pendingLinkCandidateTitle": "Πιθανή αντιστοίχιση κοινού λογαριασμού",
+    "pendingLinkCandidateDesc": "Αυτή η σύνδεση εντόπισε λογαριασμό που ταιριάζει με «{{account}}» (ήδη συγχρονισμένος μέσω {{connection}}). Σύνδεση ως κοινός λογαριασμός ή διατήρηση χωριστά;",
+    "confirmJointAccount": "Σύνδεση ως κοινός",
+    "keepSeparateAccount": "Διατήρηση χωριστά",
+    "jointAccountConfirmed": "Οι λογαριασμοί συνδέθηκαν ως κοινός λογαριασμός",
+    "jointAccountKeptSeparate": "Διατηρήθηκαν ως χωριστοί λογαριασμοί"
   },
   "loans": {
     "title": "Σύμβαση δανείου",

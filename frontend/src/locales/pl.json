@@ -1531,7 +1531,15 @@
     "disconnectAlsoDelete": "Usuń też konta i transakcje",
     "disconnectedKept": "Bank odłączony. Konta i historia zostały zachowane.",
     "removeConnection": "Usuń połączenie",
-    "connectionDisconnected": "Odłączone. Połącz ponownie, aby znów synchronizować"
+    "connectionDisconnected": "Odłączone. Połącz ponownie, aby znów synchronizować",
+    "jointAccount": "Konto wspólne",
+    "jointSecondaryFeed": "Wspólne · źródło zapasowe",
+    "pendingLinkCandidateTitle": "Możliwe dopasowanie konta wspólnego",
+    "pendingLinkCandidateDesc": "To połączenie wykryło konto pasujące do „{{account}}” (już synchronizowane przez {{connection}}). Połączyć jako jedno konto wspólne czy zachować osobno?",
+    "confirmJointAccount": "Połącz jako wspólne",
+    "keepSeparateAccount": "Zachowaj osobno",
+    "jointAccountConfirmed": "Konta połączono jako konto wspólne",
+    "jointAccountKeptSeparate": "Zachowano jako osobne konta"
   },
   "loans": {
     "title": "Umowa kredytu",

@@ -11,6 +11,7 @@ from app.core.database import Base
 if TYPE_CHECKING:
     from app.models.user import User
     from app.models.account import Account
+    from app.models.account_connection_link import AccountConnectionLink
     from app.models.institution import Institution
 
 
@@ -42,6 +43,12 @@ class BankConnection(Base):
     # the connections API can summarize them without async lazy loads.
     institutions: Mapped[list["Institution"]] = relationship(
         back_populates="connection", cascade="all, delete-orphan", lazy="selectin"
+    )
+    account_links: Mapped[list["AccountConnectionLink"]] = relationship(
+        back_populates="connection",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        lazy="selectin",
     )
 
     @property

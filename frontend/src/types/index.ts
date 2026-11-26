@@ -180,6 +180,27 @@ export interface ConnectionInstitution {
   logo_url: string | null
 }
 
+export type AccountConnectionLinkStatus = 'active' | 'pending' | 'rejected'
+export type AccountConnectionLinkAction = 'confirm' | 'reject'
+
+export interface AccountConnectionLink {
+  id: string
+  account_id: string
+  connection_id: string
+  external_id: string
+  is_primary_feed: boolean
+  status: AccountConnectionLinkStatus
+  last_synced_at?: string | null
+  created_at: string
+  account_name?: string | null
+  account_masked_number?: string | null
+  account_currency?: string | null
+  connection_name?: string | null
+  institution_name?: string | null
+  provider?: string | null
+  connection_status?: string | null
+}
+
 export interface BankConnection {
   id: string
   user_id: string
@@ -197,6 +218,7 @@ export interface BankConnection {
   // Institutions this link spans (issue #345). Empty for one-institution
   // providers — institution_name covers those.
   institutions: ConnectionInstitution[]
+  account_links?: AccountConnectionLink[]
   /** Set when a plugin syncs this connection: it is managed through that plugin connection. */
   plugin_connection_id?: string | null
   plugin_id?: string | null
@@ -295,6 +317,7 @@ export interface Account {
   open_bill_total_primary?: number | null
   is_closed: boolean
   closed_at: string | null
+  connection_links?: AccountConnectionLink[]
 }
 
 export interface CreditCardBill {

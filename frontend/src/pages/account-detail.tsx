@@ -14,9 +14,10 @@ import { isTransferTransaction } from '@/lib/transaction-transfer'
 import { closeDateForBill, isOpenCycleWindow } from '@/lib/credit-card-cycle'
 import { toast } from 'sonner'
 import type { AccountCard, CreditCardBill, ProjectedTransaction, Transaction } from '@/types'
+import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
-import { ArrowLeft, ArrowLeftRight, CalendarClock, ChevronLeft, ChevronRight, Clock, CreditCard, EyeClosed, HelpCircle, Paperclip, Pencil, Plus, X } from 'lucide-react'
+import { ArrowLeft, ArrowLeftRight, CalendarClock, ChevronLeft, ChevronRight, Clock, CreditCard, EyeClosed, HelpCircle, Paperclip, Pencil, Plus, Users, X } from 'lucide-react'
 import { MobileTransactionRow } from '@/components/mobile-transaction-row'
 import { transactionDescription } from '@/lib/transaction-description'
 import { ReportingDateBadge } from '@/components/reporting-date-badge'
@@ -982,6 +983,12 @@ export default function AccountDetailPage() {
               <span className="text-xs font-medium text-muted-foreground">
                 {t(`accounts.type${account.type.split('_').map(s => s[0].toUpperCase() + s.slice(1)).join('')}`, account.type)}
               </span>
+              {(account.connection_links?.filter((l) => l.status === 'active').length ?? 0) > 1 && (
+                <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-4 inline-flex items-center gap-1">
+                  <Users className="h-2.5 w-2.5" />
+                  {t('accounts.jointAccount')}
+                </Badge>
+              )}
               {isCreditCard && account.next_due_date && (() => {
                 const d = daysUntil(account.next_due_date)
                 if (d > 7) return null

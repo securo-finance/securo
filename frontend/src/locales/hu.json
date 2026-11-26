@@ -1476,7 +1476,15 @@
     "disconnectAlsoDelete": "A számlák és tranzakciók törlése is",
     "disconnectedKept": "Bank leválasztva. A számlák és az előzmények megmaradtak.",
     "removeConnection": "Kapcsolat eltávolítása",
-    "connectionDisconnected": "Leválasztva. Csatlakoztasd újra a szinkronizáláshoz"
+    "connectionDisconnected": "Leválasztva. Csatlakoztasd újra a szinkronizáláshoz",
+    "jointAccount": "Közös számla",
+    "jointSecondaryFeed": "Közös · másodlagos forrás",
+    "pendingLinkCandidateTitle": "Lehetséges közös számla egyezés",
+    "pendingLinkCandidateDesc": "Ez a kapcsolat egy a(z) „{{account}}” számlával egyező számlát talált (már szinkronizálva a(z) {{connection}} kapcsolaton). Összekapcsolod közös számlaként, vagy külön tartod?",
+    "confirmJointAccount": "Összekapcsolás közösként",
+    "keepSeparateAccount": "Külön tartás",
+    "jointAccountConfirmed": "Számlák összekapcsolva közös számlaként",
+    "jointAccountKeptSeparate": "Külön számlaként megtartva"
   },
   "loans": {
     "title": "Hitelszerződés",

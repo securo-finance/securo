@@ -1476,7 +1476,15 @@
     "disconnectAlsoDelete": "Also delete accounts and transactions",
     "disconnectedKept": "Bank disconnected. Accounts and history were kept.",
     "removeConnection": "Remove connection",
-    "connectionDisconnected": "Disconnected. Reconnect to sync again"
+    "connectionDisconnected": "Disconnected. Reconnect to sync again",
+    "jointAccount": "Joint account",
+    "jointSecondaryFeed": "Joint · secondary feed",
+    "pendingLinkCandidateTitle": "Possible joint account match",
+    "pendingLinkCandidateDesc": "This connection found an account matching \"{{account}}\" (already synced via {{connection}}). Link them as one joint account or keep them separate?",
+    "confirmJointAccount": "Link as joint account",
+    "keepSeparateAccount": "Keep separate",
+    "jointAccountConfirmed": "Accounts linked as a joint account",
+    "jointAccountKeptSeparate": "Kept as separate accounts"
   },
   "loans": {
     "title": "Loan contract",

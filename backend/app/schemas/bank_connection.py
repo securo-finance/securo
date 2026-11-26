@@ -37,6 +37,30 @@ class SyncFailureRead(BaseModel):
     detail: Optional[str] = None
 
 
+class AccountConnectionLinkRead(BaseModel):
+    id: uuid.UUID
+    account_id: uuid.UUID
+    connection_id: uuid.UUID
+    external_id: str
+    is_primary_feed: bool
+    status: str
+    last_synced_at: Optional[datetime] = None
+    created_at: datetime
+    account_name: Optional[str] = None
+    account_masked_number: Optional[str] = None
+    account_currency: Optional[str] = None
+    connection_name: Optional[str] = None
+    institution_name: Optional[str] = None
+    provider: Optional[str] = None
+    connection_status: Optional[str] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class AccountLinkActionRequest(BaseModel):
+    action: Literal["confirm", "reject"]
+
+
 class BankConnectionRead(BankConnectionBase):
     id: uuid.UUID
     user_id: uuid.UUID
@@ -51,6 +75,7 @@ class BankConnectionRead(BankConnectionBase):
     # Institutions this link spans. Empty for providers that are one
     # institution per connection — institution_name above covers those.
     institutions: list[ConnectionInstitutionRead] = []
+    account_links: list[AccountConnectionLinkRead] = []
     # Set when a plugin syncs this connection: manage it through the plugin connection.
     plugin_connection_id: Optional[uuid.UUID] = None
     plugin_id: Optional[str] = None

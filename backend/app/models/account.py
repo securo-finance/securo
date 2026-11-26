@@ -10,6 +10,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.core.database import Base
 
 if TYPE_CHECKING:
+    from app.models.account_connection_link import AccountConnectionLink
     from app.models.account_reserved_balance import AccountReservedBalance
     from app.models.bank_connection import BankConnection
     from app.models.institution import Institution
@@ -43,6 +44,9 @@ class Account(Base):
     # duplicating the account after a reconnect. Refreshed alongside `name`,
     # never blanked by a missing value.
     stable_external_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    # Keyed HMAC-SHA256 digest of the provider's account identifier (IBAN,
+    # branch/account number), computed via `hash_account_identifier`.
+    account_fingerprint: Mapped[Optional[str]] = mapped_column(String(64), nullable=True, index=True)
     type: Mapped[str] = mapped_column(String(50))  # checking, savings, credit_card, loan
     # Loan accounts only: the property or vehicle this loan is secured against.
     secured_asset_id: Mapped[Optional[uuid.UUID]] = mapped_column(
@@ -91,4 +95,10 @@ class Account(Base):
     # reads them in an async session, like `institution`.
     reserved_balances: Mapped[list["AccountReservedBalance"]] = relationship(
         back_populates="account", cascade="all, delete-orphan", lazy="selectin"
+    )
+    connection_links: Mapped[list["AccountConnectionLink"]] = relationship(
+        back_populates="account",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        lazy="selectin",
     )

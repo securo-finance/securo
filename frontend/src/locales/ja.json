@@ -1476,7 +1476,15 @@
     "disconnectAlsoDelete": "口座と取引も削除する",
     "disconnectedKept": "銀行の接続を解除しました。口座と履歴は残っています。",
     "removeConnection": "接続を削除",
-    "connectionDisconnected": "接続解除済み。再接続すると同期を再開します"
+    "connectionDisconnected": "接続解除済み。再接続すると同期を再開します",
+    "jointAccount": "共同口座",
+    "jointSecondaryFeed": "共同 · サブフィード",
+    "pendingLinkCandidateTitle": "共同口座の一致候補",
+    "pendingLinkCandidateDesc": "この接続で「{{account}}」と一致する口座が見つかりました（{{connection}} で既に同期済み）。共同口座としてリンクしますか、別々に保持しますか？",
+    "confirmJointAccount": "共同口座としてリンク",
+    "keepSeparateAccount": "別々に保持",
+    "jointAccountConfirmed": "口座を共同口座としてリンクしました",
+    "jointAccountKeptSeparate": "別々の口座として保持しました"
   },
   "loans": {
     "title": "ローン契約",
