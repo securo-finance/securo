@@ -1713,6 +1713,96 @@ class TestFxFallbackFlag:
     """Test that fx_fallback is set correctly in API responses."""
 
     @pytest.mark.asyncio
+    async def test_currency_change_to_one_without_rate_clears_old_stamp(
+        self,
+        client: AsyncClient,
+        auth_headers,
+        test_user: User,
+        session: AsyncSession,
+        fx_rates,
+    ):
+        """A derived stamp does not survive a move to a currency with no rate (#496).
+
+        The old figure was a conversion of the old currency: kept, it counted
+        1,500 JPY as R$ 500 without a warning. The row is left unconverted,
+        as creating it in JPY does.
+        """
+        brl_account = await _make_account(
+            session, test_user, currency="BRL", name="Test BRL Account"
+        )
+        resp = await client.post(
+            "/api/transactions",
+            headers=auth_headers,
+            json={
+                "account_id": str(brl_account.id),
+                "description": "Currency moves to JPY",
+                "amount": "100.00",
+                "date": date.today().isoformat(),
+                "type": "debit",
+                "currency": "USD",
+            },
+        )
+        assert resp.status_code == 201
+        assert resp.json()["amount_primary"] == 500.0
+        txn_id = resp.json()["id"]
+        row = await session.get(Transaction, uuid.UUID(txn_id))
+        assert row is not None
+        assert row.amount_account == Decimal("500.00")
+
+        resp = await client.patch(
+            f"/api/transactions/{txn_id}",
+            headers=auth_headers,
+            json={"currency": "JPY", "amount": "1500.00"},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["amount_primary"] is None
+        assert data["fx_rate_used"] is None
+        assert data["fx_fallback"] is True
+
+        await session.refresh(row)
+        assert row.amount_primary is None
+        assert row.fx_rate_used is None
+        # The BRL account's R$ 500 was a conversion of the old currency too.
+        assert row.amount_account is None
+
+    @pytest.mark.asyncio
+    async def test_currency_change_to_one_with_rate_restamps(
+        self,
+        client: AsyncClient,
+        auth_headers,
+        test_user: User,
+        session: AsyncSession,
+        fx_rates,
+    ):
+        """A move to a currency with a rate is stamped at that rate (#496)."""
+        usd_account = await _make_account(session, test_user, currency="USD")
+        resp = await client.post(
+            "/api/transactions",
+            headers=auth_headers,
+            json={
+                "account_id": str(usd_account.id),
+                "description": "Currency moves to EUR",
+                "amount": "100.00",
+                "date": date.today().isoformat(),
+                "type": "debit",
+                "currency": "USD",
+            },
+        )
+        txn_id = resp.json()["id"]
+
+        resp = await client.patch(
+            f"/api/transactions/{txn_id}",
+            headers=auth_headers,
+            json={"currency": "EUR"},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        # 100 EUR -> BRL at 5.0 / 0.92
+        assert data["amount_primary"] == 543.48
+        assert data["fx_fallback"] is False
+
+    @pytest.mark.asyncio
     async def test_foreign_currency_no_rates_returns_fx_fallback_true(
         self,
         client: AsyncClient,

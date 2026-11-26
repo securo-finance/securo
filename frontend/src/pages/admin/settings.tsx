@@ -30,6 +30,7 @@ import {
 import { PageHeader } from '@/components/page-header'
 import { TimezoneSettings } from '@/components/timezone-settings'
 import { ProviderSettings } from '@/components/provider-settings'
+import { EmailSettings } from '@/components/email-settings'
 import { DEFAULT_COLORS_QUERY_KEY } from '@/hooks/use-app-theme'
 import { useLocalAuthEnabled } from '@/hooks/use-local-auth'
 import { Search, Plus, Trash2, Shield, ShieldOff, UserCog, Users, Scale, Tag, Palette, Save, Hash, CalendarDays } from 'lucide-react'
@@ -54,8 +55,10 @@ export default function AdminSettingsPage() {
   const [editEmail, setEditEmail] = useState('')
   const [editIsActive, setEditIsActive] = useState(true)
   const [editIsAdmin, setEditIsAdmin] = useState(false)
-  const [editPassword, setEditPassword] = useState('')
-  const [showPasswordField, setShowPasswordField] = useState(false)
+  // Why the account is being touched; the API refuses the change without it
+  // and writes it to the access log (ADR 0042).
+  const [editReason, setEditReason] = useState('')
+  const [deleteReason, setDeleteReason] = useState('')
 
   const [lastSyncedLight, setLastSyncedLight] = useState<string | undefined>()
   const [lastSyncedDark, setLastSyncedDark] = useState<string | undefined>()
@@ -83,7 +86,7 @@ export default function AdminSettingsPage() {
   })
 
   const updateMutation = useMutation({
-    mutationFn: ({ id, ...data }: { id: string } & Record<string, unknown>) =>
+    mutationFn: ({ id, ...data }: { id: string; reason: string; email?: string; is_active?: boolean; is_superuser?: boolean }) =>
       adminApi.updateUser(id, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin', 'users'] })
@@ -96,7 +99,8 @@ export default function AdminSettingsPage() {
   })
 
   const deleteMutation = useMutation({
-    mutationFn: (id: string) => adminApi.deleteUser(id),
+    mutationFn: (data: { id: string; reason: string }) =>
+      adminApi.deleteUser(data.id, data.reason),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin', 'users'] })
       setDeleteUser(null)
@@ -271,8 +275,12 @@ export default function AdminSettingsPage() {
     setEditEmail(u.email)
     setEditIsActive(u.is_active)
     setEditIsAdmin(u.is_superuser)
-    setEditPassword('')
-    setShowPasswordField(false)
+    setEditReason('')
+  }
+
+  function openDelete(u: AdminUser) {
+    setDeleteUser(u)
+    setDeleteReason('')
   }
 
   const users = usersData?.items ?? []
@@ -340,6 +348,14 @@ export default function AdminSettingsPage() {
                         {t('admin.users.you')}
                       </span>
                     )}
+                    {u.pending_email && (
+                      <span
+                        className="text-[10px] font-medium text-amber-600 bg-amber-500/10 px-1.5 py-0.5 rounded"
+                        title={t('admin.users.pendingEmail', { email: u.pending_email })}
+                      >
+                        {t('admin.users.pending')}
+                      </span>
+                    )}
                   </div>
                   <span className="text-xs text-muted-foreground">
                     {u.is_superuser ? t('admin.users.admin') : t('admin.users.user')}
@@ -358,7 +374,7 @@ export default function AdminSettingsPage() {
                   {!isSelf(u) && (
                     <span
                       role="button"
-                      onClick={(e) => { e.stopPropagation(); setDeleteUser(u) }}
+                      onClick={(e) => { e.stopPropagation(); openDelete(u) }}
                       className="p-1.5 rounded-md text-muted-foreground/40 hover:text-destructive hover:bg-destructive/10 transition-colors"
                       title={t('common.delete')}
                     >
@@ -373,6 +389,7 @@ export default function AdminSettingsPage() {
       </div>
 
       <TimezoneSettings />
+      <EmailSettings />
       <ProviderSettings />
 
       {/* Theme and Customization Section */}
@@ -717,12 +734,14 @@ export default function AdminSettingsPage() {
           {editUser && (
             <form onSubmit={(e) => {
               e.preventDefault()
-              const updates: Record<string, unknown> = { id: editUser.id }
+              const updates: { id: string; reason: string; email?: string; is_active?: boolean; is_superuser?: boolean } = {
+                id: editUser.id,
+                reason: editReason.trim(),
+              }
               if (editEmail !== editUser.email) updates.email = editEmail
               if (editIsActive !== editUser.is_active) updates.is_active = editIsActive
               if (editIsAdmin !== editUser.is_superuser) updates.is_superuser = editIsAdmin
-              if (editPassword && editPassword.length >= 8) updates.password = editPassword
-              updateMutation.mutate(updates as { id: string })
+              updateMutation.mutate(updates)
             }}>
               <div className="space-y-4 py-2">
                 <div className="flex items-center gap-3 pb-2">
@@ -743,32 +762,30 @@ export default function AdminSettingsPage() {
                 <div className="space-y-1.5">
                   <Label className="text-[13px]">{t('admin.users.email')}</Label>
                   <Input type="email" value={editEmail} onChange={(e) => setEditEmail(e.target.value)} required autoComplete="off" className="h-10 rounded-lg" />
+                  <p className="text-[11px] text-muted-foreground">
+                    {editEmail !== editUser.email
+                      ? t('admin.users.emailPendingHint')
+                      : editUser.pending_email
+                        ? t('admin.users.pendingEmail', { email: editUser.pending_email })
+                        : ''}
+                  </p>
                 </div>
-                {localAuthEnabled && (showPasswordField ? (
-                  <div className="space-y-1.5">
-                    <Label className="text-[13px]">{t('admin.users.resetPassword')}</Label>
-                    <Input
-                      type="text"
-                      value={editPassword}
-                      onChange={(e) => setEditPassword(e.target.value)}
-                      placeholder={t('admin.users.resetPasswordPlaceholder')}
-                      minLength={8}
-                      maxLength={72}
-                      autoComplete="off"
-                      autoFocus
-                      className="h-10 rounded-lg"
-                    />
-                  </div>
-                ) : (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="w-full rounded-lg"
-                    onClick={() => setShowPasswordField(true)}
-                  >
-                    {t('admin.users.resetPassword')}
-                  </Button>
-                ))}
+                <div className="space-y-1.5">
+                  <Label className="text-[13px]">{t('admin.users.reason')}</Label>
+                  <Input
+                    value={editReason}
+                    onChange={(e) => setEditReason(e.target.value)}
+                    placeholder={t('admin.users.reasonPlaceholder')}
+                    minLength={3}
+                    maxLength={500}
+                    required
+                    autoComplete="off"
+                    className="h-10 rounded-lg"
+                  />
+                  <p className="text-[11px] text-muted-foreground">
+                    {t('admin.users.reasonHint')}
+                  </p>
+                </div>
 
                 <div className="flex items-center gap-2">
                   <button
@@ -799,7 +816,11 @@ export default function AdminSettingsPage() {
                 <Button variant="outline" type="button" onClick={() => setEditUser(null)} className="rounded-lg">
                   {t('common.cancel')}
                 </Button>
-                <Button type="submit" disabled={updateMutation.isPending} className="rounded-lg">
+                <Button
+                  type="submit"
+                  disabled={updateMutation.isPending || editReason.trim().length < 3}
+                  className="rounded-lg"
+                >
                   {updateMutation.isPending ? t('common.loading') : t('common.save')}
                 </Button>
               </DialogFooter>
@@ -817,14 +838,30 @@ export default function AdminSettingsPage() {
               {t('admin.users.confirmDeleteDesc', { email: deleteUser?.email })}
             </DialogDescription>
           </DialogHeader>
+          <div className="space-y-1.5">
+            <Label className="text-[13px]">{t('admin.users.reason')}</Label>
+            <Input
+              value={deleteReason}
+              onChange={(e) => setDeleteReason(e.target.value)}
+              placeholder={t('admin.users.reasonPlaceholder')}
+              minLength={3}
+              maxLength={500}
+              required
+              autoComplete="off"
+              className="h-10 rounded-lg"
+            />
+            <p className="text-[11px] text-muted-foreground">
+              {t('admin.users.reasonHint')}
+            </p>
+          </div>
           <DialogFooter className="mt-2">
             <Button variant="outline" onClick={() => setDeleteUser(null)} className="rounded-lg">
               {t('common.cancel')}
             </Button>
             <Button
               variant="destructive"
-              disabled={deleteMutation.isPending}
-              onClick={() => deleteUser && deleteMutation.mutate(deleteUser.id)}
+              disabled={deleteMutation.isPending || deleteReason.trim().length < 3}
+              onClick={() => deleteUser && deleteMutation.mutate({ id: deleteUser.id, reason: deleteReason.trim() })}
               className="rounded-lg"
             >
               {deleteMutation.isPending ? t('common.loading') : t('common.delete')}

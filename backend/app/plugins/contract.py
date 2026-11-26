@@ -120,6 +120,32 @@ class _Model(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+#: The key of a plugin row's `raw_data` that keeps what the plugin last sent (see `Transaction.to_data`). Its
+#: `notes` are the exception: on a row whose notes someone took over, they stay the plugin's text from before (see
+#: `_refresh_synced_notes` in the connection service).
+SYNCED_TEXT = "securo_synced"
+
+
+def _blank_is_none(value: Any) -> Any:
+    if isinstance(value, str):
+        return value.strip() or None
+    return value
+
+
+def column_amount(value: Decimal) -> Decimal:
+    """`value` as the row's `Numeric(15, 2)` column keeps it.
+
+    The contract takes up to eight decimals and the column rounds the rest, so the snapshot rounds the same way: an
+    unrounded amount there never matches the stored one, and the refresh reading it back would take the amount for
+    the user's.
+    """
+    return value.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+
+def synced_text(txn: Transaction) -> dict[str, Any]:
+    return {"amount": str(column_amount(txn.amount)), "type": txn.type, "payee": txn.payee, "notes": txn.notes}
+
+
 class Transaction(_Model):
     external_id: ExternalId
     description: str = Field(min_length=1, max_length=500)
@@ -131,7 +157,10 @@ class Transaction(_Model):
     amount_in_account_currency: PositiveMoney | None = None
     provider_category: str | None = Field(default=None, max_length=100)
     status: Literal["posted", "pending"] = "posted"
-    payee: str | None = Field(default=None, max_length=200)
+    payee: Annotated[str | None, BeforeValidator(_blank_is_none)] = Field(default=None, max_length=200)
+    """A payee of only spaces is none: Securo can't name a payee entity after it."""
+    notes: str | None = Field(default=None, max_length=1000)
+    """Text the list doesn't show but search and rules read: the bank's full purpose, a reference, an order number."""
     raw_data: dict[str, Any] | None = None
     installment_number: int | None = Field(default=None, ge=1)
     total_installments: int | None = Field(default=None, ge=1)
@@ -141,6 +170,9 @@ class Transaction(_Model):
 
     def to_data(self) -> TransactionData:
         fields = self.model_dump(exclude={"provider_category"})
+        # What the plugin sent, kept with the row: the next sync tells from it whether the row's payee and notes are
+        # still the plugin's (a correction then replaces them) or someone's edit (which stays).
+        fields["raw_data"] = {**(self.raw_data or {}), SYNCED_TEXT: synced_text(self)}
         return TransactionData(**fields, pluggy_category=self.provider_category)
 
 

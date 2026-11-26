@@ -745,6 +745,16 @@
     "email": "E-mail",
     "password": "Palavra-passe",
     "forgotPassword": "Esqueceste-te da palavra-passe?",
+    "forgotPasswordDescription": "Introduza o e-mail da sua conta e enviaremos uma ligação para escolher uma nova palavra-passe.",
+    "sendResetLink": "Enviar ligação de recuperação",
+    "resetSentTitle": "Verifique o seu e-mail",
+    "resetSentBody": "Se existir uma conta para {{email}}, a ligação de recuperação está a caminho. Expira em breve.",
+    "resetUnavailable": "A recuperação de palavra-passe por e-mail não está ativa nesta instância. Fale com o administrador.",
+    "resetRequestError": "Não foi possível enviar a ligação de recuperação. Tente novamente.",
+    "resetPasswordDescription": "Escolha uma nova palavra-passe para a sua conta.",
+    "resetPasswordRejected": "A nova palavra-passe não foi aceite. Use pelo menos 8 caracteres e tente novamente.",
+    "resetTokenMissing": "Esta ligação está incompleta. Abra novamente a ligação do e-mail de recuperação ou peça outra.",
+    "resetTokenInvalid": "Esta ligação de recuperação é inválida ou expirou. Peça uma nova.",
     "loginDescription": "Inicia sessão para aceder à tua conta",
     "invalidCredentials": "E-mail ou palavra-passe incorretos",
     "serverError": "Não foi possível ligar ao servidor. Verifica a tua ligação ou confirma que o backend está em execução e tenta novamente.",
@@ -755,6 +765,8 @@
     "changePassword": "Alterar palavra-passe",
     "newPassword": "Nova palavra-passe",
     "passwordTooShort": "A palavra-passe deve ter pelo menos 8 caracteres",
+    "passwordTooLong": "A palavra-passe deve ter no máximo 72 caracteres",
+    "resetPassword": "Redefinir palavra-passe",
     "currentPassword": "Palavra-passe atual",
     "currentPasswordWrong": "Palavra-passe atual incorreta",
     "passwordChanged": "Palavra-passe alterada com sucesso",
@@ -1790,6 +1802,12 @@
     "sectionHint": "Como categorizar as transações.",
     "resetAndReapplyAll": "Redefinir e reaplicar",
     "confirmResetAndReapplyAll": "Redefinir categorias, notas e descrições geridas por regras das transações correspondentes e reaplicar todas as regras ativas?",
+    "scanForTransfers": "Procurar transferências",
+    "scanningForTransfers": "A procurar...",
+    "confirmScanForTransfers": "Procurar em todo o histórico e emparelhar as transferências entre contas diferentes? Transferências que desfez manualmente podem voltar a ser emparelhadas. Pode demorar um pouco num histórico grande.",
+    "transferScanCreated_one": "{{count}} par de transferência criado",
+    "transferScanCreated_other": "{{count}} pares de transferência criados",
+    "transferScanNone": "Nenhum novo par de transferência encontrado",
     "add": "Adicionar",
     "created": "Regra criada",
     "createdAndApplied": "Regra criada e aplicada a {{count}} transações",
@@ -2245,6 +2263,14 @@
     "colReturn": "Rentab.",
     "colBalance": "Saldo",
     "colPortfolioPct": "% carteira",
+    "colDates": "Período",
+    "colAvgBuyPrice": "Preço méd. compra",
+    "colAvgSellPrice": "Preço méd. venda",
+    "colInvested": "Investido",
+    "colProceeds": "Recebido",
+    "colResult": "Resultado",
+    "soldRealized": "Realizado",
+    "soldTotalsTitle": "Resultado realizado a custo médio, somado por moeda sem converter",
     "addBuys": "add compras",
     "ledgerTitle": "Lançamentos",
     "noLedgerYet": "Nenhum lançamento para este ativo ainda.",
@@ -2777,6 +2803,10 @@
     "searchTransaction": "Procurar transações pela descrição...",
     "selectedTransaction": "Selecionada",
     "settled": "Acerto registado",
+    "linkableHint": "Só a parte de um crédito ainda não reembolsada pode ser vinculada.",
+    "errorExceedsAmount": "Os acertos vinculados a este crédito ultrapassariam o seu valor.",
+    "errorOnlyReceiver": "Só quem recebe o dinheiro pode vincular a transação de entrada.",
+    "errorReceiverCurrency": "Escolhe uma transação de entrada tua, na moeda do acerto.",
     "settlements": "Acertos",
     "recordSettlement": "Registar acerto",
     "noSettlements": "Sem acertos ainda.",
@@ -2957,6 +2987,33 @@
     "menuItem": "Verificar atualizações"
   },
   "admin": {
+    "email": {
+      "title": "E-mail",
+      "enabled": "E-mail ativado",
+      "disabled": "E-mail desativado",
+      "description": "Como saem os e-mails de recuperação de palavra-passe. O fornecedor e o remetente vêm da configuração do servidor.",
+      "disabledNote": "Ative EMAIL_ENABLED no servidor para enviar ligações de recuperação.",
+      "provider": "Fornecedor",
+      "providerSmtp": "Servidor SMTP",
+      "providerResend": "Resend",
+      "sender": "Remetente",
+      "senderMissing": "Não definido",
+      "templatesTitle": "Mensagem de recuperação",
+      "templatesDescription": "O que a pessoa lê. Variáveis: {app_name}, {link} e {minutes}; {link} tem de ficar sozinho na sua própria linha, e mais nada pode ser uma ligação.",
+      "subject": "Assunto",
+      "body": "Corpo",
+      "linkRequired": "O corpo tem de conter {link}.",
+      "linkInSubject": "O assunto não pode conter {link} nem um endereço.",
+      "linkOnce": "O corpo tem de conter {link} exatamente uma vez.",
+      "linkAlone": "A variável {link} tem de ficar sozinha na sua própria linha.",
+      "otherLink": "A mensagem não pode levar a outro sítio que não {link}.",
+      "restoreDefault": "Restaurar texto predefinido",
+      "save": "Guardar modelos",
+      "saved": "Modelos guardados",
+      "saveFailed": "Não foi possível guardar os modelos",
+      "languageEn": "Inglês",
+      "languagePt": "Português"
+    },
     "users": {
       "title": "Gestão de Utilizadores",
       "searchPlaceholder": "Procurar utilizadores...",
@@ -2976,12 +3033,16 @@
       "deleted": "Utilizador eliminado",
       "confirmDeleteTitle": "Eliminar utilizador?",
       "confirmDeleteDesc": "Isto eliminará permanentemente o utilizador {{email}} e todos os respetivos dados. Esta ação não pode ser desfeita.",
-      "resetPassword": "Redefinir palavra-passe",
-      "resetPasswordPlaceholder": "Deixa em branco para manter a atual",
+      "reason": "Motivo",
+      "reasonPlaceholder": "Por que está a ser feita esta alteração?",
+      "reasonHint": "Fica registado no registo de acessos e aparece para a conta afetada.",
       "addDesc": "Criar uma nova conta de utilizador com acesso ao aplicação.",
       "adminRole": "Privilégios de administrador",
       "enabled": "Sim",
-      "disabled": "Não"
+      "disabled": "Não",
+      "pending": "A aguardar",
+      "pendingEmail": "Pedido {{email}}, a aguardar o titular",
+      "emailPendingHint": "O endereço só muda depois de o titular o confirmar."
     },
     "settings": {
       "title": "Definições Admin",
@@ -3288,8 +3349,8 @@
     "defaultBadge": "Padrão",
     "defaultLabel": "Padrão",
     "globalChat": {
-      "title": "Chat",
-      "openHint": "Abrir chat",
+      "title": "Agente",
+      "openHint": "Abrir agente",
       "history": "Conversas recentes",
       "selectAgent": "Selecionar agente",
       "openSettings": "Definições do agente",
@@ -4203,5 +4264,132 @@
       "turnedOff": "Leitura de documentos desligada"
     },
     "unreadPages": "Páginas não lidas (digitalizadas, e o modelo não lê imagens): {{pages}}. As linhas delas não estão nesta revisão."
+  },
+  "notifications": {
+    "title": "Notificações",
+    "unread": "Por ler",
+    "unreadLabel": "Notificações, {{number}} por ler",
+    "markAllRead": "Marcar todas como lidas",
+    "empty": "Nada precisa da sua atenção.",
+    "loadError": "Não foi possível carregar as notificações.",
+    "connection": {
+      "title": "{{name}} deixou de sincronizar",
+      "rateLimited": "O banco continua a atingir o limite diário."
+    },
+    "recurring": {
+      "title": "{{name}} não foi gerada",
+      "detail": "Vencia em {{date}}. Verifique a conta e as definições."
+    },
+    "budget": {
+      "close": "{{name}}: {{percent}}% do orçamento usado",
+      "reached": "{{name}}: orçamento esgotado",
+      "detail": "{{actual}} de {{budget}}"
+    },
+    "backup": {
+      "title": "A cópia de segurança agendada falhou",
+      "detail": "A última tentativa foi em {{date}}. O Securo vai tentar novamente."
+    },
+    "seeAll": "Ver todas as notificações",
+    "markRead": "Marcar como lida",
+    "loadMore": "Carregar mais",
+    "filter": {
+      "all": "Todas",
+      "unread": "Por ler"
+    },
+    "emptyFilter": {
+      "all": "Ainda não há notificações.",
+      "unread": "Nada mais para ler."
+    },
+    "flag": {
+      "title": "Lembretes vencidos: {{number}}",
+      "detail": "Transações marcadas cujo lembrete já passou."
+    },
+    "match": {
+      "title": "Correspondências para rever: {{number}}",
+      "detail": "O Securo encontrou possíveis correspondências e precisa da sua resposta."
+    },
+    "invoice": {
+      "title": "{{name}}: cobrança vencida",
+      "detail": "{{amount}}, venceu em {{date}}."
+    },
+    "preferences": {
+      "title": "Preferências",
+      "hint": "Escolha sobre o que quer ser avisado neste espaço. Os outros membros mantêm as suas escolhas.",
+      "saveError": "Não foi possível guardar a sua escolha.",
+      "loadError": "Não foi possível carregar as suas preferências."
+    },
+    "kind": {
+      "connection_error": {
+        "label": "Ligações",
+        "hint": "Um banco ou plugin deixou de sincronizar."
+      },
+      "budget_threshold": {
+        "label": "Orçamentos",
+        "hint": "Um orçamento chegou a 80% ou 100%."
+      },
+      "recurring_failed": {
+        "label": "Recorrentes",
+        "hint": "Uma transação recorrente não foi gerada."
+      },
+      "flag_overdue": {
+        "label": "Lembretes",
+        "hint": "Uma transação marcada passou da data do lembrete."
+      },
+      "reconciliation_pending": {
+        "label": "Correspondências para rever",
+        "hint": "O Securo encontrou possíveis correspondências e precisa da sua resposta."
+      },
+      "invoice_overdue": {
+        "label": "Cobranças",
+        "hint": "Uma cobrança a um cliente venceu."
+      },
+      "group_expense": {
+        "label": "Despesas partilhadas",
+        "hint": "Alguém adiciona ou altera uma despesa dividida consigo num grupo."
+      },
+      "group_settlement": {
+        "label": "Pagamentos em grupos",
+        "hint": "Alguém regista um pagamento para si ou seu num grupo."
+      },
+      "backup_failed": {
+        "label": "Cópias de segurança",
+        "hint": "Uma cópia de segurança agendada falhou."
+      }
+    },
+    "group": {
+      "added": "{{actor}} adicionou {{name}}",
+      "changed": "{{actor}} alterou {{name}}",
+      "batch": "{{actor}} adicionou despesas partilhadas: {{number}}",
+      "share": "A sua parte em {{group}}: {{amount}}",
+      "paid": "{{actor}} registou um pagamento"
+    }
+  },
+  "accessLog": {
+    "title": "Registo de acesso",
+    "description": "Toda a ação administrativa na sua conta e nos membros dos espaços de trabalho que possui.",
+    "empty": "Nenhuma ação administrativa registada.",
+    "actionUpdate": "Conta alterada",
+    "actionDelete": "Conta eliminada",
+    "actionOther": "Conta alterada",
+    "by": "Por {{email}}",
+    "target": "Conta {{email}}",
+    "ip": "IP {{ip}}",
+    "loadMore": "Carregar mais",
+    "loadError": "Não foi possível carregar o registo de acesso.",
+    "emailChange": "Endereço {{from}} → {{to}}",
+    "emailPending": "a aguardar a confirmação do titular da conta",
+    "otherChanges": "Também alterado: {{fields}}"
+  },
+  "emailChange": {
+    "title": "Alteração de e-mail",
+    "description": "Um administrador pediu para alterar o endereço da sua conta para {{email}}. Até confirmar, a conta mantém o endereço atual.",
+    "accept": "Aceitar o novo endereço",
+    "decline": "Manter o meu endereço atual",
+    "accepted": "A sua conta usa agora {{email}}",
+    "declined": "A sua conta mantém o endereço atual",
+    "unavailable": "Esse endereço já não está disponível",
+    "failed": "Não foi possível registar a sua decisão",
+    "replaced": "O administrador enviou um novo pedido. Verifique o novo endereço antes de aceitar",
+    "withdrawn": "O pedido foi retirado. A sua conta mantém o endereço atual"
   }
 }

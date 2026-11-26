@@ -62,6 +62,13 @@ const KNOWN_MESSAGES: Record<string, string> = {
   'amount_primary must be at most 9999999999999.99': 'transactions.amountErrors.convertedTooLarge',
   'fx_rate_used must be greater than zero': 'transactions.amountErrors.rateNotPositive',
   'fx_rate_used must be at most 9999999999.9999999999': 'transactions.amountErrors.rateTooLarge',
+  // Linking a transaction to a group settlement, refused by the service.
+  'Settlements linked to this transaction would exceed its amount':
+    'splitGroups.errorExceedsAmount',
+  'Only the receiver can link their incoming transaction':
+    'splitGroups.errorOnlyReceiver',
+  "Linked transaction must be your own credit in the settlement's currency":
+    'splitGroups.errorReceiverCurrency',
 }
 
 /** Pydantic prefixes a validator's own message with this. */

@@ -743,6 +743,16 @@
     "email": "E-mail",
     "password": "Wachtwoord",
     "forgotPassword": "Wachtwoord vergeten?",
+    "forgotPasswordDescription": "Voer het e-mailadres van je account in en we sturen je een link om een nieuw wachtwoord te kiezen.",
+    "sendResetLink": "Herstellink versturen",
+    "resetSentTitle": "Controleer je e-mail",
+    "resetSentBody": "Als er een account bestaat voor {{email}}, is er een herstellink onderweg. De link verloopt binnenkort.",
+    "resetUnavailable": "Wachtwoordherstel per e-mail is niet ingeschakeld op deze installatie. Vraag de beheerder.",
+    "resetRequestError": "De herstellink kon niet worden verstuurd. Probeer het opnieuw.",
+    "resetPasswordDescription": "Kies een nieuw wachtwoord voor je account.",
+    "resetPasswordRejected": "Het nieuwe wachtwoord is niet geaccepteerd. Gebruik minstens 8 tekens en probeer het opnieuw.",
+    "resetTokenMissing": "Deze link is onvolledig. Open de link uit de herstelmail opnieuw of vraag een nieuwe aan.",
+    "resetTokenInvalid": "Deze herstellink is ongeldig of verlopen. Vraag een nieuwe aan.",
     "loginDescription": "Log in om toegang te krijgen tot uw account",
     "invalidCredentials": "Ongeldig e-mailadres of wachtwoord",
     "serverError": "Kan geen verbinding maken met de server. Controleer uw verbinding of controleer of de backend actief is en probeer het vervolgens opnieuw.",
@@ -751,6 +761,8 @@
     "changePassword": "Wachtwoord wijzigen",
     "newPassword": "Nieuw wachtwoord",
     "passwordTooShort": "Wachtwoord moet minimaal 8 tekens lang zijn",
+    "passwordTooLong": "Wachtwoord mag maximaal 72 tekens lang zijn",
+    "resetPassword": "Wachtwoord opnieuw instellen",
     "currentPassword": "Huidig wachtwoord",
     "currentPasswordWrong": "Het huidige wachtwoord is onjuist",
     "passwordChanged": "Wachtwoord succesvol gewijzigd",
@@ -1787,6 +1799,12 @@
     "sectionHint": "Hoe transacties worden gecategoriseerd.",
     "resetAndReapplyAll": "Resetten en opnieuw aanvragen",
     "confirmResetAndReapplyAll": "Overeenkomende transactiecategorieën, notities en door regels beheerde beschrijvingen resetten en vervolgens alle actieve regels opnieuw toepassen?",
+    "scanForTransfers": "Overdrachten zoeken",
+    "scanningForTransfers": "Bezig met zoeken...",
+    "confirmScanForTransfers": "De hele geschiedenis doorzoeken en overdrachten tussen verschillende rekeningen koppelen? Overdrachten die je handmatig hebt losgekoppeld, kunnen opnieuw worden gekoppeld. Bij een grote geschiedenis kan dit even duren.",
+    "transferScanCreated_one": "{{count}} overdrachtspaar aangemaakt",
+    "transferScanCreated_other": "{{count}} overdrachtsparen aangemaakt",
+    "transferScanNone": "Geen nieuwe overdrachtsparen gevonden",
     "add": "Toevoegen",
     "created": "Regel gemaakt",
     "createdAndApplied": "Regel gemaakt en toegepast op {{count}} transacties",
@@ -2242,6 +2260,14 @@
     "colReturn": "Keer terug",
     "colBalance": "Totaal",
     "colPortfolioPct": "% poort.",
+    "colDates": "Periode",
+    "colAvgBuyPrice": "Gem. koop",
+    "colAvgSellPrice": "Gem. verkoop",
+    "colInvested": "Geïnvesteerd",
+    "colProceeds": "Opbrengst",
+    "colResult": "Resultaat",
+    "soldRealized": "Gerealiseerd",
+    "soldTotalsTitle": "Gerealiseerd resultaat tegen gemiddelde kostprijs, per valuta opgeteld zonder omrekening",
     "addBuys": "aankopen toevoegen",
     "ledgerTitle": "Transacties",
     "noLedgerYet": "Er zijn nog geen transacties voor deze holding.",
@@ -2769,6 +2795,10 @@
     "searchTransaction": "Zoek transacties op beschrijving...",
     "selectedTransaction": "Geselecteerd",
     "settled": "Facturering geregistreerd",
+    "linkableHint": "Alleen het deel van een tegoed dat nog niet is terugbetaald, kan worden gekoppeld.",
+    "errorExceedsAmount": "De afrekeningen die aan dit tegoed zijn gekoppeld, zouden boven het bedrag uitkomen.",
+    "errorOnlyReceiver": "Alleen wie het geld ontvangt, kan de inkomende transactie koppelen.",
+    "errorReceiverCurrency": "Kies een eigen inkomende transactie in de valuta van de afrekening.",
     "settlements": "Facturen",
     "recordSettlement": "Factuur registreren",
     "noSettlements": "Nog geen facturen.",
@@ -2945,6 +2975,33 @@
     "menuItem": "Controleer op updates"
   },
   "admin": {
+    "email": {
+      "title": "E-mail",
+      "enabled": "E-mail staat aan",
+      "disabled": "E-mail staat uit",
+      "description": "Hoe de e-mails voor wachtwoordherstel verstuurd worden. De provider en afzender komen uit de serverconfiguratie.",
+      "disabledNote": "Zet EMAIL_ENABLED aan op de server om herstellinks te versturen.",
+      "provider": "Provider",
+      "providerSmtp": "SMTP-server",
+      "providerResend": "Resend",
+      "sender": "Afzender",
+      "senderMissing": "Niet ingesteld",
+      "templatesTitle": "Herstelbericht",
+      "templatesDescription": "Wat de persoon leest. Variabelen: {app_name}, {link} en {minutes}; {link} moet alleen op een eigen regel staan en niets anders mag een link zijn.",
+      "subject": "Onderwerp",
+      "body": "Tekst",
+      "linkRequired": "De tekst moet {link} bevatten.",
+      "linkInSubject": "Het onderwerp mag geen {link} of adres bevatten.",
+      "linkOnce": "De tekst moet {link} precies één keer bevatten.",
+      "linkAlone": "De variabele {link} moet alleen op zijn eigen regel staan.",
+      "otherLink": "Het bericht mag nergens anders heen leiden dan naar {link}.",
+      "restoreDefault": "Standaardtekst herstellen",
+      "save": "Sjablonen opslaan",
+      "saved": "Sjablonen opgeslagen",
+      "saveFailed": "De sjablonen konden niet worden opgeslagen",
+      "languageEn": "Engels",
+      "languagePt": "Portugees"
+    },
     "users": {
       "title": "Gebruikersbeheer",
       "searchPlaceholder": "Gebruikers zoeken...",
@@ -2964,12 +3021,16 @@
       "deleted": "Gebruiker verwijderd",
       "confirmDeleteTitle": "Gebruiker verwijderen?",
       "confirmDeleteDesc": "Hierdoor wordt de gebruiker {{email}} en al zijn gegevens permanent verwijderd. Deze actie kan niet ongedaan worden gemaakt.",
-      "resetPassword": "Wachtwoord opnieuw instellen",
-      "resetPasswordPlaceholder": "Laat dit leeg om actueel te blijven",
+      "reason": "Reden",
+      "reasonPlaceholder": "Waarom wordt deze wijziging gedaan?",
+      "reasonHint": "Wordt vastgelegd in het toegangslogboek en getoond aan het betrokken account.",
       "addDesc": "Maak een nieuw gebruikersaccount aan met toegang tot de applicatie.",
       "adminRole": "Beheerdersrechten",
       "enabled": "Aan",
-      "disabled": "Uit"
+      "disabled": "Uit",
+      "pending": "In afwachting",
+      "pendingEmail": "Aangevraagd: {{email}}, wacht op de houder",
+      "emailPendingHint": "Het adres verandert pas nadat de houder het bevestigt."
     },
     "settings": {
       "title": "Beheerdersinstellingen",
@@ -3089,8 +3150,8 @@
       "chat": "Chatten"
     },
     "globalChat": {
-      "title": "Chatten",
-      "openHint": "Chat openen",
+      "title": "Agent",
+      "openHint": "Agent openen",
       "history": "Recente gesprekken",
       "selectAgent": "Selecteer agent",
       "openSettings": "Agent-instellingen",
@@ -4191,5 +4252,132 @@
       "turnedOff": "Documenten lezen uitgeschakeld"
     },
     "unreadPages": "Niet gelezen pagina's (scans, en het model leest geen afbeeldingen): {{pages}}. Hun regels ontbreken in deze controle."
+  },
+  "notifications": {
+    "title": "Meldingen",
+    "unread": "Ongelezen",
+    "unreadLabel": "Meldingen, {{number}} ongelezen",
+    "markAllRead": "Alles als gelezen markeren",
+    "empty": "Niets vraagt je aandacht.",
+    "loadError": "Meldingen konden niet worden geladen.",
+    "connection": {
+      "title": "{{name}} is gestopt met synchroniseren",
+      "rateLimited": "De bank bereikt steeds de daglimiet."
+    },
+    "recurring": {
+      "title": "{{name}} is niet aangemaakt",
+      "detail": "Vervaldatum was {{date}}. Controleer de rekening en instellingen."
+    },
+    "budget": {
+      "close": "{{name}}: {{percent}}% van het budget gebruikt",
+      "reached": "{{name}}: budget opgebruikt",
+      "detail": "{{actual}} van {{budget}}"
+    },
+    "backup": {
+      "title": "Geplande back-up mislukt",
+      "detail": "De laatste poging was op {{date}}. Securo probeert het opnieuw."
+    },
+    "seeAll": "Alle meldingen bekijken",
+    "markRead": "Als gelezen markeren",
+    "loadMore": "Meer laden",
+    "filter": {
+      "all": "Alle",
+      "unread": "Ongelezen"
+    },
+    "emptyFilter": {
+      "all": "Nog geen meldingen.",
+      "unread": "Niets meer te lezen."
+    },
+    "flag": {
+      "title": "Verlopen herinneringen: {{number}}",
+      "detail": "Gemarkeerde transacties waarvan de herinnering voorbij is."
+    },
+    "match": {
+      "title": "Koppelingen om te controleren: {{number}}",
+      "detail": "Securo vond mogelijke koppelingen en heeft je antwoord nodig."
+    },
+    "invoice": {
+      "title": "{{name}}: factuur te laat",
+      "detail": "{{amount}}, vervallen op {{date}}."
+    },
+    "preferences": {
+      "title": "Voorkeuren",
+      "hint": "Kies waarover je bericht wilt in deze werkruimte. Andere leden houden hun eigen keuzes.",
+      "saveError": "Je keuze kon niet worden opgeslagen.",
+      "loadError": "Je voorkeuren konden niet worden geladen."
+    },
+    "kind": {
+      "connection_error": {
+        "label": "Verbindingen",
+        "hint": "Een bank of plugin synchroniseert niet meer."
+      },
+      "budget_threshold": {
+        "label": "Budgetten",
+        "hint": "Een budget bereikte 80% of 100%."
+      },
+      "recurring_failed": {
+        "label": "Terugkerend",
+        "hint": "Een terugkerende transactie is niet aangemaakt."
+      },
+      "flag_overdue": {
+        "label": "Herinneringen",
+        "hint": "De herinneringsdatum van een gemarkeerde transactie is voorbij."
+      },
+      "reconciliation_pending": {
+        "label": "Koppelingen om te controleren",
+        "hint": "Securo vond mogelijke koppelingen en heeft je antwoord nodig."
+      },
+      "invoice_overdue": {
+        "label": "Facturen",
+        "hint": "Een factuur aan een klant is te laat."
+      },
+      "group_expense": {
+        "label": "Gedeelde uitgaven",
+        "hint": "Iemand voegt een uitgave toe die met jou in een groep wordt gedeeld, of wijzigt die."
+      },
+      "group_settlement": {
+        "label": "Groepsbetalingen",
+        "hint": "Iemand legt in een groep een betaling aan jou of van jou vast."
+      },
+      "backup_failed": {
+        "label": "Back-ups",
+        "hint": "Een geplande back-up is mislukt."
+      }
+    },
+    "group": {
+      "added": "{{actor}} heeft {{name}} toegevoegd",
+      "changed": "{{actor}} heeft {{name}} gewijzigd",
+      "batch": "{{actor}} heeft gedeelde uitgaven toegevoegd: {{number}}",
+      "share": "Jouw deel in {{group}}: {{amount}}",
+      "paid": "{{actor}} heeft een betaling vastgelegd"
+    }
+  },
+  "accessLog": {
+    "title": "Toegangslogboek",
+    "description": "Elke administratieve actie op je account en op leden van werkruimten die je bezit.",
+    "empty": "Geen administratieve acties vastgelegd.",
+    "actionUpdate": "Account gewijzigd",
+    "actionDelete": "Account verwijderd",
+    "actionOther": "Account gewijzigd",
+    "by": "Door {{email}}",
+    "target": "Account {{email}}",
+    "ip": "IP {{ip}}",
+    "loadMore": "Meer laden",
+    "loadError": "Het toegangslogboek kon niet worden geladen.",
+    "emailChange": "Adres {{from}} → {{to}}",
+    "emailPending": "wacht op bevestiging door de accounthouder",
+    "otherChanges": "Ook gewijzigd: {{fields}}"
+  },
+  "emailChange": {
+    "title": "Wijziging van e-mailadres",
+    "description": "Een beheerder heeft gevraagd om het adres van je account te wijzigen in {{email}}. Tot je bevestigt, behoudt je account het huidige adres.",
+    "accept": "Nieuw adres overnemen",
+    "decline": "Mijn huidige adres behouden",
+    "accepted": "Je account gebruikt nu {{email}}",
+    "declined": "Je account behoudt het huidige adres",
+    "unavailable": "Dat adres is niet meer beschikbaar",
+    "failed": "Je beslissing kon niet worden opgeslagen",
+    "replaced": "De beheerder heeft een nieuw verzoek gestuurd. Controleer het nieuwe adres voordat je accepteert",
+    "withdrawn": "Het verzoek is ingetrokken. Je account behoudt het huidige adres"
   }
 }

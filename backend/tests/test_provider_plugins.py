@@ -96,6 +96,7 @@ from app.models.account_reserved_balance import AccountReservedBalance  # noqa: 
 from app.models.asset import Asset  # noqa: E402
 from app.models.bank_connection import BankConnection  # noqa: E402
 from app.models.transaction import Transaction  # noqa: E402
+from app.models.payee import Payee  # noqa: E402
 from app.plugins.contract import PayloadError, parse_payload  # noqa: E402
 from app.services import account_service  # noqa: E402
 from app.plugins.provider import PluginPayloadProvider, provider_name  # noqa: E402
@@ -170,6 +171,317 @@ async def test_a_payload_syncs_like_a_connected_bank(session: AsyncSession, bank
     (asset,) = await _rows(session, Asset, connection_id=bank_connection.id)
     assert (asset.source, asset.external_id, asset.units) == (provider_name(PLUGIN), "A1:STK:1", Decimal("10"))
     assert bank_connection.last_sync_at is not None
+
+
+@pytest.mark.asyncio
+async def test_a_transaction_brings_its_notes(session: AsyncSession, bank_connection, test_user):
+    """The bank's full purpose text goes to the notes: searched and matched by rules, not shown in the list."""
+    data = payload_data()
+    data["accounts"][0]["transactions"][0]["notes"] = "Ihr Einkauf bei Example Shop, order 123-4567890"
+    await _pipeline(session, bank_connection, data, test_user)
+    (account,) = await _rows(session, Account, connection_id=bank_connection.id)
+    notes = {t.external_id: t.notes for t in await _rows(session, Transaction, account_id=account.id)}
+    assert notes == {"t1": "Ihr Einkauf bei Example Shop, order 123-4567890", "t2": None}
+
+
+def _account_txns(*transactions: dict[str, Any]) -> dict[str, Any]:
+    return payload_data(transactions=list(transactions), holdings=None)
+
+
+def _txn(
+    external_id: str, *, status: str = "posted", notes: str | None = None, amount: str = "12.34"
+) -> dict[str, Any]:
+    txn = {"external_id": external_id, "description": "Example Shop", "amount": amount,
+           "date": "2026-11-14", "type": "debit", "status": status}
+    if notes is not None:
+        txn["notes"] = notes
+    return txn
+
+
+async def _only_row(session, connection) -> Transaction:
+    (account,) = await _rows(session, Account, connection_id=connection.id)
+    (row,) = await _rows(session, Transaction, account_id=account.id)
+    return row
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("posted_id", ["p1", "p2"], ids=["same-id", "new-id"])
+async def test_notes_reach_a_pending_row_when_it_posts(
+    session: AsyncSession, bank_connection, test_user, posted_id
+):
+    """The bank often adds the purpose text only on booking, under the same id
+    or as a twin with a new one: the notes reach the row the hold left."""
+    await _pipeline(session, bank_connection, _account_txns(_txn("p1", status="pending")), test_user)
+    await _pipeline(session, bank_connection, _account_txns(_txn(posted_id, notes="Ihr Einkauf")), test_user)
+    row = await _only_row(session, bank_connection)
+    assert (row.external_id, row.status, row.notes) == (posted_id, "posted", "Ihr Einkauf")
+
+
+@pytest.mark.asyncio
+async def test_a_users_notes_stay_and_the_providers_join_them(session: AsyncSession, bank_connection, test_user):
+    await _pipeline(session, bank_connection, _account_txns(_txn("p1", status="pending")), test_user)
+    row = await _only_row(session, bank_connection)
+    row.notes = "split with Alex"
+    await session.commit()
+    await _pipeline(session, bank_connection, _account_txns(_txn("p1", notes="Ihr Einkauf")), test_user)
+    await _pipeline(session, bank_connection, _account_txns(_txn("p1", notes="Ihr Einkauf")), test_user)
+    row = await _only_row(session, bank_connection)
+    assert row.notes == "split with Alex Ihr Einkauf"
+
+
+async def _complete_feed_sync(session, connection, data, user):
+    payload = parse_payload(data, ALL_KINDS)
+    assert payload is not None
+    provider = PluginPayloadProvider(provider_name(PLUGIN), payload, complete_feed=True)
+    return await connection_service.sync_connection(
+        session, connection.id, connection.workspace_id, user.id, provider=provider
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("edit", [None, "typed over", "cleared"])
+async def test_a_cancelled_hold_with_the_providers_notes_still_goes(
+    session: AsyncSession, bank_connection, test_user, edit
+):
+    """Notes the plugin sent are not the user's work: a complete feed that
+    drops the hold removes it. Notes the user changed (or cleared) keep it,
+    also after a sync that still listed the hold with the plugin's notes."""
+    hold = _txn("h1", status="pending", notes="Hotel deposit")
+    await _complete_feed_sync(session, bank_connection, _account_txns(hold, _txn("k1", amount="99.00")), test_user)
+    if edit is not None:
+        row = next(r for r in await _rows(session, Transaction, external_id="h1"))
+        row.notes = "Hotel deposit, refund due" if edit == "typed over" else None
+        await session.commit()
+    # A sync that still lists the hold, its notes unchanged, must not undo the edit.
+    await _complete_feed_sync(session, bank_connection, _account_txns(hold, _txn("k1", amount="99.00")), test_user)
+
+    await _complete_feed_sync(session, bank_connection, _account_txns(_txn("k1", amount="99.00")), test_user)
+
+    kept = {r.external_id for r in await _rows(session, Transaction)}
+    assert kept == ({"k1"} if edit is None else {"h1", "k1"})
+
+
+@pytest.mark.asyncio
+async def test_a_hold_whose_notes_grew_from_the_provider_still_goes(
+    session: AsyncSession, bank_connection, test_user
+):
+    """Notes the plugin added on a later sync are still its own."""
+    await _complete_feed_sync(
+        session, bank_connection, _account_txns(_txn("h1", status="pending"), _txn("k1", amount="99.00")), test_user
+    )
+    await _complete_feed_sync(
+        session, bank_connection,
+        _account_txns(_txn("h1", status="pending", notes="Hotel deposit"), _txn("k1", amount="99.00")), test_user,
+    )
+    row = next(r for r in await _rows(session, Transaction, external_id="h1"))
+    assert row.notes == "Hotel deposit"
+
+    await _complete_feed_sync(session, bank_connection, _account_txns(_txn("k1", amount="99.00")), test_user)
+
+    assert {r.external_id for r in await _rows(session, Transaction)} == {"k1"}
+
+
+def test_notes_longer_than_the_column_are_refused():
+    data = payload_data()
+    data["accounts"][0]["transactions"][0]["notes"] = "x" * 1001
+    with pytest.raises(PayloadError):
+        parse_payload(data, ALL_KINDS)
+
+
+async def _t1(session, bank_connection):
+    (account,) = await _rows(session, Account, connection_id=bank_connection.id)
+    (row,) = await _rows(session, Transaction, account_id=account.id, external_id="t1")
+    return row
+
+
+def _with_text(**fields):
+    data = payload_data()
+    data["accounts"][0]["transactions"][0].update(fields)
+    return data
+
+
+@pytest.mark.asyncio
+async def test_a_plugin_corrects_its_text_on_rows_nobody_edited(session: AsyncSession, bank_connection, test_user):
+    """A plugin that learns to read its bank better sends better text for rows it sent before: they take it."""
+    await _pipeline(session, bank_connection, _with_text(description="VISAEXAMPLE SHOP", payee="VISAEXAMPLE SHOP", notes="raw"), test_user)
+    await _pipeline(session, bank_connection, _with_text(description="EXAMPLE SHOP", payee="EXAMPLE SHOP", notes="Ihr Einkauf"), test_user)
+    row = await _t1(session, bank_connection)
+    assert (row.description, row.payee, row.notes) == ("EXAMPLE SHOP", "EXAMPLE SHOP", "Ihr Einkauf")
+    payee = await session.get(Payee, row.payee_id) if row.payee_id else None
+    assert payee is not None and payee.name == "EXAMPLE SHOP"
+
+
+@pytest.mark.asyncio
+async def test_text_someone_edited_stays(session: AsyncSession, bank_connection, test_user):
+    await _pipeline(session, bank_connection, _with_text(description="VISAEXAMPLE SHOP", payee="VISAEXAMPLE SHOP", notes="raw"), test_user)
+    row = await _t1(session, bank_connection)
+    row.description, row.payee, row.notes = "Groceries", "My shop", "split with Ann"
+    await session.commit()
+    await _pipeline(session, bank_connection, _with_text(description="EXAMPLE SHOP", payee="EXAMPLE SHOP", notes="Ihr Einkauf"), test_user)
+    row = await _t1(session, bank_connection)
+    assert (row.description, row.payee, row.notes) == ("Groceries", "My shop", "split with Ann")
+
+
+@pytest.mark.asyncio
+async def test_an_amount_the_column_rounds_still_takes_a_correction(session: AsyncSession, bank_connection, test_user):
+    """The contract takes eight decimals, the row's column keeps two.
+
+    The snapshot records the figure the column stores, so a later correction
+    still applies; and a payload repeating the same rounded amount is not an
+    edit, so it must not clear what the amount block clears (a typed
+    conversion is the one that shows it). SQLite doesn't round the column, so
+    the three decimals here are what make an unrounded comparison fail.
+    """
+    await _pipeline(session, bank_connection, _with_text(amount="12.345", type="credit"), test_user)
+    row = await _t1(session, bank_connection)
+    assert row.raw_data["securo_synced"]["amount"] == "12.35"
+
+    row.amount_primary_typed = Decimal("99.99")
+    await session.commit()
+    await _pipeline(session, bank_connection, _with_text(amount="12.345", type="credit"), test_user)
+    row = await _t1(session, bank_connection)
+    assert row.amount_primary_typed == Decimal("99.99")
+
+    await _pipeline(session, bank_connection, _with_text(amount="13.00", type="credit"), test_user)
+    row = await _t1(session, bank_connection)
+    assert (row.amount, row.raw_data["securo_synced"]["amount"]) == (Decimal("13.00"), "13.00")
+
+
+@pytest.mark.asyncio
+async def test_a_twin_under_a_new_id_corrects_the_notes_and_later_syncs_still_can(
+    session: AsyncSession, bank_connection, test_user
+):
+    """A pending row that posts as a twin under a new id takes the twin's
+    notes in place of its own, not beside them, so they stay the plugin's and
+    a later correction reaches them too."""
+    await _pipeline(session, bank_connection, _account_txns(_txn("p1", status="pending", notes="raw")), test_user)
+    await _pipeline(session, bank_connection, _account_txns(_txn("p2", notes="Ihr Einkauf")), test_user)
+    row = await _only_row(session, bank_connection)
+    assert (row.external_id, row.notes) == ("p2", "Ihr Einkauf")
+
+    await _pipeline(session, bank_connection, _account_txns(_txn("p2", notes="Ihr Einkauf, order 123")), test_user)
+    row = await _only_row(session, bank_connection)
+    assert row.notes == "Ihr Einkauf, order 123"
+
+
+@pytest.mark.asyncio
+async def test_a_twin_under_a_new_id_corrects_the_payee_and_later_syncs_still_can(
+    session: AsyncSession, bank_connection, test_user
+):
+    """The payee follows a twin under a new id like the notes do, linked
+    payee included, so the row doesn't read as edited from then on."""
+    await _pipeline(session, bank_connection, _account_txns({**_txn("p1", status="pending"), "payee": "VISA SHOP"}), test_user)
+    await _pipeline(session, bank_connection, _account_txns({**_txn("p2"), "payee": "Example Shop"}), test_user)
+    row = await _only_row(session, bank_connection)
+    assert (row.external_id, row.payee) == ("p2", "Example Shop")
+    payee = await session.get(Payee, row.payee_id) if row.payee_id else None
+    assert payee is not None and payee.name == "Example Shop"
+
+    await _pipeline(session, bank_connection, _account_txns({**_txn("p2"), "payee": "Example Shop GmbH"}), test_user)
+    row = await _only_row(session, bank_connection)
+    payee = await session.get(Payee, row.payee_id) if row.payee_id else None
+    assert row.payee == "Example Shop GmbH" and payee is not None and payee.name == "Example Shop GmbH"
+
+
+@pytest.mark.asyncio
+async def test_a_stale_pending_twin_leaves_the_posted_row_as_it_is(
+    session: AsyncSession, bank_connection, test_user
+):
+    """A pending entry that comes back under its old id after the row posted
+    changes neither its payee nor its notes, nor the snapshot later
+    corrections compare against."""
+    pending = {**_txn("p1", status="pending", notes="raw"), "payee": "VISA SHOP"}
+    posted = {**_txn("p2", notes="Ihr Einkauf"), "payee": "Example Shop"}
+    await _pipeline(session, bank_connection, _account_txns(pending), test_user)
+    await _pipeline(session, bank_connection, _account_txns(posted), test_user)
+    await _pipeline(session, bank_connection, _account_txns(pending), test_user)
+    row = await _only_row(session, bank_connection)
+    assert (row.external_id, row.status, row.payee, row.notes) == ("p2", "posted", "Example Shop", "Ihr Einkauf")
+    sent = (row.raw_data or {})["securo_synced"]
+    assert (sent["payee"], sent["notes"]) == ("Example Shop", "Ihr Einkauf")
+
+
+@pytest.mark.asyncio
+async def test_a_payee_a_stale_pending_twin_fills_in_still_takes_a_correction(
+    session: AsyncSession, bank_connection, test_user
+):
+    """A posted row with no payee takes one from a stale pending twin; the
+    snapshot records it, so the posted entry's later correction applies."""
+    await _pipeline(session, bank_connection, _account_txns(_txn("p1", status="pending")), test_user)
+    await _pipeline(session, bank_connection, _account_txns(_txn("p2")), test_user)
+    await _pipeline(session, bank_connection, _account_txns({**_txn("p1", status="pending"), "payee": "VISA SHOP"}), test_user)
+    row = await _only_row(session, bank_connection)
+    assert (row.status, row.payee) == ("posted", "VISA SHOP")
+    external_id = row.external_id
+    assert external_id is not None
+
+    corrected = {**_txn(external_id), "payee": "Example Shop"}
+    await _pipeline(session, bank_connection, _account_txns(corrected), test_user)
+    row = await _only_row(session, bank_connection)
+    assert row.payee == "Example Shop"
+
+
+@pytest.mark.asyncio
+async def test_a_hidden_row_takes_no_correction_from_its_twin(session: AsyncSession, bank_connection, test_user):
+    await _pipeline(session, bank_connection, _account_txns({**_txn("p1", status="pending"), "payee": "VISA SHOP"}), test_user)
+    row = await _only_row(session, bank_connection)
+    row.is_ignored = True
+    await session.commit()
+    await _pipeline(session, bank_connection, _account_txns({**_txn("p2", notes="Ihr Einkauf"), "payee": "Example Shop"}), test_user)
+    row = await _only_row(session, bank_connection)
+    assert (row.payee, row.notes) == ("VISA SHOP", None)
+
+
+@pytest.mark.asyncio
+async def test_a_payee_of_only_spaces_is_none(session: AsyncSession, bank_connection, test_user):
+    """Securo can't name a payee entity after blank text: a blank payee is none, sent first or as a correction."""
+    await _pipeline(session, bank_connection, _with_text(payee="   "), test_user)
+    row = await _t1(session, bank_connection)
+    assert (row.payee, row.payee_id) == (None, None)
+
+    await _pipeline(session, bank_connection, _with_text(payee="Example Shop"), test_user)
+    await _pipeline(session, bank_connection, _with_text(payee="  "), test_user)
+    row = await _t1(session, bank_connection)
+    assert (row.payee, row.payee_id) == (None, None)
+
+
+@pytest.mark.asyncio
+async def test_notes_someone_cleared_stay_cleared_after_the_plugin_sends_none(
+    session: AsyncSession, bank_connection, test_user
+):
+    """A payload without notes must not make the cleared row look like the plugin's again."""
+    await _pipeline(session, bank_connection, _with_text(notes="raw"), test_user)
+    row = await _t1(session, bank_connection)
+    row.notes = None
+    await session.commit()
+    await _pipeline(session, bank_connection, _with_text(notes=None), test_user)
+    await _pipeline(session, bank_connection, _with_text(notes="corrected"), test_user)
+    row = await _t1(session, bank_connection)
+    assert row.notes is None
+
+
+@pytest.mark.asyncio
+async def test_notes_someone_cleared_stay_cleared(session: AsyncSession, bank_connection, test_user):
+    await _pipeline(session, bank_connection, _with_text(notes="raw"), test_user)
+    row = await _t1(session, bank_connection)
+    row.notes = None
+    await session.commit()
+    await _pipeline(session, bank_connection, _with_text(notes="raw"), test_user)
+    await _pipeline(session, bank_connection, _with_text(notes="Ihr Einkauf"), test_user)
+    row = await _t1(session, bank_connection)
+    assert row.notes is None
+
+
+@pytest.mark.asyncio
+async def test_a_row_from_before_the_snapshot_gets_its_empty_notes_filled(session: AsyncSession, bank_connection, test_user):
+    """Rows a plugin sent before Securo kept what it sent: their empty notes are filled, nothing else is guessed."""
+    await _pipeline(session, bank_connection, _with_text(description="VISAEXAMPLE SHOP", payee="VISAEXAMPLE SHOP"), test_user)
+    row = await _t1(session, bank_connection)
+    row.raw_data = None
+    await session.commit()
+    await _pipeline(session, bank_connection, _with_text(description="EXAMPLE SHOP", payee="EXAMPLE SHOP", notes="Ihr Einkauf"), test_user)
+    row = await _t1(session, bank_connection)
+    assert (row.description, row.payee, row.notes) == ("EXAMPLE SHOP", "VISAEXAMPLE SHOP", "Ihr Einkauf")
 
 
 @pytest.mark.asyncio
@@ -873,3 +1185,18 @@ async def test_an_oauth_return_without_new_secrets_keeps_the_reason_on_the_bank(
     await connections.finish_oauth(session, workspace_id=workspace_id, user_id=user_id, code="c", state="s")
     bank = await _bank(session, connection)
     assert bank.last_sync_failure is None
+
+
+@pytest.mark.asyncio
+async def test_a_stale_pending_entry_does_not_duplicate_its_posted_row(session: AsyncSession, bank_connection, test_user):
+    """A pending entry that comes back after it posted under a new id is a
+    stale twin of the posted row: the row keeps the posted entry's id, so the
+    posted entry still finds it and nothing is inserted twice."""
+    pending = {"external_id": "p1", "description": "Example Shop", "amount": "12.34", "date": "2026-11-14",
+               "type": "debit", "status": "pending"}
+    posted = {**pending, "external_id": "p2", "status": "posted"}
+    for transactions in ([pending], [posted], [pending], [posted], [pending, posted]):
+        await _pipeline(session, bank_connection, payload_data(transactions=transactions, holdings=None), test_user)
+    (account,) = await _rows(session, Account, connection_id=bank_connection.id)
+    rows = await _rows(session, Transaction, account_id=account.id)
+    assert [(row.external_id, row.status) for row in rows] == [("p2", "posted")]

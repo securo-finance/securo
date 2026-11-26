@@ -5,6 +5,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.routing import APIRoute
 
 from app.api.accounts import router as accounts_router
 from app.api.budgets import router as budgets_router
@@ -18,6 +19,7 @@ from app.api.custom_auth import router as custom_auth_router
 from app.api.dashboard import router as dashboard_router
 from app.api.import_logs import router as import_logs_router
 from app.api.oidc_auth import router as oidc_auth_router
+from app.api.password_reset import router as password_reset_router
 from app.api.passkeys import router as passkeys_router
 from app.api.forecast import router as forecast_router
 from app.api.import_transactions import router as import_router
@@ -42,6 +44,7 @@ from app.api.invoices import router as invoices_router
 from app.api.mortgage_payments import router as mortgage_payments_router
 from app.api.products import router as products_router
 from app.api.public_invoices import router as public_invoices_router
+from app.api.notifications import router as notifications_router
 from app.api.payees import router as payees_router
 from app.api.settings import router as settings_router
 from app.api.timezones import router as timezones_router
@@ -49,6 +52,9 @@ from app.api.transactions import router as transactions_router
 from app.api.two_factor import router as two_factor_router
 from app.api.user_lookup import router as user_lookup_router
 from app.api.workspaces import router as workspaces_router
+from app.api.access_log import router as access_log_router
+from app.api.account_email import router as account_email_router
+from app.api.users_me import router as users_me_router
 from app.api.access_tokens import router as access_tokens_router
 from app.api.plugins import router as plugins_router
 from app.api.ui_layouts import router as ui_layouts_router
@@ -182,17 +188,34 @@ app.include_router(
     ],
 )
 app.include_router(
-    fastapi_users.get_reset_password_router(),
+    password_reset_router,
     prefix="/api/auth",
     tags=["auth"],
     dependencies=[Depends(require_local_auth_enabled), Depends(password_reset_rate_limit)],
 )
-# user_lookup must precede the fastapi-users router below so the
-# `/api/users/lookup` path isn't captured by the catch-all `/{id}`
-# route fastapi-users mounts.
 app.include_router(user_lookup_router)
+app.include_router(account_email_router)
+# fastapi-users mounts superuser-only `GET`, `PATCH` and `DELETE /{id}` beside
+# `/me`. Through `PATCH /{id}` an administrator could set another account's
+# address, password or flags in one request, with no reason and no entry in the
+# access log: the second door around ADR 0042 (#556). Only the `/me` routes are
+# kept; every administrative change goes through `/api/admin/users/{id}`, which
+# asks for a reason and records it.
+#
+# Of those two, only the `GET` comes from the library: `PATCH /me` is
+# `app/api/users_me.py`, which takes the account's row before writing it so a
+# concurrent deletion cannot make the edit fail with a 500 (#567).
+users_router = fastapi_users.get_users_router(UserRead, UserUpdate)
+users_router.routes = [
+    route
+    for route in users_router.routes
+    if isinstance(route, APIRoute)
+    and route.path == "/me"
+    and route.methods == {"GET"}
+]
+app.include_router(users_me_router)
 app.include_router(
-    fastapi_users.get_users_router(UserRead, UserUpdate),
+    users_router,
     prefix="/api/users",
     tags=["users"],
 )
@@ -228,6 +251,7 @@ app.include_router(export_router)
 app.include_router(backups_router)
 app.include_router(attachments_router)
 app.include_router(fiscal_router)
+app.include_router(notifications_router)
 app.include_router(payees_router)
 app.include_router(invoices_router)
 app.include_router(invoice_attachments_router)
@@ -240,6 +264,7 @@ app.include_router(access_tokens_router)
 app.include_router(plugins_router)
 app.include_router(ui_layouts_router)
 app.include_router(admin_router)
+app.include_router(access_log_router)
 app.include_router(info_router)
 
 

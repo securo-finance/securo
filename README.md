@@ -55,6 +55,7 @@ Open [http://localhost:3000](http://localhost:3000) and create an account. That'
 - Goals and savings targets with progress tracking
 - Asset management with valuation tracking and growth rules
 - Reports: Net Worth and Income vs Expenses with category sparklines
+- Notifications in the app for what needs you, each kind on or off per person
 - Multi-currency support with automatic FX conversion
 - Multi-user support with workspaces, roles, and an admin panel
 - Passkeys, two-factor authentication (TOTP), and OIDC single sign-on
@@ -83,7 +84,7 @@ retain their original bank date in the transaction list.
 Everything beyond the core is off by default, needs a single env flag, and costs nothing until you turn it on. Full setup guides live in the [documentation](https://docs.usesecuro.com/):
 
 - **Bank sync**: Pluggy for Brazilian banks, Enable Banking for ~2500 European PSD2 banks, and SimpleFIN for US and international banks. [Setup guides](https://docs.usesecuro.com/docs/features/bank-sync/) Administrators can also set the credentials in the app, under **Admin Settings → Bank connections**, without a restart ([provider settings](docs/provider-settings.md)).
-- **Login & security**: passkeys (Touch ID, Face ID, security keys), TOTP two-factor, and OIDC single sign-on with account linking and provider role sync. Signing out also ends the provider's session (RP-initiated logout, using its `end_session_endpoint` or `OIDC_LOGOUT_URL`). [Guide](https://docs.usesecuro.com/docs/features/security/)
+- **Login & security**: passkeys (Touch ID, Face ID, security keys), TOTP two-factor, and OIDC single sign-on with account linking and provider role sync. Signing out also ends the provider's session (RP-initiated logout, using its `end_session_endpoint` or `OIDC_LOGOUT_URL`). With `EMAIL_ENABLED` and your own SMTP server (or a hosted email API, `EMAIL_PROVIDER=resend`), the sign-in page also offers password recovery by email, and an administrator can rewrite the message under **Admin Settings → Email**; while the switch is off, the recovery endpoint answers 503 instead of pretending a mail went out. [Guide](https://docs.usesecuro.com/docs/features/security/)
 - **Exchange rates**: a free [Open Exchange Rates](https://openexchangerates.org/) key, set in `.env` or under **Admin Settings → Exchange rates**, enables automatic currency conversion; without one, cross-currency amounts fall back to 1:1 with a visual warning. [Details](https://docs.usesecuro.com/docs/deployment/docker/)
 - **Timezone**: balances, budgets, and due dates turn over at midnight in your application timezone, set once in Admin Settings, with per-workspace overrides. [Details](https://docs.usesecuro.com/docs/features/workspaces/)
 - **Attachment storage**: attachments and invoice logos stay on local disk by default; set `STORAGE_PROVIDER=s3` to keep them in a private S3-compatible bucket instead. [Guide](https://docs.usesecuro.com/docs/deployment/docker/#storing-attachments-in-s3)

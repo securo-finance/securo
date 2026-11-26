@@ -15,7 +15,7 @@ from fastapi_users import schemas
 from fastapi_users.exceptions import UserAlreadyExists
 from jose import JWTError, jwt
 from pydantic import BaseModel, EmailStr
-from sqlalchemy import func, select, update as sql_update
+from sqlalchemy import select, update as sql_update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import UserManager, get_jwt_strategy, get_user_manager
@@ -25,7 +25,7 @@ from app.core.redis import get_redis
 from app.models.account import Account
 from app.models.user import User
 from app.models.workspace import WORKSPACE_ROLES, Workspace, WorkspaceMember
-from app.services import admin_service
+from app.services import account_lookup_service, admin_service
 from app.services.category_service import create_default_categories
 from app.services.rule_service import create_default_rules
 from app.services.workspace_service import create_personal_workspace_for_user
@@ -40,6 +40,9 @@ class OIDCConfigResponse(BaseModel):
     enabled: bool
     provider_name: str = "OIDC"
     local_auth_enabled: bool = True
+    # Recovery by email exists only with EMAIL_ENABLED; the sign-in page reads
+    # it here, next to the other sign-in options.
+    password_reset_enabled: bool = False
 
 
 class OIDCLogoutUrlResponse(BaseModel):
@@ -211,6 +214,7 @@ async def oidc_config():
         enabled=settings.oidc_login_available,
         provider_name=settings.oidc_provider_name or "OIDC",
         local_auth_enabled=settings.local_auth_enabled,
+        password_reset_enabled=settings.email_enabled,
     )
 
 
@@ -441,11 +445,17 @@ async def _get_or_create_oidc_user(
     email = merged.get("email")
     if not email:
         raise HTTPException(status_code=400, detail="OIDC provider did not return an email claim")
-    email = str(EmailStr._validate(email)).lower()
+    # Keep the spelling the provider sent for every lookup: the resolver picks
+    # the row written exactly that way when an instance holds two accounts for
+    # one mailbox (#568). Only the account created here is stored in lower
+    # case, so a new row never comes in shouting.
+    email = str(EmailStr._validate(email))
     email_verified = merged.get("email_verified")
 
-    existing = await session.execute(select(User).where(func.lower(User.email) == email))
-    user = existing.scalar_one_or_none()
+    # One address can name two accounts on an instance built before the
+    # case-insensitive checks (#568); the resolver answers one of them instead
+    # of raising, and picks the row written in this spelling when there is one.
+    user = await account_lookup_service.find_account_by_email(session, email)
     if user is not None:
         if user.oidc_issuer or user.oidc_subject:
             raise HTTPException(status_code=403, detail="OIDC identity is linked to a different account")
@@ -479,7 +489,7 @@ async def _get_or_create_oidc_user(
     provider_roles = _claim_values(merged, settings.oidc_roles_claim)
     admin_roles = {role.strip() for role in settings.oidc_admin_roles.split(",") if role.strip()}
     user_create = schemas.BaseUserCreate(
-        email=email,
+        email=email.lower(),
         password=secrets.token_urlsafe(32),
         is_verified=True,
         is_superuser=bool(settings.oidc_sync_roles and admin_roles and provider_roles & admin_roles),
@@ -487,7 +497,11 @@ async def _get_or_create_oidc_user(
     try:
         user = await user_manager.create(user_create, safe=True, request=None)
     except UserAlreadyExists:
-        user = (await session.execute(select(User).where(func.lower(User.email) == email))).scalar_one()
+        # Another request registered the address between the check above and
+        # this insert; it answers through the same resolver (#568).
+        user = await account_lookup_service.find_account_by_email(session, email)
+        if user is None:
+            raise HTTPException(status_code=500, detail="OIDC account could not be created")
 
     db_session = user_manager.db_session
     await db_session.execute(

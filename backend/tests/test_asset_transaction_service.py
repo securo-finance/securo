@@ -109,6 +109,74 @@ def test_recompute_orders_by_date_not_insertion():
     assert pos["average_price"].quantize(Decimal("0.01")) == Decimal("100.00")
 
 
+def test_closed_position_of_a_single_round_trip():
+    pos = asset_transaction_service.closed_position([
+        _tx("buy", "10", "100", date(2026, 1, 1), fee="5"),
+        _tx("sell", "10", "120", date(2026, 2, 1), fee="3"),
+    ])
+    assert pos == {
+        "average_buy_price": Decimal("100.5"),
+        "average_sell_price": Decimal("120"),
+        "sold_cost": Decimal("1005.00"),
+        "sale_proceeds": Decimal("1197.00"),
+    }
+    # Invested + result (192) is exactly what came back.
+    assert pos["sold_cost"] + Decimal("192") == pos["sale_proceeds"]
+
+
+def test_closed_position_weights_the_average_sell_price():
+    pos = asset_transaction_service.closed_position([
+        _tx("buy", "10", "100", date(2026, 1, 1)),
+        _tx("buy", "10", "120", date(2026, 1, 2)),
+        _tx("sell", "5", "130", date(2026, 2, 1)),
+        _tx("sell", "15", "150", date(2026, 3, 1)),
+    ])
+    assert pos is not None
+    # (5 * 130 + 15 * 150) / 20 = 145
+    assert pos["average_sell_price"] == Decimal("145")
+    assert pos["average_buy_price"] == Decimal("110")
+    assert pos["sale_proceeds"] == Decimal("2900.00")
+    assert pos["sold_cost"] == Decimal("2200.00")
+
+
+def test_closed_position_rescales_sells_from_before_a_split():
+    pos = asset_transaction_service.closed_position([
+        _tx("buy", "10", "100", date(2026, 1, 1)),
+        _tx("sell", "4", "120", date(2026, 2, 1)),
+        _split(1, 2, date(2026, 3, 1)),
+        _tx("sell", "12", "70", date(2026, 4, 1)),
+    ])
+    assert pos is not None
+    # 4 units before the split count as 8, so 20 units in all.
+    assert pos["average_buy_price"] == Decimal("50")
+    assert pos["average_sell_price"] == Decimal("66")
+    assert pos["sale_proceeds"] == Decimal("1320.00")
+    assert pos["sold_cost"] == Decimal("1000.00")
+    realized = _recompute([
+        _tx("buy", "10", "100", date(2026, 1, 1)),
+        _tx("sell", "4", "120", date(2026, 2, 1)),
+        _split(1, 2, date(2026, 3, 1)),
+        _tx("sell", "12", "70", date(2026, 4, 1)),
+    ])["realized_gain"]
+    assert pos["sold_cost"] + realized == pos["sale_proceeds"]
+
+
+def test_closed_position_average_buy_price_survives_a_fraction_of_a_unit():
+    # 0.001 units: the cost is 0.104, which rounded to the cent would read 100.
+    pos = asset_transaction_service.closed_position([
+        _tx("buy", "0.001", "104", date(2026, 1, 1)),
+        _tx("sell", "0.001", "204", date(2026, 2, 1)),
+    ])
+    assert pos is not None
+    assert pos["average_buy_price"] == Decimal("104")
+
+
+def test_closed_position_is_none_without_sells():
+    assert asset_transaction_service.closed_position([
+        _tx("buy", "10", "100", date(2026, 1, 1)),
+    ]) is None
+
+
 # ---------------------------------------------------------------------------
 # Stock splits (issue #944): pure replay
 # ---------------------------------------------------------------------------
@@ -710,7 +778,11 @@ async def test_split_is_refused_on_holdings_the_ledger_does_not_drive(
     session.add(asset)
     await session.commit()
     # Units are on record, so the refusal is about the holding, not the ledger.
-    await _buy(session, test_workspace, asset, "10", "20", date(2026, 1, 1))
+    session.add(AssetTransaction(
+        asset_id=asset.id, workspace_id=test_workspace.id, kind="buy",
+        quantity=Decimal("10"), price=Decimal("20"), fee=Decimal("0"), date=date(2026, 1, 1),
+    ))
+    await session.commit()
 
     with pytest.raises(HTTPException) as exc:
         await _add_split(session, test_workspace, asset, 1, 100, date(2026, 2, 1))

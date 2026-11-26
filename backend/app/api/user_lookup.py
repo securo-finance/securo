@@ -18,13 +18,12 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, ConfigDict, EmailStr
-from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import current_active_user
 from app.core.database import get_async_session
 from app.models.user import User
-from app.services import workspace_service
+from app.services import account_lookup_service, workspace_service
 
 router = APIRouter(prefix="/api/users", tags=["users"])
 
@@ -45,10 +44,7 @@ async def lookup_user_by_email(
     session: AsyncSession = Depends(get_async_session),
     _: User = Depends(current_active_user),
 ):
-    result = await session.execute(
-        select(User).where(func.lower(User.email) == email.lower())
-    )
-    user = result.scalar_one_or_none()
+    user = await account_lookup_service.find_account_by_email(session, email)
     if user is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
     return user

@@ -743,6 +743,16 @@
     "email": "Email",
     "password": "Password",
     "forgotPassword": "Forgot password?",
+    "forgotPasswordDescription": "Enter the email for your account and we'll send you a link to choose a new password.",
+    "sendResetLink": "Send recovery link",
+    "resetSentTitle": "Check your email",
+    "resetSentBody": "If an account exists for {{email}}, a recovery link is on its way. The link expires soon.",
+    "resetUnavailable": "Password recovery by email is not turned on for this instance. Ask the administrator.",
+    "resetRequestError": "Couldn't send the recovery link. Please try again.",
+    "resetPasswordDescription": "Choose a new password for your account.",
+    "resetPasswordRejected": "The new password was not accepted. Use at least 8 characters and try again.",
+    "resetTokenMissing": "This link is incomplete. Open the link from the recovery email again, or ask for a new one.",
+    "resetTokenInvalid": "This recovery link is invalid or has expired. Ask for a new one.",
     "loginDescription": "Sign in to access your account",
     "invalidCredentials": "Invalid email or password",
     "serverError": "Couldn't connect to the server. Check your connection or that the backend is running, then try again.",
@@ -753,6 +763,8 @@
     "changePassword": "Change password",
     "newPassword": "New password",
     "passwordTooShort": "Password must be at least 8 characters",
+    "passwordTooLong": "Password must be at most 72 characters",
+    "resetPassword": "Reset password",
     "currentPassword": "Current password",
     "currentPasswordWrong": "Current password is incorrect",
     "passwordChanged": "Password changed successfully",
@@ -1785,6 +1797,12 @@
     "sectionHint": "How to categorize transactions.",
     "resetAndReapplyAll": "Reset and reapply",
     "confirmResetAndReapplyAll": "Reset matching transaction categories, notes, and rule-managed descriptions, then reapply all active rules?",
+    "scanForTransfers": "Scan for transfers",
+    "scanningForTransfers": "Scanning...",
+    "confirmScanForTransfers": "Scan your whole history and pair the transfer rows that sit in different accounts? Transfers you unlinked by hand can be paired again. This can take a moment on a large history.",
+    "transferScanCreated_one": "{{count}} transfer pair created",
+    "transferScanCreated_other": "{{count}} transfer pairs created",
+    "transferScanNone": "No new transfer pairs found",
     "add": "Add",
     "created": "Rule created",
     "createdAndApplied": "Rule created and applied to {{count}} transactions",
@@ -2240,6 +2258,14 @@
     "colReturn": "Return",
     "colBalance": "Total",
     "colPortfolioPct": "% port.",
+    "colDates": "Period",
+    "colAvgBuyPrice": "Avg buy",
+    "colAvgSellPrice": "Avg sell",
+    "colInvested": "Invested",
+    "colProceeds": "Proceeds",
+    "colResult": "Result",
+    "soldRealized": "Realized",
+    "soldTotalsTitle": "Realized result at average cost, added up per currency without converting",
     "addBuys": "add buys",
     "ledgerTitle": "Transactions",
     "noLedgerYet": "No transactions for this holding yet.",
@@ -2769,6 +2795,10 @@
     "searchTransaction": "Search transactions by description...",
     "selectedTransaction": "Selected",
     "settled": "Settlement recorded",
+    "linkableHint": "Only the part of a credit not yet paid back can be linked.",
+    "errorExceedsAmount": "The paybacks linked to this credit would add up to more than its amount.",
+    "errorOnlyReceiver": "Only the person receiving the money can link the incoming transaction.",
+    "errorReceiverCurrency": "Pick one of your own incoming transactions in the settlement's currency.",
     "settlements": "Settlements",
     "recordSettlement": "Record settlement",
     "noSettlements": "No settlements yet.",
@@ -2943,6 +2973,33 @@
     "menuItem": "Check for updates"
   },
   "admin": {
+    "email": {
+      "title": "Email",
+      "enabled": "Email is on",
+      "disabled": "Email is off",
+      "description": "How password recovery mail goes out. The provider and sender come from the server configuration.",
+      "disabledNote": "Turn on EMAIL_ENABLED on the server to send recovery links.",
+      "provider": "Provider",
+      "providerSmtp": "SMTP relay",
+      "providerResend": "Resend",
+      "sender": "Sender",
+      "senderMissing": "Not set",
+      "templatesTitle": "Recovery message",
+      "templatesDescription": "What the person reads. Placeholders: {app_name}, {link} and {minutes}; {link} must be alone on a line of its own, and nothing else may be a link.",
+      "subject": "Subject",
+      "body": "Body",
+      "linkRequired": "The body must contain {link}.",
+      "linkInSubject": "The subject cannot contain {link} or an address.",
+      "linkOnce": "The body must contain {link} exactly once.",
+      "linkAlone": "The {link} placeholder must be alone on its own line.",
+      "otherLink": "The message cannot lead anywhere but {link}.",
+      "restoreDefault": "Restore default text",
+      "save": "Save templates",
+      "saved": "Templates saved",
+      "saveFailed": "Could not save the templates",
+      "languageEn": "English",
+      "languagePt": "Portuguese"
+    },
     "users": {
       "title": "User Management",
       "searchPlaceholder": "Search users...",
@@ -2962,12 +3019,16 @@
       "deleted": "User deleted",
       "confirmDeleteTitle": "Delete user?",
       "confirmDeleteDesc": "This will permanently delete the user {{email}} and all their data. This action cannot be undone.",
-      "resetPassword": "Reset password",
-      "resetPasswordPlaceholder": "Leave blank to keep current",
+      "reason": "Reason",
+      "reasonPlaceholder": "Why is this change being made?",
+      "reasonHint": "Recorded in the access log and shown to the affected account.",
       "addDesc": "Create a new user account with access to the application.",
       "adminRole": "Administrator privileges",
       "enabled": "On",
-      "disabled": "Off"
+      "disabled": "Off",
+      "pending": "Waiting",
+      "pendingEmail": "Asked for {{email}}, waiting for the owner",
+      "emailPendingHint": "The address only changes after its owner confirms it."
     },
     "settings": {
       "title": "Admin Settings",
@@ -3087,8 +3148,8 @@
       "chat": "Chat"
     },
     "globalChat": {
-      "title": "Chat",
-      "openHint": "Open chat",
+      "title": "Agent",
+      "openHint": "Open agent",
       "history": "Recent conversations",
       "selectAgent": "Select agent",
       "openSettings": "Agent settings",
@@ -4189,5 +4250,132 @@
       "turnedOff": "Document reading turned off"
     },
     "unreadPages": "Pages not read (scans, and the model does not read images): {{pages}}. Their lines are missing from this review."
+  },
+  "notifications": {
+    "title": "Notifications",
+    "unread": "Unread",
+    "unreadLabel": "Notifications, {{number}} unread",
+    "markAllRead": "Mark all as read",
+    "empty": "Nothing needs your attention.",
+    "loadError": "Could not load notifications.",
+    "connection": {
+      "title": "{{name}} stopped syncing",
+      "rateLimited": "The bank keeps reaching its daily limit."
+    },
+    "recurring": {
+      "title": "{{name}} was not generated",
+      "detail": "It was due on {{date}}. Check its account and settings."
+    },
+    "budget": {
+      "close": "{{name}}: {{percent}}% of the budget used",
+      "reached": "{{name}}: budget used up",
+      "detail": "{{actual}} of {{budget}}"
+    },
+    "backup": {
+      "title": "Scheduled backup failed",
+      "detail": "The last attempt was on {{date}}. Securo will try again."
+    },
+    "seeAll": "See all notifications",
+    "markRead": "Mark as read",
+    "loadMore": "Load more",
+    "filter": {
+      "all": "All",
+      "unread": "Unread"
+    },
+    "emptyFilter": {
+      "all": "No notifications yet.",
+      "unread": "Nothing left to read."
+    },
+    "flag": {
+      "title": "Overdue reminders: {{number}}",
+      "detail": "Flagged transactions past their reminder date."
+    },
+    "match": {
+      "title": "Matches to review: {{number}}",
+      "detail": "Securo found possible matches and needs your answer."
+    },
+    "invoice": {
+      "title": "{{name}}: invoice overdue",
+      "detail": "{{amount}}, due on {{date}}."
+    },
+    "preferences": {
+      "title": "Preferences",
+      "hint": "Choose what you want to hear about in this workspace. Other members keep their own choices.",
+      "saveError": "Could not save your choice.",
+      "loadError": "Could not load your preferences."
+    },
+    "kind": {
+      "connection_error": {
+        "label": "Connections",
+        "hint": "A bank or plugin stopped syncing."
+      },
+      "budget_threshold": {
+        "label": "Budgets",
+        "hint": "A budget reached 80% or 100%."
+      },
+      "recurring_failed": {
+        "label": "Recurring",
+        "hint": "A recurring transaction was not generated."
+      },
+      "flag_overdue": {
+        "label": "Reminders",
+        "hint": "A flagged transaction is past its reminder date."
+      },
+      "reconciliation_pending": {
+        "label": "Matches to review",
+        "hint": "Securo found possible matches and needs your answer."
+      },
+      "invoice_overdue": {
+        "label": "Invoices",
+        "hint": "An invoice to a client is overdue."
+      },
+      "group_expense": {
+        "label": "Shared expenses",
+        "hint": "Someone adds or changes an expense they share with you in a group."
+      },
+      "group_settlement": {
+        "label": "Group payments",
+        "hint": "Someone records a payment to you or from you in a group."
+      },
+      "backup_failed": {
+        "label": "Backups",
+        "hint": "A scheduled backup failed."
+      }
+    },
+    "group": {
+      "added": "{{actor}} added {{name}}",
+      "changed": "{{actor}} changed {{name}}",
+      "batch": "{{actor}} added shared expenses: {{number}}",
+      "share": "Your share in {{group}}: {{amount}}",
+      "paid": "{{actor}} recorded a payment"
+    }
+  },
+  "accessLog": {
+    "title": "Access log",
+    "description": "Every administrative action on your account, and on members of workspaces you own.",
+    "empty": "No administrative actions recorded.",
+    "actionUpdate": "Account updated",
+    "actionDelete": "Account deleted",
+    "actionOther": "Account changed",
+    "by": "By {{email}}",
+    "target": "Account {{email}}",
+    "ip": "IP {{ip}}",
+    "loadMore": "Load more",
+    "loadError": "Could not load the access log.",
+    "emailChange": "Address {{from}} → {{to}}",
+    "emailPending": "waiting for the account owner to confirm",
+    "otherChanges": "Also changed: {{fields}}"
+  },
+  "emailChange": {
+    "title": "Change of email address",
+    "description": "An administrator asked to change the address on your account to {{email}}. Until you confirm, your account keeps its current address.",
+    "accept": "Accept the new address",
+    "decline": "Keep my current address",
+    "accepted": "Your account now uses {{email}}",
+    "declined": "Your account keeps its current address",
+    "unavailable": "That address is no longer available",
+    "failed": "Could not record your decision",
+    "replaced": "The administrator sent a new request. Check the new address before accepting",
+    "withdrawn": "The request was withdrawn. Your account keeps its current address"
   }
 }
