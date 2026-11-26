@@ -1822,6 +1822,12 @@ export interface AssetPriceRefreshResult {
   rate_limited: number
 }
 
+// Cumulative net money put into the portfolio's assets, one point per day it changed.
+export interface PortfolioInvestedPoint {
+  date: string
+  amount: number
+}
+
 export interface AssetGroup {
   id: string
   user_id: string

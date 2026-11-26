@@ -2432,6 +2432,8 @@
     "chartDrawMode": "Відображення графіка",
     "chartStacked": "Накопичено",
     "chartLines": "Лінії",
+    "chartInvested": "Чисті вкладення",
+    "chartInvestedHint": "Чисті вкладення: купівлі та комісії за вирахуванням виручки від продажів, за курсом кожного дня",
     "portfolioValue": "Вартість портфеля",
     "tabPerformance": "Дохідність",
     "performanceTitle": "Дохідність портфеля",

@@ -2395,6 +2395,8 @@
     "chartDrawMode": "Grafiek tekenen",
     "chartStacked": "Gestapeld",
     "chartLines": "Lijnen",
+    "chartInvested": "Netto geïnvesteerd",
+    "chartInvestedHint": "Netto ingelegd geld: aankopen en kosten minus de opbrengst van verkopen, tegen de wisselkoers van elke dag",
     "portfolioValue": "Portefeuillewaarde",
     "total": "Totaal",
     "confirmRegenerateTitle": "Waarden opnieuw genereren?",

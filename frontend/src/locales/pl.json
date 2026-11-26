@@ -2500,6 +2500,8 @@
     "chartDrawMode": "Sposób rysowania wykresu",
     "chartStacked": "Skumulowany",
     "chartLines": "Linie",
+    "chartInvested": "Zainwestowane netto",
+    "chartInvestedHint": "Wpłacone netto: zakupy i opłaty minus wpływy ze sprzedaży, po kursie z każdego dnia",
     "portfolioValue": "Wartość portfela",
     "tabPerformance": "Wyniki",
     "performanceTitle": "Wyniki portfela",

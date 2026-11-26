@@ -2416,6 +2416,8 @@
     "chartDrawMode": "ציור התרשים",
     "chartStacked": "מוערם",
     "chartLines": "קווים",
+    "chartInvested": "הושקע נטו",
+    "chartInvestedHint": "כסף נקי שהושקע: קניות ועמלות פחות התקבולים ממכירות, לפי שער החליפין של כל יום",
     "portfolioValue": "שווי התיק",
     "tabPerformance": "ביצועים",
     "performanceTitle": "ביצועי התיק",

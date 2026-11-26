@@ -2393,6 +2393,8 @@
     "chartDrawMode": "Chart drawing",
     "chartStacked": "Stacked",
     "chartLines": "Lines",
+    "chartInvested": "Net invested",
+    "chartInvestedHint": "Net money put in: buys and fees minus what sales brought in, at each day's exchange rate",
     "portfolioValue": "Portfolio Value",
     "tabPerformance": "Performance",
     "performanceTitle": "Portfolio Performance",

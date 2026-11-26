@@ -2432,6 +2432,8 @@
     "chartDrawMode": "Отображение графика",
     "chartStacked": "С накоплением",
     "chartLines": "Линии",
+    "chartInvested": "Чистые вложения",
+    "chartInvestedHint": "Чистые вложения: покупки и комиссии за вычетом выручки от продаж, по курсу каждого дня",
     "portfolioValue": "Стоимость портфеля",
     "tabPerformance": "Доходность",
     "performanceTitle": "Доходность портфеля",

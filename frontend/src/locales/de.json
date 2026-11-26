@@ -2394,6 +2394,8 @@
     "chartDrawMode": "Diagrammdarstellung",
     "chartStacked": "Gestapelt",
     "chartLines": "Linien",
+    "chartInvested": "Netto investiert",
+    "chartInvestedHint": "Netto eingesetztes Geld: Käufe und Gebühren abzüglich der Verkaufserlöse, zum Wechselkurs des jeweiligen Tages",
     "portfolioValue": "Portfoliowert",
     "tabPerformance": "Performance",
     "performanceTitle": "Portfolio-Performance",

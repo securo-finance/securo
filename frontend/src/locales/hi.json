@@ -2393,6 +2393,8 @@
     "chartDrawMode": "चार्ट रेखांकन",
     "chartStacked": "स्टैक्ड",
     "chartLines": "रेखाएँ",
+    "chartInvested": "शुद्ध निवेशित",
+    "chartInvestedHint": "शुद्ध लगाया गया पैसा: खरीद और शुल्क में से बिक्री से मिली राशि घटाकर, हर दिन की विनिमय दर पर",
     "portfolioValue": "पोर्टफ़ोलियो मूल्य",
     "total": "कुल",
     "confirmRegenerateTitle": "मूल्य दोबारा बनाएँ?",
