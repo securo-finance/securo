@@ -437,21 +437,21 @@ scenario('the closing keywords of the description reach the squash commit',
       'the title keeps the pull request number GitHub appends by default');
   });
 
-// No keyword in the description means there is nothing to carry: the call
-// stays as it was and GitHub builds its default message, which already covers
-// a keyword written in a commit. Neither field may be sent: passing either one
-// replaces that message instead of appending to it.
-scenario('a description with no closing keyword leaves the default message',
+// No keyword in the description still sends both fields. Left out, GitHub
+// builds the message from every commit of the branch, trailers included, and
+// #1903 and #1904 landed on main with `Co-authored-by` lines that way. The
+// empty string is what replaces that message: `undefined` would fall back to it.
+scenario('a description with no closing keyword sends an empty message',
   async () => {
     const { merged, mergeParams, log } = await evaluate({
       threads: [],
       body: '## Summary\n\nA cleanup with nothing to close.',
     });
     assert.ok(merged, `expected a merge, got: ${log}`);
-    assert.equal(mergeParams.commit_title, undefined,
-      'the title is not sent alone: it would replace the default message');
-    assert.equal(mergeParams.commit_message, undefined,
-      'no closing keyword means GitHub builds the message as before');
+    assert.match(mergeParams.commit_title, /\(#42\)$/,
+      'the title is sent even with nothing to close');
+    assert.strictEqual(mergeParams.commit_message, '',
+      'an empty message keeps the commit messages and their trailers out');
   });
 
 // The bug of #221: the lane knew sync and money only by the file name, and
