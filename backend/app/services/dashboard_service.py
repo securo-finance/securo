@@ -1888,6 +1888,148 @@ async def _balance_at(
     return total
 
 
+def _balance_history_date_expr(accounting_mode: str):
+    """Date column used by Balance Evolution.
+
+    In ``accrual`` mode, credit-card spending moves to the bill due date
+    (``reporting_date_col('accrual')``), while paired transfers and
+    ``treat_as_transfer`` CC repayments stay on ``Transaction.date`` so a
+    checking-to-card payment never splits across two months (ADR 0018).
+    """
+    if accounting_mode != "accrual":
+        return Transaction.date
+    return case(
+        (
+            or_(
+                Transaction.transfer_pair_id.is_not(None),
+                and_(
+                    Account.type == "credit_card",
+                    Category.treat_as_transfer.is_(True),
+                    Transaction.type == "credit",
+                ),
+            ),
+            Transaction.date,
+        ),
+        else_=reporting_date_col("accrual"),
+    )
+
+
+def _balance_history_tx_date(tx: Transaction, accounting_mode: str) -> date:
+    """Python counterpart to ``_balance_history_date_expr`` for loaded rows."""
+    if accounting_mode != "accrual":
+        return tx.date
+    if tx.transfer_pair_id is not None:
+        return tx.date
+    if (
+        tx.account
+        and tx.account.type == "credit_card"
+        and tx.category
+        and tx.category.treat_as_transfer
+        and tx.type == "credit"
+    ):
+        return tx.date
+    return reporting_date_value(tx, "accrual")
+
+
+async def _accrual_straddle_adjustment(
+    session: AsyncSession,
+    workspace_id: uuid.UUID,
+    cutoff: date,
+    *,
+    primary_currency_hint: Optional[str] = None,
+    account_ids: Optional[list[uuid.UUID]] = None,
+    rates: Optional[RateBook] = None,
+) -> float:
+    """Adjust a physical ``_balance_at(cutoff)`` onto the accrual timeline.
+
+    ``effective_cutoff = min(cutoff, app_today())`` matches ``_total_balance_by_currency``
+    so future months do not double-count with ``carried_forecasts``.
+    Subtracts posted non-opening rows that have already happened physically
+    (``Transaction.date <= effective_cutoff < eff_col``) and adds rows whose
+    accrual date has already arrived (``eff_col <= effective_cutoff < Transaction.date``).
+    """
+    if account_ids is not None and not account_ids:
+        return 0.0
+
+    today = app_today()
+    effective_cutoff = min(cutoff, today)
+    eff_col = _balance_history_date_expr("accrual")
+    signed = signed_amount_expr(Account.currency)
+    primary_currency = primary_currency_hint or get_settings().default_currency
+    rates = rates or RateBook(session)
+
+    common_filters = [
+        Transaction.workspace_id == workspace_id,
+        Account.is_closed == False,
+        Account.type != "loan",
+        Transaction.is_ignored == False,
+        Transaction.source != "opening_balance",
+        or_(
+            Transaction.category_id.is_(None),
+            Category.is_ignored == False,
+        ),
+    ]
+    if account_ids is not None:
+        common_filters.append(Transaction.account_id.in_(account_ids))
+
+    # When ``cutoff >= today``, ``_total_balance_by_currency`` reads a connected
+    # account's provider balance directly without backing out pending charges
+    # dated on or before today. Include those connected pending rows in the
+    # forward-straddle adjustment so a future-month chart starts before the
+    # bill due date and applies the charge on ``eff_col`` instead of day 1.
+    forward_status_filter = (
+        or_(
+            Transaction.status == "posted",
+            and_(
+                Account.connection_id.is_not(None),
+                Transaction.status == "pending",
+            ),
+        )
+        if cutoff >= today
+        else Transaction.status == "posted"
+    )
+
+    adjustment = 0.0
+
+    forward_rows = await session.execute(
+        select(Account.currency, func.sum(signed))
+        .join(Account, Transaction.account_id == Account.id)
+        .outerjoin(Category, Transaction.category_id == Category.id)
+        .where(
+            *common_filters,
+            forward_status_filter,
+            Transaction.date <= effective_cutoff,
+            eff_col > effective_cutoff,
+        )
+        .group_by(Account.currency)
+    )
+    for currency, raw_amount in forward_rows.all():
+        amount = raw_amount or 0
+        if currency != primary_currency:
+            amount, _ = await rates.convert(Decimal(str(amount)), currency, primary_currency)
+        adjustment -= float(amount)
+
+    backward_rows = await session.execute(
+        select(Account.currency, func.sum(signed))
+        .join(Account, Transaction.account_id == Account.id)
+        .outerjoin(Category, Transaction.category_id == Category.id)
+        .where(
+            *common_filters,
+            Transaction.status == "posted",
+            eff_col <= effective_cutoff,
+            Transaction.date > effective_cutoff,
+        )
+        .group_by(Account.currency)
+    )
+    for currency, raw_amount in backward_rows.all():
+        amount = raw_amount or 0
+        if currency != primary_currency:
+            amount, _ = await rates.convert(Decimal(str(amount)), currency, primary_currency)
+        adjustment += float(amount)
+
+    return adjustment
+
+
 async def _daily_balance_deltas_by_date(
     session: AsyncSession,
     workspace_id: uuid.UUID,
@@ -1900,6 +2042,7 @@ async def _daily_balance_deltas_by_date(
     exclude_opening_balance: bool = False,
     month_starts: Optional[list[date]] = None,
     rates: Optional[RateBook] = None,
+    date_col=None,
 ) -> dict[date, float]:
     """Get daily balance deltas for a date range [start, end), keyed by date.
 
@@ -1913,22 +2056,25 @@ async def _daily_balance_deltas_by_date(
     if month_starts is not None and not month_starts:
         return {}
 
+    effective_date_col = date_col if date_col is not None else Transaction.date
+    bucket_date = effective_date_col.label("bucket_date")
+
     date_filters = (
         [
             or_(*[
                 and_(
-                    Transaction.date >= month_start.replace(day=1),
-                    Transaction.date < _month_range(month_start)[1],
+                    effective_date_col >= month_start.replace(day=1),
+                    effective_date_col < _month_range(month_start)[1],
                 )
                 for month_start in month_starts
             ])
         ]
         if month_starts is not None
-        else [Transaction.date >= start, Transaction.date < end]
+        else [effective_date_col >= start, effective_date_col < end]
     )
     result = await session.execute(
         select(
-            Transaction.date,
+            bucket_date,
             Account.currency,
             func.sum(signed),
         )
@@ -1938,7 +2084,7 @@ async def _daily_balance_deltas_by_date(
             Transaction.workspace_id == workspace_id,
             Account.is_closed == False,
             *date_filters,
-            Transaction.date <= app_today(),
+            effective_date_col <= app_today(),
             Transaction.is_ignored == False,
             *status_filter,
             *([Transaction.source != "opening_balance"] if exclude_opening_balance else []),
@@ -1948,7 +2094,7 @@ async def _daily_balance_deltas_by_date(
             ),
             *( [Transaction.account_id.in_(account_ids)] if account_ids is not None else [] ),
         )
-        .group_by(Transaction.date, Account.currency)
+        .group_by(bucket_date, Account.currency)
     )
 
     primary_currency = primary_currency_hint or get_settings().default_currency
@@ -1974,6 +2120,7 @@ async def _daily_deltas(
     include_pending: bool = False,
     exclude_opening_balance: bool = False,
     rates: Optional[RateBook] = None,
+    date_col=None,
 ) -> dict[int, float]:
     """Get daily balance deltas for a date range [start, end), keyed by day-of-month."""
     by_date = await _daily_balance_deltas_by_date(
@@ -1986,6 +2133,7 @@ async def _daily_deltas(
         include_pending=include_pending,
         exclude_opening_balance=exclude_opening_balance,
         rates=rates,
+        date_col=date_col,
     )
     return {tx_date.day: amount for tx_date, amount in by_date.items()}
 
@@ -2088,8 +2236,10 @@ async def get_balance_history_months(
     if account_ids is not None and not account_ids:
         return []
 
-    tx_year = extract("year", Transaction.date)
-    tx_month = extract("month", Transaction.date)
+    accounting_mode = await get_credit_card_accounting_mode(session)
+    date_col = _balance_history_date_expr(accounting_mode)
+    tx_year = extract("year", date_col)
+    tx_month = extract("month", date_col)
     result = await session.execute(
         select(tx_year, tx_month)
         .join(Account, Transaction.account_id == Account.id)
@@ -2098,7 +2248,7 @@ async def get_balance_history_months(
             Transaction.workspace_id == workspace_id,
             Account.is_closed == False,
             Account.type != "loan",
-            Transaction.date <= app_today(),
+            date_col <= app_today(),
             Transaction.status == "posted",
             Transaction.is_ignored == False,
             Transaction.source != "opening_balance",
@@ -2135,6 +2285,9 @@ async def get_balance_history(
     days_in_month = (month_end - month_start).days
     cutoff_day = today.day if is_current else days_in_month
 
+    accounting_mode = await get_credit_card_accounting_mode(session)
+    date_col = _balance_history_date_expr(accounting_mode)
+
     # Look up the user's primary currency once so the helpers can avoid
     # re-querying.
     user = await session.get(User, user_id)
@@ -2163,12 +2316,21 @@ async def get_balance_history(
         primary_currency_hint=primary_currency, account_ids=balance_account_ids,
         rates=rates,
     )
+    if accounting_mode == "accrual":
+        current_start += await _accrual_straddle_adjustment(
+            session,
+            workspace_id,
+            month_start - timedelta(days=1),
+            primary_currency_hint=primary_currency,
+            account_ids=balance_account_ids,
+            rates=rates,
+        )
 
     # Daily deltas from real transactions
     current_deltas = await _daily_deltas(
         session, workspace_id, month_start, month_end,
         primary_currency_hint=primary_currency, account_ids=balance_account_ids,
-        exclude_opening_balance=True, rates=rates,
+        exclude_opening_balance=True, rates=rates, date_col=date_col,
     )
 
     comparison = None
@@ -2186,6 +2348,15 @@ async def get_balance_history(
             account_ids=balance_account_ids,
             rates=rates,
         )
+        if accounting_mode == "accrual":
+            comparison_opening_balance += await _accrual_straddle_adjustment(
+                session,
+                workspace_id,
+                comparison_start - timedelta(days=1),
+                primary_currency_hint=primary_currency,
+                account_ids=balance_account_ids,
+                rates=rates,
+            )
         comparison_deltas = await _daily_deltas(
             session,
             workspace_id,
@@ -2195,6 +2366,7 @@ async def get_balance_history(
             account_ids=balance_account_ids,
             exclude_opening_balance=True,
             rates=rates,
+            date_col=date_col,
         )
         if comparison_deltas:
             comparison = []
@@ -2218,6 +2390,7 @@ async def get_balance_history(
             exclude_opening_balance=True,
             month_starts=selected_comparison_months,
             rates=rates,
+            date_col=date_col,
         )
         baseline = _baseline_from_deltas(
             baseline_deltas, selected_comparison_months, days_in_month, today
@@ -2233,12 +2406,20 @@ async def get_balance_history(
         # rows dated today or earlier.
         if month_start > today:
             carried_forecasts = await _get_forecast_transactions(
-                session, workspace_id, date.min, month_start, balance_account_ids
+                session, workspace_id, date.min, month_start, balance_account_ids,
+                range_date_col=date_col,
+                future_date_col=date_col,
             )
             for tx in carried_forecasts:
                 if tx.is_ignored or (tx.category and tx.category.is_ignored):
                     continue
-                if tx.account and tx.account.connection_id and tx.status == "pending" and tx.date <= today:
+                if (
+                    tx.account
+                    and tx.account.connection_id
+                    and tx.status == "pending"
+                    and tx.date <= today
+                    and _balance_history_tx_date(tx, accounting_mode) <= today
+                ):
                     continue
                 current_start += await _signed_forecast_amount_primary(
                     session, tx, primary_currency, rates=rates
@@ -2251,22 +2432,32 @@ async def get_balance_history(
             proj_start,
             month_end,
             balance_account_ids,
+            range_date_col=date_col,
+            future_date_col=date_col,
         )
         for tx in forecast_transactions:
             if tx.is_ignored or (tx.category and tx.category.is_ignored):
                 continue
             amount = _signed_transaction_amount(tx)
-            if tx.account and tx.account.connection_id and tx.date <= today:
+            if (
+                tx.account
+                and tx.account.connection_id
+                and tx.status == "pending"
+                and tx.date <= today
+                and _balance_history_tx_date(tx, accounting_mode) <= today
+            ):
                 continue
             converted, _ = await rates.convert(
                 Decimal(str(amount)),
                 tx.account.currency if tx.account else tx.currency,
                 primary_currency,
             )
-            proj_deltas[tx.date.day] = proj_deltas.get(tx.date.day, 0) + float(converted)
+            eff_day = _balance_history_tx_date(tx, accounting_mode).day
+            proj_deltas[eff_day] = proj_deltas.get(eff_day, 0) + float(converted)
 
         projections = await _get_recurring_projections(
-            session, workspace_id, proj_start, month_end, account_ids
+            session, workspace_id, proj_start, month_end, account_ids,
+            accounting_mode=accounting_mode,
         )
         for proj in projections:
             if proj["account_id"] in loan_ids:
