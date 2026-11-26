@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { InternalAxiosRequestConfig } from 'axios'
-import { api, assets, rules } from '@/lib/api'
+import { api, assets, notifications, rules } from '@/lib/api'
 import { DATA_CHANGED_KEY } from '@/lib/data-changed'
 
 // The interceptor under test only looks at method + success, so a fake
@@ -92,5 +92,20 @@ describe('api data-change signal on a rate-limited price refresh (issue #778)', 
       response: { status: 429, data: { detail } },
     })
     expect(localStorage.getItem(DATA_CHANGED_KEY)).toBeNull()
+  })
+})
+
+describe('a notification preference that waited in line', () => {
+  it('goes to the workspace it was chosen in, whatever another tab made current', async () => {
+    const sent: unknown[] = []
+    api.defaults.adapter = (config: InternalAxiosRequestConfig) => {
+      sent.push(config.headers['X-Workspace-Id'])
+      return okAdapter(config)
+    }
+    localStorage.setItem('workspace_id', 'ws-2')
+    await notifications.list()
+    const change = { kind: 'backup_failed', channel: 'in_app', enabled: false } as const
+    await notifications.setPreference({ ...change, workspaceId: 'ws-1' })
+    expect(sent).toEqual(['ws-2', 'ws-1'])
   })
 })

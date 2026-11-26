@@ -23,7 +23,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.app_clock import app_timezone, app_today
-from app.models.asset import Asset
+from app.models.asset import ASSET_PRICE_DECIMALS, Asset
 from app.models.asset_transaction import AssetTransaction
 from app.providers.market_price import MarketPriceProvider, get_market_price_provider
 from app.schemas.asset import (
@@ -116,7 +116,10 @@ def _recompute(transactions: list[AssetTransaction]) -> dict:
     """Replay a holding's ledger in date order → derived position.
 
     Returns units (current quantity), average_price (per unit, None when flat),
-    cost_basis (of held units), realized_gain, first_buy/last_sell dates.
+    cost_basis (of held units), realized_gain, first_buy/last_sell dates, and
+    what the sells covered: sold_units (in the units held after later splits),
+    gross_sales (price x quantity), sale_proceeds (net of sell fees) and
+    sold_cost (average cost of the units sold).
     """
     txs = sorted(transactions, key=_replay_order)
     qty = Decimal("0")
@@ -124,6 +127,10 @@ def _recompute(transactions: list[AssetTransaction]) -> dict:
     realized = Decimal("0")
     first_buy: Optional[date] = None
     last_sell: Optional[date] = None
+    sold_units = Decimal("0")
+    gross_sales = Decimal("0")
+    proceeds = Decimal("0")
+    sold_cost = Decimal("0")
 
     for tx in txs:
         q = _d(tx.quantity)
@@ -141,11 +148,18 @@ def _recompute(transactions: list[AssetTransaction]) -> dict:
             cost -= avg * sell_qty
             qty -= sell_qty
             last_sell = tx.date
+            sold_units += sell_qty
+            gross_sales += p * sell_qty
+            proceeds += p * sell_qty - fee
+            sold_cost += avg * sell_qty
         elif tx.kind == "split":
             # A split changes how many units there are, not what they cost: the
             # cost basis and realized gain stay, so the average price moves by the
             # inverse ratio.
             qty = _units_after_split(qty, tx)
+            # Exact, so per-unit prices of earlier sells land on the new scale.
+            assert tx.old_units is not None and tx.new_units is not None
+            sold_units = sold_units * _d(tx.new_units) / _d(tx.old_units)
 
     avg_price = (cost / qty) if qty > 0 else None
     return {
@@ -155,6 +169,45 @@ def _recompute(transactions: list[AssetTransaction]) -> dict:
         "realized_gain": realized,
         "first_buy": first_buy,
         "last_sell": last_sell,
+        "sold_units": sold_units,
+        "gross_sales": gross_sales,
+        "sale_proceeds": proceeds,
+        "sold_cost": sold_cost,
+    }
+
+
+def closed_position(
+    transactions: list[AssetTransaction], realized_gain: Optional[Decimal] = None
+) -> Optional[dict[str, Decimal]]:
+    """What a closed holding's sold units cost and brought in, from its ledger.
+
+    None when nothing was sold. Per-unit prices are in the units held after the
+    last split, so a sell from before a split reads at the same scale as the rest.
+    `sold_cost` is taken as proceeds minus `realized_gain`, the holding's stored
+    one, so the three figures on screen add up to the cent; the average buy
+    price comes from the unrounded cost, which a cent would skew on a fraction
+    of a unit. The stored gain is passed in rather than replayed: it was worked
+    out before the price column rounded the prices to six decimals, so a
+    replay of the stored prices can land a cent away from it.
+    """
+    pos = _recompute(transactions)
+    sold_units = pos["sold_units"]
+    if sold_units <= 0:
+        return None
+    cent = Decimal("0.01")
+    proceeds = pos["sale_proceeds"].quantize(cent, rounding=ROUND_HALF_UP)
+    realized = (
+        realized_gain if realized_gain is not None else pos["realized_gain"]
+    ).quantize(cent)
+    cost = proceeds - realized
+    price = Decimal(1).scaleb(-ASSET_PRICE_DECIMALS)
+    return {
+        "average_buy_price": (pos["sold_cost"] / sold_units).quantize(price, rounding=ROUND_HALF_UP),
+        "average_sell_price": (pos["gross_sales"] / sold_units).quantize(
+            price, rounding=ROUND_HALF_UP
+        ),
+        "sold_cost": cost,
+        "sale_proceeds": proceeds,
     }
 
 
@@ -244,6 +297,19 @@ def split_not_allowed(asset: Asset) -> bool:
     """Splits live in the ledger of holdings tracked here. A synced holding
     takes its units from the provider, which reflects the split itself."""
     return asset.valuation_method != "market_price" or asset.connection_id is not None
+
+
+def _raise_if_synced(asset: Asset) -> None:
+    """A synced holding's position is its provider's: a trade typed here would
+    replace it with whatever this ledger adds up to."""
+    if asset.connection_id is not None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=(
+                "This holding is synced from a bank connection, "
+                "so its trades can't be added or edited by hand."
+            ),
+        )
 
 
 def too_large_to_store(transactions: list[AssetTransaction], asset: Asset) -> bool:
@@ -341,21 +407,28 @@ def _raise_if_too_large_to_store(transactions: list[AssetTransaction], asset: As
         )
 
 
-async def recompute_and_cache(session: AsyncSession, asset: Asset) -> None:
+async def recompute_and_cache(
+    session: AsyncSession, asset: Asset, *, from_sync: bool = False
+) -> None:
     """Recompute the derived position from the ledger and cache it on the asset.
 
     Keeps `purchase_price` as the cost basis of the held units so the existing
     `gain_loss = current_value - purchase_price` math reads as the unrealized
     gain, and refreshes today's AssetValue so the portfolio chart matches the
     new quantity.
+
+    A synced holding keeps the units its provider reports, and is never closed
+    by its ledger, unless the sync itself asks for the replay (`from_sync`).
     """
+    keeps_units = asset.connection_id is not None and not from_sync and bool(asset.units)
+    reported_units = asset.units
     result = await session.execute(
         select(AssetTransaction).where(AssetTransaction.asset_id == asset.id)
     )
     txs = list(result.scalars().all())
     pos = _recompute(txs)
 
-    asset.units = pos["units"]
+    asset.units = reported_units if keeps_units else pos["units"]
     asset.average_price = pos["average_price"]
     asset.realized_gain = pos["realized_gain"].quantize(Decimal("0.01"))
     asset.purchase_price = (
@@ -367,7 +440,7 @@ async def recompute_and_cache(session: AsyncSession, asset: Asset) -> None:
         # Re-opened position (or still open): clear any prior full-exit marker.
         asset.sell_date = None
         asset.sell_price = None
-    elif txs and pos["last_sell"] is not None:
+    elif not keeps_units and txs and pos["last_sell"] is not None:
         # Fully exited — mark sold so it drops out of the active portfolio.
         asset.sell_date = pos["last_sell"]
 
@@ -571,6 +644,8 @@ async def add_transaction(
     if is_split:
         _raise_if_split_not_allowed(asset)
         _raise_if_split_in_future(data.date)
+    else:
+        _raise_if_synced(asset)
     new_tx = AssetTransaction(
         asset_id=asset.id,
         workspace_id=workspace_id,
@@ -631,6 +706,8 @@ async def update_transaction(
     if tx is None:
         return None
     fields = data.model_dump(exclude_unset=True)
+    if fields.keys() - {"notes"}:
+        _raise_if_synced(asset)
     kind = fields.get("kind", tx.kind)
     if fields.get("quantity") is not None and kind != "split":
         # The checks below and the row that is written have to hold the same
@@ -706,13 +783,13 @@ async def delete_transaction(
     if tx is None:
         return None
     others = [t for t in await _load_txs(session, tx.asset_id, refresh=True) if t.id != tx.id]
-    # The recompute would clamp a sell that needed the split's units, and that
-    # can close the holding.
-    if tx.kind == "split" and _detect_oversell(others) is not None:
+    # The recompute would clamp a sell that needed the entry's units, which
+    # changes the realized gain and can close the holding.
+    if tx.kind in ("buy", "split") and _detect_oversell(others) is not None:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=(
-                "This split can't be deleted because a later sell depends on its units. "
+                f"This {tx.kind} can't be deleted because a later sell depends on its units. "
                 "Delete or edit that sell first."
             ),
         )
@@ -752,6 +829,8 @@ async def buy_into_holding(
         .with_for_update()
     )
     asset = result.scalar_one_or_none()
+    if asset is not None:
+        _raise_if_synced(asset)
     ledger = [] if asset is None else await _load_txs(session, asset.id)
 
     if asset is None:

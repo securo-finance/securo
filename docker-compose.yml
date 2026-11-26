@@ -12,6 +12,8 @@ x-backend-env: &backend-env
   # Optional. Left empty, Securo generates a unique key on first start and
   # keeps it in the database. Set one (openssl rand -hex 32) to manage it yourself.
   SECRET_KEY: ${SECRET_KEY:-}
+  # true refuses to start without a SECRET_KEY of your own.
+  REQUIRE_SECRET_KEY: ${REQUIRE_SECRET_KEY:-false}
   DEBUG: ${DEBUG:-true}
   # Not nested (${FRONTEND_URL:-http://localhost:${FRONTEND_PORT:-3000}}):
   # podman-compose before 1.6.0 leaves a stray "}" on such values (#1162).
@@ -108,6 +110,22 @@ x-backend-env: &backend-env
   # ollama/openai/openai_compatible for better quality.
   AGENTS_EMBEDDING_PROVIDER: ${AGENTS_EMBEDDING_PROVIDER:-native}
   AGENTS_EMBEDDING_MODEL: ${AGENTS_EMBEDDING_MODEL:-sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2}
+  # Password recovery by email (ADR 0044), off by default: with EMAIL_ENABLED
+  # unset nothing leaves the machine and the forgot-password route answers 503.
+  EMAIL_ENABLED: ${EMAIL_ENABLED:-false}
+  # Who carries the message: smtp (your own relay) or resend (hosted API).
+  # With resend nothing under SMTP_* is read; only the RESEND_* values.
+  EMAIL_PROVIDER: ${EMAIL_PROVIDER:-smtp}
+  RESEND_API_KEY: ${RESEND_API_KEY:-}
+  RESEND_API_URL: ${RESEND_API_URL:-https://api.resend.com}
+  SMTP_HOST: ${SMTP_HOST:-}
+  SMTP_PORT: ${SMTP_PORT:-587}
+  # starttls | ssl | none. `none` sends the credentials in the clear.
+  SMTP_SECURITY: ${SMTP_SECURITY:-starttls}
+  SMTP_USERNAME: ${SMTP_USERNAME:-}
+  SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+  EMAIL_FROM: ${EMAIL_FROM:-}
+  PASSWORD_RESET_TOKEN_MINUTES: ${PASSWORD_RESET_TOKEN_MINUTES:-60}
 
 x-backend-base: &backend-base
   build: ./backend
@@ -155,6 +173,11 @@ services:
     # knowledge base; harmless when AGENTS_ENABLED=false.
     image: ${DB_IMAGE:-docker.io/pgvector/pgvector:pg16}
     restart: unless-stopped
+    # JIT compilation costs more than it saves on the short, indexed queries
+    # Securo runs. On the hosted instance a plain GET /api/transactions went
+    # from 1222 ms to 229 ms with it off, and 100k-transaction workspaces
+    # followed (560 ms). DB_JIT=on restores the PostgreSQL default (#583).
+    command: ["postgres", "-c", "jit=${DB_JIT:-off}"]
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres

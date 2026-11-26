@@ -359,6 +359,9 @@ EXCLUDED_WORKSPACE_TABLES: dict[str, str] = {
     "workspace_members": "membership is managed per instance",
     "workspace_plugins": "install state tied to the plugin runtime",
     "ui_layouts": "per-user screen layout",
+    "notifications": "derived from the workspace's state; recreated by the next evaluation",
+    "notification_preferences": "per-user preference",
+    "notification_deliveries": "messages already sent, or about to be, about this instance's state",
 }
 
 
@@ -568,6 +571,19 @@ async def get_backup_config(session: AsyncSession, workspace_id: uuid.UUID) -> B
     return cfg
 
 
+async def _locked_config(
+    session: AsyncSession, workspace_id: uuid.UUID
+) -> tuple[BackupConfig, AppSetting | None]:
+    """The stored settings as they are now, locked until the next commit.
+
+    The person, a backup that worked and one that failed all write the same
+    value whole, so each starts from the last one committed."""
+    setting = await session.get(
+        AppSetting, _config_key(workspace_id), populate_existing=True, with_for_update=True
+    )
+    return await get_backup_config(session, workspace_id), setting
+
+
 async def save_backup_config(
     session: AsyncSession,
     workspace_id: uuid.UUID,
@@ -581,7 +597,7 @@ async def save_backup_config(
                 "Enable persistence.backups.enabled for Helm deployments."
             ),
         )
-    current = await get_backup_config(session, workspace_id)
+    current, setting = await _locked_config(session, workspace_id)
     data = current.model_dump(mode="json", exclude={"storage_shared"})
     data.update(
         {
@@ -593,7 +609,6 @@ async def save_backup_config(
     cfg = BackupConfig(**data)
     cfg.storage_shared = get_settings().backup_storage_shared
     cfg.next_run_at = _next_run(cfg.last_run_at, cfg.schedule)
-    setting = await session.get(AppSetting, _config_key(workspace_id))
     value = cfg.model_dump_json(exclude={"next_run_at", "storage_shared"})
     if setting is None:
         setting = AppSetting(key=_config_key(workspace_id), value=value)
@@ -1023,8 +1038,10 @@ async def create_stored_backup(
     await asyncio.to_thread(path.write_bytes, data)
 
     if update_schedule:
+        # Read again: building the archive takes a while, and the settings may have changed.
+        config, setting = await _locked_config(session, workspace.id)
         config.last_run_at = _now()
-        setting = await session.get(AppSetting, _config_key(workspace.id))
+        config.last_failure_at = None
         if setting is None:
             setting = AppSetting(
                 key=_config_key(workspace.id),
@@ -2186,6 +2203,24 @@ async def restore_backup_bytes(
         raise HTTPException(status_code=400, detail=f"Could not restore backup: {exc}")
 
 
+async def _record_scheduled_failure(
+    session: AsyncSession, workspace_id: uuid.UUID, started_at: datetime
+) -> None:
+    """Keep that a scheduled backup failed, until one works (ADR 0041)."""
+    try:
+        config, setting = await _locked_config(session, workspace_id)
+        # Either a backup worked meanwhile, or only the clean-up after this one failed.
+        if setting is None or (config.last_run_at is not None and config.last_run_at >= started_at):
+            await session.rollback()
+            return
+        config.last_failure_at = _now()
+        setting.value = config.model_dump_json(exclude={"next_run_at", "storage_shared"})
+        await session.commit()
+    except Exception:
+        await session.rollback()
+        logger.exception("Could not record the failed backup of workspace %s", workspace_id)
+
+
 async def run_scheduled_backups(session: AsyncSession) -> dict[str, Any]:
     if not get_settings().backup_storage_shared:
         return {"created": 0, "skipped": 0, "errors": []}
@@ -2198,6 +2233,8 @@ async def run_scheduled_backups(session: AsyncSession) -> dict[str, Any]:
     skipped = 0
     errors: list[str] = []
     for setting_key in setting_keys:
+        workspace_id: uuid.UUID | None = None
+        started_at = _now()
         try:
             workspace_id = uuid.UUID(
                 setting_key.removeprefix(CONFIG_KEY_PREFIX).removesuffix(CONFIG_KEY_SUFFIX)
@@ -2221,4 +2258,6 @@ async def run_scheduled_backups(session: AsyncSession) -> dict[str, Any]:
         except Exception as exc:
             await session.rollback()
             errors.append(str(exc))
+            if workspace_id is not None:
+                await _record_scheduled_failure(session, workspace_id, started_at)
     return {"created": created, "skipped": skipped, "errors": errors}

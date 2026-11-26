@@ -745,6 +745,16 @@
     "email": "Correo electrónico",
     "password": "Contraseña",
     "forgotPassword": "¿Olvidaste tu contraseña?",
+    "forgotPasswordDescription": "Escribe el correo de tu cuenta y te enviaremos un enlace para elegir una nueva contraseña.",
+    "sendResetLink": "Enviar enlace de recuperación",
+    "resetSentTitle": "Revisa tu correo",
+    "resetSentBody": "Si existe una cuenta para {{email}}, el enlace de recuperación va en camino. Caduca pronto.",
+    "resetUnavailable": "La recuperación de contraseña por correo no está activada en esta instancia. Pregunta al administrador.",
+    "resetRequestError": "No se pudo enviar el enlace de recuperación. Inténtalo de nuevo.",
+    "resetPasswordDescription": "Elige una nueva contraseña para tu cuenta.",
+    "resetPasswordRejected": "La nueva contraseña no se aceptó. Usa al menos 8 caracteres e inténtalo de nuevo.",
+    "resetTokenMissing": "Este enlace está incompleto. Abre de nuevo el enlace del correo de recuperación o pide otro.",
+    "resetTokenInvalid": "Este enlace de recuperación no es válido o ha caducado. Pide uno nuevo.",
     "loginDescription": "Inicia sesión para acceder a tu cuenta",
     "invalidCredentials": "Correo o contraseña inválidos",
     "serverError": "No se pudo conectar con el servidor. Comprueba tu conexión o que el backend esté en ejecución e inténtalo de nuevo.",
@@ -755,6 +765,8 @@
     "changePassword": "Cambiar contraseña",
     "newPassword": "Nueva contraseña",
     "passwordTooShort": "La contraseña debe tener al menos 8 caracteres",
+    "passwordTooLong": "La contraseña debe tener como máximo 72 caracteres",
+    "resetPassword": "Restablecer contraseña",
     "currentPassword": "Contraseña actual",
     "currentPasswordWrong": "La contraseña actual es incorrecta",
     "passwordChanged": "Contraseña cambiada correctamente",
@@ -1787,6 +1799,12 @@
     "sectionHint": "Cómo categorizar las transacciones.",
     "resetAndReapplyAll": "Restablecer y reaplicar",
     "confirmResetAndReapplyAll": "¿Restablecer las categorías, las notas y las descripciones gestionadas por reglas de las transacciones coincidentes y volver a aplicar todas las reglas activas?",
+    "scanForTransfers": "Buscar transferencias",
+    "scanningForTransfers": "Buscando...",
+    "confirmScanForTransfers": "¿Buscar en todo el historial y emparejar las transferencias entre cuentas distintas? Las transferencias que deshiciste a mano pueden volver a emparejarse. Puede tardar un poco en un historial grande.",
+    "transferScanCreated_one": "{{count}} par de transferencia creado",
+    "transferScanCreated_other": "{{count}} pares de transferencia creados",
+    "transferScanNone": "No se encontraron nuevos pares de transferencia",
     "add": "Agregar",
     "created": "Regla creada",
     "createdAndApplied": "Regla creada y aplicada a {{count}} transacciones",
@@ -2242,6 +2260,14 @@
     "colReturn": "Rentab.",
     "colBalance": "Saldo",
     "colPortfolioPct": "% cartera",
+    "colDates": "Periodo",
+    "colAvgBuyPrice": "P. medio compra",
+    "colAvgSellPrice": "P. medio venta",
+    "colInvested": "Invertido",
+    "colProceeds": "Recuperado",
+    "colResult": "Resultado",
+    "soldRealized": "Realizado",
+    "soldTotalsTitle": "Resultado realizado a coste medio, sumado por moneda sin convertir",
     "addBuys": "add compras",
     "ledgerTitle": "Movimientos",
     "noLedgerYet": "Aún no hay movimientos para este activo.",
@@ -2958,6 +2984,33 @@
     "menuItem": "Comprobar actualizaciones"
   },
   "admin": {
+    "email": {
+      "title": "Correo electrónico",
+      "enabled": "Correo activado",
+      "disabled": "Correo desactivado",
+      "description": "Cómo se envían los correos de recuperación de contraseña. El proveedor y el remitente vienen de la configuración del servidor.",
+      "disabledNote": "Activa EMAIL_ENABLED en el servidor para enviar enlaces de recuperación.",
+      "provider": "Proveedor",
+      "providerSmtp": "Servidor SMTP",
+      "providerResend": "Resend",
+      "sender": "Remitente",
+      "senderMissing": "Sin definir",
+      "templatesTitle": "Mensaje de recuperación",
+      "templatesDescription": "Lo que lee la persona. Variables: {app_name}, {link} y {minutes}; {link} debe estar solo en su propia línea y nada más puede ser un enlace.",
+      "subject": "Asunto",
+      "body": "Cuerpo",
+      "linkRequired": "El cuerpo debe contener {link}.",
+      "linkInSubject": "El asunto no puede contener {link} ni una dirección.",
+      "linkOnce": "El cuerpo debe contener {link} exactamente una vez.",
+      "linkAlone": "La variable {link} debe estar sola en su propia línea.",
+      "otherLink": "El mensaje no puede llevar a ningún otro sitio que {link}.",
+      "restoreDefault": "Restaurar texto predeterminado",
+      "save": "Guardar plantillas",
+      "saved": "Plantillas guardadas",
+      "saveFailed": "No se pudieron guardar las plantillas",
+      "languageEn": "Inglés",
+      "languagePt": "Portugués"
+    },
     "users": {
       "title": "Gestión de usuarios",
       "searchPlaceholder": "Buscar usuarios...",
@@ -2977,12 +3030,16 @@
       "deleted": "Usuario eliminado",
       "confirmDeleteTitle": "¿Eliminar usuario?",
       "confirmDeleteDesc": "Esto eliminará permanentemente al usuario {{email}} y todos sus datos. Esta acción no se puede deshacer.",
-      "resetPassword": "Restablecer contraseña",
-      "resetPasswordPlaceholder": "Déjalo vacío para mantener la actual",
+      "reason": "Motivo",
+      "reasonPlaceholder": "¿Por qué se hace este cambio?",
+      "reasonHint": "Queda registrado en el registro de accesos y se muestra a la cuenta afectada.",
       "addDesc": "Crea una nueva cuenta de usuario con acceso a la aplicación.",
       "adminRole": "Privilegios de administrador",
       "enabled": "Activado",
-      "disabled": "Desactivado"
+      "disabled": "Desactivado",
+      "pending": "Pendiente",
+      "pendingEmail": "Solicitada {{email}}, esperando al titular",
+      "emailPendingHint": "La dirección solo cambia cuando su titular la confirma."
     },
     "settings": {
       "title": "Configuración de administrador",
@@ -3289,8 +3346,8 @@
     "defaultBadge": "Predeterminado",
     "defaultLabel": "Predeterminado",
     "globalChat": {
-      "title": "Chat",
-      "openHint": "Abrir chat",
+      "title": "Agente",
+      "openHint": "Abrir agente",
       "history": "Conversaciones recientes",
       "selectAgent": "Seleccionar agente",
       "openSettings": "Ajustes del agente",
@@ -4249,5 +4306,132 @@
       "unlinkFirstDirection": "Desvincula los reembolsos antes de cambiar la dirección.",
       "unlinkFirstGroupSplit": "Desvincula los reembolsos antes de dividir entre personas."
     }
+  },
+  "notifications": {
+    "title": "Notificaciones",
+    "unread": "Sin leer",
+    "unreadLabel": "Notificaciones, {{number}} sin leer",
+    "markAllRead": "Marcar todas como leídas",
+    "empty": "Nada requiere tu atención.",
+    "loadError": "No se pudieron cargar las notificaciones.",
+    "connection": {
+      "title": "{{name}} dejó de sincronizarse",
+      "rateLimited": "El banco sigue alcanzando su límite diario."
+    },
+    "recurring": {
+      "title": "{{name}} no se generó",
+      "detail": "Vencía el {{date}}. Revisa su cuenta y su configuración."
+    },
+    "budget": {
+      "close": "{{name}}: {{percent}} % del presupuesto usado",
+      "reached": "{{name}}: presupuesto agotado",
+      "detail": "{{actual}} de {{budget}}"
+    },
+    "backup": {
+      "title": "La copia de seguridad programada falló",
+      "detail": "El último intento fue el {{date}}. Securo lo intentará de nuevo."
+    },
+    "seeAll": "Ver todas las notificaciones",
+    "markRead": "Marcar como leída",
+    "loadMore": "Cargar más",
+    "filter": {
+      "all": "Todas",
+      "unread": "Sin leer"
+    },
+    "emptyFilter": {
+      "all": "Aún no hay notificaciones.",
+      "unread": "No queda nada por leer."
+    },
+    "flag": {
+      "title": "Recordatorios vencidos: {{number}}",
+      "detail": "Transacciones marcadas cuyo recordatorio ya pasó."
+    },
+    "match": {
+      "title": "Coincidencias por revisar: {{number}}",
+      "detail": "Securo encontró posibles coincidencias y necesita tu respuesta."
+    },
+    "invoice": {
+      "title": "{{name}}: factura vencida",
+      "detail": "{{amount}}, venció el {{date}}."
+    },
+    "preferences": {
+      "title": "Preferencias",
+      "hint": "Elige de qué quieres enterarte en este espacio. Los demás miembros conservan sus opciones.",
+      "saveError": "No se pudo guardar tu elección.",
+      "loadError": "No se pudieron cargar tus preferencias."
+    },
+    "kind": {
+      "connection_error": {
+        "label": "Conexiones",
+        "hint": "Un banco o plugin dejó de sincronizarse."
+      },
+      "budget_threshold": {
+        "label": "Presupuestos",
+        "hint": "Un presupuesto llegó al 80 % o al 100 %."
+      },
+      "recurring_failed": {
+        "label": "Recurrentes",
+        "hint": "Una transacción recurrente no se generó."
+      },
+      "flag_overdue": {
+        "label": "Recordatorios",
+        "hint": "Una transacción marcada pasó la fecha de su recordatorio."
+      },
+      "reconciliation_pending": {
+        "label": "Coincidencias por revisar",
+        "hint": "Securo encontró posibles coincidencias y necesita tu respuesta."
+      },
+      "invoice_overdue": {
+        "label": "Facturas",
+        "hint": "Una factura a un cliente está vencida."
+      },
+      "group_expense": {
+        "label": "Gastos compartidos",
+        "hint": "Alguien añade o cambia un gasto que comparte contigo en un grupo."
+      },
+      "group_settlement": {
+        "label": "Pagos en grupos",
+        "hint": "Alguien registra un pago tuyo o para ti en un grupo."
+      },
+      "backup_failed": {
+        "label": "Copias de seguridad",
+        "hint": "Una copia de seguridad programada falló."
+      }
+    },
+    "group": {
+      "added": "{{actor}} añadió {{name}}",
+      "changed": "{{actor}} cambió {{name}}",
+      "batch": "{{actor}} añadió gastos compartidos: {{number}}",
+      "share": "Tu parte en {{group}}: {{amount}}",
+      "paid": "{{actor}} registró un pago"
+    }
+  },
+  "accessLog": {
+    "title": "Registro de acceso",
+    "description": "Todas las acciones administrativas en tu cuenta y en los miembros de los espacios de trabajo que posees.",
+    "empty": "No hay acciones administrativas registradas.",
+    "actionUpdate": "Cuenta modificada",
+    "actionDelete": "Cuenta eliminada",
+    "actionOther": "Cuenta modificada",
+    "by": "Por {{email}}",
+    "target": "Cuenta {{email}}",
+    "ip": "IP {{ip}}",
+    "loadMore": "Cargar más",
+    "loadError": "No se pudo cargar el registro de acceso.",
+    "emailChange": "Dirección {{from}} → {{to}}",
+    "emailPending": "esperando la confirmación del titular de la cuenta",
+    "otherChanges": "También se cambió: {{fields}}"
+  },
+  "emailChange": {
+    "title": "Cambio de correo electrónico",
+    "description": "Un administrador solicitó cambiar la dirección de su cuenta a {{email}}. Hasta que confirme, su cuenta conserva su dirección actual.",
+    "accept": "Aceptar la nueva dirección",
+    "decline": "Mantener mi dirección actual",
+    "accepted": "Su cuenta ahora usa {{email}}",
+    "declined": "Su cuenta conserva su dirección actual",
+    "unavailable": "Esa dirección ya no está disponible",
+    "failed": "No se pudo registrar su decisión",
+    "replaced": "El administrador envió una nueva solicitud. Revisa la nueva dirección antes de aceptar",
+    "withdrawn": "La solicitud fue retirada. Tu cuenta mantiene su dirección actual"
   }
 }

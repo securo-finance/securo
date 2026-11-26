@@ -56,7 +56,7 @@ from app.providers.base import (
 from app.services.provider_settings import resolve_settings
 from app.services import oauth_state
 from app.services import admin_service
-from app.services import category_line_service, reconciliation_service, recurring_match_service
+from app.services import category_line_service, notification_service, reconciliation_service, recurring_match_service
 from app.services.text_similarity import normalize_words, token_overlap
 from app.services.account_service import (
     LIABILITY_ACCOUNT_TYPES,
@@ -1231,7 +1231,7 @@ async def _sync_holding_trades(
         was_sold = asset.sell_date is not None
         # Average price, realized gain and cost basis come from the ledger;
         # the position stays what the provider reports.
-        await recompute_and_cache(session, asset)
+        await recompute_and_cache(session, asset, from_sync=True)
         if holding.quantity is not None and not holding.is_withdrawn:
             asset.units = holding.quantity
         if sold is not None:
@@ -2109,7 +2109,7 @@ async def _run_first_import(
                     _merge_sync_metadata(
                         synced_dup,
                         txn_data,
-                        replace_external_id=synced_dup.source == "sync",
+                        replace_external_id=_takes_twin_key(synced_dup, txn_data),
                     )
                 continue
 
@@ -2434,6 +2434,26 @@ async def _fuzzy_match_manual(
     return None
 
 
+def _is_stale_pending_twin(transaction: Transaction, txn_data) -> bool:
+    """Whether `txn_data` is a pending entry come back for a row that posted.
+
+    What the posted entry brought stands against it: its id and the
+    provider's text (`_takes_twin_key`, `_takes_plugin_correction`).
+    """
+    return transaction.status == "posted" and txn_data.status == "pending"
+
+
+def _takes_twin_key(transaction: Transaction, txn_data) -> bool:
+    """Whether a row matched as a twin under another id takes the new id.
+
+    A synced row follows its provider's re-keying, except a posted row that a
+    stale pending entry comes back for: the posted entry's id stays. Moving
+    it to the pending one's would leave the posted entry matching nothing on
+    its next sync, and it would be inserted a second time.
+    """
+    return transaction.source == "sync" and not _is_stale_pending_twin(transaction, txn_data)
+
+
 def _merge_sync_metadata(
     transaction: Transaction,
     txn_data,
@@ -2678,9 +2698,7 @@ def _takes_plugin_correction(transaction: Transaction, txn_data) -> bool:
     and not a posted row a stale pending twin comes back for: what the posted
     entry brought stands.
     """
-    if transaction.is_ignored:
-        return False
-    return not (transaction.status == "posted" and txn_data.status == "pending")
+    return not transaction.is_ignored and not _is_stale_pending_twin(transaction, txn_data)
 
 
 #: How many days an Enable Banking card hold can precede the booked entry that
@@ -2771,6 +2789,15 @@ _SECURO_RAW_KEYS = frozenset(
 )
 
 
+def _eb_leads_with_label(remittance: Optional[str]) -> bool:
+    """Whether a remittance text opens with one word the bank marked as a
+    label: "TRASPASO: ahorro" does, "BETA SHOP" and "PAGO RECIBO: ahorro"
+    do not. The colon is read from the text as the bank sent it, since
+    `normalize_words` drops it."""
+    label, colon, _ = (remittance or "").partition(":")
+    return bool(colon) and len(normalize_words(label)) == 1
+
+
 def _eb_reworded_entry(held: dict, booked: dict) -> bool:
     """Whether `booked` is `held` with a reference filled in and its
     remittance text reworded.
@@ -2782,9 +2809,18 @@ def _eb_reworded_entry(held: dict, booked: dict) -> bool:
     agree on everything but the reference and the remittance text, and the
     two texts have to end in the same words, covering at least 80% of the
     shorter one: a bank that rewords an entry swaps the label in front and
-    keeps the concept the payer typed at the end. Shared words elsewhere are
-    not enough, since "CARD PAYMENT AT SHOP ALPHA" and "CARD PAYMENT AT SHOP
-    BETA" are two purchases when no creditor field tells them apart.
+    keeps the concept the payer typed at the end. A short concept falls under
+    80% once the label is counted ("TRASPASO: ahorro" shares one word of two),
+    so the shorter text also matches when its shared ending covers every word
+    but one, the label in front. That word is only taken for a label when the
+    bank's own text marks it as one with a colon (`_eb_leads_with_label`) and
+    the other text is at least two words longer, as a rewording that swaps a
+    long label for a short one is. Without the colon the word may as well be
+    the merchant: "COMPRA EN ALPHA SHOP" and "BETA SHOP" are two purchases,
+    and so are "ALPHA SHOP" and "BETA SHOP".
+    Shared words elsewhere are not enough, since "CARD PAYMENT AT SHOP ALPHA"
+    and "CARD PAYMENT AT SHOP BETA" are two purchases when no creditor field
+    tells them apart.
     """
     def rest(raw: dict) -> dict:
         return {
@@ -2796,8 +2832,9 @@ def _eb_reworded_entry(held: dict, booked: dict) -> bool:
 
     if rest(held) != rest(booked):
         return False
-    held_words = normalize_words(_eb_remittance(held))
-    booked_words = normalize_words(_eb_remittance(booked))
+    held_text, booked_text = _eb_remittance(held), _eb_remittance(booked)
+    held_words = normalize_words(held_text)
+    booked_words = normalize_words(booked_text)
     if not held_words or not booked_words:
         return False
     shared_tail = 0
@@ -2805,7 +2842,19 @@ def _eb_reworded_entry(held: dict, booked: dict) -> bool:
         if held_word != booked_word:
             break
         shared_tail += 1
-    return shared_tail / min(len(held_words), len(booked_words)) >= 0.8
+    if shared_tail == 0:
+        return False
+    (shorter, shorter_text), (longer, _) = sorted(
+        ((len(held_words), held_text), (len(booked_words), booked_text)),
+        key=lambda counted: counted[0],
+    )
+    if shared_tail / shorter >= 0.8:
+        return True
+    return (
+        shared_tail >= shorter - 1
+        and longer - shorter >= 2
+        and _eb_leads_with_label(shorter_text)
+    )
 
 
 def _eb_exact_twin_in_batch(
@@ -4926,11 +4975,12 @@ async def sync_connection(
                         # Same logical posted row re-keyed by a provider such
                         # as SimpleFIN. Keep the user's row and move its
                         # idempotency key forward instead of inserting a twin.
+                        # A stale pending twin of a posted row moves nothing.
                         await _refresh_twin_payee(session, synced_dup, txn_data)
                         _merge_sync_metadata(
                             synced_dup,
                             txn_data,
-                            replace_external_id=synced_dup.source == "sync",
+                            replace_external_id=_takes_twin_key(synced_dup, txn_data),
                         )
                     continue
 
@@ -5401,6 +5451,7 @@ async def sync_connection(
         else:
             connection.status = "active"
         connection.settings = _with_sync_failure(connection.settings, failure)
+        await notification_service.connection_changed(session, connection)
         if rate_limited_accounts:
             logger.warning(
                 "Sync %s finished %s: %d account(s) rate-limited by the provider "
@@ -5508,6 +5559,7 @@ async def _mark_failed_sync(
             conn.settings = _with_retry_after(conn.settings, retry_after)
         if failure is not None:
             conn.settings = _with_sync_failure(conn.settings, failure)
+        await notification_service.connection_changed(session, conn)
 
 
 def _with_sync_failure(settings: Optional[dict], failure: Optional[dict]) -> dict:
@@ -5607,6 +5659,7 @@ async def delete_connection(
     connection = await get_connection(session, connection_id, workspace_id)
     if not connection:
         return False
+    await notification_service.connection_changed(session, connection, removed=True)
 
     if keep_accounts:
         # Disconnecting keeps the accounts, their history, payees and

@@ -51,6 +51,9 @@ class Settings(BaseSettings):
     # instance generates its own and keeps it in the database: see
     # app.core.instance_secrets and get_settings().
     secret_key: SecretStr = SecretStr("")
+    # Refuse to start instead of generating one: an operator who keeps the key
+    # out of the database finds out at startup when it is missing (ADR 0048).
+    require_secret_key: bool = False
     # Keys this instance encrypted with before, tried when opening a saved
     # credential. Never used to sign or check a token.
     _secret_key_fallbacks: tuple[str, ...] = PrivateAttr(default=())
@@ -141,6 +144,61 @@ class Settings(BaseSettings):
 
     # Registration
     registration_enabled: bool = True
+
+    # Password recovery by email (ADR 0044). One switch: while it is off no
+    # message is sent and the forgot-password route answers 503 instead of
+    # pretending a mail went out.
+    email_enabled: bool = False
+    # Who carries the message: your own relay, or the hosted API. The switch
+    # above stays the only one; this only picks the path behind it.
+    email_provider: Literal["smtp", "resend"] = "smtp"
+    resend_api_key: SecretStr = SecretStr("")
+    resend_api_url: str = "https://api.resend.com"
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_username: str = ""
+    smtp_password: SecretStr = SecretStr("")
+    # starttls upgrades port 587, ssl connects over TLS on port 465, and none
+    # is only for a relay on a network you already trust.
+    smtp_security: Literal["starttls", "ssl", "none"] = "starttls"
+    # The From address, for example "Securo <no-reply@example.com>". Empty
+    # falls back to the SMTP username.
+    email_from: str = ""
+    # How long a recovery link stays valid.
+    password_reset_token_minutes: int = 60
+
+    @model_validator(mode="after")
+    def validate_email_settings(self):
+        if not self.email_enabled:
+            return self
+        if self.email_provider == "resend":
+            if not self.resend_api_key.get_secret_value():
+                raise ValueError(
+                    "RESEND_API_KEY is required when EMAIL_ENABLED is true and "
+                    "EMAIL_PROVIDER is resend"
+                )
+            if not self.email_from:
+                raise ValueError(
+                    "EMAIL_FROM is required when EMAIL_ENABLED is true and "
+                    "EMAIL_PROVIDER is resend"
+                )
+            # The key travels in a header: never let it go out in the clear.
+            if not self.resend_api_url:
+                raise ValueError(
+                    "RESEND_API_URL is required when EMAIL_ENABLED is true and "
+                    "EMAIL_PROVIDER is resend"
+                )
+            if not self.resend_api_url.startswith("https://"):
+                raise ValueError("RESEND_API_URL must start with https://")
+        elif not self.smtp_host:
+            raise ValueError("SMTP_HOST is required when EMAIL_ENABLED is true")
+        if self.email_provider == "smtp" and not (self.email_from or self.smtp_username):
+            raise ValueError(
+                "EMAIL_FROM (or SMTP_USERNAME) is required when EMAIL_ENABLED is true"
+            )
+        if self.password_reset_token_minutes <= 0:
+            raise ValueError("PASSWORD_RESET_TOKEN_MINUTES must be positive")
+        return self
 
     # OIDC login (works with Authentik, Pocket ID, and other standard OIDC providers)
     oidc_enabled: bool = False
@@ -363,10 +421,16 @@ class Settings(BaseSettings):
     # the process environment are ignored by pydantic-settings anyway; without
     # this, the very same key written into the .env file aborted startup with
     # "Extra inputs are not permitted".
+    #
+    # hide_input_in_errors: a validator that refuses the settings prints the
+    # input it refused, and that input is every field the instance was built
+    # from — including the email API key and SECRET_KEY, truncated but legible,
+    # in the log of a container that failed to boot.
     model_config = SettingsConfigDict(
         env_file=(".env", Path(__file__).resolve().parents[2] / ".env"),
         secrets_dir=CREDENTIALS_DIRECTORY,
         extra="ignore",
+        hide_input_in_errors=True,
     )
 
 
@@ -412,6 +476,13 @@ def resolve_secret_key(settings: Settings) -> Settings:
             k for k in instance.PUBLIC_SECRET_KEYS if k != raw
         )
         return settings
+
+    if settings.require_secret_key:
+        raise RuntimeError(
+            "REQUIRE_SECRET_KEY is on, but SECRET_KEY is "
+            + ("a public default" if configured else "not set")
+            + ". Set a unique value (openssl rand -hex 32)."
+        )
 
     if configured:
         logging.getLogger(__name__).warning(

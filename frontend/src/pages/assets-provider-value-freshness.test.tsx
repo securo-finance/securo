@@ -119,9 +119,11 @@ describe('Assets provider value freshness badge', () => {
         sell_date: todayInTimezone('UTC'),
       }),
     ])
+    // Sold holdings sit in a collapsed section until it is opened.
+    localStorage.setItem('securo:assets:showSold', '1')
     renderWithProviders(<AssetsPage />)
 
-    expect(await screen.findByText(t('assets.sold'))).toBeVisible()
+    expect(await screen.findByText('Frozen CDB')).toBeVisible()
     expectNoStaleWarning()
   })
 

@@ -1269,15 +1269,20 @@ function TransactionForm({
           : hadInitialLines
             ? { category_lines: { share_type: 'exact', lines: [] } }
             : {}
-        // The payback goes with the save, like splits, and only when its group
-        // or payers changed, so amounts already recorded are kept.
+        // The payback goes with the save, like splits, and only when its group,
+        // payers or their amounts changed, so what is already recorded is kept.
         // A new amount re-splits a payback that covered the whole transaction.
         const before = transaction?.settled_by ?? []
-        const payersKey = (groupId: string | undefined, ids: string[]) => `${groupId}:${[...ids].sort().join()}`
+        // Per member, so two settlements from one payer read as their sum.
+        const paybackKey = (groupId: string | undefined, parts: { member_id: string; amount: number | string }[]) => {
+          const byMember = new Map<string, number>()
+          for (const p of parts) byMember.set(p.member_id, (byMember.get(p.member_id) ?? 0) + Number(p.amount))
+          return `${groupId}:${[...byMember].map(([id, a]) => `${id}=${a.toFixed(2)}`).sort().join()}`
+        }
         const coveredWhole = Math.abs(before.reduce((sum, s) => sum + Number(s.amount), 0) - Number(transaction?.amount)) < 0.005
         const paybackPayload: Pick<TransactionEditPayload, 'payback'> = settle !== undefined && !splitByCategory
-          && (payersKey(before[0]?.group_id, before.map((s) => s.from_member_id))
-            !== payersKey(settle?.group_id, settle?.payers.map((p) => p.member_id) ?? [])
+          && (paybackKey(before[0]?.group_id, before.map((s) => ({ member_id: s.from_member_id, amount: s.amount })))
+            !== paybackKey(settle?.group_id, settle?.payers ?? [])
             || (!!settle && coveredWhole && parsedAmount != null && Number(transaction?.amount) !== parsedAmount))
           ? { payback: settle ? { group_id: settle.group_id, to_member_id: settle.to_member_id, payers: settle.payers } : { payers: [] } }
           : {}

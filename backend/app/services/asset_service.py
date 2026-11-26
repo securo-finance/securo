@@ -1,7 +1,7 @@
 import logging
 import uuid
 from datetime import date, datetime, timezone, timedelta
-from decimal import ROUND_DOWN, Decimal
+from decimal import ROUND_DOWN, ROUND_HALF_UP, Decimal
 from typing import Any, Optional, Sequence, cast
 
 from fastapi import HTTPException, status
@@ -638,7 +638,62 @@ async def get_assets(
         latest = await _get_latest_value(session, asset.id)
         count = await _get_value_count(session, asset.id)
         reads.append(_asset_to_read(asset, latest, count, tx_counts.get(asset.id, 0)))
+    await _fill_closed_positions(session, workspace_id, assets, reads)
     return reads
+
+
+async def _fill_closed_positions(
+    session: AsyncSession,
+    workspace_id: uuid.UUID,
+    assets: list[Asset],
+    reads: list[AssetRead],
+) -> None:
+    """Fill the closed-position fields of the sold holdings in place.
+
+    A ledger-backed holding is read from its transactions (one query for all of
+    them); one sold by hand from its purchase and sell prices.
+    """
+    # Local import: asset_transaction_service imports this module.
+    from app.services import asset_transaction_service
+
+    sold = [(a, r) for a, r in zip(assets, reads) if a.sell_date is not None]
+    ledger_ids = [a.id for a, r in sold if r.transaction_count > 0]
+    by_asset: dict[uuid.UUID, list[AssetTransaction]] = {}
+    if ledger_ids:
+        rows = await session.execute(
+            select(AssetTransaction).where(
+                AssetTransaction.asset_id.in_(ledger_ids),
+                AssetTransaction.workspace_id == workspace_id,
+            )
+        )
+        for tx in rows.scalars().all():
+            by_asset.setdefault(tx.asset_id, []).append(tx)
+
+    price_quantum = Decimal(1).scaleb(-ASSET_PRICE_DECIMALS)
+    for asset, read in sold:
+        if read.transaction_count > 0:
+            position = asset_transaction_service.closed_position(
+                by_asset.get(asset.id, []), asset.realized_gain
+            )
+            if position is None:
+                continue
+            read.average_buy_price = float(position["average_buy_price"])
+            read.average_sell_price = float(position["average_sell_price"])
+            read.sold_cost = float(position["sold_cost"])
+            read.sale_proceeds = float(position["sale_proceeds"])
+            continue
+        cost, proceeds = asset.purchase_price, asset.sell_price
+        read.sold_cost = float(cost) if cost is not None else None
+        read.sale_proceeds = float(proceeds) if proceeds is not None else None
+        if asset.units is not None and asset.units > 0:
+            if cost is not None:
+                read.average_buy_price = float(
+                    (cost / asset.units).quantize(price_quantum, rounding=ROUND_HALF_UP)
+                )
+            if proceeds is not None:
+                read.average_sell_price = float(
+                    (proceeds / asset.units).quantize(price_quantum, rounding=ROUND_HALF_UP)
+                )
 
 
 async def stamp_primary_values(
@@ -705,7 +760,9 @@ async def get_asset(
         .select_from(AssetTransaction)
         .where(AssetTransaction.asset_id == asset.id)
     )
-    return _asset_to_read(asset, latest, count, tx_count or 0)
+    read = _asset_to_read(asset, latest, count, tx_count or 0)
+    await _fill_closed_positions(session, workspace_id, [asset], [read])
+    return read
 
 
 async def create_asset(

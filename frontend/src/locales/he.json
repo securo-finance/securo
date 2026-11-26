@@ -755,6 +755,16 @@
     "email": "אימייל",
     "password": "סיסמה",
     "forgotPassword": "שכחת סיסמה?",
+    "forgotPasswordDescription": "הזינו את כתובת הדוא״ל של החשבון ונשלח קישור לבחירת סיסמה חדשה.",
+    "sendResetLink": "שליחת קישור לשחזור",
+    "resetSentTitle": "בדקו את תיבת הדוא״ל",
+    "resetSentBody": "אם קיים חשבון עבור {{email}}, קישור השחזור בדרך. הוא יפוג בקרוב.",
+    "resetUnavailable": "שחזור סיסמה בדוא״ל אינו מופעל במופע הזה. פנו למנהל.",
+    "resetRequestError": "לא ניתן היה לשלוח את קישור השחזור. נסו שוב.",
+    "resetPasswordDescription": "בחרו סיסמה חדשה לחשבון.",
+    "resetPasswordRejected": "הסיסמה החדשה לא התקבלה. השתמשו בלפחות 8 תווים ונסו שוב.",
+    "resetTokenMissing": "הקישור הזה חסר. פתחו שוב את הקישור מהודעת השחזור או בקשו קישור חדש.",
+    "resetTokenInvalid": "קישור השחזור הזה אינו תקף או שפג תוקפו. בקשו קישור חדש.",
     "loginDescription": "התחברו כדי לגשת לחשבון",
     "invalidCredentials": "אימייל או סיסמה שגויים",
     "serverError": "לא ניתן להתחבר לשרת. בדקו את החיבור או שהשרת פועל, ונסו שוב.",
@@ -765,6 +775,8 @@
     "changePassword": "שינוי סיסמה",
     "newPassword": "סיסמה חדשה",
     "passwordTooShort": "הסיסמה חייבת להכיל לפחות 8 תווים",
+    "passwordTooLong": "הסיסמה יכולה להכיל עד 72 תווים",
+    "resetPassword": "איפוס סיסמה",
     "currentPassword": "הסיסמה הנוכחית",
     "currentPasswordWrong": "הסיסמה הנוכחית שגויה",
     "passwordChanged": "הסיסמה שונתה בהצלחה",
@@ -1800,6 +1812,13 @@
     "sectionHint": "איך לסווג תנועות.",
     "resetAndReapplyAll": "איפוס והחלה מחדש",
     "confirmResetAndReapplyAll": "לאפס את הקטגוריות, ההערות והתיאורים שמנוהלים על ידי כללים בתנועות תואמות, ואז להחיל מחדש את כל הכללים הפעילים?",
+    "scanForTransfers": "סריקת העברות",
+    "scanningForTransfers": "סורק...",
+    "confirmScanForTransfers": "לסרוק את כל ההיסטוריה ולזווג העברות בין חשבונות שונים? העברות שניתקת ידנית יכולות להיות מזווגות שוב. בהיסטוריה גדולה זה עשוי לקחת רגע.",
+    "transferScanCreated_one": "נוצר {{count}} זוג העברות",
+    "transferScanCreated_two": "נוצרו {{count}} זוגות העברות",
+    "transferScanCreated_other": "נוצרו {{count}} זוגות העברות",
+    "transferScanNone": "לא נמצאו זוגות העברות חדשים",
     "add": "הוספה",
     "created": "הכלל נוצר",
     "createdAndApplied": "הכלל נוצר והוחל על {{count}} תנועות",
@@ -2255,6 +2274,14 @@
     "colReturn": "תשואה",
     "colBalance": "סה\"כ",
     "colPortfolioPct": "% מהתיק",
+    "colDates": "תקופה",
+    "colAvgBuyPrice": "ממוצע קנייה",
+    "colAvgSellPrice": "ממוצע מכירה",
+    "colInvested": "הושקע",
+    "colProceeds": "תמורה",
+    "colResult": "תוצאה",
+    "soldRealized": "ממומש",
+    "soldTotalsTitle": "תוצאה ממומשת לפי עלות ממוצעת, מסוכמת לפי מטבע ללא המרה",
     "addBuys": "הוספת קניות",
     "ledgerTitle": "תנועות",
     "noLedgerYet": "אין עדיין תנועות לאחזקה זו.",
@@ -2971,6 +2998,33 @@
     "menuItem": "בדיקת עדכונים"
   },
   "admin": {
+    "email": {
+      "title": "דוא\"ל",
+      "enabled": "הדוא\"ל פעיל",
+      "disabled": "הדוא\"ל כבוי",
+      "description": "איך נשלחים דוא\"לים לאיפוס סיסמה. הספק והשולח מגיעים מהגדרות השרת.",
+      "disabledNote": "יש להפעיל EMAIL_ENABLED בשרת כדי לשלוח קישורי איפוס.",
+      "provider": "ספק",
+      "providerSmtp": "שרת SMTP",
+      "providerResend": "Resend",
+      "sender": "שולח",
+      "senderMissing": "לא הוגדר",
+      "templatesTitle": "הודעת איפוס",
+      "templatesDescription": "מה שהאדם קורא. משתנים: {app_name}, {link} ו-{minutes}; {link} חייב לעמוד לבדו בשורה משלו, ושום דבר אחר לא יכול להיות קישור.",
+      "subject": "נושא",
+      "body": "גוף",
+      "linkRequired": "הגוף חייב להכיל {link}.",
+      "linkInSubject": "הנושא אינו יכול להכיל {link} או כתובת.",
+      "linkOnce": "הגוף חייב להכיל את {link} בדיוק פעם אחת.",
+      "linkAlone": "המשתנה {link} חייב לעמוד לבדו בשורה משלו.",
+      "otherLink": "ההודעה אינה יכולה להוביל לשום מקום מלבד {link}.",
+      "restoreDefault": "שחזור טקסט ברירת המחדל",
+      "save": "שמירת תבניות",
+      "saved": "התבניות נשמרו",
+      "saveFailed": "לא ניתן היה לשמור את התבניות",
+      "languageEn": "אנגלית",
+      "languagePt": "פורטוגזית"
+    },
     "users": {
       "title": "ניהול משתמשים",
       "searchPlaceholder": "חיפוש משתמשים...",
@@ -2990,12 +3044,16 @@
       "deleted": "המשתמש נמחק",
       "confirmDeleteTitle": "למחוק את המשתמש?",
       "confirmDeleteDesc": "פעולה זו תמחק לצמיתות את המשתמש {{email}} ואת כל הנתונים שלו. לא ניתן לבטל פעולה זו.",
-      "resetPassword": "איפוס סיסמה",
-      "resetPasswordPlaceholder": "השאירו ריק כדי לשמור את הנוכחית",
+      "reason": "סיבה",
+      "reasonPlaceholder": "למה מתבצע השינוי?",
+      "reasonHint": "נרשם ביומן הגישה ומוצג לחשבון המושפע.",
       "addDesc": "יצירת חשבון משתמש חדש עם גישה ליישום.",
       "adminRole": "הרשאות מנהל",
       "enabled": "פועל",
-      "disabled": "כבוי"
+      "disabled": "כבוי",
+      "pending": "ממתין",
+      "pendingEmail": "התבקשה {{email}}, ממתין לבעל החשבון",
+      "emailPendingHint": "הכתובת משתנה רק לאחר אישור של בעל החשבון."
     },
     "settings": {
       "title": "הגדרות מנהל",
@@ -3115,8 +3173,8 @@
       "chat": "צ'אט"
     },
     "globalChat": {
-      "title": "צ'אט",
-      "openHint": "פתיחת הצ'אט",
+      "title": "סוכן",
+      "openHint": "פתיחת הסוכן",
       "history": "שיחות אחרונות",
       "selectAgent": "בחירת סוכן",
       "openSettings": "הגדרות הסוכן",
@@ -4273,5 +4331,132 @@
       "unlinkFirstDirection": "יש לבטל את קישור ההחזרים לפני שינוי הכיוון.",
       "unlinkFirstGroupSplit": "יש לבטל את קישור ההחזרים לפני חלוקה בין אנשים."
     }
+  },
+  "notifications": {
+    "title": "התראות",
+    "unread": "לא נקראה",
+    "unreadLabel": "התראות, {{number}} שלא נקראו",
+    "markAllRead": "סימון הכול כנקרא",
+    "empty": "אין דבר שדורש את תשומת ליבך.",
+    "loadError": "לא ניתן לטעון את ההתראות.",
+    "connection": {
+      "title": "הסנכרון נעצר: {{name}}",
+      "rateLimited": "הבנק ממשיך להגיע למגבלה היומית."
+    },
+    "recurring": {
+      "title": "לא נוצרה: {{name}}",
+      "detail": "המועד היה {{date}}. יש לבדוק את החשבון ואת ההגדרות."
+    },
+    "budget": {
+      "close": "{{name}}: נוצלו {{percent}}% מהתקציב",
+      "reached": "{{name}}: התקציב נוצל במלואו",
+      "detail": "{{actual}} מתוך {{budget}}"
+    },
+    "backup": {
+      "title": "הגיבוי המתוזמן נכשל",
+      "detail": "הניסיון האחרון היה ב-{{date}}. Securo ינסה שוב."
+    },
+    "seeAll": "הצגת כל ההתראות",
+    "markRead": "סימון כנקראה",
+    "loadMore": "טעינת עוד",
+    "filter": {
+      "all": "הכול",
+      "unread": "לא נקראו"
+    },
+    "emptyFilter": {
+      "all": "אין עדיין התראות.",
+      "unread": "אין עוד מה לקרוא."
+    },
+    "flag": {
+      "title": "תזכורות שעבר זמנן: {{number}}",
+      "detail": "עסקאות מסומנות שמועד התזכורת שלהן עבר."
+    },
+    "match": {
+      "title": "התאמות לבדיקה: {{number}}",
+      "detail": "Securo מצא התאמות אפשריות וזקוק לתשובה שלך."
+    },
+    "invoice": {
+      "title": "{{name}}: חשבונית באיחור",
+      "detail": "{{amount}}, לתשלום עד {{date}}."
+    },
+    "preferences": {
+      "title": "העדפות",
+      "hint": "אפשר לבחור על מה לקבל התראות בסביבת העבודה הזו. לשאר החברים יש בחירות משלהם.",
+      "saveError": "לא ניתן לשמור את הבחירה.",
+      "loadError": "לא ניתן לטעון את ההעדפות."
+    },
+    "kind": {
+      "connection_error": {
+        "label": "חיבורים",
+        "hint": "בנק או תוסף הפסיק להסתנכרן."
+      },
+      "budget_threshold": {
+        "label": "תקציבים",
+        "hint": "תקציב הגיע ל-80% או ל-100%."
+      },
+      "recurring_failed": {
+        "label": "חוזרות",
+        "hint": "עסקה חוזרת לא נוצרה."
+      },
+      "flag_overdue": {
+        "label": "תזכורות",
+        "hint": "עבר מועד התזכורת של עסקה מסומנת."
+      },
+      "reconciliation_pending": {
+        "label": "התאמות לבדיקה",
+        "hint": "Securo מצא התאמות אפשריות וזקוק לתשובה שלך."
+      },
+      "invoice_overdue": {
+        "label": "חשבוניות",
+        "hint": "חשבונית ללקוח באיחור."
+      },
+      "group_expense": {
+        "label": "הוצאות משותפות",
+        "hint": "מישהו מוסיף או משנה הוצאה שמתחלקת איתך בקבוצה."
+      },
+      "group_settlement": {
+        "label": "תשלומים בקבוצות",
+        "hint": "מישהו רושם בקבוצה תשלום אליך או ממך."
+      },
+      "backup_failed": {
+        "label": "גיבויים",
+        "hint": "גיבוי מתוזמן נכשל."
+      }
+    },
+    "group": {
+      "added": "הוספה של {{actor}}: {{name}}",
+      "changed": "שינוי של {{actor}}: {{name}}",
+      "batch": "הוצאות משותפות שנוספו על ידי {{actor}}: {{number}}",
+      "share": "החלק שלך ב-{{group}}: {{amount}}",
+      "paid": "תשלום שנרשם על ידי {{actor}}"
+    }
+  },
+  "accessLog": {
+    "title": "יומן גישה",
+    "description": "כל פעולה מנהלית בחשבון שלך ובחברי סביבות עבודה שבבעלותך.",
+    "empty": "לא נרשמו פעולות מנהליות.",
+    "actionUpdate": "החשבון עודכן",
+    "actionDelete": "החשבון נמחק",
+    "actionOther": "החשבון עודכן",
+    "by": "על ידי {{email}}",
+    "target": "חשבון {{email}}",
+    "ip": "IP {{ip}}",
+    "loadMore": "טען עוד",
+    "loadError": "לא ניתן לטעון את יומן הגישה.",
+    "emailChange": "כתובת {{from}} → {{to}}",
+    "emailPending": "ממתין לאישור בעל החשבון",
+    "otherChanges": "שונה גם: {{fields}}"
+  },
+  "emailChange": {
+    "title": "שינוי כתובת דוא״ל",
+    "description": "מנהל ביקש לשנות את כתובת החשבון שלך ל-{{email}}. עד שתאשר, החשבון שומר על הכתובת הנוכחית.",
+    "accept": "אישור הכתובת החדשה",
+    "decline": "שמירה על הכתובת הנוכחית",
+    "accepted": "החשבון שלך משתמש כעת ב-{{email}}",
+    "declined": "החשבון שלך שומר על הכתובת הנוכחית",
+    "unavailable": "הכתובת הזו אינה זמינה יותר",
+    "failed": "לא ניתן היה לשמור את ההחלטה",
+    "replaced": "המנהל שלח בקשה חדשה. בדקו את הכתובת החדשה לפני האישור",
+    "withdrawn": "הבקשה בוטלה. החשבון שלכם שומר על הכתובת הנוכחית"
   }
 }

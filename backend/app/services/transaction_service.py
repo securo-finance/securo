@@ -60,6 +60,7 @@ from app.schemas.transaction import (
 from app.schemas.transaction_split import TransactionSplitInput, TransactionSplitsInput
 from app.services import (
     category_line_service,
+    notification_service,
     reconciliation_service,
     reimbursement_service,
     split_service,
@@ -90,6 +91,7 @@ from app.services._query_filters import (
     reporting_date_col,
     reporting_date_value,
     with_category_lines,
+    member_shares,
 )
 from app.services.recurring_transaction_service import _advance_date
 
@@ -816,9 +818,11 @@ async def get_transactions(
         # another workspace counts the viewer's split share; a split row
         # the viewer paid counts what the other members' shares leave of
         # the amount it has now, because the bank sync rewrites `amount`
-        # without touching the splits. A row of this workspace that another
-        # member created (shared workspace) counts whole, as it does in the
-        # dashboard. Rows without splits count whole. `share_amount` is in
+        # without touching the splits. An expense of this workspace that another
+        # member paid counts the viewer's share when they are part of its
+        # split, and whole when they are not or under an account filter, as in
+        # the dashboard.
+        # Rows without splits count whole. `share_amount` is in
         # the row's own currency, so the ratio rides the FX stamp already
         # stored on the row.
         from app.models.transaction_split import TransactionSplit
@@ -844,8 +848,30 @@ async def get_transactions(
             )
             .scalar_subquery()
         )
+        member_share = member_shares(user_id)
+        own_member_share = (
+            select(member_share.c.share)
+            .where(member_share.c.transaction_id == Transaction.id)
+            .correlate(Transaction)
+            .scalar_subquery()
+        )
+        # Under an account filter it counts whole, as in the reports and the
+        # dashboard, which drop the split rules there.
+        account_filtered = bool(account_ids) or account_id is not None
         viewer_share_fraction = case(
-            # Another member's row of this workspace is native here.
+            # Another member's expense of this workspace: the viewer's share
+            # when they are in its split.
+            (
+                and_(
+                    literal(not account_filtered),
+                    Transaction.workspace_id == workspace_id,
+                    Transaction.user_id != user_id,
+                    Transaction.type == "debit",
+                    own_member_share.is_not(None),
+                ),
+                own_member_share / func.nullif(func.abs(Transaction.amount), 0),
+            ),
+            # Any other row of theirs is native here.
             (
                 and_(
                     Transaction.workspace_id == workspace_id,
@@ -1158,6 +1184,18 @@ async def flagged_summary(session: AsyncSession, workspace_id: uuid.UUID) -> dic
         )
     ).one()
     return {"flagged": row[0], "overdue": row[1], "due_soon": row[2]}
+
+
+async def overdue_flags(session: AsyncSession, workspace_id: uuid.UUID) -> tuple[int, Optional[date]]:
+    """How many flagged rows are past their reminder date, and the latest of those dates."""
+    row = (
+        await session.execute(
+            select(func.count(), func.max(Transaction.flag_due_date)).where(
+                _flagged_in_workspace(workspace_id), Transaction.flag_due_date < app_today()
+            )
+        )
+    ).one()
+    return row[0], row[1]
 
 
 def _normalize_flag_update(tx: Transaction, update_data: dict) -> None:
@@ -1493,6 +1531,8 @@ async def create_transaction(
 
     if data.splits is not None:
         await split_service.replace_splits(session, transaction, data.splits, user_id)
+        await session.flush()
+        await notification_service.expenses_shared(session, user_id, [transaction])
 
     # A payment recorded by hand settles an invoice exactly as a synced one
     # does. Someone who reconciles by typing the Pix in should not have to
@@ -1626,6 +1666,10 @@ async def create_installment_series(
             await stamp_primary_amount(session, user_id, tx)
         if base.splits is not None:
             await split_service.replace_splits(session, tx, base.splits, user_id)
+
+    if base.splits is not None:
+        await session.flush()
+        await notification_service.expenses_shared(session, user_id, created)
 
     await session.commit()
     for tx in created:
@@ -2375,7 +2419,10 @@ async def _apply_update_to_row(
                 apply_effective_date(paired_tx, paired_account)
 
     if splits_payload is not None:
+        before = await notification_service.shares_of(session, tx.id)
         await split_service.replace_splits(session, tx, splits_payload, user_id)
+        await session.flush()
+        await notification_service.expenses_shared(session, user_id, [tx], before=before)
 
 
 # Columns that decide how a transaction moves a balance. Changing any of them
@@ -3112,16 +3159,20 @@ async def bulk_add_to_group(
 
     updated = 0
     skipped = 0
+    shared: list[Transaction] = []
     for tx in txs:
         if tx.transfer_pair_id is not None or tx.splits or tx.has_category_lines:
             skipped += 1
             continue
         await split_service.replace_splits(session, tx, payload, user_id)
+        shared.append(tx)
         updated += 1
 
     # Account for ids that didn't match (wrong user, deleted, etc.)
     skipped += len(set(transaction_ids)) - len(txs)
 
+    await session.flush()
+    await notification_service.expenses_shared(session, user_id, shared)
     await session.commit()
     return {"updated": updated, "skipped": skipped}
 
