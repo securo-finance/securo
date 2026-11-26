@@ -61,6 +61,19 @@ _LOCK_ID = 0x5EC5_0001
 # coming up.
 _CONNECT_DEADLINE_SECONDS = 90.0
 
+# SQLSTATE classes no wait will fix: the database answered and refused the
+# role, at sign-in (28) or for lacking a privilege (42, e.g. 42501).
+_REFUSED_SQLSTATE_CLASSES = ("28", "42")
+
+
+def _refused(exc: BaseException) -> bool:
+    """True when the database answered with a refusal rather than being
+    unreachable, so retrying only delays the same error."""
+    if not isinstance(exc, DBAPIError):
+        return False
+    code = getattr(exc.orig, "sqlstate", None) or getattr(exc.orig, "pgcode", None)
+    return isinstance(code, str) and code[:2] in _REFUSED_SQLSTATE_CLASSES
+
 
 def _engine(database_url: str, timeout: float):
     # asyncpg waits 60 seconds for a connection by default; a host that drops
@@ -174,7 +187,8 @@ def fetch_or_create(database_url: str, name: str, on_created: OnCreated | None =
     """The instance value called `name`, generated and stored on first use.
 
     Retries while the database is unreachable, since the caller can't start
-    without it, and gives up with a clear error after a while.
+    without it, and gives up with a clear error after a while. A refusal
+    (wrong password, missing privilege) fails at once.
     """
     deadline = time.monotonic() + _CONNECT_DEADLINE_SECONDS
     delay = 1.0
@@ -182,6 +196,12 @@ def fetch_or_create(database_url: str, name: str, on_created: OnCreated | None =
         try:
             value, created = _run(lambda: _fetch_or_create(database_url, name, on_created))
         except (OSError, TimeoutError, DBAPIError) as exc:
+            if _refused(exc):
+                raise RuntimeError(
+                    f"The database refused to store the instance {name}: {exc}. "
+                    f"Set {name.upper()} in the environment, or let the database role "
+                    f"create and read the {_TABLE} table."
+                ) from exc
             if time.monotonic() >= deadline:
                 raise RuntimeError(
                     f"Could not reach the database to load the instance {name}: {exc}. "
