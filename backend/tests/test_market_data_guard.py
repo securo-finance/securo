@@ -208,6 +208,8 @@ async def test_a_batch_with_a_delisted_ticker_does_not_back_off(fake_redis, yaho
         closes = await YFinanceProvider().get_latest_closes(["GONE"])
 
     assert closes == {"GONE": None}
+    # The probe ran and Yahoo answered (with nothing): not a rate limit.
+    assert yahoo["price"] == 1
     assert "market:yahoo:cooldown" not in fake_redis.data
 
 
@@ -251,6 +253,61 @@ async def test_a_rate_limit_mid_batch_keeps_the_chunks_already_priced(fake_redis
     assert closes["AAPL"].price == Decimal("190.5")
     assert closes["MSFT"] is None
     assert fake_redis.data.get("market:yahoo:cooldown") == "1"
+
+
+@pytest.mark.asyncio
+async def test_a_rate_limit_beside_priced_tickers_starts_the_cooldown(fake_redis, yahoo):
+    """One ticker priced must not hide the 429 `yf.download` swallowed for another."""
+    from datetime import date
+    from decimal import Decimal
+
+    def download(symbols: list[str]):
+        return {
+            "AAPL": LatestClose(price=Decimal("190.5"), on=date(2026, 11, 25)),
+            "MSFT": None,
+        }
+
+    def refused(symbol: str):
+        yahoo["price"] += 1
+        raise MarketPriceRateLimitedError("429")
+
+    with (
+        patch.object(YFinanceProvider, "_download_closes_sync", staticmethod(download)),
+        patch.object(YFinanceProvider, "_price_sync", staticmethod(refused)),
+    ):
+        closes = await YFinanceProvider().get_latest_closes(["AAPL", "MSFT"])
+
+    # The priced ticker survives and the unanswered one is probed, so the
+    # partial batch starts the cooldown instead of looking like a quiet sweep.
+    assert closes["AAPL"].price == Decimal("190.5")
+    assert closes["MSFT"] is None
+    assert yahoo["price"] == 1
+    assert fake_redis.data.get("market:yahoo:cooldown") == "1"
+
+
+@pytest.mark.asyncio
+async def test_a_denied_probe_keeps_the_chunks_already_priced(fake_redis, yahoo):
+    """A probe our own throttle denies must not erase closes a chunk returned."""
+    from datetime import date
+    from decimal import Decimal
+
+    def download(symbols: list[str]):
+        if symbols == ["AAPL"]:
+            return {"AAPL": LatestClose(price=Decimal("190.5"), on=date(2026, 11, 25))}
+        return {s: None for s in symbols}
+
+    with (
+        patch.object(YFinanceProvider, "_BATCH_CHUNK_SIZE", 1),
+        patch.object(YFinanceProvider, "_download_closes_sync", staticmethod(download)),
+        patch.object(market_data_guard, "take_call_slot", return_value=False),
+    ):
+        closes = await YFinanceProvider().get_latest_closes(["AAPL", "GONE"])
+
+    assert closes["AAPL"].price == Decimal("190.5")
+    assert closes["GONE"] is None
+    assert yahoo["price"] == 0
+    # Our own cap is not Yahoo refusing: no cooldown is started for it.
+    assert "market:yahoo:cooldown" not in fake_redis.data
 
 
 @pytest.mark.asyncio

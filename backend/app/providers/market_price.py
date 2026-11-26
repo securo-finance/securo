@@ -250,6 +250,11 @@ class YFinanceProvider(MarketPriceProvider):
                 refused = True
                 break
 
+            # Tickers `yf.download` could not price at all. A symbol dropped
+            # further down for an unknown minor unit is not one of these: it
+            # did answer, so it says nothing about Yahoo refusing.
+            unanswered = [s for s, p in chunk_prices.items() if p is None]
+
             # Normalize minor-unit prices (GBp → GBP, ZAc → ZAR, both ×0.01).
             # yf.download returns raw pence/cents for LSE/JSE tickers without
             # a currency tag; we fetch fast_info.currency only for the tickers
@@ -282,21 +287,24 @@ class YFinanceProvider(MarketPriceProvider):
                     if conv is not None and close is not None:
                         chunk_prices[sym] = close._replace(price=close.price * Decimal(str(conv[1])))
 
-            if not any(p is not None for p in chunk_prices.values()):
+            # The closes that did come back are part of the answer as soon as
+            # they arrive: a refusal found below must not take them back.
+            out.update(chunk_prices)
+
+            if unanswered:
                 # `yf.download` records a per-ticker failure instead of
                 # raising it, so a rate limit inside the batch never reaches
-                # the handler above. One quote probe tells the two cases
-                # apart: if Yahoo is refusing, the probe raises and the whole
-                # instance backs off; if it answers, the batch simply found
-                # nothing (a delisted ticker, say) and the caller falls back
-                # to a per-holding quote.
+                # the handler above — and it can sit next to tickers that did
+                # answer, which a whole-chunk check would never look at. One
+                # quote probe on a symbol the chunk left unanswered tells the
+                # two cases apart: a refusing Yahoo raises here and the whole
+                # instance backs off; a delisted ticker answers without a
+                # price and the caller falls back to a per-holding quote.
                 try:
-                    await self._call_upstream(self._price_sync, chunk[0])
+                    await self._call_upstream(self._price_sync, unanswered[0])
                 except MarketPriceRateLimitedError:
                     refused = True
                     break
-
-            out.update(chunk_prices)
 
         if refused:
             # A refusal partway through must not throw away the chunks that
