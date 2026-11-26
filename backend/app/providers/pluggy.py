@@ -5,7 +5,7 @@ import json
 import logging
 import time
 from datetime import date
-from decimal import ROUND_DOWN, Decimal, InvalidOperation
+from decimal import ROUND_DOWN, ROUND_HALF_UP, Decimal, InvalidOperation
 from typing import Literal, Optional
 from urllib.parse import parse_qs, urlparse
 
@@ -221,6 +221,21 @@ def _decimal_or_none(value) -> Optional[Decimal]:
         return Decimal(str(value))
     except (ValueError, TypeError, InvalidOperation):
         return None
+
+
+# `AssetValue.gross_amount` is Numeric(15, 6): at most 9 integer digits.
+_GROSS_LIMIT = Decimal("1000000000")
+
+
+def _storable_gross(value) -> Optional[Decimal]:
+    """The gross amount, or None when the column can't hold it (even once
+    rounded to its 6 decimals); the net amount still records the value."""
+    gross = _decimal_or_none(value)
+    if gross is None or not gross.is_finite() or abs(gross) >= _GROSS_LIMIT:
+        return None
+    if abs(gross.quantize(Decimal("0.000001"), rounding=ROUND_HALF_UP)) >= _GROSS_LIMIT:
+        return None
+    return gross
 
 
 def _consolidated_credit_balance_group(
@@ -450,6 +465,7 @@ def _build_holding_data(inv: dict) -> HoldingData:
         name=inv.get("name") or "Investment",
         currency=inv.get("currencyCode") or "BRL",
         current_value=current_value,
+        gross_value=_storable_gross(inv.get("amount")),
         quantity=quantity,
         unit_price=_decimal_or_none(inv.get("value")),
         purchase_price=_decimal_or_none(inv.get("amountOriginal")),
@@ -459,6 +475,60 @@ def _build_holding_data(inv: dict) -> HoldingData:
         value_date=_date_or_none(inv.get("date")),
         is_withdrawn=is_withdrawn,
         metadata=metadata or None,
+    )
+
+
+# Execution costs in Pluggy's `expenses` breakdown. Income tax withheld on
+# a redemption is deliberately excluded: performance is measured on gross
+# (pre-tax) values, so the tax is not an investment loss.
+_TRADE_FEE_KEYS = (
+    "serviceTax",
+    "brokerageFee",
+    "tradingAssetsNoticeFee",
+    "maintenanceFee",
+    "settlementFee",
+    "clearingFee",
+    "stockExchangeFee",
+    "custodyFee",
+    "operatingFee",
+    "other",
+)
+
+
+def _build_holding_trade_data(raw: dict) -> Optional[HoldingTradeData]:
+    """Map a Pluggy investment transaction to a trade for the on-request
+    import (`get_holding_trades`), or None for rows that do not change the
+    position (interest, dividends, taxes) or lack what a trade needs.
+
+    Unlike `_build_trade_data` (exchange-traded positions read with the
+    holdings), the price comes from the trade's cash `amount` and the fee
+    leaves out income tax, since performance is measured on gross values."""
+    trade_id = raw.get("id")
+    kind = _TRADE_KINDS.get(str(raw.get("type") or "").upper())
+    trade_date = _date_or_none(raw.get("tradeDate") or raw.get("date"))
+    quantity = _decimal_or_none(raw.get("quantity"))
+    amount = _decimal_or_none(raw.get("amount"))
+    if not trade_id or kind is None or trade_date is None or not quantity or quantity <= 0:
+        return None
+    price = _decimal_or_none(raw.get("value"))
+    if amount is not None and amount > 0:
+        # `amount` is the exact cash value of the trade; derive the unit
+        # price from it so quantity * price reproduces it.
+        price = amount / quantity
+    if price is None or price <= 0:
+        return None
+    expenses = raw.get("expenses") or {}
+    fee = sum(
+        (_decimal_or_none(expenses.get(key)) or Decimal("0") for key in _TRADE_FEE_KEYS),
+        Decimal("0"),
+    )
+    return HoldingTradeData(
+        external_id=str(trade_id),
+        kind=kind,
+        date=trade_date,
+        quantity=quantity,
+        price=price,
+        fee=fee,
     )
 
 
@@ -1170,6 +1240,62 @@ class PluggyProvider(BankProvider):
         for holding, rows in traded:
             holding.trades = [trade for trade, _ in rows]
         return holdings
+
+    async def get_holding_trades(
+        self, credentials: dict, holdings: list[HoldingData]
+    ) -> dict[str, list[HoldingTradeData]]:
+        """Fetch each holding's buys and sells from
+        /investments/{id}/transactions, which returns all the history Pluggy
+        has. A failed request is logged and only leaves that holding out."""
+        headers = await self._headers()
+        semaphore = asyncio.Semaphore(5)
+
+        async def fetch(client: httpx.AsyncClient, holding_id: str) -> list[HoldingTradeData]:
+            trades: list[HoldingTradeData] = []
+            page = 1
+            async with semaphore:
+                while True:
+                    resp = await client.get(
+                        f"{PLUGGY_API_BASE}/investments/{holding_id}/transactions",
+                        headers=headers,
+                        params={"pageSize": 500, "page": page},
+                    )
+                    resp.raise_for_status()
+                    data = resp.json()
+                    results = data.get("results") if isinstance(data, dict) else None
+                    if not isinstance(results, list):
+                        # Not an empty history: recording one would stop
+                        # asking for this holding until its position moves.
+                        raise ValueError(
+                            f"Pluggy returned no trade list for investment {holding_id}"
+                        )
+                    for raw in results:
+                        trade = _build_holding_trade_data(raw)
+                        if trade is not None:
+                            trades.append(trade)
+                    if page >= data.get("totalPages", 1) or not results:
+                        break
+                    page += 1
+            return trades
+
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            results = await asyncio.gather(
+                *(fetch(client, holding.external_id) for holding in holdings),
+                return_exceptions=True,
+            )
+        trades_by_holding: dict[str, list[HoldingTradeData]] = {}
+        for holding, result in zip(holdings, results, strict=True):
+            if isinstance(result, BaseException):
+                if not isinstance(result, Exception):
+                    raise result
+                logger.warning(
+                    "Failed to fetch trades for Pluggy investment %s: %s",
+                    holding.external_id,
+                    result,
+                )
+                continue
+            trades_by_holding[holding.external_id] = result
+        return trades_by_holding
 
     async def _fetch_investment_trades(
         self, client: httpx.AsyncClient, headers: dict, investment_id: str

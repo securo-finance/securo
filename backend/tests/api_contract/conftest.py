@@ -26,6 +26,7 @@ import pytest_asyncio
 from httpx import AsyncClient
 
 from app.core.config import get_settings
+from app.providers.benchmark import YahooBenchmarkProvider
 from tests.api_contract.world import build_world
 from tests.conftest import engine
 
@@ -214,3 +215,9 @@ def _no_outbound_network(monkeypatch):
         return real_connect(sock, address)
 
     monkeypatch.setattr(socket.socket, "connect", guarded)
+    # yfinance sends through curl_cffi, which opens its sockets in C and never
+    # meets the guard above. Answer the benchmark lookup offline: Yahoo has no
+    # instrument named like the placeholder query.
+    monkeypatch.setattr(
+        YahooBenchmarkProvider, "_lookup_sync", staticmethod(lambda query, limit: [])
+    )
