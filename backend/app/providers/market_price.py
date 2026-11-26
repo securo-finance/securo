@@ -10,7 +10,11 @@ Why a thin abstraction: swapping Yahoo out (for Stooq, Alpha Vantage,
 CoinGecko, or a user-chosen source) is a realistic future, and keeping
 the asset service off the concrete provider makes those swaps non-events.
 
-yfinance usage notes (matches v1.3.x):
+Calls to Yahoo go through ``market_data_guard``: a cache shared by every
+workspace (keyed by the public symbol only) and an instance-wide throttle,
+because all workspaces of an instance reach Yahoo from the same address.
+
+yfinance usage notes (checked against v1.8.0, the version in ``uv.lock``):
   * ``yfinance.Search(query, max_results=..., news_count=..., enable_fuzzy_query=...)``
     returns a ``.quotes`` list of dicts with keys like ``symbol``, ``shortname``,
     ``longname``, ``exchange``, ``exchDisp``, ``quoteType``.
@@ -20,7 +24,11 @@ yfinance usage notes (matches v1.3.x):
   * ``yf.config.network.retries`` enables transient-error retries (exponential
     backoff). Set once at module import so both Search and Ticker benefit.
   * ``YFRateLimitError`` is raised when Yahoo rate-limits us — we surface it
-    so the caller can decide (UI toast vs. scheduled-task skip).
+    so the caller can decide (UI toast vs. scheduled-task skip). yfinance
+    re-raises it even while ``yf.config.debug.hide_exceptions`` (on by
+    default) swallows other errors.
+  * ``yf.download`` makes one HTTP request per ticker (a loop over
+    ``_download_one`` in ``yfinance/multi.py``), not one per batch.
 """
 
 from __future__ import annotations
@@ -32,6 +40,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import NamedTuple, Optional
 
+from app.providers import market_data_guard
 from app.providers.favicon import favicon_url_for
 from app.schemas.asset import MarketSymbolMatch, MarketSymbolQuote
 
@@ -159,9 +168,14 @@ class YFinanceProvider(MarketPriceProvider):
         q = (query or "").strip()
         if not q:
             return []
-        raw = await asyncio.to_thread(self._search_sync, q, limit)
+        raw = await market_data_guard.cached(
+            "search",
+            f"{limit}:{q.casefold()}",
+            market_data_guard.SEARCH_TTL_SECONDS,
+            lambda: self._call_upstream(self._search_sync, q, limit),
+        )
         matches: list[MarketSymbolMatch] = []
-        for quote in raw:
+        for quote in raw or []:
             symbol = quote.get("symbol")
             if not symbol:
                 continue
@@ -177,17 +191,32 @@ class YFinanceProvider(MarketPriceProvider):
             )
         return matches
 
-    # Practical cap per `yf.download` request. Yahoo accepts more but starts
-    # silently dropping symbols beyond ~100 in community reports — we chunk
-    # above this to keep the success rate high.
+    async def _call_upstream(self, fn, *args):
+        """Run one blocking yfinance call under the instance-wide throttle.
+
+        No free slot, or Yahoo cooling down after a 429, raises the same
+        rate-limit error a 429 does, so routes answer "try again" and never
+        a 500. A 429 from Yahoo starts that cooldown for every caller.
+        """
+        if not await market_data_guard.take_call_slot():
+            raise MarketPriceRateLimitedError("Market data calls are throttled; try again shortly")
+        try:
+            return await asyncio.to_thread(fn, *args)
+        except MarketPriceRateLimitedError:
+            await market_data_guard.start_cooldown()
+            raise
+
+    # Tickers per `yf.download` call. yfinance still fetches them one HTTP
+    # request each; the chunk only bounds how much one failed call loses.
     _BATCH_CHUNK_SIZE = 100
 
     async def get_latest_prices(self, symbols: list[str]) -> dict[str, Optional[Decimal]]:
-        """One HTTP request per ~100 tickers via ``yfinance.download``.
+        """Latest close per ticker via ``yfinance.download``.
 
-        Much cheaper than looping ``get_quote`` for a scheduled refresh — a
-        portfolio of 50 market-priced assets goes from 50 calls to 1. The
-        tradeoff: ``download`` returns prices only (no currency/name/etc.).
+        ``download`` costs one HTTP request per ticker, the same count as
+        looping ``get_quote``'s price lookup, but skips the ``info`` fetch
+        and the per-call overhead. The tradeoff: ``download`` returns
+        prices only (no currency/name/etc.).
         That's fine here because ``Asset.currency`` is already cached from
         creation time; we just update the price and let ``current_value``
         recompute from ``units × last_price``.
@@ -216,6 +245,7 @@ class YFinanceProvider(MarketPriceProvider):
             try:
                 chunk_prices = await asyncio.to_thread(self._download_closes_sync, chunk)
             except _rate_limit_exception_types():
+                await market_data_guard.start_cooldown()
                 raise MarketPriceRateLimitedError(
                     "Yahoo Finance rate-limited the batch price download"
                 )
@@ -259,30 +289,48 @@ class YFinanceProvider(MarketPriceProvider):
         sym = (symbol or "").strip().upper()
         if not sym:
             return None
-        raw = await asyncio.to_thread(self._quote_sync, sym)
+        raw = await market_data_guard.cached(
+            "price",
+            sym,
+            market_data_guard.PRICE_TTL_SECONDS,
+            lambda: self._call_upstream(self._price_sync, sym),
+        )
         if raw is None:
             return None
         price = raw.get("price")
         currency = raw.get("currency")
         if price is None or not currency:
             return None
+        # The name and website only matter for display; a throttled or
+        # failed lookup still returns the price.
+        try:
+            info = await market_data_guard.cached(
+                "info",
+                sym,
+                market_data_guard.INFO_TTL_SECONDS,
+                lambda: self._call_upstream(self._info_sync, sym),
+            )
+        except MarketPriceRateLimitedError:
+            info = None
+        info = info or {}
+        quote_type = raw.get("quote_type") or info.get("quote_type")
         normalized_currency, normalized_price = _normalize_currency_and_price(
             currency, float(price)
         )
         return MarketSymbolQuote(
             symbol=sym,
-            name=raw.get("name"),
+            name=info.get("name"),
             exchange=raw.get("exchange"),
             currency=normalized_currency,
             price=normalized_price,
-            quote_type=raw.get("quote_type"),
-            logo_url=_logo_url_for(raw.get("website")),
+            quote_type=quote_type,
+            logo_url=_logo_url_for(info.get("website")),
         )
 
     # ---- sync helpers (called via asyncio.to_thread) ----
 
     @staticmethod
-    def _search_sync(query: str, limit: int) -> list[dict]:
+    def _search_sync(query: str, limit: int) -> Optional[list[dict]]:
         import yfinance as yf
 
         try:
@@ -307,7 +355,8 @@ class YFinanceProvider(MarketPriceProvider):
             raise MarketPriceRateLimitedError("Yahoo Finance rate-limited the search")
         except Exception as e:  # pragma: no cover (upstream flakiness, not logic)
             logger.warning("yfinance search failed for %r: %s", query, e)
-            return []
+            # None, not [], so a failure is not cached as "no matches".
+            return None
 
     @staticmethod
     def _get_currencies_sync(symbols: list[str]) -> dict[str, Optional[str]]:
@@ -387,12 +436,12 @@ class YFinanceProvider(MarketPriceProvider):
         return out
 
     @staticmethod
-    def _quote_sync(symbol: str) -> Optional[dict]:
+    def _price_sync(symbol: str) -> Optional[dict]:
+        """The price half of a quote, from ``fast_info`` (cached short)."""
         import yfinance as yf
 
         try:
-            ticker = yf.Ticker(symbol)
-            fast = ticker.fast_info
+            fast = yf.Ticker(symbol).fast_info
 
             # FastInfo's public API is camelCase (snake_case is tolerated but
             # not advertised). See yfinance/scrapers/quote.py FastInfo class.
@@ -401,34 +450,14 @@ class YFinanceProvider(MarketPriceProvider):
             # previous close so the UI still surfaces *something* sensible.
             if price is None:
                 price = _fast_info_value(fast, "previousClose")
+            quote_type = _fast_info_value(fast, "quoteType")
             currency = _fast_info_value(fast, "currency")
             exchange = _fast_info_value(fast, "exchange")
-            quote_type = _fast_info_value(fast, "quoteType")
-
-            # `info` is the slow path (full quoteSummary fetch) and the only
-            # place the display name lives. Swallow any failure — the caller
-            # only truly needs price + currency.
-            try:
-                info = ticker.info or {}
-            except Exception:
-                info = {}
-            name = info.get("longName") or info.get("shortName") or None
-            if not quote_type:
-                quote_type = (info.get("quoteType") or "").upper() or None
-            else:
-                quote_type = str(quote_type).upper()
-
             return {
-                "symbol": symbol,
-                "name": name,
-                "exchange": exchange,
-                "currency": currency,
+                "currency": str(currency) if currency else None,
+                "exchange": str(exchange) if exchange else None,
                 "price": float(price) if price is not None else None,
-                "quote_type": quote_type,
-                # Yahoo's `info["website"]` is the source of truth for the
-                # company domain, from which we build the logo URL. Missing
-                # for most crypto/indices — caller will just skip the logo.
-                "website": info.get("website") or None,
+                "quote_type": str(quote_type).upper() if quote_type else None,
             }
         except _rate_limit_exception_types():
             raise MarketPriceRateLimitedError(
@@ -437,6 +466,34 @@ class YFinanceProvider(MarketPriceProvider):
         except Exception as e:  # pragma: no cover
             logger.warning("yfinance quote failed for %s: %s", symbol, e)
             return None
+
+    @staticmethod
+    def _info_sync(symbol: str) -> Optional[dict]:
+        """The display half of a quote, from ``info`` (cached long).
+
+        ``info`` is the slow path (full quoteSummary fetch) and the only
+        place the display name lives. A failure returns None, which the
+        caller treats as "no name" and does not cache.
+        """
+        import yfinance as yf
+
+        try:
+            info = yf.Ticker(symbol).info or {}
+        except _rate_limit_exception_types():
+            raise MarketPriceRateLimitedError(
+                f"Yahoo Finance rate-limited while reading {symbol}"
+            )
+        except Exception as e:  # pragma: no cover
+            logger.warning("yfinance info failed for %s: %s", symbol, e)
+            return None
+        return {
+            "name": info.get("longName") or info.get("shortName") or None,
+            "quote_type": (info.get("quoteType") or "").upper() or None,
+            # Yahoo's `info["website"]` is the source of truth for the
+            # company domain, from which we build the logo URL. Missing
+            # for most crypto/indices — caller will just skip the logo.
+            "website": info.get("website") or None,
+        }
 
 
 # Asset logos reuse the shared favicon helper. Kept as a module-local alias so
