@@ -2328,3 +2328,298 @@ async def test_charge_moved_to_previous_bill_counts_as_prior_debt(
     assert aug is not None and sep is not None
     assert aug["monthly_expenses"] == pytest.approx(300.0)
     assert sep["monthly_expenses"] == pytest.approx(50.0)
+
+
+class TestBalanceEvolutionAccrual:
+    @pytest.mark.asyncio
+    async def test_balance_history_accrual_shifts_cc_spend_and_future_cutoff(
+        self, session, test_user, test_workspace, monkeypatch
+    ):
+        checking = Account(
+            id=uuid.uuid4(),
+            user_id=test_user.id,
+            workspace_id=test_workspace.id,
+            name="Checking",
+            type="checking",
+            balance=Decimal("0"),
+            currency="BRL",
+        )
+        cc = Account(
+            id=uuid.uuid4(),
+            user_id=test_user.id,
+            workspace_id=test_workspace.id,
+            name="Manual CC",
+            type="credit_card",
+            balance=Decimal("0"),
+            currency="BRL",
+            statement_close_day=31,
+            payment_due_day=10,
+        )
+        session.add_all([checking, cc])
+        await session.flush()
+
+        session.add_all([
+            Transaction(
+                id=uuid.uuid4(),
+                user_id=test_user.id,
+                workspace_id=test_workspace.id,
+                account_id=checking.id,
+                description="Opening",
+                amount=Decimal("1000.00"),
+                amount_primary=Decimal("1000.00"),
+                currency="BRL",
+                date=date(2026, 2, 28),
+                effective_date=date(2026, 2, 28),
+                type="credit",
+                source="opening_balance",
+                status="posted",
+                created_at=datetime.now(timezone.utc),
+            ),
+            Transaction(
+                id=uuid.uuid4(),
+                user_id=test_user.id,
+                workspace_id=test_workspace.id,
+                account_id=cc.id,
+                description="Mar CC Purchase",
+                amount=Decimal("200.00"),
+                amount_primary=Decimal("200.00"),
+                currency="BRL",
+                date=date(2026, 3, 28),
+                effective_date=date(2026, 4, 10),
+                type="debit",
+                source="manual",
+                status="posted",
+                created_at=datetime.now(timezone.utc),
+            ),
+        ])
+        await session.commit()
+
+        await _set_mode(session, "accrual")
+
+        # Past/current view: today = 2026-04-20
+        monkeypatch.setattr("app.services.dashboard_service.app_today", lambda: date(2026, 4, 20))
+        mar_hist = await dashboard_service.get_balance_history(
+            session, test_workspace.id, test_user.id, month=date(2026, 3, 1)
+        )
+        assert mar_hist.current[-1].balance == pytest.approx(1000.0)
+
+        apr_hist = await dashboard_service.get_balance_history(
+            session, test_workspace.id, test_user.id, month=date(2026, 4, 1)
+        )
+        assert apr_hist.opening_balance == pytest.approx(1000.0)
+        assert apr_hist.current[8].balance == pytest.approx(1000.0)  # Apr 9
+        assert apr_hist.current[9].balance == pytest.approx(800.0)   # Apr 10
+
+        months = await dashboard_service.get_balance_history_months(
+            session, test_workspace.id
+        )
+        assert months == ["2026-04"]
+
+        # Current-month straddle (today = 2026-04-05 < effective_date = 2026-04-10)
+        monkeypatch.setattr("app.services.dashboard_service.app_today", lambda: date(2026, 4, 5))
+        apr_mid = await dashboard_service.get_balance_history(
+            session, test_workspace.id, test_user.id, month=date(2026, 4, 1)
+        )
+        assert apr_mid.opening_balance == pytest.approx(1000.0)
+        assert apr_mid.current[4].balance == pytest.approx(1000.0)  # Apr 5 (cutoff day)
+
+        # Future-month view (today = 2026-03-30, viewing April): no double-count!
+        monkeypatch.setattr("app.services.dashboard_service.app_today", lambda: date(2026, 3, 30))
+        apr_future = await dashboard_service.get_balance_history(
+            session, test_workspace.id, test_user.id, month=date(2026, 4, 1)
+        )
+        assert apr_future.opening_balance == pytest.approx(1000.0)
+        assert apr_future.current[8].balance == pytest.approx(1000.0)
+        assert apr_future.current[9].balance == pytest.approx(800.0)
+
+    @pytest.mark.asyncio
+    async def test_balance_history_accrual_keeps_connected_posted_cc_future_bill(
+        self, session, test_user, test_workspace, test_connection, monkeypatch
+    ):
+        monkeypatch.setattr("app.services.dashboard_service.app_today", lambda: date(2026, 3, 30))
+
+        checking = Account(
+            id=uuid.uuid4(),
+            user_id=test_user.id,
+            workspace_id=test_workspace.id,
+            name="Checking",
+            type="checking",
+            balance=Decimal("0"),
+            currency="BRL",
+        )
+        connected_cc = Account(
+            id=uuid.uuid4(),
+            user_id=test_user.id,
+            workspace_id=test_workspace.id,
+            connection_id=test_connection.id,
+            external_id="cc-conn-1",
+            name="Connected CC",
+            type="credit_card",
+            balance=Decimal("200.00"),
+            currency="BRL",
+            statement_close_day=31,
+            payment_due_day=10,
+        )
+        session.add_all([checking, connected_cc])
+        await session.flush()
+        session.add_all([
+            Transaction(
+                id=uuid.uuid4(),
+                user_id=test_user.id,
+                workspace_id=test_workspace.id,
+                account_id=checking.id,
+                description="Opening",
+                amount=Decimal("1000.00"),
+                amount_primary=Decimal("1000.00"),
+                currency="BRL",
+                date=date(2026, 3, 1),
+                effective_date=date(2026, 3, 1),
+                type="credit",
+                source="opening_balance",
+                status="posted",
+                created_at=datetime.now(timezone.utc),
+            ),
+            Transaction(
+                id=uuid.uuid4(),
+                user_id=test_user.id,
+                workspace_id=test_workspace.id,
+                account_id=connected_cc.id,
+                description="Connected CC Charge",
+                amount=Decimal("200.00"),
+                amount_primary=Decimal("200.00"),
+                currency="BRL",
+                date=date(2026, 3, 28),
+                effective_date=date(2026, 4, 10),
+                type="debit",
+                source="sync",
+                status="posted",
+                created_at=datetime.now(timezone.utc),
+            ),
+        ])
+        await session.commit()
+
+        await _set_mode(session, "accrual")
+        apr_hist = await dashboard_service.get_balance_history(
+            session, test_workspace.id, test_user.id, month=date(2026, 4, 1)
+        )
+        assert apr_hist.opening_balance == pytest.approx(1000.0)
+        assert apr_hist.current[8].balance == pytest.approx(1000.0)
+        assert apr_hist.current[9].balance == pytest.approx(800.0)
+
+    @pytest.mark.asyncio
+    async def test_balance_history_accrual_keeps_transfers_and_repayments_on_tx_date(
+        self, session, test_user, test_workspace, monkeypatch
+    ):
+        monkeypatch.setattr("app.services.dashboard_service.app_today", lambda: date(2026, 5, 20))
+
+        checking = Account(
+            id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+            name="Checking", type="checking", balance=Decimal("0"), currency="BRL",
+        )
+        cc = Account(
+            id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+            name="Card", type="credit_card", balance=Decimal("0"), currency="BRL",
+            statement_close_day=31, payment_due_day=10,
+        )
+        transfer_cat = Category(
+            id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+            name="CC Payment", icon="arrow-left-right", color="#64748b",
+            treat_as_transfer=True,
+        )
+        session.add_all([checking, cc, transfer_cat])
+        await session.flush()
+
+        pair_id = uuid.uuid4()
+        session.add_all([
+            Transaction(
+                id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+                account_id=checking.id, description="Opening",
+                amount=Decimal("1000.00"), amount_primary=Decimal("1000.00"),
+                currency="BRL", date=date(2026, 3, 31), effective_date=date(2026, 3, 31),
+                type="credit", source="opening_balance", status="posted",
+                created_at=datetime.now(timezone.utc),
+            ),
+            Transaction(
+                id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+                account_id=checking.id, description="Pay CC",
+                amount=Decimal("500.00"), amount_primary=Decimal("500.00"),
+                currency="BRL", date=date(2026, 4, 5), effective_date=date(2026, 4, 5),
+                type="debit", source="transfer", transfer_pair_id=pair_id, status="posted",
+                created_at=datetime.now(timezone.utc),
+            ),
+            Transaction(
+                id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+                account_id=cc.id, description="Pay CC",
+                amount=Decimal("500.00"), amount_primary=Decimal("500.00"),
+                currency="BRL", date=date(2026, 4, 5), effective_date=date(2026, 5, 10),
+                type="credit", source="transfer", transfer_pair_id=pair_id, status="posted",
+                created_at=datetime.now(timezone.utc),
+            ),
+            Transaction(
+                id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+                account_id=cc.id, category_id=transfer_cat.id, description="Card Bill Credit",
+                amount=Decimal("100.00"), amount_primary=Decimal("100.00"),
+                currency="BRL", date=date(2026, 4, 5), effective_date=date(2026, 5, 10),
+                type="credit", source="manual", status="posted",
+                created_at=datetime.now(timezone.utc),
+            ),
+        ])
+        await session.commit()
+
+        await _set_mode(session, "accrual")
+        apr_hist = await dashboard_service.get_balance_history(
+            session, test_workspace.id, test_user.id, month=date(2026, 4, 1)
+        )
+        assert apr_hist.current[4].balance == pytest.approx(1100.0)
+        assert apr_hist.current[-1].balance == pytest.approx(1100.0)
+
+        may_hist = await dashboard_service.get_balance_history(
+            session, test_workspace.id, test_user.id, month=date(2026, 5, 1)
+        )
+        assert may_hist.opening_balance == pytest.approx(1100.0)
+        assert may_hist.current[9].balance == pytest.approx(1100.0)
+
+    @pytest.mark.asyncio
+    async def test_balance_history_accrual_backward_override_continuous(
+        self, session, test_user, test_workspace, monkeypatch
+    ):
+        monkeypatch.setattr("app.services.dashboard_service.app_today", lambda: date(2026, 4, 20))
+
+        checking = Account(
+            id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+            name="Checking", type="checking", balance=Decimal("0"), currency="BRL",
+        )
+        session.add(checking)
+        await session.flush()
+        session.add_all([
+            Transaction(
+                id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+                account_id=checking.id, description="Opening",
+                amount=Decimal("1000.00"), amount_primary=Decimal("1000.00"),
+                currency="BRL", date=date(2026, 2, 28), effective_date=date(2026, 2, 28),
+                type="credit", source="opening_balance", status="posted",
+                created_at=datetime.now(timezone.utc),
+            ),
+            Transaction(
+                id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+                account_id=checking.id, description="Backdated override",
+                amount=Decimal("100.00"), amount_primary=Decimal("100.00"),
+                currency="BRL", date=date(2026, 4, 2), effective_date=date(2026, 4, 2),
+                reporting_date_override=date(2026, 3, 30),
+                type="debit", source="manual", status="posted",
+                created_at=datetime.now(timezone.utc),
+            ),
+        ])
+        await session.commit()
+
+        await _set_mode(session, "accrual")
+        mar_hist = await dashboard_service.get_balance_history(
+            session, test_workspace.id, test_user.id, month=date(2026, 3, 1)
+        )
+        apr_hist = await dashboard_service.get_balance_history(
+            session, test_workspace.id, test_user.id, month=date(2026, 4, 1)
+        )
+        assert mar_hist.current[29].balance == pytest.approx(900.0)
+        assert mar_hist.current[-1].balance == pytest.approx(900.0)
+        assert apr_hist.opening_balance == pytest.approx(900.0)
+        assert apr_hist.current[1].balance == pytest.approx(900.0)
