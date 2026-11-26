@@ -65,9 +65,6 @@ class Asset(Base):
     growth_start_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
     purchase_price_primary: Mapped[Optional[Decimal]] = mapped_column(Numeric(precision=15, scale=2), nullable=True)
     is_archived: Mapped[bool] = mapped_column(Boolean, default=False)
-    # Order within its wallet, from 1. 0 means nobody placed it yet: such a
-    # holding lists after the placed ones, so a new or moved holding lands at
-    # the end of an order someone set, whichever path created it.
     position: Mapped[int] = mapped_column(Integer, default=0)
 
     # Provider-agnostic sync fields. `source` tags where the asset came from
