@@ -126,6 +126,13 @@ async def lifespan(app: FastAPI):
 
         resolve_mcp_jwt_secret()
 
+    if settings.row_security_enabled:
+        from app.core.database import async_session_maker
+        from app.core.row_security import check_connection
+
+        async with async_session_maker() as session:
+            await check_connection(session)
+
     # Old credentials may need the instance key as a fallback; read it off
     # the event loop, and keep trying while the database comes up.
     app.state.stored_key_task = asyncio.create_task(_load_stored_secret_key())

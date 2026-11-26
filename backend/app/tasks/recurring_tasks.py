@@ -1,5 +1,6 @@
 import asyncio
 import logging
+from itertools import product
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
@@ -7,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sess
 from app.core.app_clock import get_timezone, use_resolved_timezone
 from app.worker import celery_app
 from app.core.config import get_settings
+from app.core.row_security import workspace_makers
 from app.models.user import User
 from app.services import recurring_transaction_service
 
@@ -30,11 +32,12 @@ async def _generate_all() -> int:
             operation_timezone = await get_timezone(session, fresh=True)
             result = await session.execute(select(User.id))
             user_ids = [row[0] for row in result.all()]
+        makers = await workspace_makers(session_maker)
 
         with use_resolved_timezone(operation_timezone):
-            for user_id in user_ids:
+            for maker, user_id in product(makers, user_ids):
                 try:
-                    async with session_maker() as session:
+                    async with maker() as session:
                         count = await recurring_transaction_service.generate_pending(session, user_id)
                         if count:
                             logger.info("Generated %d recurring transactions for user %s", count, user_id)

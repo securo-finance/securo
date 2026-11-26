@@ -22,6 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.core.database import Base
+from app.core.row_security import bound_to
 from app.models.account import Account
 from app.models.account_card import AccountCard
 from app.models.account_reserved_balance import AccountReservedBalance
@@ -2232,6 +2233,8 @@ async def run_scheduled_backups(session: AsyncSession) -> dict[str, Any]:
             workspace_id = uuid.UUID(
                 setting_key.removeprefix(CONFIG_KEY_PREFIX).removesuffix(CONFIG_KEY_SUFFIX)
             )
+            if bound_to(session) not in (None, workspace_id):
+                continue
             cfg = await get_backup_config(session, workspace_id)
             if not cfg.scheduled_enabled:
                 skipped += 1

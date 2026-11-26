@@ -3,6 +3,7 @@ import asyncio
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.core.config import get_settings
+from app.core.row_security import workspace_makers
 from app.services import backup_service
 from app.worker import celery_app
 
@@ -15,8 +16,13 @@ def _make_session_maker():
 async def _run_scheduled_backups() -> dict:
     engine, session_maker = _make_session_maker()
     try:
-        async with session_maker() as session:
-            return await backup_service.run_scheduled_backups(session)
+        # Every setting is seen from each workspace, so a bound run takes only its own.
+        total: dict = {"created": 0, "skipped": 0, "errors": []}
+        for maker in await workspace_makers(session_maker):
+            async with maker() as session:
+                done = await backup_service.run_scheduled_backups(session)
+            total = {key: total[key] + done[key] for key in total}
+        return total
     finally:
         await engine.dispose()
 

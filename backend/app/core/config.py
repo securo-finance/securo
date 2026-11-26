@@ -172,6 +172,10 @@ class Settings(BaseSettings):
     storage_s3_allow_insecure_http: bool = False  # development only: permits http:// endpoints
     storage_s3_addressing_style: str = "auto"  # auto|path|virtual; checked only when S3 is selected
 
+    # Let Postgres hold the workspace boundary too (ADR 0043). DATABASE_URL must
+    # then name a restricted role set up with `app.cli apply-row-security`.
+    row_security_enabled: bool = False
+
     # Registration
     registration_enabled: bool = True
 
@@ -507,8 +511,9 @@ def resolve_secret_key(settings: Settings) -> Settings:
     if not instance.is_public_or_missing(configured):
         # The key stays exactly as given. Anything encrypted while the
         # instance key was in use (SECRET_KEY set after it existed) still
-        # opens: that key is read on first use (secret_key_fallbacks).
-        settings._stored_key_url = settings.database_url
+        # opens: that key is read on first use (secret_key_fallbacks). The
+        # restricted role of row security can't read it (ADR 0043).
+        settings._stored_key_url = None if settings.row_security_enabled else settings.database_url
         settings._secret_key_fallbacks = tuple(
             k for k in instance.PUBLIC_SECRET_KEYS if k != raw
         )
@@ -519,6 +524,19 @@ def resolve_secret_key(settings: Settings) -> Settings:
             "REQUIRE_SECRET_KEY is on, but SECRET_KEY is "
             + ("a public default" if configured else "not set")
             + ". Set a unique value (openssl rand -hex 32)."
+        )
+
+    if settings.row_security_enabled:
+        # An install that already ran without SECRET_KEY encrypted its saved
+        # credentials with the stored key: a new key would leave them unreadable.
+        raise RuntimeError(
+            "ROW_SECURITY_ENABLED needs its own SECRET_KEY in the environment: the "
+            "restricted database role can't read or create the stored instance key "
+            "(ADR 0043). On an install that already ran without SECRET_KEY, set it to "
+            "the key stored in the database, read as the owner of the tables with "
+            f"`{instance.STORED_KEY_QUERY}`; a new key would leave the saved "
+            "credentials unreadable. On a new install, generate one with "
+            "`openssl rand -hex 32`."
         )
 
     if configured:
