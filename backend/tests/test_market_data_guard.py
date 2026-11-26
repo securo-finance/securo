@@ -8,6 +8,7 @@ cached answers keep working while Yahoo refuses.
 
 from __future__ import annotations
 
+import logging
 from unittest.mock import patch
 
 import pytest
@@ -184,7 +185,7 @@ async def test_a_batch_with_nothing_for_any_ticker_probes_yahoo_and_backs_off(
         raise MarketPriceRateLimitedError("429")
 
     def empty(symbols: list[str]):
-        return {s: None for s in symbols}
+        return {s: None for s in symbols}, False
 
     with (
         patch.object(YFinanceProvider, "_download_closes_sync", staticmethod(empty)),
@@ -202,7 +203,7 @@ async def test_a_batch_with_a_delisted_ticker_does_not_back_off(fake_redis, yaho
     """Yahoo still answers, it just has nothing for that ticker: no cooldown."""
 
     def empty(symbols: list[str]):
-        return {s: None for s in symbols}
+        return {s: None for s in symbols}, False
 
     with patch.object(YFinanceProvider, "_download_closes_sync", staticmethod(empty)):
         closes = await YFinanceProvider().get_latest_closes(["GONE"])
@@ -238,7 +239,7 @@ async def test_a_rate_limit_mid_batch_keeps_the_chunks_already_priced(fake_redis
 
     def download(symbols: list[str]):
         if symbols == ["AAPL"]:
-            return {"AAPL": LatestClose(price=Decimal("190.5"), on=date(2026, 11, 25))}
+            return {"AAPL": LatestClose(price=Decimal("190.5"), on=date(2026, 11, 25))}, False
         raise YFRateLimitError()
 
     with (
@@ -263,10 +264,13 @@ async def test_a_rate_limit_beside_priced_tickers_starts_the_cooldown(fake_redis
     from decimal import Decimal
 
     def download(symbols: list[str]):
-        return {
-            "AAPL": LatestClose(price=Decimal("190.5"), on=date(2026, 11, 25)),
-            "MSFT": None,
-        }
+        return (
+            {
+                "AAPL": LatestClose(price=Decimal("190.5"), on=date(2026, 11, 25)),
+                "MSFT": None,
+            },
+            False,
+        )
 
     def refused(symbol: str):
         # Probing the priced ticker would hide the refusal, so pin the symbol.
@@ -291,17 +295,85 @@ async def test_a_rate_limit_beside_priced_tickers_starts_the_cooldown(fake_redis
 
 
 @pytest.mark.asyncio
+async def test_a_rate_limit_the_batch_reported_starts_the_cooldown_without_a_probe(
+    fake_redis, yahoo
+):
+    """A 429 the batch itself recorded counts even when a probe would answer."""
+    from datetime import date
+    from decimal import Decimal
+
+    def download(symbols: list[str]):
+        return (
+            {
+                "AAPL": LatestClose(price=Decimal("190.5"), on=date(2026, 11, 25)),
+                "MSFT": None,
+            },
+            # yf.download swallowed a 429 for MSFT, which the frame cannot say.
+            True,
+        )
+
+    def price(symbol: str):
+        yahoo["price"] += 1
+        return None
+
+    with (
+        patch.object(YFinanceProvider, "_download_closes_sync", staticmethod(download)),
+        patch.object(YFinanceProvider, "_price_sync", staticmethod(price)),
+    ):
+        closes = await YFinanceProvider().get_latest_closes(["AAPL", "MSFT"])
+
+    priced = closes["AAPL"]
+    assert priced is not None
+    assert priced.price == Decimal("190.5")
+    assert closes["MSFT"] is None
+    # The batch already reported the refusal: no probe that could answer back.
+    assert yahoo["price"] == 0
+    assert fake_redis.data.get("market:yahoo:cooldown") == "1"
+
+
+def test_yf_download_rate_limits_are_read_from_the_errors_it_logs():
+    """The failures ``yf.download`` keeps to itself only surface in its log."""
+    yf_logger = logging.getLogger("yfinance")
+
+    def rate_limited(tickers, **kwargs):
+        yf_logger.error(
+            "1 Failed download:\n['MSFT']: YFRateLimitError('Too Many Requests. "
+            "Rate limited. Try after a while.')"
+        )
+        return None
+
+    def delisted(tickers, **kwargs):
+        yf_logger.error(
+            "1 Failed download:\n['GONE']: YFPricesMissingError('$GONE: possibly "
+            "delisted; no price data found')"
+        )
+        return None
+
+    with patch("yfinance.download", rate_limited):
+        _, refused = YFinanceProvider._download_closes_sync(["AAPL", "MSFT"])
+    assert refused is True
+
+    with patch("yfinance.download", delisted):
+        _, refused = YFinanceProvider._download_closes_sync(["GONE"])
+    # Yahoo answered, it just has nothing for a delisted ticker.
+    assert refused is False
+
+
+@pytest.mark.asyncio
 async def test_a_delisted_ticker_does_not_hide_a_rate_limit_behind_it(fake_redis, yahoo):
     """The probe has to cover every unanswered ticker, not only the first."""
     from datetime import date
     from decimal import Decimal
 
     def download(symbols: list[str]):
-        return {
-            "AAPL": LatestClose(price=Decimal("190.5"), on=date(2026, 11, 25)),
-            "GONE": None,
-            "MSFT": None,
-        }
+        return (
+            {
+                "AAPL": LatestClose(price=Decimal("190.5"), on=date(2026, 11, 25)),
+                "GONE": None,
+                "MSFT": None,
+            },
+            False,
+        )
 
     probed: list[str] = []
 
@@ -339,8 +411,8 @@ async def test_a_denied_probe_keeps_the_chunks_already_priced(fake_redis, yahoo)
 
     def download(symbols: list[str]):
         if symbols == ["AAPL"]:
-            return {"AAPL": LatestClose(price=Decimal("190.5"), on=date(2026, 11, 25))}
-        return {s: None for s in symbols}
+            return {"AAPL": LatestClose(price=Decimal("190.5"), on=date(2026, 11, 25))}, False
+        return {s: None for s in symbols}, False
 
     with (
         patch.object(YFinanceProvider, "_BATCH_CHUNK_SIZE", 1),

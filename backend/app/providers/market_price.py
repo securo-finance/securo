@@ -244,7 +244,9 @@ class YFinanceProvider(MarketPriceProvider):
         for i in range(0, len(unique), self._BATCH_CHUNK_SIZE):
             chunk = unique[i : i + self._BATCH_CHUNK_SIZE]
             try:
-                chunk_prices = await asyncio.to_thread(self._download_closes_sync, chunk)
+                chunk_prices, chunk_refused = await asyncio.to_thread(
+                    self._download_closes_sync, chunk
+                )
             except (_rate_limit_exception_types() + (MarketPriceRateLimitedError,)):
                 await market_data_guard.start_cooldown()
                 refused = True
@@ -290,6 +292,16 @@ class YFinanceProvider(MarketPriceProvider):
             # The closes that did come back are part of the answer as soon as
             # they arrive: a refusal found below must not take them back.
             out.update(chunk_prices)
+
+            if chunk_refused:
+                # The batch itself reported a 429 for one of its tickers. The
+                # frame cannot say which, and asking again may well succeed —
+                # the block lifts between calls as often as not — so the
+                # cooldown starts from what the batch said instead of waiting
+                # for the probe to reproduce it.
+                await market_data_guard.start_cooldown()
+                refused = True
+                break
 
             if unanswered:
                 # `yf.download` records a per-ticker failure instead of
@@ -436,7 +448,9 @@ class YFinanceProvider(MarketPriceProvider):
         return out
 
     @staticmethod
-    def _download_closes_sync(symbols: list[str]) -> dict[str, Optional[LatestClose]]:
+    def _download_closes_sync(
+        symbols: list[str],
+    ) -> tuple[dict[str, Optional[LatestClose]], bool]:
         """Run ``yf.download`` and extract the last close per symbol, with its day.
 
         ``yf.download`` returns a pandas DataFrame: flat columns for a
@@ -444,13 +458,21 @@ class YFinanceProvider(MarketPriceProvider):
         ``"5d"`` so we span weekends and market holidays while still
         getting today's close once the market has ticked. Before the market
         opens, the last row is the previous trading day.
+
+        The boolean says whether the batch recorded a Yahoo rate limit for
+        any of its tickers. It is a return value and not an exception
+        because the tickers this call did price are worth keeping, and only
+        the caller knows how to stop there.
         """
         import yfinance as yf
 
         out: dict[str, Optional[LatestClose]] = {s: None for s in symbols}
         if not symbols:
-            return out
+            return out, False
 
+        yf_logger = logging.getLogger("yfinance")
+        capture = _BatchRateLimitCapture()
+        yf_logger.addHandler(capture)
         try:
             df = yf.download(
                 tickers=symbols,
@@ -464,9 +486,9 @@ class YFinanceProvider(MarketPriceProvider):
                 group_by="ticker",
                 # `download` has no ``raise_errors`` argument: it catches each
                 # ticker's failure itself and returns an empty frame for it.
-                # A rate limit it does raise is re-raised below so the caller
-                # starts the shared cooldown; the one it swallows is caught by
-                # the probe in ``get_latest_closes``.
+                # A rate limit it does raise is re-raised below; the ones it
+                # swallows only reach the caller through its log, which the
+                # handler around this call captures.
             )
         except _rate_limit_exception_types():
             raise MarketPriceRateLimitedError(
@@ -474,17 +496,20 @@ class YFinanceProvider(MarketPriceProvider):
             )
         except Exception as e:  # pragma: no cover (upstream flakiness)
             logger.warning("yfinance batch download failed for %d symbols: %s", len(symbols), e)
-            return out
+            return out, capture.rate_limited
+        finally:
+            yf_logger.removeHandler(capture)
 
+        rate_limited = capture.rate_limited
         if df is None or df.empty:
-            return out
+            return out, rate_limited
 
         # Single-ticker downloads come back with flat columns — no MultiIndex.
         # Multi-ticker downloads use group_by="ticker" → MultiIndex (sym, field).
         if len(symbols) == 1:
             close_series = df.get("Close") if "Close" in df.columns else None
             out[symbols[0]] = _last_decimal_close(close_series)
-            return out
+            return out, rate_limited
 
         level0 = set(df.columns.get_level_values(0))
         for sym in symbols:
@@ -496,7 +521,7 @@ class YFinanceProvider(MarketPriceProvider):
                 continue
             close_series = sym_df.get("Close") if "Close" in getattr(sym_df, "columns", []) else None
             out[sym] = _last_decimal_close(close_series)
-        return out
+        return out, rate_limited
 
     @staticmethod
     def _price_sync(symbol: str) -> Optional[dict]:
@@ -647,6 +672,40 @@ def _fast_info_value(fast_info, key: str):
         return value
     # Attribute fallback covers versions where FastInfo was attribute-only.
     return getattr(fast_info, key, None)
+
+
+_RATE_LIMIT_LOG_MARKERS = (
+    "too many requests",
+    "rate limited",
+    "yfratelimiterror",
+)
+
+
+class _BatchRateLimitCapture(logging.Handler):
+    """Hear the failures ``yf.download`` records instead of raising.
+
+    yfinance 1.8.0 keeps each ticker's failure inside the download call's own
+    context (``multi._DownloadCtx.errors``), which the caller cannot reach, and
+    only writes them to the ``yfinance`` logger at ERROR ("N Failed downloads:").
+    A 429 it swallowed for one ticker is therefore invisible in the returned
+    frame, and it can sit next to tickers that answered. Its log is the only
+    surface saying the batch was refused, whatever a later probe finds.
+
+    Another call's failure can land here too, since the logger is shared; an
+    unrelated 429 means the cooldown should start for everyone anyway.
+    """
+
+    def __init__(self) -> None:
+        super().__init__(level=logging.ERROR)
+        self.rate_limited = False
+
+    def emit(self, record: logging.LogRecord) -> None:
+        try:
+            message = record.getMessage().lower()
+        except Exception:  # pragma: no cover (a record we can't read isn't ours)
+            return
+        if any(marker in message for marker in _RATE_LIMIT_LOG_MARKERS):
+            self.rate_limited = True
 
 
 def _rate_limit_exception_types() -> tuple[type[BaseException], ...]:
