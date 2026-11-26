@@ -199,7 +199,21 @@ export function axisTicks(from: string, to: string, max = 6): number[] {
     cursor = Date.UTC(month.getUTCFullYear(), month.getUTCMonth() + 1, 1)
   }
 
-  const ascending = [...times].sort((a, b) => a - b)
+  // A month start in the end tick's own month would label itself and the end
+  // with the same month, so the end alone carries that month.
+  const endDate = new Date(end)
+  const ascending = [...times]
+    .filter(time => {
+      if (time === start || time === end) {
+        return true
+      }
+      const date = new Date(time)
+      return (
+        date.getUTCFullYear() !== endDate.getUTCFullYear() ||
+        date.getUTCMonth() !== endDate.getUTCMonth()
+      )
+    })
+    .sort((a, b) => a - b)
   const step = Math.max(1, Math.ceil((ascending.length - 1) / (Math.max(2, max) - 1)))
   const ticks = ascending.filter((_, index) => index % step === 0)
   const last = ascending.at(-1)

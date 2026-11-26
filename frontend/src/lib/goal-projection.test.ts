@@ -152,6 +152,12 @@ describe('goal chart axis', () => {
     expect(new Set(labels.map(label => label.slice(0, 7))).size).toBe(labels.length)
   })
 
+  it('keeps one tick per month when the window ends mid-month', () => {
+    const ticks = axisTicks('2026-10-21', '2026-12-15')
+    const labels = ticks.map(time => new Date(time).toISOString().slice(0, 10))
+    expect(labels).toEqual(['2026-10-21', '2026-11-01', '2026-12-15'])
+  })
+
   it('thins a ten-year window to at most six ticks and keeps both ends', () => {
     const ticks = axisTicks('2016-11-21', '2026-11-21')
     expect(ticks.length).toBeLessThanOrEqual(6)
