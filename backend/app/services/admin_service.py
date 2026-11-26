@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi_users.exceptions import UserAlreadyExists
-from sqlalchemy import delete, func, select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import UserManager
@@ -14,7 +14,7 @@ from app.models.admin_access_log import AdminAccessLog, AdminAccessLogViewer
 from app.models.app_settings import AppSetting
 from app.models.user import User
 from app.schemas.admin import AdminUserCreate, AdminUserUpdate
-from app.services import account_lookup_service, email_service
+from app.services import account_lookup_service, email_service, user_removal_service
 
 logger = logging.getLogger(__name__)
 
@@ -25,8 +25,10 @@ async def list_users(
     page: int = 1,
     limit: int = 50,
 ) -> tuple[list[User], int]:
-    query = select(User)
-    count_query = select(func.count()).select_from(User)
+    query = select(User).where(user_removal_service.not_removed())
+    count_query = (
+        select(func.count()).select_from(User).where(user_removal_service.not_removed())
+    )
 
     if search:
         query = query.where(User.email.ilike(f"%{search}%"))
@@ -42,7 +44,9 @@ async def list_users(
 
 
 async def get_user(session: AsyncSession, user_id: uuid.UUID) -> Optional[User]:
-    result = await session.execute(select(User).where(User.id == user_id))
+    result = await session.execute(
+        select(User).where(User.id == user_id, user_removal_service.not_removed())
+    )
     return result.scalar_one_or_none()
 
 
@@ -120,9 +124,13 @@ async def update_user(
     # this read and the record this call writes, and the record's foreign key
     # then fails with a 500 (#567). Taking the row first makes the two queue;
     # if the deletion went first, this read finds nothing and the route
-    # answers 404.
+    # answers 404. A deletion that kept the row as a closed shell counts as
+    # gone too: editing it would bring the account back.
     locked = await session.execute(
-        select(User).where(User.id == user_id).with_for_update()
+        select(User)
+        .where(User.id == user_id, user_removal_service.not_removed())
+        .with_for_update()
+        .execution_options(populate_existing=True)
     )
     user = locked.scalar_one_or_none()
     if not user:
@@ -227,10 +235,12 @@ async def delete_user(
     # foreign key with a 500 (#557). Taking the row first makes them queue, so
     # the second one finds nothing left and answers 404 — which is what a
     # deletion of something already gone means.
-    locked = await session.execute(
-        select(User).where(User.id == user_id).with_for_update()
+    user = await session.scalar(
+        select(User)
+        .where(User.id == user_id, user_removal_service.not_removed())
+        .with_for_update()
+        .execution_options(populate_existing=True)
     )
-    user = locked.scalar_one_or_none()
     if not user:
         return False
 
@@ -246,68 +256,12 @@ async def delete_user(
         if superuser_count <= 1:
             raise ValueError("Cannot delete the last admin user")
 
-    # Cascade delete user data in correct order
-    from app.models.transaction_attachment import TransactionAttachment
-    from app.models.transaction import Transaction
-    from app.models.budget import Budget
-    from app.models.recurring_transaction import RecurringTransaction
-    from app.models.import_log import ImportLog
-    from app.models.rule import Rule
-    from app.models.asset_value import AssetValue
-    from app.models.asset import Asset
-    from app.models.payee import PayeeMapping, Payee
-    from app.models.account import Account
-    from app.models.category import Category
-    from app.models.category_group import CategoryGroup
-    from app.models.bank_connection import BankConnection
-    from app.models.invoice import Invoice
-    from app.models.invoice_schedule import InvoiceSchedule
-
-    # Delete attachments for user's transactions
-    tx_ids_query = select(Transaction.id).where(Transaction.user_id == user_id)
-    await session.execute(
-        delete(TransactionAttachment).where(
-            TransactionAttachment.transaction_id.in_(tx_ids_query)
-        )
-    )
-
-    # Delete in dependency order
-    await session.execute(delete(Transaction).where(Transaction.user_id == user_id))
-    await session.execute(delete(Budget).where(Budget.user_id == user_id))
-    await session.execute(delete(RecurringTransaction).where(RecurringTransaction.user_id == user_id))
-    await session.execute(delete(ImportLog).where(ImportLog.user_id == user_id))
-    await session.execute(delete(Rule).where(Rule.user_id == user_id))
-
-    # Asset values depend on assets
-    asset_ids_query = select(Asset.id).where(Asset.user_id == user_id)
-    await session.execute(
-        delete(AssetValue).where(AssetValue.asset_id.in_(asset_ids_query))
-    )
-    await session.execute(delete(Asset).where(Asset.user_id == user_id))
-
-    await session.execute(delete(PayeeMapping).where(PayeeMapping.user_id == user_id))
-    # Billing records belong to the workspace and RESTRICT client deletion.
-    # Keep their clients and let the creator FK clear when the user is deleted;
-    # unrelated user payees retain the existing cleanup behavior.
-    await session.execute(
-        delete(Payee).where(
-            Payee.user_id == user_id,
-            ~select(Invoice.id).where(Invoice.payee_id == Payee.id).exists(),
-            ~select(InvoiceSchedule.id).where(InvoiceSchedule.payee_id == Payee.id).exists(),
-        )
-    )
-    await session.execute(delete(Account).where(Account.user_id == user_id))
-    await session.execute(delete(Category).where(Category.user_id == user_id))
-    await session.execute(delete(CategoryGroup).where(CategoryGroup.user_id == user_id))
-    await session.execute(delete(BankConnection).where(BankConnection.user_id == user_id))
-
     # The log row goes in the same commit as the deletion: either the account
-    # is gone and the record says why, or neither happened.
+    # is gone and the record says why, or neither happened. ``remove_user``
+    # commits it, so a refusal it raises leaves no record behind.
     await _record_admin_access(session, current_user_id, user, "user.delete", reason, ip)
 
-    # Delete the user
-    await session.delete(user)
-    await session.commit()
+    await user_removal_service.remove_user(session, user)
     return True
 
 
