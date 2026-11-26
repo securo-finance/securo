@@ -107,8 +107,12 @@ function ProviderEditor({ provider, name, description, icon, guideUrl, onClose }
   const workspaceFields = provider.workspace_fields?.length ? provider.workspace_fields : null
 
   const credentialsForm = (
-    <form aria-label={name} onSubmit={(event) => { event.preventDefault(); if (canSave) save.mutate(undefined) }}>
-      <div className="space-y-6 px-5 py-6 sm:px-6">
+    <form
+      aria-label={name}
+      className="flex min-h-full flex-col"
+      onSubmit={(event) => { event.preventDefault(); if (canSave) save.mutate(undefined) }}
+    >
+      <div className="flex-1 space-y-6 px-5 py-6 sm:px-6">
         {provider.redirect_uri && <RedirectUri value={provider.redirect_uri} />}
         {!isSimplefin && (
           <div className="space-y-1.5">
@@ -156,12 +160,18 @@ function ProviderEditor({ provider, name, description, icon, guideUrl, onClose }
 
   return (
     <DialogContent
-      className={`max-h-[calc(100dvh-2rem)] gap-0 overflow-y-auto p-0 ${provider.workspace_fields?.length ? 'sm:max-w-xl' : 'sm:max-w-lg'}`}
+      className={
+        workspaceFields
+          // One height for both tabs, so switching doesn't move the dialog;
+          // each tab scrolls inside it.
+          ? 'flex h-[min(40rem,calc(100dvh-2rem))] flex-col gap-0 overflow-hidden p-0 sm:max-w-xl'
+          : 'max-h-[calc(100dvh-2rem)] gap-0 overflow-y-auto p-0 sm:max-w-lg'
+      }
       showCloseButton={!save.isPending}
       onInteractOutside={(event) => { if (save.isPending) event.preventDefault() }}
       onEscapeKeyDown={(event) => { if (save.isPending) event.preventDefault() }}
     >
-      <DialogHeader className="border-b border-border/60 px-5 py-5 text-start sm:px-6">
+      <DialogHeader className="shrink-0 border-b border-border/60 px-5 py-5 text-start sm:px-6">
         <div className="mb-2 flex size-10 items-center justify-center rounded-lg border border-border/60 bg-muted/40">{icon}</div>
         <DialogTitle className="pe-6 text-lg leading-snug">{name}</DialogTitle>
         <DialogDescription className="leading-relaxed">{description ?? t('providerSettings.catalog.credentialsDescription')}</DialogDescription>
@@ -178,17 +188,17 @@ function ProviderEditor({ provider, name, description, icon, guideUrl, onClose }
         )}
       </DialogHeader>
       {workspaceFields ? (
-        <Tabs defaultValue="credentials" className="gap-0">
-          <div className="border-b border-border/60 px-5 sm:px-6">
+        <Tabs defaultValue="credentials" className="min-h-0 flex-1 gap-0">
+          <div className="shrink-0 border-b border-border/60 px-5 sm:px-6">
             <TabsList variant="line" className="h-11">
               <TabsTrigger value="credentials">{t('providerSettings.catalog.credentialsTitle')}</TabsTrigger>
               <TabsTrigger value="workspaces">{t('providerSettings.workspacesTab')}</TabsTrigger>
             </TabsList>
           </div>
-          <TabsContent value="credentials" className="mt-0">
+          <TabsContent value="credentials" className="mt-0 min-h-0 overflow-y-auto">
             {credentialsForm}
           </TabsContent>
-          <TabsContent value="workspaces" className="mt-0">
+          <TabsContent value="workspaces" className="mt-0 min-h-0 overflow-y-auto">
             <WorkspaceProviderCredentials
               provider={provider.name}
               fields={workspaceFields}
