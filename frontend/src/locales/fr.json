@@ -914,7 +914,7 @@
   },
   "transactions": {
     "title": "Transactions",
-    "mortgageAllocation": "Répartition du paiement du prêt immobilier",
+    "mortgageAllocation": "Répartition du paiement du prêt",
     "mortgagePrincipal": "Remboursement du capital",
     "mortgageInterest": "Intérêts",
     "mortgageCurrencyHint": "Saisissez toutes les parts en {{currency}}.",
@@ -3771,7 +3771,7 @@
       "notSplittable": "Cette transaction ne peut pas être répartie par catégorie.",
       "noAmount": "Une transaction sans montant ne peut pas être répartie.",
       "hasGroupSplit": "Retirez le partage entre personnes avant de répartir par catégorie.",
-      "hasMortgage": "Retirez la ventilation du prêt immobilier avant de répartir par catégorie.",
+      "hasMortgage": "Retirez la ventilation du prêt avant de répartir par catégorie.",
       "installments": "Une série d'échéances ne peut pas encore être répartie par catégorie.",
       "installmentScope": "Une échéance de cette série est répartie par catégorie ; modifiez-la seule.",
       "categoryAndLines": "Choisissez une catégorie ou une répartition par catégorie, pas les deux.",

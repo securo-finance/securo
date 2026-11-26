@@ -12,6 +12,7 @@ from app.models.mortgage_payment_allocation import (
 )
 from app.models.transaction import Transaction
 from app.services.credit_card_service import apply_effective_date
+from app.services.fx_rate_service import stamp_primary_amount
 
 
 async def opening_balance_date(session: AsyncSession, loan: Account) -> Optional[date]:
@@ -62,6 +63,22 @@ def principal_entry(
     return entry
 
 
+async def create_principal_entry(
+    session: AsyncSession,
+    loan: Account,
+    user_id: uuid.UUID,
+    payment: Transaction,
+    principal,
+    *,
+    allow_fetch: bool = True,
+) -> Transaction:
+    entry = principal_entry(loan, user_id, payment, principal)
+    await stamp_primary_amount(session, user_id, entry, allow_fetch=allow_fetch)
+    session.add(entry)
+    await session.flush()
+    return entry
+
+
 async def resync_principal_entries(session: AsyncSession, loan: Account) -> None:
     """Re-apply the posting rule to every breakdown on this loan.
 
@@ -78,9 +95,14 @@ async def resync_principal_entries(session: AsyncSession, loan: Account) -> None
     for allocation, payment in rows.all():
         wanted = posts_principal(loan, allocation.principal_amount, payment.date, opening_date)
         if wanted and allocation.loan_transaction_id is None:
-            entry = principal_entry(loan, payment.user_id, payment, allocation.principal_amount)
-            session.add(entry)
-            await session.flush()
+            entry = await create_principal_entry(
+                session,
+                loan,
+                payment.user_id,
+                payment,
+                allocation.principal_amount,
+                allow_fetch=False,
+            )
             allocation.loan_transaction_id = entry.id
         elif not wanted and allocation.loan_transaction_id is not None:
             entry_id = allocation.loan_transaction_id
