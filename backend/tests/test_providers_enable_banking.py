@@ -1496,6 +1496,45 @@ def test_build_transaction_description_prefers_remittance_over_counterparty():
     assert tx.description == "Order #12345"
 
 
+@pytest.mark.parametrize(
+    "remittance",
+    [
+        ["mandatereference:,creditorid:,remittanceinformation:KAUFUMSATZ 23.11 Google Pay"],
+        ["mandatereference:4M5J,creditorid:DE98ZZZ09999999999,remittanceinformation:KAUFUMSATZ 23.11 Google Pay"],
+        ["MandateReference:,CreditorId:,", "RemittanceInformation:KAUFUMSATZ 23.11 Google Pay"],
+        ["mandatereference:ABC,DEF,creditorid:DE98ZZZ09999999999,remittanceinformation:KAUFUMSATZ 23.11 Google Pay"],
+    ],
+)
+def test_build_transaction_description_strips_ing_sepa_key_prefix(remittance):
+    # Issue #1882: ING Germany sends its SEPA fields as key prefixes in the
+    # remittance text; the description keeps only the remittance part.
+    provider = EnableBankingProvider()
+    raw = {
+        "transaction_amount": {"amount": "15.00", "currency": "EUR"},
+        "credit_debit_indicator": "DBIT",
+        "booking_date": "2026-08-20",
+        "remittance_information": remittance,
+        "creditor": {"name": "Example Merchant"},
+    }
+    tx = provider._build_transaction("acc-1", raw, "posted", "auto")
+    assert tx is not None
+    assert tx.description == "KAUFUMSATZ 23.11 Google Pay"
+
+
+def test_build_transaction_description_empty_ing_remittance_falls_back():
+    provider = EnableBankingProvider()
+    raw = {
+        "transaction_amount": {"amount": "15.00", "currency": "EUR"},
+        "credit_debit_indicator": "DBIT",
+        "booking_date": "2026-08-20",
+        "remittance_information": ["mandatereference:,creditorid:,remittanceinformation:"],
+        "creditor": {"name": "Example Merchant"},
+    }
+    tx = provider._build_transaction("acc-1", raw, "posted", "auto")
+    assert tx is not None
+    assert tx.description == "Example Merchant"
+
+
 def test_build_transaction_description_prefers_additional_information_over_counterparty():
     provider = EnableBankingProvider()
     raw = {

@@ -15,6 +15,7 @@ import hashlib
 import json
 import logging
 import math
+import re
 import time
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
@@ -271,6 +272,21 @@ def _join_remittance(value: Any) -> str:
     if isinstance(value, list):
         return " ".join(str(v) for v in value if v).strip()
     return (value or "").strip() if isinstance(value, str) else ""
+
+
+# ING Germany packs its SEPA fields into the remittance text as
+# "mandatereference:<ref>,creditorid:<id>,remittanceinformation:<text>",
+# empty keys included. Only the text after the last key reads as a
+# description.
+_ING_SEPA_PREFIX = re.compile(
+    r"^\s*mandatereference:.*?,\s*creditorid:[^,]*,\s*remittanceinformation:",
+    re.IGNORECASE,
+)
+
+
+def _description_remittance(value: Any) -> str:
+    """The remittance text as a description, ING's SEPA key prefix removed."""
+    return _ING_SEPA_PREFIX.sub("", _join_remittance(value), count=1).strip()
 
 
 def _counterparty_name(raw: dict, party: str) -> str:
@@ -1641,7 +1657,7 @@ class EnableBankingProvider(BankProvider):
             return None
         additional_value = raw.get("additional_information")
         additional = additional_value.strip() if isinstance(additional_value, str) else ""
-        description = _join_remittance(raw.get("remittance_information")) or additional
+        description = _description_remittance(raw.get("remittance_information")) or additional
         if not description:
             creditor = _counterparty_name(raw, "creditor")
             debtor = _counterparty_name(raw, "debtor")
