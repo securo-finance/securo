@@ -1804,9 +1804,9 @@ async def refresh_all_market_prices(
 ) -> dict[str, int]:
     """Refresh every non-archived market-priced asset in the database.
 
-    Uses the provider's batch ``get_latest_closes`` endpoint when possible —
-    one HTTP request covers the whole portfolio via ``yfinance.download``
-    instead of one call per asset. Falls back silently to per-asset refresh
+    Uses the provider's batch ``get_latest_closes`` when possible, which
+    reads closes other workspaces already fetched from the shared cache and
+    downloads only the rest. Falls back silently to per-asset refresh
     if the batch returns nothing (provider without bulk support, or a hard
     failure on Yahoo's end). A close from before the holding's latest
     recorded split is skipped, not stored.
@@ -1845,7 +1845,7 @@ async def refresh_all_market_prices(
     # older quote in hand (and stamped as if it were fresh).
     fetch_started_at = datetime.now(timezone.utc)
 
-    # Batch path: one request → dict[SYMBOL, close]. On rate-limit we halt
+    # Batch path: dict[SYMBOL, close]. On rate-limit we halt
     # immediately — retrying within the same task would just pile on 429s
     # and risk an IP-level cookie ban.
     try:

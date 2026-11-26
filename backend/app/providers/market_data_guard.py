@@ -58,6 +58,35 @@ def cache_key(kind: str, key: str) -> str:
     return f"{_PREFIX}:{kind}:{key}"
 
 
+async def read(kind: str, key: str) -> Any:
+    """The cached JSON value for ``kind:key``, or ``None`` on a miss."""
+    redis = await _redis()
+    if redis is None:
+        return None
+    full_key = cache_key(kind, key)
+    try:
+        hit = await redis.get(full_key)
+        if isinstance(hit, (str, bytes)):
+            return json.loads(hit)
+    except Exception:
+        logger.debug("market cache read failed for %s", full_key, exc_info=True)
+    return None
+
+
+async def write(kind: str, key: str, value: Any, ttl: int) -> None:
+    """Keep ``value`` under ``kind:key`` for ``ttl`` seconds (``None`` is not kept)."""
+    if value is None:
+        return
+    redis = await _redis()
+    if redis is None:
+        return
+    full_key = cache_key(kind, key)
+    try:
+        await redis.set(full_key, json.dumps(value), ex=ttl)
+    except Exception:
+        logger.debug("market cache write failed for %s", full_key, exc_info=True)
+
+
 async def cached(
     kind: str, key: str, ttl: int, fetch: Callable[[], Awaitable[Any]]
 ) -> Any:
@@ -65,23 +94,24 @@ async def cached(
 
     ``None`` from ``fetch`` means "no answer" and is not cached.
     """
-    redis = await _redis()
-    full_key = cache_key(kind, key)
-    if redis is not None:
-        try:
-            hit = await redis.get(full_key)
-            if isinstance(hit, (str, bytes)):
-                return json.loads(hit)
-        except Exception:
-            logger.debug("market cache read failed for %s", full_key, exc_info=True)
-
+    hit = await read(kind, key)
+    if hit is not None:
+        return hit
     value = await fetch()
-    if value is not None and redis is not None:
-        try:
-            await redis.set(full_key, json.dumps(value), ex=ttl)
-        except Exception:
-            logger.debug("market cache write failed for %s", full_key, exc_info=True)
+    await write(kind, key, value, ttl)
     return value
+
+
+async def cooling_down() -> bool:
+    """True while Yahoo's last 429 still holds every caller back."""
+    redis = await _redis()
+    if redis is None:
+        return False
+    try:
+        return bool(await redis.get(_COOLDOWN_KEY))
+    except Exception:
+        logger.debug("market cooldown read failed", exc_info=True)
+        return False
 
 
 async def take_call_slot() -> bool:

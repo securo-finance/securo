@@ -66,6 +66,24 @@ _MINOR_UNIT_CURRENCIES: dict[str, tuple[str, float]] = {
 }
 
 
+def _close_to_cache(close: LatestClose) -> dict:
+    return {"price": str(close.price), "on": close.on.isoformat() if close.on else None}
+
+
+def _close_from_cache(raw: object) -> Optional[LatestClose]:
+    """A cached close, or ``None`` for a miss or anything unreadable."""
+    if not isinstance(raw, dict):
+        return None
+    try:
+        price = Decimal(raw["price"])
+        on = date.fromisoformat(raw["on"]) if raw.get("on") else None
+    except (KeyError, TypeError, ValueError, ArithmeticError):
+        return None
+    if not price.is_finite():
+        return None
+    return LatestClose(price, on)
+
+
 def _normalize_currency_and_price(currency: str, price: float) -> tuple[str, float]:
     conv = _MINOR_UNIT_CURRENCIES.get(currency)
     if conv is None:
@@ -240,9 +258,28 @@ class YFinanceProvider(MarketPriceProvider):
             return {}
 
         out: dict[str, Optional[LatestClose]] = {s: None for s in unique}
+        # The scheduled sweep asks once per workspace, and every workspace
+        # holding the same ticker would otherwise download it again. A close
+        # is public and the same for everyone, so it is shared through the
+        # cache for as long as a quote is.
+        missing: list[str] = []
+        for sym in unique:
+            hit = _close_from_cache(await market_data_guard.read("close", sym))
+            if hit is None:
+                missing.append(sym)
+            else:
+                out[sym] = hit
+        if not missing:
+            return out
+
         refused = False
-        for i in range(0, len(unique), self._BATCH_CHUNK_SIZE):
-            chunk = unique[i : i + self._BATCH_CHUNK_SIZE]
+        if await market_data_guard.cooling_down():
+            # Yahoo refused a moment ago: the cached closes are the answer
+            # and the rest waits for the next run instead of asking again.
+            missing = []
+            refused = True
+        for i in range(0, len(missing), self._BATCH_CHUNK_SIZE):
+            chunk = missing[i : i + self._BATCH_CHUNK_SIZE]
             try:
                 chunk_prices, chunk_refused = await asyncio.to_thread(
                     self._download_closes_sync, chunk
@@ -301,6 +338,11 @@ class YFinanceProvider(MarketPriceProvider):
             # The closes that did come back are part of the answer as soon as
             # they arrive: a refusal found below must not take them back.
             out.update(chunk_prices)
+            for sym, close in chunk_prices.items():
+                if close is not None:
+                    await market_data_guard.write(
+                        "close", sym, _close_to_cache(close), market_data_guard.PRICE_TTL_SECONDS
+                    )
 
             if chunk_refused:
                 # The batch itself reported a 429 for one of its tickers. The
