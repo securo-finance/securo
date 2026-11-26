@@ -1,7 +1,7 @@
 """store each month's expected income as its own workspace row
 
-Revision ID: 138
-Revises: 137
+Revision ID: 134
+Revises: 133
 Create Date: 2026-11-20
 
 The issue #1104 comparison needs the month's income entered by hand, once
@@ -18,8 +18,8 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
-revision: str = "138"
-down_revision: Union[str, None] = "137"
+revision: str = "134"
+down_revision: Union[str, None] = "133"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
