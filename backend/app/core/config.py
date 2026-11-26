@@ -68,6 +68,13 @@ class Settings(BaseSettings):
     # so that the pool never grows past DB_POOL_SIZE.
     db_pool_size: int = Field(default=5, ge=1)
     db_max_overflow: int = Field(default=10, ge=0)
+    # Plan each statement with the values of the call that runs it, instead of
+    # reusing a plan sized for an average call. On an instance with a large
+    # history a 12-month report took about twice as long with the average plan
+    # (issue #584). Off sends nothing and keeps the server's plan_cache_mode,
+    # which is what an instance behind a connection pooler that refuses an
+    # unknown startup parameter needs.
+    db_force_custom_plans: bool = True
 
     # Auth. Signs session and password-reset tokens and derives the key that
     # encrypts saved credentials. Left unset (or on a public default), the

@@ -157,6 +157,16 @@ def test_database_pool_size_without_overflow_is_allowed(secrets: Path):
     assert (settings.db_pool_size, settings.db_max_overflow) == (3, 0)
 
 
+def test_custom_plans_are_on_by_default_and_can_be_turned_off(monkeypatch):
+    """An instance that sets nothing plans each call with its own values; off
+    sends nothing and keeps the server's setting, the way out for an instance
+    behind a connection pooler that refuses the parameter (#584)."""
+    assert Settings(_env_file=None).db_force_custom_plans is True
+
+    monkeypatch.setenv("DB_FORCE_CUSTOM_PLANS", "false")
+    assert Settings(_env_file=None).db_force_custom_plans is False
+
+
 @pytest.mark.parametrize(
     ("missing_field", "oidc_client_id", "oidc_discovery_url"),
     [
