@@ -1,4 +1,4 @@
-"""Migration 132 on real PostgreSQL: what the table enforces and the upsert."""
+"""Migration 138 on real PostgreSQL: what the table enforces and the upsert."""
 import importlib.util
 from datetime import date
 from decimal import Decimal
@@ -20,7 +20,7 @@ _MIGRATION_PATH = (
     Path(__file__).resolve().parent.parent
     / "alembic"
     / "versions"
-    / "132_expected_incomes.py"
+    / "138_expected_incomes.py"
 )
 _SPEC = importlib.util.spec_from_file_location("expected_incomes_migration", _MIGRATION_PATH)
 assert _SPEC is not None and _SPEC.loader is not None
