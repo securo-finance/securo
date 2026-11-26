@@ -923,7 +923,7 @@
   },
   "transactions": {
     "title": "Transakcje",
-    "mortgageAllocation": "Rozbicie raty kredytu hipotecznego",
+    "mortgageAllocation": "Rozbicie raty kredytu",
     "mortgagePrincipal": "Spłata kapitału",
     "mortgageInterest": "Odsetki",
     "mortgageCurrencyHint": "Podaj wszystkie części w {{currency}}.",
@@ -3831,7 +3831,7 @@
       "notSplittable": "Tej transakcji nie można podzielić na kategorie.",
       "noAmount": "Transakcji bez kwoty nie można podzielić.",
       "hasGroupSplit": "Usuń podział między osoby, zanim podzielisz na kategorie.",
-      "hasMortgage": "Usuń rozbicie kredytu hipotecznego, zanim podzielisz na kategorie.",
+      "hasMortgage": "Usuń rozbicie kredytu, zanim podzielisz na kategorie.",
       "installments": "Serii rat nie można jeszcze podzielić na kategorie.",
       "installmentScope": "Rata z tej serii jest podzielona na kategorie; edytuj ją osobno.",
       "categoryAndLines": "Wybierz jedną kategorię albo podział na kategorie, nie oba.",
