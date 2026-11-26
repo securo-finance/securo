@@ -29,6 +29,7 @@ from app.services._query_filters import (
     line_category_id,
     line_primary_or_amount,
     reporting_date_col,
+    resolve_viewer_category_map,
     user_pnl_parts,
     user_pnl_ratio,
     viewer_shares_in_primary,
@@ -1216,18 +1217,26 @@ async def get_income_expenses_report(
         viewer,
     )
     shared_category_ids = {cat for (_p, cat) in shared_by_category if cat is not None}
+    shared_category_map = (
+        await resolve_viewer_category_map(session, shared_category_ids, workspace_id)
+        if shared_category_ids
+        else {}
+    )
+    unmapped_foreign_ids = {
+        cid for cid in shared_category_ids if shared_category_map.get(cid) is None
+    }
     shared_category_meta = (
         {
             cat_id: (name, color)
             for cat_id, name, color in (
                 await session.execute(
                     select(Category.id, Category.name, Category.color).where(
-                        Category.id.in_(shared_category_ids)
+                        Category.id.in_(unmapped_foreign_ids)
                     )
                 )
             ).all()
         }
-        if shared_category_ids
+        if unmapped_foreign_ids
         else {}
     )
     shared_slices = [
@@ -1239,11 +1248,17 @@ async def get_income_expenses_report(
         amount = abs(float(value))
         if amount <= 0:
             continue
-        cat_name, cat_color = shared_category_meta.get(cat_id, (None, None))
-        cat_key = str(cat_id) if cat_id else "uncategorized"
+        mapped_cat = shared_category_map.get(cat_id) if cat_id is not None else None
+        if mapped_cat is not None:
+            cat_key = str(mapped_cat.id)
+            label = mapped_cat.name
+            color = mapped_cat.color or "#6B7280"
+        else:
+            cat_name, cat_color = shared_category_meta.get(cat_id, (None, None))
+            cat_key = str(cat_id) if cat_id else "uncategorized"
+            label = cat_name or "Uncategorized"
+            color = cat_color or "#6B7280"
         group = "income" if txn_type == "credit" else "expenses"
-        label = cat_name or "Uncategorized"
-        color = cat_color or "#6B7280"
 
         comp_key = (cat_key, group)
         if comp_key in comp_map:

@@ -31,6 +31,7 @@ from app.services._query_filters import (
     owner_split_offset_pnl,
     reporting_date_col,
     reporting_date_value,
+    resolve_viewer_category_map,
     signed_amount_expr,
     viewer_shared_pnl,
     viewer_shared_spending_by_category,
@@ -961,29 +962,23 @@ async def get_spending_by_category(
         exclude_workspace_id=workspace_id,
     )
     if shared_by_cat:
-        cat_meta_cache: dict[str, dict] = {}
+        cat_map = await resolve_viewer_category_map(
+            session, shared_by_cat.keys(), workspace_id
+        )
         for cat_uuid, share_total in shared_by_cat.items():
-            cat_id = str(cat_uuid) if cat_uuid else None
-            if cat_id and cat_id not in cat_meta_cache and cat_id not in spending_map:
-                meta_row = (
-                    await session.execute(
-                        select(Category.name, Category.icon, Category.color).where(
-                            Category.id == cat_uuid
-                        )
-                    )
-                ).one_or_none()
-                if meta_row:
-                    cat_meta_cache[cat_id] = {
-                        "name": meta_row[0],
-                        "icon": meta_row[1],
-                        "color": meta_row[2],
-                    }
+            mapped_cat = cat_map.get(cat_uuid) if cat_uuid is not None else None
+            cat_id = str(mapped_cat.id) if mapped_cat is not None else None
             if cat_id in spending_map:
                 spending_map[cat_id]["total"] += share_total
             else:
-                meta = cat_meta_cache.get(
-                    cat_id,
-                    {"name": "Sem categoria", "icon": "circle-help", "color": "#6B7280"},
+                meta = (
+                    {
+                        "name": mapped_cat.name,
+                        "icon": mapped_cat.icon,
+                        "color": mapped_cat.color,
+                    }
+                    if mapped_cat is not None
+                    else {"name": "Sem categoria", "icon": "circle-help", "color": "#6B7280"}
                 )
                 spending_map[cat_id] = {
                     "name": meta["name"],
