@@ -1164,12 +1164,12 @@ export default function ReportsPage() {
       <>
       {/* Main Trend Chart */}
       <div className="bg-card rounded-xl border border-border shadow-sm mb-5">
-        <div className="px-5 pt-5 pb-2 flex items-center justify-between">
+        <div className="px-5 pt-5 pb-2 flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
           <p className="text-sm font-semibold text-foreground">
             {t(currentTab.labelKey)} · {t('reports.trend')}
           </p>
           {meta && (
-            <div className="flex items-center gap-3">
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 min-w-0">
               {meta.type === 'net_worth' ? (
                 <div className="flex items-center gap-1.5">
                   <div className="w-2 h-2 rounded-full" style={{ backgroundColor: 'var(--chart-1)' }} />

@@ -19,6 +19,8 @@ secret:
   storageS3SessionToken: ""
   # Optional. Left empty, Securo generates a unique key on first start and keeps
   # it in the database. Set one (openssl rand -hex 32) to manage it yourself.
+  # REQUIRE_SECRET_KEY=true, through extraEnv on every backend component or in
+  # existingSecret, refuses to start without one.
   secretKey: ""
   # If postgresql.enabled is true, the internal database will be deployed.
   # If postgresql.enabled is false, you must provide your external database URL here or in existingSecret.
@@ -410,6 +412,10 @@ postgresql:
     repository: docker.io/pgvector/pgvector
     tag: pg16
     pullPolicy: IfNotPresent
+  # JIT compilation costs more than it saves on the short, indexed queries
+  # Securo runs: a plain transaction list went from 1222 ms to 229 ms with it
+  # off (#583). Set to "on" for the PostgreSQL default.
+  jit: "off"
   resources: {}
 
 # Simple StatefulSet for Redis

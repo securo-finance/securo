@@ -58,3 +58,4 @@ Each file here records one decision about how Securo is built: what we chose, wh
 | [0043](0043-row-security.md) | Postgres can hold the workspace boundary too |
 | [0044](0044-email-password-recovery.md) | Password recovery goes out over the instance's own SMTP server, behind one switch |
 | [0046](0046-email-provider-and-templates.md) | The mail path is SMTP or a hosted API, and an admin may rewrite the recovery message |
+| [0048](0048-required-secret-key.md) | An operator can require a secret key of their own |

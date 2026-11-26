@@ -197,6 +197,20 @@ even though it is off by default: when `mcpServer.enabled` and
 tools, so without the variables and the mounted certificate those tools fail to
 reach the database.
 
+A database outside the chart also misses the `jit` setting: the bundled
+PostgreSQL starts with JIT off (`postgresql.jit`), because on the small
+instances Securo runs on it cost more than it saved, and a plain transaction
+list went from 1222 ms to 229 ms without it (#583). Set it once on the database
+Securo uses:
+
+```sql
+ALTER DATABASE securo SET jit = off;
+```
+
+`securo` is the database name from your `DATABASE_URL`; use yours. New
+connections pick it up. Leave it on for a dedicated analytical database
+that runs long scans on large tables.
+
 To mount a PersistentVolumeClaim you already have instead of letting the chart
 create one, set `persistence.attachments.existingClaim`. Keep
 `persistence.attachments.enabled` true so the pods mount it; the chart then
