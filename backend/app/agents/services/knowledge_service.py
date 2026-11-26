@@ -138,10 +138,10 @@ async def mark_status(
     status: str,
     error: Optional[str] = None,
     chunk_count: Optional[int] = None,
-) -> None:
+) -> Optional[KnowledgeDoc]:
     doc = (await session.execute(select(KnowledgeDoc).where(KnowledgeDoc.id == doc_id))).scalar_one_or_none()
     if doc is None:
-        return
+        return None
     doc.status = status
     # On success, always clear any stale error from prior attempts. Without
     # this the UI keeps showing "embed failed: …" alongside a green ready
@@ -153,6 +153,8 @@ async def mark_status(
     if chunk_count is not None:
         doc.chunk_count = chunk_count
     await session.commit()
+    await session.refresh(doc)
+    return doc
 
 
 async def similarity_search(
