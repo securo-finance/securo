@@ -25,18 +25,25 @@ from app.services import access_token_service, quota_service
 from tests import test_provider_plugins as provider_plugins
 from tests.test_code_plugins import PLUGIN
 
-#: How many advisory locks this very transaction holds for `key`, computed the
-#: same way `pg_advisory_xact_lock(hashtext(key))` stores it: the 8-byte key is
-#: split across `classid` (high half) and `objid` (low half).
-_HELD = text(
-    """
-    SELECT count(*) FROM pg_locks
-    WHERE locktype = 'advisory'
-      AND pid = pg_backend_pid()
+#: How `pg_advisory_xact_lock(hashtext(key))` stores its 8-byte key: split
+#: across `classid` (high half) and `objid` (low half). Both queries below match
+#: on it, so an advisory lock of another test running in parallel is never
+#: mistaken for this one's.
+_KEY_MATCH = """
       AND objsubid = 1
       AND classid = ((hashtext(:key)::bigint >> 32) & 4294967295)::oid
       AND objid = (hashtext(:key)::bigint & 4294967295)::oid
-    """
+"""
+
+#: How many advisory locks this very transaction holds for `key`.
+_HELD = text(
+    "SELECT count(*) FROM pg_locks WHERE locktype = 'advisory' AND pid = pg_backend_pid()" + _KEY_MATCH
+)
+
+#: How many other sessions are queued for `key` right now (`granted = false`).
+_QUEUED = text(
+    "SELECT count(*) FROM pg_locks"
+    " WHERE locktype = 'advisory' AND NOT granted AND pid <> pg_backend_pid()" + _KEY_MATCH
 )
 
 #: Try to take the same transaction-scoped lock from another connection.
@@ -74,6 +81,24 @@ async def _workspace(session, creator: User) -> Workspace:
     session.add(workspace)
     await session.flush()
     return workspace
+
+
+async def _wait_until_queued(session, key: str, timeout: float = 15.0) -> None:
+    """Wait until another session is blocked asking for `key`, or fail.
+
+    What this test has to show is the lock serialising the two requests, not
+    the order the tasks happened to run in: the first request stays inside its
+    transaction until the second is really queued on `pg_advisory_xact_lock`
+    (`granted = false` in `pg_locks`). A flag set before the second reaches the
+    lock would let it count after the first commits and be refused anyway,
+    which proves nothing about contention.
+    """
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + timeout
+    while not await session.scalar(_QUEUED, {"key": key}):
+        if loop.time() >= deadline:
+            raise AssertionError(f"no other session queued on {key!r} within {timeout:g}s")
+        await asyncio.sleep(0.01)
 
 
 async def test_each_gate_holds_its_account_lock_until_the_transaction_ends(postgres_sessions, managed):
@@ -173,25 +198,17 @@ async def test_a_plugin_connection_cannot_pass_the_limit_while_its_token_is_crea
     maker = postgres_sessions
     workspace_id, user_id = await _plugin_workspace(maker, max_bank_connections=1)
 
-    real_lock = quota_service._lock
     real_create_token = access_token_service.create_token
     at_token = asyncio.Event()
-    at_gate = asyncio.Event()
-    gate_calls = 0
+    lock_key = f"quota:connections:{user_id}"
 
-    async def counting_lock(session, key):
-        nonlocal gate_calls
-        gate_calls += 1
-        if gate_calls == 2:
-            at_gate.set()
-        await real_lock(session, key)
-
-    async def pausing_create_token(*args, **kwargs):
-        # Hold the first request right where the plugin's token is made, and
-        # only then let the second one reach its own count.
-        created = await real_create_token(*args, **kwargs)
+    async def pausing_create_token(session, **kwargs):
+        # Hold the first request right where the plugin's token is made until
+        # the second one is queued on the quota lock: only then may this
+        # transaction end and release it.
+        created = await real_create_token(session, **kwargs)
         at_token.set()
-        await asyncio.wait_for(at_gate.wait(), 30)
+        await _wait_until_queued(session, lock_key)
         return created
 
     async def connect(waits_for=None):
@@ -213,9 +230,7 @@ async def test_a_plugin_connection_cannot_pass_the_limit_while_its_token_is_crea
             finally:
                 await session.rollback()
 
-    with patch.object(quota_service, "_lock", counting_lock), patch.object(
-        access_token_service, "create_token", pausing_create_token
-    ):
+    with patch.object(access_token_service, "create_token", pausing_create_token):
         first = asyncio.create_task(connect())
         second = asyncio.create_task(connect(at_token))
         results = await asyncio.wait_for(asyncio.gather(first, second, return_exceptions=True), 60)
