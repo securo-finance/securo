@@ -411,6 +411,47 @@ describe('AccountDialog account types', () => {
   })
 })
 
+describe('AccountDialog account ordering', () => {
+  it.each([
+    { value: '', expected: undefined },
+    { value: '0', expected: 0 },
+    { value: '7', expected: 7 },
+  ])('saves a new account with order "$value"', async ({ value, expected }) => {
+    const onSave = vi.fn()
+    const { user } = renderWithProviders(
+      <AccountDialog open account={null} onClose={vi.fn()} onSave={onSave} loading={false} />,
+    )
+    const nameInput = screen.getByRole('dialog').querySelector<HTMLInputElement>('input[required]')
+    expect(nameInput).not.toBeNull()
+    await user.type(nameInput!, 'New account')
+    const orderInput = screen.getByRole('spinbutton', { name: t('accounts.order') })
+    if (value) await user.type(orderInput, value)
+    await user.click(screen.getByRole('button', { name: t('common.save') }))
+
+    expect(onSave).toHaveBeenCalledTimes(1)
+    if (expected === undefined) {
+      expect(onSave.mock.calls[0][0]).not.toHaveProperty('order')
+    } else {
+      expect(onSave.mock.calls[0][0]).toHaveProperty('order', expected)
+    }
+  })
+
+  it('omits order when an existing account order is cleared', async () => {
+    const onSave = vi.fn()
+    const account = { ...makeAccount('conn-d'), order: 7 }
+    const { user } = renderWithProviders(
+      <AccountDialog open account={account} onClose={vi.fn()} onSave={onSave} loading={false} />,
+    )
+    const orderInput = screen.getByRole('spinbutton', { name: t('accounts.order') })
+    expect(orderInput).toHaveValue(7)
+    await user.clear(orderInput)
+    await user.click(screen.getByRole('button', { name: t('common.save') }))
+
+    expect(onSave).toHaveBeenCalledTimes(1)
+    expect(onSave.mock.calls[0][0]).not.toHaveProperty('order')
+  })
+})
+
 describe('AccountsPage connections a plugin syncs', () => {
   const plugin = {
     plugin_id: 'acme/ledger',

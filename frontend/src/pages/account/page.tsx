@@ -244,7 +244,7 @@ export default function AccountsPage() {
   const deletingOnDisconnect = alreadyDisconnected || deleteOnDisconnect
 
   const createMutation = useMutation({
-    mutationFn: (data: { name: string; type: string; balance?: number; currency?: string, order: number }) =>
+    mutationFn: (data: { name: string; type: string; balance?: number; currency?: string; order?: number }) =>
       accounts.create(data),
     onSuccess: () => {
       invalidateFinancialQueries(queryClient)
@@ -697,7 +697,7 @@ export default function AccountsPage() {
           if (editingAccount) {
             updateMutation.mutate({ id: editingAccount.id, ...data })
           } else {
-            createMutation.mutate(data as { name: string; type: string; balance?: number; balance_date?: string; currency?: string, order: number })
+            createMutation.mutate(data as { name: string; type: string; balance?: number; balance_date?: string; currency?: string; order?: number })
           }
         }}
         loading={createMutation.isPending || updateMutation.isPending}
@@ -797,7 +797,7 @@ export function AccountDialog({
   const [displayName, setDisplayName] = useState(account?.display_name ?? '')
   const [type, setType] = useState(account?.type ?? 'checking')
   const [balance, setBalance] = useState(account?.balance?.toString() ?? '0')
-  const [order, setOrder] = useState(account?.order?.toString())
+  const [order, setOrder] = useState(account?.order?.toString() ?? '')
   const [currency, setCurrency] = useState(account?.currency ?? userCurrency)
   // The opening balance's own date (issue #1204); today for a new account
   // or one without an opening balance.
@@ -834,7 +834,7 @@ export function AccountDialog({
     setCreditLimit(account?.credit_limit?.toString() ?? '')
     setStatementCloseDay(account?.statement_close_day?.toString() ?? '')
     setPaymentDueDay(account?.payment_due_day?.toString() ?? '')
-    setOrder(account?.order?.toString())
+    setOrder(account?.order?.toString() ?? '')
     setSecuredAssetId(account?.secured_asset_id ?? '')
     setLoanTerms(loanTermsFrom(account, account?.currency ?? userCurrency))
     setTermsOpen(account?.loan_original_amount != null)
@@ -886,7 +886,7 @@ export function AccountDialog({
                 ...loanTermsPayload(loanTerms),
               }),
               display_name: displayName.trim() || null,
-              order: +(order || '0'),
+              ...(order.trim() !== '' && { order: Number(order) }),
               ...(isCC && {
                 credit_limit: creditLimit !== '' ? parseFloat(creditLimit) : null,
                 statement_close_day: parseDay(statementCloseDay),
