@@ -34,3 +34,13 @@ class AccessTokenCreated(AccessTokenRead):
 
 class AccessTokenScopes(BaseModel):
     scopes: list[str]
+
+
+class AccessTokenInfo(BaseModel):
+    id: uuid.UUID
+    name: str
+    token_prefix: str
+    workspace_id: uuid.UUID
+    workspace_name: str
+    scopes: list[str]
+    expires_at: Optional[datetime]

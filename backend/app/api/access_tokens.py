@@ -5,7 +5,7 @@ signed-in session: a token can't mint, list or revoke tokens.
 """
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.access_token_scopes import ALL_SCOPES
@@ -17,6 +17,7 @@ from app.models.user import User
 from app.schemas.access_token import (
     AccessTokenCreate,
     AccessTokenCreated,
+    AccessTokenInfo,
     AccessTokenRead,
     AccessTokenScopes,
 )
@@ -24,6 +25,7 @@ from app.services import access_token_service
 from app.services.access_token_service import AccessTokenError
 
 router = APIRouter(prefix="/api/access-tokens", tags=["access-tokens"])
+token_info_router = APIRouter(prefix="/api/auth", tags=["access-tokens"])
 
 
 def _read(token: AccessToken) -> dict:
@@ -96,3 +98,25 @@ async def revoke_access_token(
     )
     if not revoked:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Access token not found")
+
+
+@token_info_router.get("/token-info", response_model=AccessTokenInfo)
+async def get_token_info(
+    request: Request,
+    ctx: WorkspaceContext = Depends(current_workspace),
+):
+    token: AccessToken | None = getattr(request.state, "access_token", None)
+    if token is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This endpoint requires a personal access token.",
+        )
+    return AccessTokenInfo(
+        id=token.id,
+        name=token.name,
+        token_prefix=token.token_prefix,
+        workspace_id=ctx.workspace.id,
+        workspace_name=ctx.workspace.name,
+        scopes=list(token.scopes),
+        expires_at=token.expires_at,
+    )
