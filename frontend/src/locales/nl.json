@@ -4481,9 +4481,11 @@
       "max_members_per_workspace": "Deze werkruimte heeft zijn limiet van {{maximum}} leden bereikt. Verwijder een lid om een nieuw lid toe te voegen."
     },
     "ownerReached": {
-      "max_bank_connections": "De eigenaar van deze werkruimte heeft de limiet van {{maximum}} bankkoppelingen bereikt. Alleen de eigenaar kan een plek vrijmaken, door een koppeling te verwijderen.",
+      "max_bank_connections": "De eigenaar van deze werkruimte heeft de limiet van {{maximum}} bankkoppelingen bereikt. Iedereen die deze werkruimte kan bewerken, kan een plek vrijmaken door een van de koppelingen te verwijderen.",
       "max_members_per_workspace": "Deze werkruimte heeft de limiet van {{maximum}} leden van de eigenaar bereikt. Er moet een lid worden verwijderd om een nieuw lid toe te voegen."
     },
+    "none": "{{label}}: de limiet van dit account op deze instantie is 0, dus er kan niets worden toegevoegd.",
+    "ownerNone": "{{label}}: de eigenaar van deze werkruimte heeft op deze instantie een limiet van 0, dus er kan niets worden toegevoegd.",
     "reachedGeneric": "Dit account heeft een van zijn gebruikslimieten bereikt."
   }
 }

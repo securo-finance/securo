@@ -4479,9 +4479,11 @@
       "max_members_per_workspace": "Ez a munkaterület elérte a tagok korlátját ({{maximum}}). Távolítson el egy tagot, hogy újat adhasson hozzá."
     },
     "ownerReached": {
-      "max_bank_connections": "A munkaterület tulajdonosa elérte a banki kapcsolatok korlátját ({{maximum}}). Csak a tulajdonos szabadíthat fel helyet egy kapcsolat eltávolításával.",
+      "max_bank_connections": "A munkaterület tulajdonosa elérte a banki kapcsolatok korlátját ({{maximum}}). Bárki, aki szerkesztheti ezt a munkaterületet, helyet szabadíthat fel az egyik kapcsolatának eltávolításával.",
       "max_members_per_workspace": "Ez a munkaterület elérte a tulajdonosa tagkorlátját ({{maximum}}). Új tag hozzáadásához el kell távolítani egy tagot."
     },
+    "none": "{{label}}: ennek a fióknak a korlátja ezen a példányon 0, ezért semmi sem adható hozzá.",
+    "ownerNone": "{{label}}: a munkaterület tulajdonosának korlátja ezen a példányon 0, ezért semmi sem adható hozzá.",
     "reachedGeneric": "Ez a fiók elérte az egyik használati korlátját."
   }
 }

@@ -10,7 +10,7 @@ import { TimezoneSelect } from '@/components/timezone-select'
 import { useAuth } from '@/contexts/auth-context'
 import { useWorkspace } from '@/contexts/workspace-context'
 import { useLocalAuthEnabled } from '@/hooks/use-local-auth'
-import { useQuotaNotice } from '@/hooks/use-quota'
+import { MY_QUOTAS_KEY, useQuotaNotice } from '@/hooks/use-quota'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -237,6 +237,7 @@ export default function WorkspaceSettingsPage() {
       setInviteRole('editor')
       queryClient.invalidateQueries({ queryKey: ['workspace-members', current?.id] })
       queryClient.invalidateQueries({ queryKey: ['workspace-stats', current?.id] })
+      queryClient.invalidateQueries({ queryKey: MY_QUOTAS_KEY })
     },
     onError: (e: unknown) => {
       if (quotaNotice.handle(e)) return
@@ -257,6 +258,8 @@ export default function WorkspaceSettingsPage() {
       setRemoveTarget(null)
       queryClient.invalidateQueries({ queryKey: ['workspace-members', current?.id] })
       queryClient.invalidateQueries({ queryKey: ['workspace-stats', current?.id] })
+      // The member limit counts seats, so a place may be free now.
+      queryClient.invalidateQueries({ queryKey: MY_QUOTAS_KEY })
     },
     onError: (e: unknown) => {
       const detail =

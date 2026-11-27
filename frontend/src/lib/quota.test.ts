@@ -32,6 +32,14 @@ describe('quotaMessageKey', () => {
     expect(quotaMessageKey('max_business_workspaces', true)).toBe('quota.reached.max_business_workspaces')
   })
 
+  it('never suggests removing something when the limit is 0, since nothing frees a place', () => {
+    expect(quotaMessageKey('max_bank_connections', false, 0)).toBe('quota.none')
+    expect(quotaMessageKey('max_personal_workspaces', false, 0)).toBe('quota.none')
+    expect(quotaMessageKey('max_members_per_workspace', true, 0)).toBe('quota.ownerNone')
+    expect(quotaMessageKey('max_business_workspaces', true, 0)).toBe('quota.none')
+    expect(quotaMessageKey('max_bank_connections', false, 2)).toBe('quota.reached.max_bank_connections')
+  })
+
   it('falls back to a generic sentence for a counter it does not know', () => {
     expect(quotaMessageKey('max_something_new', false)).toBe('quota.reachedGeneric')
   })

@@ -12,7 +12,7 @@ import { accounts, assets, connections, currencies, plugins as pluginsApi } from
 import { localDateString, todayInTimezone } from '@/lib/date-utils'
 import { extractApiError } from '@/lib/api-errors'
 import { fullCounter } from '@/lib/quota'
-import { useQuotaNotice } from '@/hooks/use-quota'
+import { MY_QUOTAS_KEY, useQuotaNotice } from '@/hooks/use-quota'
 import { invalidateFinancialQueries, invalidateSyncedRecords } from '@/lib/invalidate-queries'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -268,6 +268,8 @@ export default function AccountsPage() {
       connections.delete(id, { keepAccounts }),
     onSuccess: (_data, { keepAccounts }) => {
       invalidateSyncedRecords(queryClient)
+      // A place in the bank connection limit may be free now.
+      void queryClient.invalidateQueries({ queryKey: MY_QUOTAS_KEY })
       setDisconnectingConnection(null)
       toast.success(t(keepAccounts ? 'accounts.disconnectedKept' : 'accounts.disconnected'))
     },

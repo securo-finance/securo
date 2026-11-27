@@ -4494,9 +4494,11 @@
       "max_members_per_workspace": "Questo spazio di lavoro ha raggiunto il limite di {{maximum}} membri. Rimuovi un membro per aggiungerne un altro."
     },
     "ownerReached": {
-      "max_bank_connections": "Il proprietario di questo spazio di lavoro ha raggiunto il limite di {{maximum}} connessioni bancarie. Solo il proprietario può liberare un posto, rimuovendo una connessione.",
+      "max_bank_connections": "Il proprietario di questo spazio di lavoro ha raggiunto il limite di {{maximum}} connessioni bancarie. Chi può modificare questo spazio di lavoro può liberare un posto rimuovendo una delle sue connessioni.",
       "max_members_per_workspace": "Questo spazio di lavoro ha raggiunto il limite di {{maximum}} membri del suo proprietario. Bisogna rimuovere un membro per aggiungerne un altro."
     },
+    "none": "{{label}}: il limite di questo account su questa istanza è 0, quindi non se ne possono aggiungere.",
+    "ownerNone": "{{label}}: il proprietario di questo spazio di lavoro ha un limite di 0 su questa istanza, quindi non se ne possono aggiungere.",
     "reachedGeneric": "Questo account ha raggiunto uno dei suoi limiti di utilizzo."
   }
 }
