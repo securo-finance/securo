@@ -19,12 +19,14 @@ class AssetValue(Base):
     workspace_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("workspaces.id", ondelete="CASCADE"), index=True
     )
-    amount: Mapped[Decimal] = mapped_column(Numeric(precision=15, scale=6))
+    # Thirteen integer digits, like the money columns (`MAX_MONEY_AMOUNT`):
+    # a billion is an ordinary flat in IDR, VND or JPY (issue #641).
+    amount: Mapped[Decimal] = mapped_column(Numeric(precision=19, scale=6))
     # Optional pre-tax/pre-fee value reported by a connected investment
     # provider. ``amount`` remains the withdrawable/net value used everywhere
     # outside benchmark performance.
     gross_amount: Mapped[Optional[Decimal]] = mapped_column(
-        Numeric(precision=15, scale=6), nullable=True
+        Numeric(precision=19, scale=6), nullable=True
     )
     # Per-share price on `date` for market-priced holdings (quantity-independent).
     # The value chart is rebuilt as ledger_quantity(date) × price(date) so that

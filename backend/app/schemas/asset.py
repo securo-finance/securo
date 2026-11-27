@@ -3,7 +3,25 @@ from datetime import date as _date, datetime
 from decimal import Decimal
 from typing import Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator
+
+from app.core.money import MAX_MONEY_AMOUNT
+
+
+def _bounded_asset_amount(value: Optional[Decimal], field: str) -> Optional[Decimal]:
+    """A valuation or price as its column holds it, or a readable 422.
+
+    Valuations are Numeric(19, 6) and prices Numeric(15, 2): thirteen integer
+    digits either way. Past that the database refused the row at flush and the
+    route answered 500 (issue #641)."""
+    if value is None:
+        return None
+    if not value.is_finite():
+        raise ValueError(f"{field} must be a finite number")
+    if abs(value) > MAX_MONEY_AMOUNT:
+        raise ValueError(f"{field} must be at most {MAX_MONEY_AMOUNT}")
+    return value
+
 
 #: How an asset's current value is kept: recorded by hand, projected by a
 #: growth rule, or read from the market through its ticker. The jobs, the
@@ -41,6 +59,11 @@ class AssetCreate(BaseModel):
     # service seeds the buy at the live quote ("bought at market now").
     unit_price: Optional[Decimal] = None
 
+    @field_validator("purchase_price", "sell_price", "current_value")
+    @classmethod
+    def bound_amounts(cls, value: Optional[Decimal], info: ValidationInfo) -> Optional[Decimal]:
+        return _bounded_asset_amount(value, info.field_name or "amount")
+
     @field_validator("external_id")
     @classmethod
     def normalize_external_id(cls, value: Optional[str]) -> Optional[str]:
@@ -76,6 +99,11 @@ class AssetUpdate(BaseModel):
     group_id: Optional[uuid.UUID] = None
     ticker: Optional[str] = None
     ticker_exchange: Optional[str] = None
+
+    @field_validator("purchase_price", "sell_price")
+    @classmethod
+    def bound_amounts(cls, value: Optional[Decimal], info: ValidationInfo) -> Optional[Decimal]:
+        return _bounded_asset_amount(value, info.field_name or "amount")
 
 
 class AssetRead(BaseModel):
@@ -302,6 +330,13 @@ class PortfolioPerformanceRead(BaseModel):
 class AssetValueCreate(BaseModel):
     amount: Decimal
     date: _date
+
+    @field_validator("amount")
+    @classmethod
+    def bound_amount(cls, value: Decimal) -> Decimal:
+        bounded = _bounded_asset_amount(value, "amount")
+        assert bounded is not None
+        return bounded
 
 
 class AssetValueRead(BaseModel):
