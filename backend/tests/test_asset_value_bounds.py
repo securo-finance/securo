@@ -18,14 +18,17 @@ from sqlalchemy import Numeric, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.money import MoneyOutOfRange, bounded_asset_value, max_asset_value
-from app.models.asset import Asset
+from app.models.asset import PROVIDER_VALUE_DATE_METADATA_KEY, Asset
 from app.models.asset_value import AssetValue
 from app.models.user import User
+from app.providers.base import HoldingData
 from app.schemas.asset import AssetCreate, AssetValueCreate
 from app.services import asset_service
 from app.services.asset_service import _generate_growth_values
 from app.services.connection_service import (
     _ensure_historical_seed,
+    _store_todays_snapshot,
+    _upsert_asset_from_holding,
     _upsert_asset_value_for_today,
 )
 
@@ -61,9 +64,12 @@ def test_the_refusal_names_the_value_the_column_holds():
 
 
 def test_a_manual_value_past_the_column_is_refused_before_the_database():
-    assert AssetValueCreate(amount=max_asset_value(), date=date.today()).amount == max_asset_value()
-    with pytest.raises(ValidationError):
-        AssetValueCreate(amount=TOO_BIG, date=date.today())
+    today = date.today()
+    assert AssetValueCreate(amount=max_asset_value(), date=today).amount == max_asset_value()
+    assert AssetValueCreate(amount=-max_asset_value(), date=today).amount == -max_asset_value()
+    for value in (TOO_BIG, -TOO_BIG, Decimal("Infinity"), Decimal("-Infinity"), Decimal("NaN")):
+        with pytest.raises(ValidationError):
+            AssetValueCreate(amount=value, date=today)
 
 
 def test_growth_backfill_refuses_a_series_past_the_column():
@@ -229,3 +235,125 @@ async def test_todays_market_value_is_not_written_when_units_times_price_overflo
         select(func.count(AssetValue.id)).where(AssetValue.asset_id == asset.id)
     )
     assert stored == 0
+
+
+@pytest.mark.asyncio
+async def test_the_route_refuses_a_negative_value_past_the_column(
+    client: AsyncClient,
+    auth_headers: dict,
+    session: AsyncSession,
+    test_user: User,
+    test_workspace,
+):
+    """The bound has two sides. `-1E+15` passed the old one-sided ceiling and
+    went straight to the column, where PostgreSQL answered 500."""
+    asset = Asset(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        name="Negative Overflow API",
+        type="investment",
+        currency="IDR",
+        valuation_method="manual",
+    )
+    session.add(asset)
+    await session.commit()
+
+    response = await client.post(
+        f"/api/assets/{asset.id}/values",
+        headers=auth_headers,
+        json={"amount": str(-TOO_BIG), "date": date.today().isoformat()},
+    )
+    assert response.status_code == 422
+
+    stored = await session.scalar(
+        select(func.count(AssetValue.id)).where(AssetValue.asset_id == asset.id)
+    )
+    assert stored == 0
+
+
+@pytest.mark.asyncio
+async def test_a_refused_snapshot_does_not_move_the_provider_value_date(
+    session: AsyncSession, test_user: User, test_workspace
+):
+    """The metadata blob is replaced before the value is checked, so the
+    payload's date used to end up over the amount that was kept."""
+    previous = date(2026, 1, 15)
+    asset = Asset(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        name="Weak Currency Snapshot",
+        type="investment",
+        currency="IDR",
+        valuation_method="manual",
+        external_metadata={PROVIDER_VALUE_DATE_METADATA_KEY: previous.isoformat()},
+    )
+    session.add(asset)
+    await session.flush()
+    today = date.today()
+    holding = HoldingData(
+        external_id="weak-currency-snapshot",
+        name="Weak Currency Snapshot",
+        currency="IDR",
+        current_value=TOO_BIG,
+        value_date=today,
+    )
+
+    await _upsert_asset_from_holding(
+        session,
+        asset,
+        holding,
+        test_user.id,
+        uuid.uuid4(),
+        "pluggy",
+        workspace_id=test_workspace.id,
+    )
+    assert (asset.external_metadata or {})[PROVIDER_VALUE_DATE_METADATA_KEY] == today.isoformat()
+
+    await _store_todays_snapshot(session, asset, holding, today)
+
+    assert PROVIDER_VALUE_DATE_METADATA_KEY not in (asset.external_metadata or {})
+
+
+@pytest.mark.asyncio
+async def test_a_stored_snapshot_keeps_the_provider_value_date(
+    session: AsyncSession, test_user: User, test_workspace
+):
+    """The other side of the same rule: a value that fits keeps its date."""
+    asset = Asset(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        name="Stored Snapshot",
+        type="investment",
+        currency="BRL",
+        valuation_method="manual",
+    )
+    session.add(asset)
+    await session.flush()
+    today = date.today()
+    holding = HoldingData(
+        external_id="stored-snapshot",
+        name="Stored Snapshot",
+        currency="BRL",
+        current_value=Decimal("1500.000000"),
+        value_date=today,
+    )
+
+    await _upsert_asset_from_holding(
+        session,
+        asset,
+        holding,
+        test_user.id,
+        uuid.uuid4(),
+        "pluggy",
+        workspace_id=test_workspace.id,
+    )
+    await _store_todays_snapshot(session, asset, holding, today)
+
+    assert (asset.external_metadata or {})[PROVIDER_VALUE_DATE_METADATA_KEY] == today.isoformat()
+    stored = await session.scalar(
+        select(func.count(AssetValue.id)).where(AssetValue.asset_id == asset.id)
+    )
+    assert stored == 1

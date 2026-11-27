@@ -5,7 +5,7 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from app.core.money import max_asset_value
+from app.core.money import bounded_asset_value, max_asset_value
 
 #: How an asset's current value is kept: recorded by hand, projected by a
 #: growth rule, or read from the market through its ticker. The jobs, the
@@ -302,10 +302,6 @@ class PortfolioPerformanceRead(BaseModel):
 
 
 class AssetValueCreate(BaseModel):
-    # The column's own ceiling (`max_asset_value`), the same one the values the
-    # backend works out respect (ADR 0008). Without it a larger value reached
-    # the driver and came back as a raw database error instead of a 422
-    # (issue #642).
     amount: Decimal = Field(le=max_asset_value())
     date: _date
 
