@@ -281,6 +281,48 @@ class FitCheck:
     source: Source
 
 
+async def _current_counts(session: AsyncSession, user_id: uuid.UUID) -> tuple[dict[str, int], list[int]]:
+    """Each counter's count, and the seats of every workspace the user created.
+
+    For the member limit the count is the fullest workspace, since the limit
+    holds per workspace.
+    """
+    members = await _members_by_workspace(session, user_id)
+    current = {
+        PERSONAL_WORKSPACES: await count_workspaces(session, user_id, "personal"),
+        BUSINESS_WORKSPACES: await count_workspaces(session, user_id, "business"),
+        BANK_CONNECTIONS: await count_bank_connections(session, user_id),
+        MEMBERS_PER_WORKSPACE: max(members, default=0),
+    }
+    return current, members
+
+
+@dataclass(frozen=True)
+class CounterUsage:
+    counter: str
+    current: int
+    maximum: int
+
+
+async def usage(session: AsyncSession, user_id: uuid.UUID) -> list[CounterUsage]:
+    """The account's bounded counters and the count behind each (#1972).
+
+    Unbounded counters are left out, and with MANAGED_INSTANCE off there is
+    nothing to list.
+    """
+    if not enforced():
+        return []
+    limits, _ = await effective_limits(session, user_id)
+    if all(limits[c] is None for c in COUNTERS):
+        return []
+    current, _ = await _current_counts(session, user_id)
+    return [
+        CounterUsage(counter, current[counter], maximum)
+        for counter in COUNTERS
+        if (maximum := limits[counter]) is not None
+    ]
+
+
 async def check_fit(
     session: AsyncSession, user_id: uuid.UUID, target: Mapping[str, Optional[int]]
 ) -> FitCheck:
@@ -290,13 +332,7 @@ async def check_fit(
     member limit, `current` is the fullest workspace and `excess` the seats
     over the target summed across workspaces.
     """
-    members = await _members_by_workspace(session, user_id)
-    current = {
-        PERSONAL_WORKSPACES: await count_workspaces(session, user_id, "personal"),
-        BUSINESS_WORKSPACES: await count_workspaces(session, user_id, "business"),
-        BANK_CONNECTIONS: await count_bank_connections(session, user_id),
-        MEMBERS_PER_WORKSPACE: max(members, default=0),
-    }
+    current, members = await _current_counts(session, user_id)
     fits = []
     for counter in COUNTERS:
         limit = target.get(counter)
