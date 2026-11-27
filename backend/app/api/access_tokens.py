@@ -1,7 +1,9 @@
-"""Manage access tokens for the current workspace.
+"""Manage access tokens for the current workspace and inspect the caller's token.
 
-These routes are not in the access-token route map, so they only answer a
-signed-in session: a token can't mint, list or revoke tokens.
+`router` (`/api/access-tokens`) is not in the access-token route map, so its
+routes only answer a signed-in session: a token can't mint, list or revoke
+tokens. `token_info_router` (`GET /api/auth/token-info`) is the read-only
+self-inspection endpoint for personal access tokens (`sct_...`).
 """
 import uuid
 
@@ -100,11 +102,33 @@ async def revoke_access_token(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Access token not found")
 
 
-@token_info_router.get("/token-info", response_model=AccessTokenInfo)
+@token_info_router.get(
+    "/token-info",
+    response_model=AccessTokenInfo,
+    summary="Inspect the current personal access token",
+    responses={
+        status.HTTP_400_BAD_REQUEST: {
+            "description": (
+                "Caller used a session JWT instead of a personal access token, "
+                "or sent a malformed X-Workspace-Id header."
+            ),
+        },
+        status.HTTP_401_UNAUTHORIZED: {
+            "description": "Missing, invalid, revoked, or expired token, or inactive user.",
+        },
+        status.HTTP_403_FORBIDDEN: {
+            "description": "X-Workspace-Id does not match the token's workspace.",
+        },
+        status.HTTP_404_NOT_FOUND: {
+            "description": "Token workspace not found, archived, or user is no longer a member.",
+        },
+    },
+)
 async def get_token_info(
     request: Request,
     ctx: WorkspaceContext = Depends(current_workspace),
 ):
+    """Return metadata and workspace binding for the active `sct_...` personal access token."""
     token: AccessToken | None = getattr(request.state, "access_token", None)
     if token is None:
         raise HTTPException(
