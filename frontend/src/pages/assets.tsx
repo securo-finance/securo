@@ -451,12 +451,20 @@ export default function AssetsPage() {
     queryFn: () => assets.list(true),
     enabled: showArchived,
   })
+  const { data: archivedCounts } = useQuery({
+    queryKey: ['assets', 'archived-count'],
+    queryFn: () => assets.archivedCount(),
+  })
   const rawAssetsList = showArchived && withArchived.data ? withArchived.data : defaultAssets
 
   // Active Collection filter (issue #105): when a collection is active, scope
   // the Assets page to the assets in its wallets (asset_groups). A collection
   // with no wallets → no assets shown. "All accounts" (null) → show everything.
   const { activeWalletIds } = useCollectionFilter()
+  const visibleArchivedCount =
+    activeWalletIds === null
+      ? (archivedCounts?.count ?? 0)
+      : activeWalletIds.reduce((sum, id) => sum + (archivedCounts?.by_wallet[id] ?? 0), 0)
   const assetsList = useMemo(() => {
     if (!activeWalletIds) return rawAssetsList
     const allowed = new Set(activeWalletIds)
@@ -1682,8 +1690,10 @@ export default function AssetsPage() {
             {t('assets.tabPerformance')}
           </button>
         </div>
-        {/* Archived holdings never enter performance, so the toggle is moot there. */}
-        {activeTab !== 'performance' && (
+        {/* Archived holdings never enter performance, and the toggle is only
+            shown when archived holdings exist (or while already on so it can be
+            turned back off). */}
+        {activeTab !== 'performance' && (visibleArchivedCount > 0 || showArchived) && (
           <label className="flex items-center gap-2 text-xs text-muted-foreground">
             <input
               type="checkbox"
@@ -1849,7 +1859,7 @@ export default function AssetsPage() {
               <p>{t('assets.noAssets')}</p>
               {/* A portfolio that is entirely archived reads as empty here
                   (issue #1046), so the way to it starts from this box. */}
-              {!showArchived && (
+              {!showArchived && visibleArchivedCount > 0 && (
                 <button
                   onClick={() => toggleArchived(true)}
                   className="mt-3 rounded-md border border-border px-3 py-1.5 text-xs font-medium text-foreground hover:bg-muted"

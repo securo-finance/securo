@@ -223,6 +223,14 @@ class AssetPriceRefreshResult(BaseModel):
     rate_limited: int
 
 
+class ArchivedAssetCountsRead(BaseModel):
+    """Archived holding counts for a workspace, broken down by wallet."""
+
+    count: int
+    by_wallet: dict[str, int]
+    ungrouped: int
+
+
 class MarketSymbolMatch(BaseModel):
     """A single search result returned by /assets/market/search."""
 

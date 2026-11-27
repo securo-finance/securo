@@ -32,6 +32,7 @@ from app.schemas.asset_import import (
     AssetImportResult,
 )
 from app.schemas.asset import (
+    ArchivedAssetCountsRead,
     AssetBuyCreate,
     AssetCreate,
     AssetPriceRefreshResult,
@@ -360,6 +361,14 @@ async def list_assets(
                 session, asset, primary_currency, rates
             )
     return assets
+
+
+@router.get("/archived-count", response_model=ArchivedAssetCountsRead)
+async def archived_asset_counts(
+    ctx: WorkspaceContext = Depends(current_workspace),
+    session: AsyncSession = Depends(get_async_session),
+) -> ArchivedAssetCountsRead:
+    return await asset_service.get_archived_asset_counts(session, ctx.workspace.id)
 
 
 @router.get("/portfolio-trend")
