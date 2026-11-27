@@ -2299,13 +2299,14 @@ async def _find_cross_connection_match(
     if not candidates:
         return None
 
-    # Tier 1: High-confidence keyed HMAC account_fingerprint + same provider + same currency.
+    # Tier 1: High-confidence keyed HMAC account_fingerprint + same provider + same currency + same type.
     if acc_data.account_fingerprint:
         fp_matches = [
             acc
             for acc, cand_conn in candidates
             if cand_conn.provider == connection.provider
             and acc.currency == acc_data.currency
+            and acc.type == acc_data.type
             and (
                 acc.account_fingerprint == acc_data.account_fingerprint
                 or any(

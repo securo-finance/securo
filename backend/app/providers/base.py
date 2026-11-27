@@ -58,17 +58,31 @@ def mask_last4(value: Optional[str]) -> Optional[str]:
 
 
 def hash_account_identifier(
-    provider: str, raw_id: Optional[str], *, min_length: int = 6
+    provider: str,
+    raw_id: Optional[str],
+    *,
+    institution: Optional[str] = None,
+    min_length: int = 6,
 ) -> Optional[str]:
     """Keyed HMAC-SHA256 fingerprint of a bank-assigned account identifier.
 
     Used to match the same underlying account across re-authorizations or two
     co-owners' separate bank connections (joint accounts) without persisting
-    raw IBANs or account numbers. Returns None for missing, masked, trivial, or
-    too-short inputs so unrelated credit cards sharing a 4-digit tail are never
-    merged.
+    raw IBANs or account numbers.
+
+    ``institution`` (Pluggy connector / COMPE code, Enable Banking ASPSP +
+    country) is required and bound into the HMAC so non-globally-unique
+    branch/account numbers or BBANs at different banks can never collide.
+    Returns None for missing institution or missing, masked, trivial, or
+    too-short inputs so unrelated accounts or credit cards sharing a 4-digit
+    tail are never merged.
     """
     if not raw_id or not isinstance(raw_id, str):
+        return None
+    if not institution or not isinstance(institution, str):
+        return None
+    inst_clean = " ".join(institution.strip().lower().split())
+    if not inst_clean:
         return None
     stripped = raw_id.strip()
     if "*" in stripped or "XXXX" in stripped.upper():
@@ -81,7 +95,9 @@ def hash_account_identifier(
     secret = get_settings().secret_key.get_secret_value()
     if not secret:
         return None
-    msg = f"account-fingerprint:v1:{provider.strip().lower()}:{cleaned}".encode("utf-8")
+    msg = (
+        f"account-fingerprint:v2:{provider.strip().lower()}:{inst_clean}:{cleaned}"
+    ).encode("utf-8")
     return hmac.new(secret.encode("utf-8"), msg, hashlib.sha256).hexdigest()
 
 

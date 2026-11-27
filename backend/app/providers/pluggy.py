@@ -678,7 +678,45 @@ def _auto_invested_portion(account: dict) -> Decimal:
     return min(_auto_invested_balance(account), balance)
 
 
-def _build_account_data(acc: dict, type_mapper) -> AccountData:
+def _pluggy_institution_key(
+    connector_id: object = None,
+    connector_name: object = None,
+    acc: Optional[dict] = None,
+) -> Optional[str]:
+    """Institution scope for Pluggy account fingerprints.
+
+    Pluggy's ``number`` is a branch/account string with no bank code, so two
+    different banks (e.g. Itaú ``1234-56789`` and Bradesco ``1234/5678-9``)
+    normalize to identical digits. Binding the Pluggy connector identity (plus
+    the COMPE code from ``bankData.transferNumber`` when present, which also
+    separates multi-institution banking groups under one connector) guarantees
+    different institutions never share a fingerprint.
+    """
+    parts: list[str] = []
+    if connector_id is not None and not isinstance(connector_id, bool):
+        cid = str(connector_id).strip()
+        if cid:
+            parts.append(f"connector:{cid}")
+    elif isinstance(connector_name, str) and connector_name.strip():
+        cname = " ".join(connector_name.strip().lower().split())
+        if cname and cname != "unknown bank":
+            parts.append(f"connector_name:{cname}")
+    if isinstance(acc, dict):
+        compe = _compe_from_transfer_number(
+            (acc.get("bankData") or {}).get("transferNumber")
+        )
+        if compe:
+            parts.append(f"compe:{compe}")
+    return "|".join(parts) if parts else None
+
+
+def _build_account_data(
+    acc: dict,
+    type_mapper,
+    *,
+    connector_id: object = None,
+    connector_name: object = None,
+) -> AccountData:
     """Map a Pluggy account payload to AccountData, including creditData when present."""
     account_type = type_mapper(acc.get("type", ""), acc.get("subtype"))
     credit_data = acc.get("creditData") or {}
@@ -708,8 +746,15 @@ def _build_account_data(acc: dict, type_mapper) -> AccountData:
 
     account_currency = acc.get("currencyCode", "USD")
     raw_number = acc.get("number")
+    institution_key = _pluggy_institution_key(
+        connector_id=connector_id,
+        connector_name=connector_name,
+        acc=acc,
+    )
     account_fingerprint = hash_account_identifier(
-        "pluggy", raw_number if isinstance(raw_number, str) else None
+        "pluggy",
+        raw_number if isinstance(raw_number, str) else None,
+        institution=institution_key,
     )
 
     return AccountData(
@@ -847,19 +892,34 @@ class PluggyProvider(BankProvider):
             accounts_resp.raise_for_status()
             accounts_data = accounts_resp.json()
 
-        connector = item_data.get("connector", {})
-        institution_name = connector.get("name", "Unknown Bank")
+        connector = item_data.get("connector") or {}
+        connector_id = connector.get("id")
+        connector_name = connector.get("name")
+        institution_name = connector_name or "Unknown Bank"
 
         raw_accounts = accounts_data.get("results", [])
         account_list = []
         for acc in raw_accounts:
-            account_list.append(_build_account_data(acc, self._map_account_type))
+            account_list.append(
+                _build_account_data(
+                    acc,
+                    self._map_account_type,
+                    connector_id=connector_id,
+                    connector_name=connector_name,
+                )
+            )
         await _annotate_institutions(raw_accounts, account_list)
+
+        creds: dict = {"item_id": item_id}
+        if connector_id is not None and not isinstance(connector_id, bool):
+            creds["connector_id"] = str(connector_id)
+        if isinstance(connector_name, str) and connector_name.strip():
+            creds["connector_name"] = connector_name.strip()
 
         return ConnectionData(
             external_id=item_id,
             institution_name=institution_name,
-            credentials={"item_id": item_id},
+            credentials=creds,
             accounts=account_list,
             logo_url=_resolve_connector_logo(connector, raw_accounts),
         )
@@ -886,8 +946,32 @@ class PluggyProvider(BankProvider):
     async def get_accounts(self, credentials: dict) -> list[AccountData]:
         item_id = credentials["item_id"]
         headers = await self._headers()
+        connector_id = credentials.get("connector_id")
+        connector_name = credentials.get("connector_name")
 
         async with httpx.AsyncClient(timeout=30.0) as client:
+            if connector_id is None and not connector_name:
+                # Legacy connections stored only `item_id`; backfill connector
+                # metadata once so account fingerprints stay institution-scoped.
+                try:
+                    item_resp = await client.get(
+                        f"{PLUGGY_API_BASE}/items/{item_id}",
+                        headers=headers,
+                    )
+                    item_resp.raise_for_status()
+                    connector = (item_resp.json() or {}).get("connector") or {}
+                    if connector.get("id") is not None and not isinstance(connector.get("id"), bool):
+                        connector_id = str(connector["id"])
+                        credentials["connector_id"] = connector_id
+                    if isinstance(connector.get("name"), str) and connector["name"].strip():
+                        connector_name = connector["name"].strip()
+                        credentials["connector_name"] = connector_name
+                except Exception:
+                    logger.debug(
+                        "Could not backfill Pluggy connector metadata for item %s",
+                        item_id,
+                    )
+
             resp = await client.get(
                 f"{PLUGGY_API_BASE}/accounts",
                 headers=headers,
@@ -898,7 +982,14 @@ class PluggyProvider(BankProvider):
 
         accounts = []
         for acc in data.get("results", []):
-            accounts.append(_build_account_data(acc, self._map_account_type))
+            accounts.append(
+                _build_account_data(
+                    acc,
+                    self._map_account_type,
+                    connector_id=connector_id,
+                    connector_name=connector_name,
+                )
+            )
         await _annotate_institutions(data.get("results", []), accounts)
         return accounts
 

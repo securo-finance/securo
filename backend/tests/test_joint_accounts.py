@@ -59,7 +59,9 @@ async def test_cross_connection_joint_account_linking_and_failover(
         )
     )
 
-    fp = hash_account_identifier("enable_banking", "DE89370400440532013001")
+    fp = hash_account_identifier(
+        "enable_banking", "DE89370400440532013001", institution="DE:jointbank"
+    )
     assert fp is not None
     conn_a = BankConnection(
         id=uuid.uuid4(),
@@ -539,7 +541,9 @@ async def test_oauth_takeover_promotes_joint_account_without_duplicating_transac
         )
     )
 
-    fp = hash_account_identifier("pluggy", "1234567890")
+    fp = hash_account_identifier(
+        "pluggy", "1234567890", institution="connector:201"
+    )
     assert fp is not None
     old_conn = BankConnection(
         id=uuid.uuid4(),
@@ -706,9 +710,15 @@ async def test_oauth_partner_login_does_not_overwrite_active_first_partner_via_j
         )
     )
 
-    fp_a = hash_account_identifier("enable_banking", "DE89370400440532011111")
-    fp_b = hash_account_identifier("enable_banking", "DE89370400440532022222")
-    fp_j = hash_account_identifier("enable_banking", "DE89370400440532099999")
+    fp_a = hash_account_identifier(
+        "enable_banking", "DE89370400440532011111", institution="DE:householdbank"
+    )
+    fp_b = hash_account_identifier(
+        "enable_banking", "DE89370400440532022222", institution="DE:householdbank"
+    )
+    fp_j = hash_account_identifier(
+        "enable_banking", "DE89370400440532099999", institution="DE:householdbank"
+    )
     assert fp_a and fp_b and fp_j
 
     conn_a = BankConnection(
@@ -936,7 +946,9 @@ async def test_path_4b_matches_eb_settled_hold_beyond_1d_and_pluggy_failover_ded
         is None
     )
 
-    fp = hash_account_identifier("pluggy", "555566667777")
+    fp = hash_account_identifier(
+        "pluggy", "555566667777", institution="connector:201"
+    )
     assert fp is not None
     conn_a = BankConnection(
         id=uuid.uuid4(),
@@ -1577,3 +1589,283 @@ async def test_secondary_sync_skips_closed_account_and_failover_preserves_tx_use
         )
     await session.refresh(hist_tx)
     assert hist_tx.user_id == test_user.id
+
+
+@pytest.mark.asyncio
+async def test_different_pluggy_banks_with_same_account_number_do_not_fold(
+    session: AsyncSession, test_user: User, test_workspace
+):
+    """Two Pluggy connections at different institutions whose branch/account
+    numbers normalize identically (Itaú 1234-56789 vs Bradesco 1234/5678-9)
+    must stay separate accounts, keeping independent balances and importing
+    transactions for both."""
+    from app.providers.enable_banking import _aspsp_institution_key, _details_summary
+    from app.providers.pluggy import PluggyProvider, _build_account_data
+
+    # Fail closed when institution scope is absent
+    assert hash_account_identifier("pluggy", "1234-56789") is None
+    assert hash_account_identifier("pluggy", "1234-56789", institution="   ") is None
+
+    # Enable Banking ASPSP + country scope separates same BBAN across banks/countries
+    eb_raw = {
+        "display_name": "Checking",
+        "cash_account_type": "CACC",
+        "currency": "EUR",
+        "account_id": {"other": {"identification": "1234567890"}},
+    }
+    nl_ing = _details_summary(
+        eb_raw, institution=_aspsp_institution_key({"name": "ING", "country": "NL"})
+    )["account_fingerprint"]
+    de_ing = _details_summary(
+        eb_raw, institution=_aspsp_institution_key({"name": "ING", "country": "DE"})
+    )["account_fingerprint"]
+    nl_rabo = _details_summary(
+        eb_raw, institution=_aspsp_institution_key({"name": "Rabobank", "country": "NL"})
+    )["account_fingerprint"]
+    assert nl_ing is not None and de_ing is not None and nl_rabo is not None
+    assert len({nl_ing, de_ing, nl_rabo}) == 3
+
+    # Build real Pluggy AccountData rows for Itaú vs Bradesco with colliding numbers
+    itau_data = _build_account_data(
+        {
+            "id": "itau-acc-1",
+            "name": "Conta Corrente",
+            "type": "BANK",
+            "subtype": "CHECKING_ACCOUNT",
+            "currencyCode": "BRL",
+            "balance": 1000.00,
+            "number": "1234-56789",
+        },
+        PluggyProvider._map_account_type,
+        connector_id=201,
+        connector_name="Itaú",
+    )
+    bradesco_data = _build_account_data(
+        {
+            "id": "bradesco-acc-1",
+            "name": "Conta Corrente",
+            "type": "BANK",
+            "subtype": "CHECKING_ACCOUNT",
+            "currencyCode": "BRL",
+            "balance": 250.00,
+            "number": "1234/5678-9",
+        },
+        PluggyProvider._map_account_type,
+        connector_id=205,
+        connector_name="Bradesco",
+    )
+    itau_partner_data = _build_account_data(
+        {
+            "id": "itau-acc-partner",
+            "name": "Conta Corrente",
+            "type": "BANK",
+            "subtype": "CHECKING_ACCOUNT",
+            "currencyCode": "BRL",
+            "balance": 1000.00,
+            "number": "1234/5678-9",
+        },
+        PluggyProvider._map_account_type,
+        connector_id=201,
+        connector_name="Itaú",
+    )
+    assert itau_data.account_fingerprint is not None
+    assert bradesco_data.account_fingerprint is not None
+    assert itau_data.account_fingerprint != bradesco_data.account_fingerprint
+    assert itau_data.account_fingerprint == itau_partner_data.account_fingerprint
+
+    conn_itau = BankConnection(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        provider="pluggy",
+        external_id="item-itau",
+        institution_name="Itaú",
+        credentials={"item_id": "item-itau", "connector_id": "201", "connector_name": "Itaú"},
+        status="active",
+        created_at=datetime.now(timezone.utc),
+    )
+    conn_bradesco = BankConnection(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        provider="pluggy",
+        external_id="item-bradesco",
+        institution_name="Bradesco",
+        credentials={
+            "item_id": "item-bradesco",
+            "connector_id": "205",
+            "connector_name": "Bradesco",
+        },
+        status="active",
+        created_at=datetime.now(timezone.utc),
+    )
+    session.add_all([conn_itau, conn_bradesco])
+    await session.commit()
+
+    itau_provider = AsyncMock()
+    itau_provider.refresh_credentials = AsyncMock(return_value=conn_itau.credentials)
+    itau_provider.get_institution_logo = AsyncMock(return_value=None)
+    itau_provider.get_accounts = AsyncMock(return_value=[itau_data])
+    itau_provider.get_transactions = AsyncMock(
+        return_value=[
+            TransactionData(
+                external_id="itau-tx-1",
+                description="Padaria Itau",
+                amount=Decimal("20.00"),
+                date=date(2026, 10, 5),
+                type="debit",
+                currency="BRL",
+            )
+        ]
+    )
+    itau_provider.get_bills = AsyncMock(return_value=[])
+
+    bradesco_provider = AsyncMock()
+    bradesco_provider.refresh_credentials = AsyncMock(return_value=conn_bradesco.credentials)
+    bradesco_provider.get_institution_logo = AsyncMock(return_value=None)
+    bradesco_provider.get_accounts = AsyncMock(return_value=[bradesco_data])
+    bradesco_provider.get_transactions = AsyncMock(
+        return_value=[
+            TransactionData(
+                external_id="bradesco-tx-1",
+                description="Mercado Bradesco",
+                amount=Decimal("45.00"),
+                date=date(2026, 10, 6),
+                type="debit",
+                currency="BRL",
+            )
+        ]
+    )
+    bradesco_provider.get_bills = AsyncMock(return_value=[])
+
+    p1, p2, p3 = _patch_sync_helpers()
+    with patch("app.services.connection_service.get_provider", return_value=itau_provider), p1, p2, p3:
+        await connection_service.sync_connection(
+            session, conn_itau.id, test_workspace.id, test_user.id
+        )
+
+    p1, p2, p3 = _patch_sync_helpers()
+    with patch("app.services.connection_service.get_provider", return_value=bradesco_provider), p1, p2, p3:
+        await connection_service.sync_connection(
+            session, conn_bradesco.id, test_workspace.id, test_user.id
+        )
+
+    accs = (
+        await session.execute(
+            select(Account)
+            .where(Account.workspace_id == test_workspace.id)
+            .order_by(Account.balance.desc())
+        )
+    ).scalars().all()
+    assert len(accs) == 2
+    by_conn = {a.connection_id: a for a in accs}
+    assert by_conn[conn_itau.id].balance == Decimal("1000.00")
+    assert by_conn[conn_bradesco.id].balance == Decimal("250.00")
+
+    txns = (
+        await session.execute(
+            select(Transaction).where(
+                Transaction.workspace_id == test_workspace.id,
+                Transaction.external_id.is_not(None),
+            )
+        )
+    ).scalars().all()
+    assert {tx.external_id: tx.account_id for tx in txns} == {
+        "itau-tx-1": by_conn[conn_itau.id].id,
+        "bradesco-tx-1": by_conn[conn_bradesco.id].id,
+    }
+
+
+@pytest.mark.asyncio
+async def test_tier1_fingerprint_match_requires_same_account_type(
+    session: AsyncSession, test_user: User, test_workspace
+):
+    """Tier 1 matching must require acc.type == acc_data.type so a checking and
+    savings account sharing an underlying bank identifier never fold together."""
+    shared_fp = hash_account_identifier(
+        "pluggy", "99887766", institution="connector:201"
+    )
+    assert shared_fp is not None
+
+    conn_a = BankConnection(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        provider="pluggy",
+        external_id="item-type-a",
+        institution_name="Itaú",
+        credentials={"item_id": "item-type-a", "connector_id": "201"},
+        status="active",
+        created_at=datetime.now(timezone.utc),
+    )
+    conn_b = BankConnection(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        provider="pluggy",
+        external_id="item-type-b",
+        institution_name="Itaú",
+        credentials={"item_id": "item-type-b", "connector_id": "201"},
+        status="active",
+        created_at=datetime.now(timezone.utc),
+    )
+    session.add_all([conn_a, conn_b])
+    await session.flush()
+
+    checking_acc = Account(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        connection_id=conn_a.id,
+        external_id="itau-chk-1",
+        account_fingerprint=shared_fp,
+        masked_number="7766",
+        name="Conta Corrente",
+        type="checking",
+        balance=Decimal("800.00"),
+        currency="BRL",
+    )
+    session.add(checking_acc)
+    await session.flush()
+    session.add(
+        AccountConnectionLink(
+            workspace_id=test_workspace.id,
+            account_id=checking_acc.id,
+            connection_id=conn_a.id,
+            external_id="itau-chk-1",
+            account_fingerprint=shared_fp,
+            is_primary_feed=True,
+            status="active",
+        )
+    )
+    await session.commit()
+
+    savings_incoming = AccountData(
+        external_id="itau-sav-1",
+        account_fingerprint=shared_fp,
+        masked_number="7766",
+        name="Poupança",
+        type="savings",
+        balance=Decimal("3000.00"),
+        currency="BRL",
+    )
+    mock_provider = AsyncMock()
+    mock_provider.refresh_credentials = AsyncMock(return_value=conn_b.credentials)
+    mock_provider.get_institution_logo = AsyncMock(return_value=None)
+    mock_provider.get_accounts = AsyncMock(return_value=[savings_incoming])
+    mock_provider.get_transactions = AsyncMock(return_value=[])
+    mock_provider.get_bills = AsyncMock(return_value=[])
+
+    p1, p2, p3 = _patch_sync_helpers()
+    with patch("app.services.connection_service.get_provider", return_value=mock_provider), p1, p2, p3:
+        await connection_service.sync_connection(
+            session, conn_b.id, test_workspace.id, test_user.id
+        )
+
+    accs = (
+        await session.execute(
+            select(Account).where(Account.workspace_id == test_workspace.id)
+        )
+    ).scalars().all()
+    assert len(accs) == 2
+    assert {a.type for a in accs} == {"checking", "savings"}

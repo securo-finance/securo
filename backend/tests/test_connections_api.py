@@ -845,4 +845,6 @@ async def test_plugin_payload_provider_server_hmacs_account_fingerprint():
     assert a1.account_fingerprint != raw_fp
     assert a1.account_fingerprint == hash_plugin_account_fingerprint("plugin:acme/one", raw_fp)
     assert a1.account_fingerprint != a2.account_fingerprint
-    assert a1.account_fingerprint != hash_account_identifier("plugin:acme/one", raw_fp)
+    assert a1.account_fingerprint != hash_account_identifier(
+        "plugin:acme/one", raw_fp, institution="acme"
+    )

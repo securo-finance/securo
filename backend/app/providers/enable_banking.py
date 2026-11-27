@@ -508,7 +508,22 @@ def _stable_account_id(raw: dict) -> Optional[str]:
     return None
 
 
-def _details_summary(raw: dict) -> dict[str, Optional[str]]:
+def _aspsp_institution_key(aspsp: Optional[dict]) -> Optional[str]:
+    """Institution scope for Enable Banking fingerprints (ASPSP name + country)."""
+    if not isinstance(aspsp, dict):
+        return None
+    name = aspsp.get("name")
+    country = aspsp.get("country")
+    clean_name = " ".join(name.strip().lower().split()) if isinstance(name, str) else ""
+    clean_country = country.strip().upper() if isinstance(country, str) else ""
+    if not clean_name or (clean_name == "bank" and not clean_country):
+        return None
+    return f"{clean_country}:{clean_name}" if clean_country else clean_name
+
+
+def _details_summary(
+    raw: dict, *, institution: Optional[str] = None
+) -> dict[str, Optional[str]]:
     """The part of an account's details payload the sync uses.
 
     The masked number and keyed HMAC fingerprint are kept rather than the
@@ -522,7 +537,10 @@ def _details_summary(raw: dict) -> dict[str, Optional[str]]:
         "cash_account_type": raw.get("cash_account_type"),
         "currency": raw.get("currency"),
         "masked_number": mask_last4(ident),
-        "account_fingerprint": hash_account_identifier("enable_banking", ident),
+        "account_fingerprint": hash_account_identifier(
+            "enable_banking", ident, institution=institution
+        ),
+        "account_fingerprint_scope": institution,
     }
 
 
@@ -642,6 +660,7 @@ class EnableBankingProvider(BankProvider):
         # of the connection being synced. None while unknown.
         self._required_psu_headers: Optional[list[str]] = None
         self._institution_name = "The bank"
+        self._institution_key: Optional[str] = None
         # Accounts whose transactions this sync fetched only in part; the
         # sync then leaves last_sync_at alone so the rest is asked for again.
         self.incomplete_account_ids: set[str] = set()
@@ -669,6 +688,7 @@ class EnableBankingProvider(BankProvider):
             self._required_psu_headers = [h for h in required if isinstance(h, str)]
         if isinstance(aspsp.get("name"), str) and aspsp["name"]:
             self._institution_name = aspsp["name"]
+        self._institution_key = _aspsp_institution_key(aspsp)
 
     @property
     def name(self) -> str:
@@ -1006,6 +1026,7 @@ class EnableBankingProvider(BankProvider):
             )
 
         aspsp = data.get("aspsp") or {}
+        institution_key = _aspsp_institution_key(aspsp)
         institution_name = aspsp.get("name") or "Bank"
         access = data.get("access") or {}
         valid_until = access.get("valid_until")
@@ -1019,6 +1040,7 @@ class EnableBankingProvider(BankProvider):
         if required_psu_headers is not None:
             stored_aspsp["required_psu_headers"] = required_psu_headers
         self._use_credentials({"aspsp": stored_aspsp})
+        self._institution_key = institution_key
 
         accounts: list[AccountData] = []
         account_details: dict[str, dict] = {}
@@ -1033,12 +1055,15 @@ class EnableBankingProvider(BankProvider):
                 await self._build_account(
                     raw_acc,
                     _stable_account_id(raw_acc),
+                    institution=institution_key,
                     tolerate_presence_refusal=True,
                 )
             )
             uid = raw_acc.get("uid") or raw_acc.get("account_uid")
             if uid:
-                account_details[uid] = _details_summary(raw_acc)
+                account_details[uid] = _details_summary(
+                    raw_acc, institution=institution_key
+                )
 
         encrypted_session = encrypt(session_id) or session_id
         credentials: dict[str, Any] = {
@@ -1074,6 +1099,7 @@ class EnableBankingProvider(BankProvider):
         raw: dict,
         stable_external_id: Optional[str] = None,
         *,
+        institution: Optional[str] = None,
         tolerate_presence_refusal: bool = False,
         require_balance: bool = False,
     ) -> AccountData:
@@ -1115,6 +1141,7 @@ class EnableBankingProvider(BankProvider):
             or "Account"
         )
         ident = _account_identifier(raw)
+        inst_scope = institution if institution is not None else self._institution_key
         return AccountData(
             external_id=uid,
             name=name,
@@ -1127,11 +1154,18 @@ class EnableBankingProvider(BankProvider):
             # From the session payload: `uid` is scoped to one session, this
             # hash is what lets a later session find the same account again.
             stable_external_id=stable_external_id,
-            account_fingerprint=hash_account_identifier("enable_banking", ident),
+            account_fingerprint=hash_account_identifier(
+                "enable_banking", ident, institution=inst_scope
+            ),
         )
 
     async def _build_cached_account(
-        self, uid: str, cached: dict, stable_external_id: Optional[str]
+        self,
+        uid: str,
+        cached: dict,
+        stable_external_id: Optional[str],
+        *,
+        institution: Optional[str] = None,
     ) -> AccountData:
         """An account named from cached details; only its balance is fetched.
 
@@ -1148,12 +1182,21 @@ class EnableBankingProvider(BankProvider):
                 "cash_account_type": cached.get("cash_account_type"),
             },
             stable_external_id,
+            institution=institution,
             require_balance=True,
         )
         masked = cached.get("masked_number")
         account.masked_number = masked if isinstance(masked, str) else None
         fp = cached.get("account_fingerprint")
-        account.account_fingerprint = fp if isinstance(fp, str) else None
+        inst_scope = institution if institution is not None else self._institution_key
+        if (
+            isinstance(fp, str)
+            and inst_scope is not None
+            and cached.get("account_fingerprint_scope") == inst_scope
+        ):
+            account.account_fingerprint = fp
+        else:
+            account.account_fingerprint = None
         return account
 
     # ----- account / transaction fetches -----
@@ -1228,6 +1271,18 @@ class EnableBankingProvider(BankProvider):
         if not isinstance(cached_details, dict):
             cached_details = {}
             credentials[ACCOUNT_DETAILS_KEY] = cached_details
+        data_aspsp = data.get("aspsp")
+        raw_aspsp: dict[str, Any] = data_aspsp if isinstance(data_aspsp, dict) else {}
+        creds_aspsp_val = credentials.get("aspsp")
+        cred_aspsp: dict[str, Any] = (
+            creds_aspsp_val if isinstance(creds_aspsp_val, dict) else {}
+        )
+        institution_key = _aspsp_institution_key(
+            {
+                "name": raw_aspsp.get("name") or cred_aspsp.get("name"),
+                "country": raw_aspsp.get("country") or cred_aspsp.get("country"),
+            }
+        )
         # Present means the requests carry the user's headers: a user-present
         # sync that cannot send them reaches the bank as a background one.
         user_present = bool(self._present_psu_headers())
@@ -1243,17 +1298,25 @@ class EnableBankingProvider(BankProvider):
                     # rather than syncing a zero balance.
                     result.append(
                         await self._build_cached_account(
-                            uid, cached, stable_external_ids.get(uid)
+                            uid,
+                            cached,
+                            stable_external_ids.get(uid),
+                            institution=institution_key,
                         )
                     )
                     continue
                 details = await self._request("GET", f"/accounts/{uid}/details")
-                cached_details[uid] = _details_summary(details)
+                cached_details[uid] = _details_summary(
+                    details, institution=institution_key
+                )
                 # A balance that cannot be read is skipped like the cached
                 # path above, never synced as a 0.00 over the real one.
                 result.append(
                     await self._build_account(
-                        details, stable_external_ids.get(uid), require_balance=True
+                        details,
+                        stable_external_ids.get(uid),
+                        institution=institution_key,
+                        require_balance=True,
                     )
                 )
             except ProviderRateLimited as exc:
