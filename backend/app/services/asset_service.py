@@ -231,14 +231,12 @@ def _asset_to_read(
 
 
 async def _get_latest_value(session: AsyncSession, asset_id: uuid.UUID) -> Optional[AssetValue]:
-    """Get the most recent AssetValue for an asset."""
-    result = await session.execute(
-        select(AssetValue)
-        .where(AssetValue.asset_id == asset_id)
-        .order_by(desc(AssetValue.date), desc(AssetValue.id))
-        .limit(1)
-    )
-    return result.scalar_one_or_none()
+    """Get the AssetValue an asset is worth today.
+
+    A valuation dated after today has not happened yet, so it is left out,
+    as the dashboard, net worth and goals leave it out (#646).
+    """
+    return await _get_value_as_of(session, asset_id, app_today())
 
 
 async def _get_value_as_of(

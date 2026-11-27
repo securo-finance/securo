@@ -935,11 +935,17 @@ async def test_manual_valuation_on_a_synced_asset_hides_the_provider_date(
     assert read is not None
     assert read.provider_value_date == frozen
 
+    # The sync ran yesterday; the user values the holding by hand today. A
+    # valuation dated after today would not be on screen yet (#646).
+    for value in await _values_for(session, asset.id):
+        if value.source == "sync":
+            value.date = app_today() - timedelta(days=1)
+    await session.commit()
     await add_asset_value(
         session,
         asset.id,
         asset.workspace_id,
-        AssetValueCreate(amount=Decimal("1200.00"), date=app_today() + timedelta(days=1)),
+        AssetValueCreate(amount=Decimal("1200.00"), date=app_today()),
     )
 
     read = await get_asset(session, asset.id, asset.workspace_id)
