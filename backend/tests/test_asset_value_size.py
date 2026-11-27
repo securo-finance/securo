@@ -127,3 +127,20 @@ async def test_a_goal_on_a_flat_worth_billions_shows_its_value_and_history(
     amounts = [point["amount"] for point in trend.json()]
     assert float(NINE_POINT_EIGHT_BILLION) in amounts
     assert amounts[-1] == float(ONE_BILLION)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("field", ["purchase_price", "sell_price"])
+async def test_an_asset_edited_past_the_column_is_a_422_without_sql(
+    client: AsyncClient, auth_headers: dict, field: str
+):
+    flat = await _flat(client, auth_headers)
+
+    response = await client.patch(
+        f"/api/assets/{flat['id']}", headers=auth_headers, json={field: PAST_IT}
+    )
+
+    assert response.status_code == 422
+    body = response.text.lower()
+    assert f"{field} must be at most 9999999999999.99" in body
+    assert "numeric" not in body and "sql" not in body

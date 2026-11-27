@@ -12,6 +12,7 @@ from tests.test_asset_value_size import (  # noqa: F401 -- rerun on PostgreSQL
     test_a_valuation_past_the_column_is_a_422_without_sql,
     test_an_asset_created_past_the_column_is_a_422_without_sql,
     test_an_asset_created_with_a_current_value_of_a_billion_is_kept,
+    test_an_asset_edited_past_the_column_is_a_422_without_sql,
 )
 
 
