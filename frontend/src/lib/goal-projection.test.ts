@@ -170,7 +170,9 @@ describe('goal chart axis', () => {
   })
 
   it.each([
-    { target: 0, floor: 0, side: 'insideTopRight' },
+    // On the floor the label goes above the line, clear of the x-axis labels.
+    { target: 0, floor: 0, side: 'insideBottomRight' },
+    { target: -100, floor: -100, side: 'insideBottomRight' },
     { target: 0, floor: -100, side: 'insideTopLeft' },
     { target: 6000, floor: 0, side: 'insideTopLeft' },
   ])('places a target of $target above a floor of $floor at $side', ({ target, floor, side }) => {

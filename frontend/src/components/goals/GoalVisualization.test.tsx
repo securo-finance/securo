@@ -271,7 +271,19 @@ it('moves the target label off the axis when the target is zero', async () => {
     const label = within(region)
       .getByText('Target')
       .closest('text')
+    // Sits above the dashed target line, one text line clear of the x-axis
+    // tick labels that share the bottom-right corner.
+    const line = region.querySelector('.recharts-reference-line line[stroke-dasharray="4 4"]')
+    const labelY = Number(label?.getAttribute('y'))
+    const lineY = Number(line?.getAttribute('y1'))
     expect(label?.getAttribute('text-anchor')).toBe('end')
+    expect(labelY).toBeLessThan(lineY)
+    const tickY = Math.min(
+      ...Array.from(region.querySelectorAll('.recharts-xAxis-tick-labels text')).map(node =>
+        Number(node.getAttribute('y')),
+      ),
+    )
+    expect(tickY - labelY).toBeGreaterThanOrEqual(11)
   })
 })
 

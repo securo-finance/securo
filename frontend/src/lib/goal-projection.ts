@@ -224,18 +224,20 @@ export function axisTicks(from: string, to: string, max = 6): number[] {
 }
 
 /**
- * Places the target label on the side of the line that does not cover the axis
- * labels: right when the target sits on the axis floor, left otherwise.
+ * Places the target label so it covers neither the x-axis labels nor the
+ * dashed target line. A reference line has no height, so Recharts reads
+ * "insideTopRight" on the floor line as one line *below* it, over the tick
+ * labels; the label goes above the line ("insideBottomRight") there instead.
  *
  * @param {number} target - Goal target amount in major currency units.
  * @param {number} floor - Lower bound of the vertical axis.
- * @returns {'insideTopLeft' | 'insideTopRight'} Recharts label position.
+ * @returns {'insideTopLeft' | 'insideBottomRight'} Recharts label position.
  */
 export function targetLabelSide(
   target: number,
   floor: number,
-): 'insideTopLeft' | 'insideTopRight' {
-  return target <= floor ? 'insideTopRight' : 'insideTopLeft'
+): 'insideTopLeft' | 'insideBottomRight' {
+  return target <= floor ? 'insideBottomRight' : 'insideTopLeft'
 }
 
 /**
