@@ -5,7 +5,6 @@ session is bound to it, and a refusal has to take all of them back.
 """
 from __future__ import annotations
 
-import pytest
 from httpx import ASGITransport, AsyncClient
 from pydantic import SecretStr
 from sqlalchemy import func, select

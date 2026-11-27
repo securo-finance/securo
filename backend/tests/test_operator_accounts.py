@@ -5,11 +5,13 @@ import uuid
 from unittest.mock import patch
 
 import pytest
+from fastapi_users.db import SQLAlchemyUserDatabase
 from httpx import AsyncClient
 from pydantic import SecretStr
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.auth import UserManager
 from app.core.config import get_settings
 from app.models.account import Account
 from app.models.admin_access_log import AdminAccessLog, AdminAccessLogViewer
@@ -18,6 +20,7 @@ from app.models.rule import Rule
 from app.models.user import User
 from app.models.user_quota import UserQuota
 from app.models.workspace import Workspace, WorkspaceMember, WorkspaceTaxId
+from app.schemas.user import UserUpdate
 from app.services import operator_account_service
 
 TOKEN = "operator-secret-token"
@@ -155,6 +158,24 @@ async def test_the_account_cannot_be_signed_in_to(managed, operator, client: Asy
         login = await client.post("/api/auth/login", data={"username": "ana@example.com", "password": password})
         assert login.status_code in (400, 422), (password, login.text)
         assert "access_token" not in login.text
+
+
+@pytest.mark.asyncio
+async def test_the_account_has_no_password_set_until_the_person_sets_one(
+    managed, operator, client: AsyncClient, session: AsyncSession
+):
+    """The password column always holds a hash, so it cannot say this (#1966)."""
+    assert (await client.post(URL, json=_body(), headers=operator)).status_code == 201
+    [user] = await _accounts(session, "ana@example.com")
+    assert user.hashed_password and user.password_set_at is None
+
+    manager = UserManager(SQLAlchemyUserDatabase(session, User))
+    await manager.update(UserUpdate(password="her-own-pass-12"), user)
+    session.expire_all()
+    [user] = await _accounts(session, "ana@example.com")
+    assert user.password_set_at is not None
+    login = await client.post("/api/auth/login", data={"username": "ana@example.com", "password": "her-own-pass-12"})
+    assert login.status_code == 200, login.text
 
 
 @pytest.mark.asyncio

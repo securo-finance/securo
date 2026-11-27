@@ -5,6 +5,7 @@ import json
 import logging
 import secrets
 import time
+from datetime import datetime
 from typing import Any
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
@@ -461,6 +462,8 @@ class _OIDCUserCreate(schemas.BaseUserCreate):
     preferences: dict[str, Any] | None = None
     oidc_issuer: str | None = None
     oidc_subject: str | None = None
+    # The password below is a throwaway the person never sees.
+    password_set_at: datetime | None = None
 
 
 async def _get_or_create_oidc_user(
@@ -541,6 +544,7 @@ async def _get_or_create_oidc_user(
     user_create = _OIDCUserCreate(
         email=email.lower(),
         password=secrets.token_urlsafe(32),
+        password_set_at=None,
         is_verified=True,
         is_superuser=bool(settings.oidc_sync_roles and admin_roles and provider_roles & admin_roles),
         preferences=preferences,
