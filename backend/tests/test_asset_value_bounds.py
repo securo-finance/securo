@@ -14,7 +14,7 @@ from decimal import Decimal
 import pytest
 from httpx import AsyncClient
 from pydantic import ValidationError
-from sqlalchemy import func, select
+from sqlalchemy import Numeric, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.money import MoneyOutOfRange, bounded_asset_value, max_asset_value
@@ -40,6 +40,8 @@ def test_the_ceiling_is_the_asset_column_not_a_constant_of_its_own():
     column (the one in #1951) has to move the bound with it, and a hardcoded
     ceiling would keep refusing what the column already holds."""
     column = AssetValue.__table__.c.amount.type
+    assert isinstance(column, Numeric)
+    assert column.precision is not None and column.scale is not None
     integer_digits = column.precision - column.scale
     assert max_asset_value() == Decimal(10) ** integer_digits - Decimal(1).scaleb(-column.scale)
     assert len(str(int(max_asset_value()))) == integer_digits
