@@ -74,8 +74,15 @@ async def create_token(
     name: str,
     scopes: list[str],
     expires_in_days: Optional[int],
+    commit: bool = True,
 ) -> tuple[AccessToken, str]:
-    """Create a token and return it with its plaintext secret (shown once)."""
+    """Create a token and return it with its plaintext secret (shown once).
+
+    `commit=False` leaves it in the caller's transaction, for a caller that
+    creates more with it: a plugin connection and its token commit together,
+    so the quota lock taken before them covers both and a failure after the
+    token leaves no token behind.
+    """
     name = name.strip()
     if not name:
         raise AccessTokenError("Give the token a name.")
@@ -92,8 +99,11 @@ async def create_token(
         expires_at=now + timedelta(days=expires_in_days) if expires_in_days else None,
     )
     session.add(token)
-    await session.commit()
-    await session.refresh(token)
+    if commit:
+        await session.commit()
+        await session.refresh(token)
+    else:
+        await session.flush()
     return token, raw
 
 

@@ -57,6 +57,11 @@ class Settings(BaseSettings):
             return False
         return value
 
+    # The operator's own credential for writing per-account limits on a managed
+    # instance (ADR 0049), sent as a bearer token to /api/operator/quotas.
+    # Unset, that route does not exist (404).
+    operator_token: SecretStr = SecretStr("")
+
     # Database
     database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/securo"
     # Connections the API keeps open, and how many extra ones a burst may open

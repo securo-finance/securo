@@ -115,6 +115,16 @@ ALLOWLIST: dict[tuple[str, str], str] = {
     # untouched, so a viewer may arrange their view too.
     ("PUT", "/api/ui/layouts/{surface}"): "the requester's own view of the workspace, no workspace data",
     ("DELETE", "/api/ui/layouts/{surface}"): "the requester's own view of the workspace, no workspace data",
+    # The operator of a managed instance, by OPERATOR_TOKEN and never by a
+    # user: the customer's administrator must not reach these (ADR 0049).
+    ("PUT", "/api/operator/quotas/{user_id}"): "operator-token-gated per-account limits, no user",
+    ("POST", "/api/operator/quotas/{user_id}/fit-check"): "operator-token-gated read of the account's counts",
+}
+
+# Gated by the operator's token instead of a user (ADR 0049).
+OPERATOR_ROUTES = {
+    ("PUT", "/api/operator/quotas/{user_id}"),
+    ("POST", "/api/operator/quotas/{user_id}/fit-check"),
 }
 
 # These routes establish authentication (or end it), so requiring an existing
@@ -193,7 +203,10 @@ def test_a_mutating_route_declares_a_permission_decision(method, path):
     if (method, path) in ALLOWLIST:
         assert ALLOWLIST[(method, path)].strip(), "an exemption needs a reason"
         assert not names & WRITE_GATES, "remove the redundant write-gate exemption"
-        if (method, path) in PUBLIC_ROUTES:
+        if (method, path) in OPERATOR_ROUTES:
+            assert "operator_only" in names, "operator routes require the operator token"
+            assert "current_user_dependency" not in names, "no user, not even a superuser, reaches these"
+        elif (method, path) in PUBLIC_ROUTES:
             assert "current_user_dependency" not in names, "login cannot require an existing user"
         else:
             assert "current_user_dependency" in names, "the exemption still requires authentication"
