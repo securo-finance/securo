@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { screen, waitFor, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 
 import AccountsPage, { AccountDialog } from '@/pages/accounts'
 import { renderWithProviders, t } from '@/test/utils'
@@ -25,6 +26,12 @@ const toast = vi.hoisted(() => ({
 
 vi.mock('sonner', () => ({ toast }))
 
+const NO_LIMITS = { enforced: false, info_url: null, counters: [] }
+const quota = vi.hoisted(() => ({
+  creator: 'me',
+  mine: vi.fn(() => Promise.resolve({ enforced: false, info_url: null, counters: [] as unknown[] })),
+}))
+
 vi.mock('@/lib/api', () => ({
   accounts: { list: api.accountsList },
   assets: { list: vi.fn().mockResolvedValue([]) },
@@ -36,6 +43,7 @@ vi.mock('@/lib/api', () => ({
     getReauthUrl: vi.fn(),
   },
   currencies: { list: vi.fn().mockResolvedValue([]) },
+  quotas: { mine: quota.mine },
   info: { get: vi.fn().mockResolvedValue({ features: { plugins: true } }) },
   plugins: {
     installed: api.pluginsInstalled,
@@ -46,11 +54,11 @@ vi.mock('@/lib/api', () => ({
 }))
 
 vi.mock('@/contexts/auth-context', () => ({
-  useAuth: () => ({ user: { preferences: { currency_display: 'USD' } } }),
+  useAuth: () => ({ user: { id: 'me', preferences: { currency_display: 'USD' } } }),
 }))
 
 vi.mock('@/contexts/workspace-context', () => ({
-  useWorkspace: () => ({ canWrite: true }),
+  useWorkspace: () => ({ canWrite: true, current: { id: 'ws-1', created_by_user_id: quota.creator } }),
 }))
 
 vi.mock('@/hooks/use-timezone', () => ({
@@ -75,11 +83,17 @@ vi.mock('@/components/bank-connect-dialog', () => ({
   BankConnectDialog: ({ open, reconnectConnectionId }: { open: boolean; reconnectConnectionId?: string }) =>
     open ? <div data-testid="reconnect-dialog" data-connection-id={reconnectConnectionId} /> : null,
 }))
-vi.mock('@/components/connector-select-dialog', () => ({ ConnectorSelectDialog: () => null }))
+vi.mock('@/components/connector-select-dialog', () => ({
+  ConnectorSelectDialog: ({ open }: { open: boolean }) => (open ? <div data-testid="connector-select" /> : null),
+}))
 vi.mock('@/components/oauth-connect-dialog', () => ({ OAuthConnectDialog: () => null }))
 vi.mock('@/components/token-connect-dialog', () => ({ TokenConnectDialog: () => null }))
 vi.mock('@/components/connection-settings-dialog', () => ({ ConnectionSettingsDialog: () => null }))
-vi.mock('@/components/account-page-actions', () => ({ AccountPageActions: () => null }))
+vi.mock('@/components/account-page-actions', () => ({
+  AccountPageActions: ({ onConnectBank }: { onConnectBank: () => void }) => (
+    <button type="button" onClick={onConnectBank}>connect bank</button>
+  ),
+}))
 vi.mock('@/components/account-row-actions', () => ({ AccountRowActions: () => null }))
 
 function makeConnection(overrides: Partial<BankConnection>): BankConnection {
@@ -181,6 +195,60 @@ describe('AccountsPage connection row actions', () => {
 
     await vi.waitFor(() => expect(toast.warning).toHaveBeenCalledWith(t('accounts.syncPartial')))
     expect(toast.success).not.toHaveBeenCalled()
+  })
+})
+
+describe('AccountsPage connection limit (#1972)', () => {
+  const FULL = {
+    enforced: true,
+    info_url: null,
+    counters: [{ counter: 'max_bank_connections', current: 2, maximum: 2 }],
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    quota.creator = 'me'
+    api.accountsList.mockResolvedValue([])
+    api.connectionsList.mockResolvedValue([])
+    api.pluginsInstalled.mockResolvedValue([])
+    api.pluginConnections.mockResolvedValue([])
+  })
+
+  it('says the limit is reached instead of opening the bank picker', async () => {
+    quota.mine.mockResolvedValue(FULL)
+    const user = userEvent.setup()
+    renderWithProviders(<AccountsPage />, { route: '/accounts' })
+
+    await waitFor(() => expect(quota.mine).toHaveBeenCalled())
+    await user.click(await screen.findByRole('button', { name: 'connect bank' }))
+
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith(t('quota.reached.max_bank_connections', { maximum: 2 }), undefined),
+    )
+    expect(screen.queryByTestId('connector-select')).not.toBeInTheDocument()
+  })
+
+  it('opens the bank picker when there is room', async () => {
+    quota.mine.mockResolvedValue(NO_LIMITS)
+    const user = userEvent.setup()
+    renderWithProviders(<AccountsPage />, { route: '/accounts' })
+
+    await user.click(await screen.findByRole('button', { name: 'connect bank' }))
+
+    expect(await screen.findByTestId('connector-select')).toBeInTheDocument()
+    expect(toast.error).not.toHaveBeenCalled()
+  })
+
+  it("leaves the check to the server in a workspace someone else created", async () => {
+    quota.creator = 'someone-else'
+    quota.mine.mockResolvedValue(FULL)
+    const user = userEvent.setup()
+    renderWithProviders(<AccountsPage />, { route: '/accounts' })
+
+    await waitFor(() => expect(quota.mine).toHaveBeenCalled())
+    await user.click(await screen.findByRole('button', { name: 'connect bank' }))
+
+    expect(await screen.findByTestId('connector-select')).toBeInTheDocument()
   })
 })
 

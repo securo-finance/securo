@@ -4472,5 +4472,31 @@
     "failed": "Não foi possível registrar sua decisão",
     "replaced": "O administrador enviou um novo pedido. Confira o novo endereço antes de aceitar",
     "withdrawn": "O pedido foi retirado. Sua conta mantém o endereço atual"
+  },
+  "quota": {
+    "title": "Limites de uso",
+    "menu": "Limites de uso",
+    "description": "O que esta conta pode criar nesta instância. Contadores sem limite não aparecem.",
+    "loadError": "Não foi possível carregar os limites de uso",
+    "usage": "{{current}} de {{maximum}}",
+    "membersHint": "No seu espaço de trabalho mais cheio, sem contar você",
+    "learnMore": "Saiba mais",
+    "counters": {
+      "max_personal_workspaces": "Espaços de trabalho pessoais",
+      "max_business_workspaces": "Espaços de trabalho empresariais",
+      "max_bank_connections": "Conexões bancárias",
+      "max_members_per_workspace": "Membros por espaço de trabalho"
+    },
+    "reached": {
+      "max_personal_workspaces": "Esta conta atingiu o limite de {{maximum}} espaços de trabalho pessoais. Arquive um para criar outro.",
+      "max_business_workspaces": "Esta conta atingiu o limite de {{maximum}} espaços de trabalho empresariais. Arquive um para criar outro.",
+      "max_bank_connections": "Esta conta atingiu o limite de {{maximum}} conexões bancárias nos espaços de trabalho que criou. Remova uma conexão para adicionar outra.",
+      "max_members_per_workspace": "Este espaço de trabalho atingiu o limite de {{maximum}} membros. Remova um membro para adicionar outro."
+    },
+    "ownerReached": {
+      "max_bank_connections": "O dono deste espaço de trabalho atingiu o limite de {{maximum}} conexões bancárias. Só o dono pode liberar uma vaga, removendo uma conexão.",
+      "max_members_per_workspace": "Este espaço de trabalho atingiu o limite de {{maximum}} membros do seu dono. É preciso remover um membro para adicionar outro."
+    },
+    "reachedGeneric": "Esta conta atingiu um dos seus limites de uso."
   }
 }

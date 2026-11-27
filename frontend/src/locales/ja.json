@@ -4457,5 +4457,31 @@
     "failed": "決定を記録できませんでした",
     "replaced": "管理者が新しいリクエストを送信しました。承諾する前に新しいアドレスを確認してください",
     "withdrawn": "リクエストは取り下げられました。アカウントは現在のアドレスを維持します"
+  },
+  "quota": {
+    "title": "利用上限",
+    "menu": "利用上限",
+    "description": "このアカウントがこのインスタンスで作成できるもの。上限のない項目は表示されません。",
+    "loadError": "利用上限を読み込めませんでした",
+    "usage": "{{current}} / {{maximum}}",
+    "membersHint": "最もメンバーの多いワークスペース(あなたを除く)",
+    "learnMore": "詳細",
+    "counters": {
+      "max_personal_workspaces": "個人ワークスペース",
+      "max_business_workspaces": "ビジネスワークスペース",
+      "max_bank_connections": "銀行連携",
+      "max_members_per_workspace": "ワークスペースあたりのメンバー"
+    },
+    "reached": {
+      "max_personal_workspaces": "このアカウントは個人ワークスペースの上限({{maximum}})に達しました。新しく作成するには、いずれかをアーカイブしてください。",
+      "max_business_workspaces": "このアカウントはビジネスワークスペースの上限({{maximum}})に達しました。新しく作成するには、いずれかをアーカイブしてください。",
+      "max_bank_connections": "このアカウントは、作成したワークスペース全体で銀行連携の上限({{maximum}})に達しました。追加するには連携を一つ削除してください。",
+      "max_members_per_workspace": "このワークスペースはメンバーの上限({{maximum}})に達しました。追加するにはメンバーを一人削除してください。"
+    },
+    "ownerReached": {
+      "max_bank_connections": "このワークスペースの所有者は銀行連携の上限({{maximum}})に達しました。枠を空けられるのは所有者だけで、連携を一つ削除する必要があります。",
+      "max_members_per_workspace": "このワークスペースは所有者のメンバー上限({{maximum}})に達しました。追加するにはメンバーを一人削除する必要があります。"
+    },
+    "reachedGeneric": "このアカウントは利用上限のいずれかに達しました。"
   }
 }

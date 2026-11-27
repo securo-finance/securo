@@ -4457,5 +4457,31 @@
     "failed": "A döntését nem sikerült rögzíteni",
     "replaced": "Az adminisztrátor új kérést küldött. Elfogadás előtt ellenőrizze az új címet",
     "withdrawn": "A kérést visszavonták. A fiókja megtartja a jelenlegi címét"
+  },
+  "quota": {
+    "title": "Használati korlátok",
+    "menu": "Használati korlátok",
+    "description": "Mit hozhat létre ez a fiók ezen a példányon. A korlát nélküli számlálók nem jelennek meg.",
+    "loadError": "Nem sikerült betölteni a használati korlátokat",
+    "usage": "{{current}} / {{maximum}}",
+    "membersHint": "A legtelítettebb munkaterületén, önt nem számítva",
+    "learnMore": "További információ",
+    "counters": {
+      "max_personal_workspaces": "Személyes munkaterületek",
+      "max_business_workspaces": "Üzleti munkaterületek",
+      "max_bank_connections": "Banki kapcsolatok",
+      "max_members_per_workspace": "Tagok munkaterületenként"
+    },
+    "reached": {
+      "max_personal_workspaces": "Ez a fiók elérte a személyes munkaterületek korlátját ({{maximum}}). Archiváljon egyet, hogy újat hozhasson létre.",
+      "max_business_workspaces": "Ez a fiók elérte az üzleti munkaterületek korlátját ({{maximum}}). Archiváljon egyet, hogy újat hozhasson létre.",
+      "max_bank_connections": "Ez a fiók elérte a banki kapcsolatok korlátját ({{maximum}}) az általa létrehozott munkaterületeken. Távolítson el egy kapcsolatot, hogy újat adhasson hozzá.",
+      "max_members_per_workspace": "Ez a munkaterület elérte a tagok korlátját ({{maximum}}). Távolítson el egy tagot, hogy újat adhasson hozzá."
+    },
+    "ownerReached": {
+      "max_bank_connections": "A munkaterület tulajdonosa elérte a banki kapcsolatok korlátját ({{maximum}}). Csak a tulajdonos szabadíthat fel helyet egy kapcsolat eltávolításával.",
+      "max_members_per_workspace": "Ez a munkaterület elérte a tulajdonosa tagkorlátját ({{maximum}}). Új tag hozzáadásához el kell távolítani egy tagot."
+    },
+    "reachedGeneric": "Ez a fiók elérte az egyik használati korlátját."
   }
 }

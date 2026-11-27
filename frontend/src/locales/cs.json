@@ -4669,5 +4669,31 @@
     "failed": "Vaše rozhodnutí se nepodařilo uložit",
     "replaced": "Administrátor poslal novou žádost. Před přijetím zkontrolujte novou adresu",
     "withdrawn": "Žádost byla stažena. Váš účet si ponechá současnou adresu"
+  },
+  "quota": {
+    "title": "Limity využití",
+    "menu": "Limity využití",
+    "description": "Co může tento účet v této instanci vytvořit. Počítadla bez limitu se nezobrazují.",
+    "loadError": "Limity využití se nepodařilo načíst",
+    "usage": "{{current}} z {{maximum}}",
+    "membersHint": "V nejplnějším pracovním prostoru, bez vás",
+    "learnMore": "Další informace",
+    "counters": {
+      "max_personal_workspaces": "Osobní pracovní prostory",
+      "max_business_workspaces": "Firemní pracovní prostory",
+      "max_bank_connections": "Bankovní připojení",
+      "max_members_per_workspace": "Členové na pracovní prostor"
+    },
+    "reached": {
+      "max_personal_workspaces": "Tento účet dosáhl limitu osobních pracovních prostorů ({{maximum}}). Archivujte jeden a vytvořte další.",
+      "max_business_workspaces": "Tento účet dosáhl limitu firemních pracovních prostorů ({{maximum}}). Archivujte jeden a vytvořte další.",
+      "max_bank_connections": "Tento účet dosáhl limitu bankovních připojení ({{maximum}}) v pracovních prostorech, které vytvořil. Odeberte připojení a přidejte další.",
+      "max_members_per_workspace": "Tento pracovní prostor dosáhl limitu členů ({{maximum}}). Odeberte člena a přidejte dalšího."
+    },
+    "ownerReached": {
+      "max_bank_connections": "Vlastník tohoto pracovního prostoru dosáhl limitu bankovních připojení ({{maximum}}). Uvolnit místo může jen vlastník, odebráním připojení.",
+      "max_members_per_workspace": "Tento pracovní prostor dosáhl limitu členů svého vlastníka ({{maximum}}). Pro přidání dalšího je třeba odebrat člena."
+    },
+    "reachedGeneric": "Tento účet dosáhl jednoho ze svých limitů využití."
   }
 }

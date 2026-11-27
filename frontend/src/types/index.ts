@@ -61,6 +61,22 @@ export interface AdminAccessLogList {
   total: number
 }
 
+/** One limited counter of the account and what it holds now (ADR 0049). */
+export interface QuotaUsage {
+  counter: string
+  current: number
+  maximum: number
+}
+
+/** The account's own limits. `enforced` false: the instance sets none. */
+export interface MyQuotas {
+  enforced: boolean
+  /** The operator's page about the limits, when it set one. */
+  info_url: string | null
+  /** Only the bounded counters; an unbounded one is never listed. */
+  counters: QuotaUsage[]
+}
+
 export interface Passkey {
   id: string
   name: string

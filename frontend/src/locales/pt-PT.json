@@ -4471,5 +4471,31 @@
     "failed": "Não foi possível registar a sua decisão",
     "replaced": "O administrador enviou um novo pedido. Verifique o novo endereço antes de aceitar",
     "withdrawn": "O pedido foi retirado. A sua conta mantém o endereço atual"
+  },
+  "quota": {
+    "title": "Limites de utilização",
+    "menu": "Limites de utilização",
+    "description": "O que esta conta pode criar nesta instância. Contadores sem limite não são apresentados.",
+    "loadError": "Não foi possível carregar os limites de utilização",
+    "usage": "{{current}} de {{maximum}}",
+    "membersHint": "No seu espaço de trabalho mais cheio, sem contar consigo",
+    "learnMore": "Saber mais",
+    "counters": {
+      "max_personal_workspaces": "Espaços de trabalho pessoais",
+      "max_business_workspaces": "Espaços de trabalho empresariais",
+      "max_bank_connections": "Ligações bancárias",
+      "max_members_per_workspace": "Membros por espaço de trabalho"
+    },
+    "reached": {
+      "max_personal_workspaces": "Esta conta atingiu o limite de {{maximum}} espaços de trabalho pessoais. Arquive um para criar outro.",
+      "max_business_workspaces": "Esta conta atingiu o limite de {{maximum}} espaços de trabalho empresariais. Arquive um para criar outro.",
+      "max_bank_connections": "Esta conta atingiu o limite de {{maximum}} ligações bancárias nos espaços de trabalho que criou. Remova uma ligação para adicionar outra.",
+      "max_members_per_workspace": "Este espaço de trabalho atingiu o limite de {{maximum}} membros. Remova um membro para adicionar outro."
+    },
+    "ownerReached": {
+      "max_bank_connections": "O proprietário deste espaço de trabalho atingiu o limite de {{maximum}} ligações bancárias. Só o proprietário pode libertar uma vaga, removendo uma ligação.",
+      "max_members_per_workspace": "Este espaço de trabalho atingiu o limite de {{maximum}} membros do seu proprietário. É necessário remover um membro para adicionar outro."
+    },
+    "reachedGeneric": "Esta conta atingiu um dos seus limites de utilização."
   }
 }

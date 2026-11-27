@@ -11,6 +11,7 @@ import type {
   User,
   AdminUser,
   AdminAccessLogList,
+  MyQuotas,
   AdminUserList,
   Passkey,
   PasskeyOptionsResponse,
@@ -414,6 +415,14 @@ export const auth = {
 export const accessLog = {
   mine: async (params?: { page?: number; limit?: number }): Promise<AdminAccessLogList> => {
     const { data } = await api.get('/access-log/mine', { params })
+    return data
+  },
+}
+
+// The account's own usage limits on a managed instance (ADR 0049)
+export const quotas = {
+  mine: async (): Promise<MyQuotas> => {
+    const { data } = await api.get('/quotas/mine')
     return data
   },
 }

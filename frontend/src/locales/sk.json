@@ -4653,5 +4653,31 @@
     "failed": "Vaše rozhodnutie sa nepodarilo uložiť",
     "replaced": "Administrátor poslal novú žiadosť. Pred prijatím skontrolujte novú adresu",
     "withdrawn": "Žiadosť bola stiahnutá. Váš účet si ponechá aktuálnu adresu"
+  },
+  "quota": {
+    "title": "Limity využitia",
+    "menu": "Limity využitia",
+    "description": "Čo môže tento účet v tejto inštancii vytvoriť. Počítadlá bez limitu sa nezobrazujú.",
+    "loadError": "Limity využitia sa nepodarilo načítať",
+    "usage": "{{current}} z {{maximum}}",
+    "membersHint": "V najplnšom pracovnom priestore, bez vás",
+    "learnMore": "Ďalšie informácie",
+    "counters": {
+      "max_personal_workspaces": "Osobné pracovné priestory",
+      "max_business_workspaces": "Firemné pracovné priestory",
+      "max_bank_connections": "Bankové pripojenia",
+      "max_members_per_workspace": "Členovia na pracovný priestor"
+    },
+    "reached": {
+      "max_personal_workspaces": "Tento účet dosiahol limit osobných pracovných priestorov ({{maximum}}). Archivujte jeden a vytvorte ďalší.",
+      "max_business_workspaces": "Tento účet dosiahol limit firemných pracovných priestorov ({{maximum}}). Archivujte jeden a vytvorte ďalší.",
+      "max_bank_connections": "Tento účet dosiahol limit bankových pripojení ({{maximum}}) v pracovných priestoroch, ktoré vytvoril. Odstráňte pripojenie a pridajte ďalšie.",
+      "max_members_per_workspace": "Tento pracovný priestor dosiahol limit členov ({{maximum}}). Odstráňte člena a pridajte ďalšieho."
+    },
+    "ownerReached": {
+      "max_bank_connections": "Vlastník tohto pracovného priestoru dosiahol limit bankových pripojení ({{maximum}}). Uvoľniť miesto môže iba vlastník, odstránením pripojenia.",
+      "max_members_per_workspace": "Tento pracovný priestor dosiahol limit členov svojho vlastníka ({{maximum}}). Na pridanie ďalšieho treba odstrániť člena."
+    },
+    "reachedGeneric": "Tento účet dosiahol jeden zo svojich limitov využitia."
   }
 }

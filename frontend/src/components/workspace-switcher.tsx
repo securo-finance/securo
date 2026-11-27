@@ -7,6 +7,8 @@ import { toast } from 'sonner'
 import { useAuth } from '@/contexts/auth-context'
 import { useWorkspace } from '@/contexts/workspace-context'
 import { workspaces as workspacesApi } from '@/lib/api'
+import { useQuotaNotice } from '@/hooks/use-quota'
+import { fullCounter } from '@/lib/quota'
 import { resolveSupportedLang } from '@/lib/i18n'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -37,6 +39,7 @@ import {
   Check,
   ChevronsUpDown,
   Download,
+  Gauge,
   HardDriveDownload,
   History,
   KeyRound,
@@ -91,6 +94,8 @@ interface AccountMenuProps {
   onBackup: () => void
   /** Open the access log of the account and of the workspaces it owns. */
   onAccessLog: () => void
+  /** Open the account's usage limits; the item shows only when it has some. */
+  onUsageLimits: () => void
   /** Open the "Update available" dialog. */
   onUpdateAvailable: () => void
   /** True when the AGENTS_ENABLED env flag is on. */
@@ -116,6 +121,7 @@ export function WorkspaceSwitcher({
   onPasskeys,
   onBackup,
   onAccessLog,
+  onUsageLimits,
   onUpdateAvailable,
   agentsEnabled,
   localAuthEnabled,
@@ -132,6 +138,10 @@ export function WorkspaceSwitcher({
   const [newKind, setNewKind] = useState<WorkspaceKind>('personal')
 
   const currentLang = resolveSupportedLang(i18n.resolvedLanguage ?? i18n.language)
+  const quotaNotice = useQuotaNotice()
+  // The chosen kind is already at its limit: say so before the attempt.
+  const kindFull = fullCounter(quotaNotice.quotas, `max_${newKind}_workspaces`)
+  const hasUsageLimits = (quotaNotice.quotas?.counters.length ?? 0) > 0
 
   const createMutation = useMutation({
     mutationFn: () =>
@@ -151,6 +161,7 @@ export function WorkspaceSwitcher({
       navigate('/workspace/settings')
     },
     onError: (e: unknown) => {
+      if (quotaNotice.handle(e)) return
       const detail =
         (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail ||
         (e instanceof Error ? e.message : 'Failed to create workspace')
@@ -297,6 +308,15 @@ export function WorkspaceSwitcher({
             <History size={14} />
             {t('accessLog.title')}
           </DropdownMenuItem>
+          {hasUsageLimits && (
+            <DropdownMenuItem
+              onClick={onUsageLimits}
+              className="flex items-center gap-2"
+            >
+              <Gauge size={14} />
+              {t('quota.menu')}
+            </DropdownMenuItem>
+          )}
 
           {agentsEnabled && (
             <DropdownMenuItem
@@ -561,6 +581,19 @@ export function WorkspaceSwitcher({
                 )}
               </p>
             </div>
+            {kindFull && (
+              <p role="alert" className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-[13px] text-destructive">
+                {quotaNotice.message(kindFull)}
+                {quotaNotice.infoUrl && (
+                  <>
+                    {' '}
+                    <a href={quotaNotice.infoUrl} target="_blank" rel="noopener noreferrer" className="underline underline-offset-2">
+                      {t('quota.learnMore')}
+                    </a>
+                  </>
+                )}
+              </p>
+            )}
           </div>
           <DialogFooter className="mt-2">
             <Button
@@ -572,7 +605,7 @@ export function WorkspaceSwitcher({
             </Button>
             <Button
               onClick={() => createMutation.mutate()}
-              disabled={createMutation.isPending || !newName.trim()}
+              disabled={createMutation.isPending || !newName.trim() || !!kindFull}
               className="rounded-lg"
             >
               {createMutation.isPending ? t('common.loading') : t('common.create', 'Create')}

@@ -4472,5 +4472,31 @@
     "failed": "Impossible d'enregistrer votre décision",
     "replaced": "L'administrateur a envoyé une nouvelle demande. Vérifiez la nouvelle adresse avant d'accepter",
     "withdrawn": "La demande a été retirée. Votre compte conserve son adresse actuelle"
+  },
+  "quota": {
+    "title": "Limites d'utilisation",
+    "menu": "Limites d'utilisation",
+    "description": "Ce que ce compte peut créer sur cette instance. Les compteurs sans limite ne sont pas affichés.",
+    "loadError": "Impossible de charger les limites d'utilisation",
+    "usage": "{{current}} sur {{maximum}}",
+    "membersHint": "Dans votre espace de travail le plus rempli, sans vous compter",
+    "learnMore": "En savoir plus",
+    "counters": {
+      "max_personal_workspaces": "Espaces de travail personnels",
+      "max_business_workspaces": "Espaces de travail professionnels",
+      "max_bank_connections": "Connexions bancaires",
+      "max_members_per_workspace": "Membres par espace de travail"
+    },
+    "reached": {
+      "max_personal_workspaces": "Ce compte a atteint sa limite de {{maximum}} espaces de travail personnels. Archivez-en un pour en créer un autre.",
+      "max_business_workspaces": "Ce compte a atteint sa limite de {{maximum}} espaces de travail professionnels. Archivez-en un pour en créer un autre.",
+      "max_bank_connections": "Ce compte a atteint sa limite de {{maximum}} connexions bancaires dans les espaces de travail qu'il a créés. Supprimez une connexion pour en ajouter une autre.",
+      "max_members_per_workspace": "Cet espace de travail a atteint sa limite de {{maximum}} membres. Retirez un membre pour en ajouter un autre."
+    },
+    "ownerReached": {
+      "max_bank_connections": "Le propriétaire de cet espace de travail a atteint sa limite de {{maximum}} connexions bancaires. Seul le propriétaire peut libérer une place, en supprimant une connexion.",
+      "max_members_per_workspace": "Cet espace de travail a atteint la limite de {{maximum}} membres de son propriétaire. Il faut retirer un membre pour en ajouter un autre."
+    },
+    "reachedGeneric": "Ce compte a atteint l'une de ses limites d'utilisation."
   }
 }

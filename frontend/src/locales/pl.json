@@ -4619,5 +4619,31 @@
     "failed": "Nie udało się zapisać decyzji",
     "replaced": "Administrator wysłał nową prośbę. Sprawdź nowy adres przed zaakceptowaniem",
     "withdrawn": "Prośba została wycofana. Twoje konto zachowuje obecny adres"
+  },
+  "quota": {
+    "title": "Limity użycia",
+    "menu": "Limity użycia",
+    "description": "Co to konto może utworzyć w tej instancji. Liczniki bez limitu nie są wyświetlane.",
+    "loadError": "Nie udało się wczytać limitów użycia",
+    "usage": "{{current}} z {{maximum}}",
+    "membersHint": "W Twojej najpełniejszej przestrzeni roboczej, bez Ciebie",
+    "learnMore": "Dowiedz się więcej",
+    "counters": {
+      "max_personal_workspaces": "Osobiste przestrzenie robocze",
+      "max_business_workspaces": "Firmowe przestrzenie robocze",
+      "max_bank_connections": "Połączenia bankowe",
+      "max_members_per_workspace": "Członkowie na przestrzeń roboczą"
+    },
+    "reached": {
+      "max_personal_workspaces": "To konto osiągnęło limit osobistych przestrzeni roboczych ({{maximum}}). Zarchiwizuj jedną, aby utworzyć kolejną.",
+      "max_business_workspaces": "To konto osiągnęło limit firmowych przestrzeni roboczych ({{maximum}}). Zarchiwizuj jedną, aby utworzyć kolejną.",
+      "max_bank_connections": "To konto osiągnęło limit połączeń bankowych ({{maximum}}) w utworzonych przez siebie przestrzeniach roboczych. Usuń połączenie, aby dodać kolejne.",
+      "max_members_per_workspace": "Ta przestrzeń robocza osiągnęła limit członków ({{maximum}}). Usuń członka, aby dodać kolejnego."
+    },
+    "ownerReached": {
+      "max_bank_connections": "Właściciel tej przestrzeni roboczej osiągnął limit połączeń bankowych ({{maximum}}). Tylko właściciel może zwolnić miejsce, usuwając połączenie.",
+      "max_members_per_workspace": "Ta przestrzeń robocza osiągnęła limit członków jej właściciela ({{maximum}}). Trzeba usunąć członka, aby dodać kolejnego."
+    },
+    "reachedGeneric": "To konto osiągnęło jeden ze swoich limitów użycia."
   }
 }
