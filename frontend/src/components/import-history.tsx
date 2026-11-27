@@ -24,6 +24,9 @@ import {
 interface ImportHistoryProps {
   /** Which importer's runs to list; the two never mix in one table. */
   entity: 'transactions' | 'asset_orders'
+  /** List the runs without the undo, for a surface that may not delete
+   *  them (the public demo, where undoing would empty the seeded history). */
+  readOnly?: boolean
 }
 
 /**
@@ -34,7 +37,7 @@ interface ImportHistoryProps {
  * this table but not its columns — an order import has no account and no
  * credit/debit totals, so those columns only appear for statements.
  */
-export function ImportHistory({ entity }: ImportHistoryProps) {
+export function ImportHistory({ entity, readOnly = false }: ImportHistoryProps) {
   const { t } = useTranslation()
   const locale = useDisplayLocale()
   const dateLocale = useDateLocale()
@@ -125,7 +128,7 @@ export function ImportHistory({ entity }: ImportHistoryProps) {
                     </>
                   )}
                   <td className="px-3 py-3 text-end sm:px-4">
-                    {canWrite && (
+                    {canWrite && !readOnly && (
                       <button
                         onClick={() => setDeleteTarget(log)}
                         className="text-muted-foreground transition-colors hover:text-rose-500"

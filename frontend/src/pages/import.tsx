@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
-import { Navigate, useSearchParams } from 'react-router-dom'
+import { useSearchParams } from 'react-router-dom'
 import { getAccountName, sortAccountsByDisplayName } from '@/lib/account-utils'
 import { useTranslation } from 'react-i18next'
 import { useDisplayLocale, useDateLocale } from '@/hooks/use-display-locale'
@@ -740,6 +740,25 @@ function TransactionImportPanel() {
   )
 }
 
+/** The public demo's import page: the history and nothing else.
+ *
+ * Uploads stay off there — files survive only until the hourly reset
+ * (confusing UX) and the unbounded parser would let a visitor crash the
+ * worker with a giant CSV — but the statements the demo was seeded with are
+ * listed, so the B2B page's "import a statement" promise has something to
+ * show. The nav entry stays hidden in demo mode; the page is reachable by
+ * its URL, for the screenshots.
+ */
+function DemoImportHistory() {
+  const { t } = useTranslation()
+  return (
+    <div className="space-y-6">
+      <PageHeader section={t('import.title')} title={t('import.subtitle')} />
+      <ImportHistory entity="transactions" readOnly />
+    </div>
+  )
+}
+
 /** Both importers live behind one menu entry: someone with a file to upload
     should not have to know first whether it holds transactions or orders. */
 export default function ImportPage() {
@@ -748,11 +767,9 @@ export default function ImportPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const tab = searchParams.get('tab') === 'investments' ? 'investments' : 'transactions'
 
-  // Import is off in demo mode — uploads survive only until the hourly
-  // reset (confusing UX) and the unbounded parser would let a visitor
-  // crash the worker with a giant CSV. Guarding the page, not the panel,
-  // keeps every hook in the panel unconditional.
-  if (demoMode) return <Navigate to="/" replace />
+  // Guarding the page, not the panel, keeps every hook in the panel
+  // unconditional.
+  if (demoMode) return <DemoImportHistory />
 
   function selectTab(next: 'transactions' | 'investments') {
     const params = new URLSearchParams(searchParams)
