@@ -9,7 +9,7 @@
 
 ADR 0042 made every administrative mutation of an account carry a reason and leave a row in `admin_access_log`, and it left one door open: instance settings written through `PUT /api/admin/settings/{key}` and `PUT /api/admin/email` are mutations with no record at all. The email one is the one that matters. It is where the recovery message is written, and that message is the only way back into every account on the instance: a superuser who rewrites the text, or points it somewhere else within what the validator allows ([0046](0046-email-provider-and-templates.md)), changes what every locked-out person receives, and nothing said who did it, when, or what the text had been.
 
-The table cannot name a person for this: the change is the instance's, not an account's. ADR 0042 already said a workspace can be its target ([0049](0049-suspended-workspaces.md)); an instance setting is the case where even that is too narrow.
+The table cannot name a person for this: the change is the instance's, not an account's. ADR 0042 writes each row for an action on one account; an instance setting is not one, because the affected side is every account at once.
 
 ## Decision
 
