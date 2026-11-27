@@ -26,16 +26,17 @@ export function WorkspaceStatusSettings() {
   const { refresh } = useWorkspace()
   const [search, setSearch] = useState('')
   const [confirming, setConfirming] = useState<AdminWorkspace | null>(null)
+  const [reason, setReason] = useState('')
   const { data, isError, refetch } = useQuery({
     queryKey: ['admin', 'workspaces', search],
     queryFn: () => admin.listWorkspaces({ search: search || undefined }),
     placeholderData: keepPreviousData,
   })
   const update = useMutation({
-    mutationFn: ({ id, status }: { id: string; status: WorkspaceStatus }) =>
-      admin.updateWorkspaceStatus(id, status),
+    mutationFn: ({ id, status, reason }: { id: string; status: WorkspaceStatus; reason: string }) =>
+      admin.updateWorkspaceStatus(id, status, reason),
     onSuccess: () => {
-      setConfirming(null)
+      closeConfirm()
       void queryClient.invalidateQueries({ queryKey: ['admin', 'workspaces'] })
       // The administrator may belong to the workspace that just changed.
       void refresh()
@@ -43,6 +44,21 @@ export function WorkspaceStatusSettings() {
     },
     onError: (error) => toast.error(extractApiError(error)),
   })
+
+  // Both directions ask the same two things: which way the status moves, and
+  // why. The reason is required by the API and kept in the access log (ADR 0042).
+  const suspending = confirming?.status !== 'suspended'
+  const reasonReady = reason.trim().length >= 3
+
+  function openConfirm(workspace: AdminWorkspace) {
+    setReason('')
+    setConfirming(workspace)
+  }
+
+  function closeConfirm() {
+    setConfirming(null)
+    setReason('')
+  }
 
   return (
     <section className="mb-8 rounded-xl border border-border/60 bg-card overflow-hidden">
@@ -97,11 +113,7 @@ export function WorkspaceStatusSettings() {
                     aria-label={t(`workspaceStatus.${suspended ? 'reactivateNamed' : 'suspendNamed'}`, {
                       name: workspace.name,
                     })}
-                    onClick={() =>
-                      suspended
-                        ? update.mutate({ id: workspace.id, status: 'active' })
-                        : setConfirming(workspace)
-                    }
+                    onClick={() => openConfirm(workspace)}
                   >
                     {t(`workspaceStatus.${suspended ? 'reactivate' : 'suspend'}`)}
                   </Button>
@@ -116,24 +128,51 @@ export function WorkspaceStatusSettings() {
           </p>
         )}
       </div>
-      <Dialog open={confirming !== null} onOpenChange={(open) => !open && setConfirming(null)}>
+      <Dialog open={confirming !== null} onOpenChange={(open) => !open && closeConfirm()}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{t('workspaceStatus.confirmTitle', { name: confirming?.name })}</DialogTitle>
-            <DialogDescription>{t('workspaceStatus.confirmDescription')}</DialogDescription>
+            <DialogTitle>
+              {suspending
+                ? t('workspaceStatus.confirmTitle', { name: confirming?.name })
+                : t('workspaceStatus.reactivateTitle', { name: confirming?.name })}
+            </DialogTitle>
+            <DialogDescription>
+              {t(
+                suspending
+                  ? 'workspaceStatus.confirmDescription'
+                  : 'workspaceStatus.reactivateDescription',
+              )}
+            </DialogDescription>
           </DialogHeader>
+          <div className="space-y-2">
+            <label htmlFor="workspace-status-reason" className="text-sm font-medium">
+              {t('workspaceStatus.reasonLabel')}
+            </label>
+            <Input
+              id="workspace-status-reason"
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              placeholder={t('workspaceStatus.reasonPlaceholder')}
+              maxLength={500}
+            />
+          </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setConfirming(null)}>
+            <Button variant="outline" onClick={() => closeConfirm()}>
               {t('common.cancel')}
             </Button>
             <Button
-              variant="destructive"
-              disabled={update.isPending}
+              variant={suspending ? 'destructive' : 'default'}
+              disabled={!reasonReady || update.isPending}
               onClick={() =>
-                confirming && update.mutate({ id: confirming.id, status: 'suspended' })
+                confirming &&
+                update.mutate({
+                  id: confirming.id,
+                  status: suspending ? 'suspended' : 'active',
+                  reason: reason.trim(),
+                })
               }
             >
-              {t('workspaceStatus.suspend')}
+              {t(`workspaceStatus.${suspending ? 'suspend' : 'reactivate'}`)}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -84,14 +84,38 @@ async def list_workspaces(
 
 
 async def set_status(
-    session: AsyncSession, workspace_id: uuid.UUID, status: str
+    session: AsyncSession,
+    workspace_id: uuid.UUID,
+    status: str,
+    *,
+    actor_id: uuid.UUID,
+    reason: str,
+    ip: Optional[str] = None,
 ) -> Optional[tuple[Workspace, list[str]]]:
+    """Suspend or reactivate a workspace, and record who did it and why.
+
+    The record goes in the same commit as the change (ADR 0042): either the
+    workspace moved and the log says so, or neither happened. Asking for the
+    status it already has changes nothing and leaves no record.
+    """
+    from app.services import admin_service
+
     workspace = await session.get(Workspace, workspace_id, with_for_update=True)
     if workspace is None or workspace.is_archived:
         return None
     if workspace.status != status:
+        previous = workspace.status
         workspace.status = status
         workspace.status_changed_at = datetime.now(timezone.utc)
+        await admin_service.record_workspace_access(
+            session,
+            actor_id,
+            workspace,
+            "workspace.status",
+            reason,
+            ip,
+            changes={"status": {"from": previous, "to": status}},
+        )
     await session.commit()
     owners = await _owner_emails(session, [workspace.id])
     return workspace, owners.get(workspace.id, [])

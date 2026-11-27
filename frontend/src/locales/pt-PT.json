@@ -4431,6 +4431,9 @@
     "empty": "Nenhuma ação administrativa registada.",
     "actionUpdate": "Conta alterada",
     "actionDelete": "Conta eliminada",
+    "actionWorkspaceStatus": "Estado do espaço de trabalho alterado",
+    "targetWorkspace": "Espaço de trabalho {{name}}",
+    "statusChange": "Estado {{from}} → {{to}}",
     "actionOther": "Conta alterada",
     "by": "Por {{email}}",
     "target": "Conta {{email}}",
@@ -4468,6 +4471,10 @@
     "reactivateNamed": "Reativar {{name}}",
     "confirmTitle": "Suspender {{name}}?",
     "confirmDescription": "Os membros continuam a ler e a exportar, mas não podem alterar nada até à reativação. As tarefas agendadas também param.",
+    "reasonLabel": "Motivo desta alteração",
+    "reasonPlaceholder": "Porque é que este espaço de trabalho está a ser alterado",
+    "reactivateTitle": "Reativar {{name}}?",
+    "reactivateDescription": "Os membros voltam a poder alterar e as tarefas agendadas retomam de onde pararam.",
     "showing": "A mostrar {{shown}} de {{total}}. Pesquise para encontrar os restantes.",
     "updated": "Espaço de trabalho atualizado"
   }

@@ -4432,6 +4432,9 @@
     "empty": "Aucune action administrative enregistrée.",
     "actionUpdate": "Compte modifié",
     "actionDelete": "Compte supprimé",
+    "actionWorkspaceStatus": "Statut de l'espace de travail modifié",
+    "targetWorkspace": "Espace de travail {{name}}",
+    "statusChange": "Statut {{from}} → {{to}}",
     "actionOther": "Compte modifié",
     "by": "Par {{email}}",
     "target": "Compte {{email}}",
@@ -4469,6 +4472,10 @@
     "reactivateNamed": "Réactiver {{name}}",
     "confirmTitle": "Suspendre {{name}} ?",
     "confirmDescription": "Ses membres peuvent toujours lire et exporter, mais ne peuvent rien modifier avant sa réactivation. Les tâches planifiées s'arrêtent aussi.",
+    "reasonLabel": "Motif de ce changement",
+    "reasonPlaceholder": "Pourquoi cet espace de travail est modifié",
+    "reactivateTitle": "Réactiver {{name}} ?",
+    "reactivateDescription": "Ses membres peuvent de nouveau modifier les choses, et les tâches planifiées reprennent là où elles s'étaient arrêtées.",
     "showing": "{{shown}} sur {{total}} affichés. Recherchez pour trouver les autres.",
     "updated": "Espace de travail mis à jour"
   }

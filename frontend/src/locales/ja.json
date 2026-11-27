@@ -4417,6 +4417,9 @@
     "empty": "管理者操作は記録されていません。",
     "actionUpdate": "アカウントを更新しました",
     "actionDelete": "アカウントを削除しました",
+    "actionWorkspaceStatus": "ワークスペースの状態が変更されました",
+    "targetWorkspace": "ワークスペース: {{name}}",
+    "statusChange": "状態: {{from}} → {{to}}",
     "actionOther": "アカウントを更新しました",
     "by": "実行者: {{email}}",
     "target": "アカウント: {{email}}",
@@ -4454,6 +4457,10 @@
     "reactivateNamed": "{{name}}を再開",
     "confirmTitle": "{{name}}を停止しますか?",
     "confirmDescription": "メンバーは引き続き閲覧とエクスポートができますが、再開するまで何も変更できません。予定された処理も止まります。",
+    "reasonLabel": "この変更の理由",
+    "reasonPlaceholder": "このワークスペースを変更する理由",
+    "reactivateTitle": "{{name}}を再開しますか?",
+    "reactivateDescription": "メンバーは再び変更できるようになり、予定された処理は止まったところから再開します。",
     "showing": "{{total}}件中{{shown}}件を表示しています。残りは検索してください。",
     "updated": "ワークスペースを更新しました"
   }

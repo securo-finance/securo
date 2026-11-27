@@ -4417,6 +4417,9 @@
     "empty": "Nincs rögzített adminisztratív művelet.",
     "actionUpdate": "Fiók módosítva",
     "actionDelete": "Fiók törölve",
+    "actionWorkspaceStatus": "A munkaterület állapota módosult",
+    "targetWorkspace": "Munkaterület: {{name}}",
+    "statusChange": "Állapot: {{from}} → {{to}}",
     "actionOther": "Fiók módosítva",
     "by": "Végrehajtó: {{email}}",
     "target": "Fiók: {{email}}",
@@ -4454,6 +4457,10 @@
     "reactivateNamed": "{{name}} újraaktiválása",
     "confirmTitle": "Felfüggeszti ezt: {{name}}?",
     "confirmDescription": "A tagok továbbra is olvashatnak és exportálhatnak, de az újraaktiválásig semmit sem módosíthatnak. Az ütemezett feladatok is leállnak.",
+    "reasonLabel": "A módosítás oka",
+    "reasonPlaceholder": "Miért módosul ez a munkaterület",
+    "reactivateTitle": "Újraaktiválja ezt: {{name}}?",
+    "reactivateDescription": "A tagok ismét módosíthatnak dolgokat, és az ütemezett feladatok onnan folytatódnak, ahol megálltak.",
     "showing": "{{shown}} / {{total}} megjelenítve. A többit kereséssel találja meg.",
     "updated": "Munkaterület frissítve"
   }

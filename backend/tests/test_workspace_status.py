@@ -9,6 +9,7 @@ from fastapi import HTTPException
 from sqlalchemy import func, select
 
 from app.models.account import Account
+from app.models.admin_access_log import AdminAccessLog
 from app.models.asset import Asset
 from app.models.asset_value import AssetValue
 from app.models.bank_connection import BankConnection
@@ -17,6 +18,7 @@ from app.models.plugin_connection import PluginConnection, PluginConnectionRouti
 from app.models.recurring_transaction import RecurringTransaction
 from app.models.transaction import Transaction
 from app.models.user import User
+from app.models.workspace import Workspace
 from app.providers.market_price import LatestClose
 from app.schemas.group import GroupCreate, GroupMemberCreate
 from app.schemas.group_settlement import GroupSettlementCreate, GroupSettlementUpdate
@@ -41,9 +43,14 @@ async def suspended(session, test_workspace):
     return test_workspace
 
 
-async def _set(client, headers, workspace_id, status):
+REASON = "Support asked for a pause while the books are audited"
+
+
+async def _set(client, headers, workspace_id, status, **extra):
     return await client.patch(
-        f"/api/admin/workspaces/{workspace_id}/status", headers=headers, json={"status": status}
+        f"/api/admin/workspaces/{workspace_id}/status",
+        headers=headers,
+        json={"status": status, "reason": REASON, **extra},
     )
 
 
@@ -83,6 +90,64 @@ async def test_setting_the_same_status_keeps_its_date(client, admin_auth_headers
     # SQLite gives the date back without its offset.
     dates = [r.json()["status_changed_at"].rstrip("Z") for r in (first, again)]
     assert dates[0] == dates[1]
+
+
+async def test_a_status_change_needs_a_reason(client, session, admin_auth_headers, test_workspace):
+    """ADR 0042: the reason is part of the request, not an optional note."""
+    for body in ({"status": "suspended"}, {"status": "suspended", "reason": "  "}):
+        resp = await client.patch(
+            f"/api/admin/workspaces/{test_workspace.id}/status",
+            headers=admin_auth_headers,
+            json=body,
+        )
+        assert resp.status_code == 422, resp.text
+    workspace = await session.get(Workspace, test_workspace.id)
+    await session.refresh(workspace)
+    assert workspace.status == "active"
+    assert await session.scalar(select(func.count()).select_from(AdminAccessLog)) == 0
+
+
+async def test_the_change_is_recorded_and_the_owner_reads_it(
+    client, session, admin_auth_headers, auth_headers, viewer_auth_headers, test_workspace
+):
+    resp = await _set(client, admin_auth_headers, test_workspace.id, "suspended")
+    assert resp.status_code == 200, resp.text
+
+    entry = await session.scalar(
+        select(AdminAccessLog).where(AdminAccessLog.action == "workspace.status")
+    )
+    assert entry is not None
+    assert entry.actor_email == "admin@example.com"
+    assert entry.target_user_id is None
+    assert entry.target_email is None
+    assert entry.target_workspace_id == test_workspace.id
+    assert entry.target_workspace_name == test_workspace.name
+    assert entry.reason == REASON
+    assert entry.changes == {"status": {"from": "active", "to": "suspended"}}
+    assert entry.ip is not None
+
+    mine = await client.get("/api/access-log/mine", headers=auth_headers)
+    assert mine.status_code == 200, mine.text
+    items = mine.json()["items"]
+    assert [item["target_workspace_name"] for item in items] == [test_workspace.name]
+    assert items[0]["reason"] == REASON
+    assert items[0]["target_email"] is None
+    assert items[0]["changes"] == {"status": {"from": "active", "to": "suspended"}}
+
+    # A member who is not an owner runs the workspace day to day but does not
+    # answer for it, so the record of a suspension is not theirs to read.
+    member = await client.get("/api/access-log/mine", headers=viewer_auth_headers)
+    assert member.status_code == 200, member.text
+    assert member.json()["total"] == 0
+
+
+async def test_asking_for_the_status_it_has_leaves_no_record(
+    client, session, admin_auth_headers, test_workspace
+):
+    assert (await _set(client, admin_auth_headers, test_workspace.id, "suspended")).status_code == 200
+    assert (await _set(client, admin_auth_headers, test_workspace.id, "suspended")).status_code == 200
+    count = await session.scalar(select(func.count()).select_from(AdminAccessLog))
+    assert count == 1
 
 
 async def test_an_unknown_status_is_refused(client, admin_auth_headers, test_workspace):

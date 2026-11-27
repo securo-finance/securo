@@ -41,8 +41,14 @@ it('asks before suspending, then shows what the server says', async () => {
   expect(admin.updateWorkspaceStatus).not.toHaveBeenCalled()
 
   const dialog = await screen.findByRole('dialog', { name: 'Suspend Home?' })
-  await user.click(within(dialog).getByRole('button', { name: 'Suspend' }))
-  await waitFor(() => expect(admin.updateWorkspaceStatus).toHaveBeenCalledWith('w1', 'suspended'))
+  // The API refuses a change with no reason, so the screen does not offer one.
+  const confirm = within(dialog).getByRole('button', { name: 'Suspend' })
+  expect(confirm).toBeDisabled()
+  await user.type(within(dialog).getByLabelText('Reason for this change'), 'Audit in progress')
+  await user.click(confirm)
+  await waitFor(() =>
+    expect(admin.updateWorkspaceStatus).toHaveBeenCalledWith('w1', 'suspended', 'Audit in progress'),
+  )
   await waitFor(() => expect(refresh).toHaveBeenCalled())
   expect(admin.listWorkspaces).toHaveBeenCalledTimes(2)
   expect(await screen.findByRole('button', { name: 'Reactivate Home' })).toBeVisible()
@@ -58,7 +64,13 @@ it('reactivates a suspended workspace and drops the badge', async () => {
   const { user } = renderWithProviders(<WorkspaceStatusSettings />)
   expect(await screen.findByText('Suspended')).toBeVisible()
   await user.click(screen.getByRole('button', { name: 'Reactivate Home' }))
-  await waitFor(() => expect(admin.updateWorkspaceStatus).toHaveBeenCalledWith('w1', 'active'))
+
+  const dialog = await screen.findByRole('dialog', { name: 'Reactivate Home?' })
+  await user.type(within(dialog).getByLabelText('Reason for this change'), 'Books are settled')
+  await user.click(within(dialog).getByRole('button', { name: 'Reactivate' }))
+  await waitFor(() =>
+    expect(admin.updateWorkspaceStatus).toHaveBeenCalledWith('w1', 'active', 'Books are settled'),
+  )
   expect(await screen.findByRole('button', { name: 'Suspend Home' })).toBeVisible()
   expect(screen.queryByText('Suspended')).not.toBeInTheDocument()
 })

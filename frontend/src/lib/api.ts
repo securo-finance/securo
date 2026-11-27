@@ -2284,8 +2284,12 @@ export const admin = {
     const { data } = await api.get('/admin/workspaces', { params })
     return data
   },
-  updateWorkspaceStatus: async (id: string, status: WorkspaceStatus): Promise<AdminWorkspace> => {
-    const { data } = await api.patch(`/admin/workspaces/${id}/status`, { status })
+  updateWorkspaceStatus: async (
+    id: string,
+    status: WorkspaceStatus,
+    reason: string,
+  ): Promise<AdminWorkspace> => {
+    const { data } = await api.patch(`/admin/workspaces/${id}/status`, { status, reason })
     return data
   },
   providerSettings: async (): Promise<ProviderSettingStatus[]> => {

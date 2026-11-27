@@ -11,6 +11,7 @@ The administrator of an instance with several workspaces had no way to stop one 
 ## Decision
 
 - `workspaces.status` is `active` or `suspended` (`WorkspaceStatus` in `backend/app/models/workspace.py`), with `status_changed_at`. Only an instance administrator changes it, through `/api/admin/workspaces`. It is separate from `is_archived`.
+- The change carries a required reason and leaves a record in `admin_access_log` in the same transaction, the way every administrative action does ([0042](0042-admin-actions-on-accounts-leave-a-record.md)). The workspace's owners and its manager can read it, and the frontend asks for the reason in the confirmation dialog, for suspending and for reactivating.
 - `WorkspaceContext.require_write()` refuses every role, the owner included, with a 403 whose text says why. The role is checked first, so a viewer still gets the read-only message. MCP tools that apply changes follow the same rule.
 - The workspace routes that check ownership inside the handler refuse a rename, a new member and a role change. Leaving, removing a member and archiving stay open.
 - A write that starts in another workspace and lands here, a linked member's settlement, is refused as well.
@@ -26,4 +27,4 @@ The administrator of an instance with several workspaces had no way to stop one 
 
 ## Enforced by
 
-`backend/tests/test_workspace_status.py`: each transition, reads and export while suspended, and each job with the workspace suspended and active.
+`backend/tests/test_workspace_status.py`: each transition, reads and export while suspended, each job with the workspace suspended and active, and the record a change leaves (a missing reason is a 422 that changes nothing; one with it is `workspace.status` in the log with `changes` and the owner as a viewer).

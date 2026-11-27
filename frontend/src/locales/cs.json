@@ -4629,6 +4629,9 @@
     "empty": "Nejsou zaznamenány žádné administrativní akce.",
     "actionUpdate": "Účet změněn",
     "actionDelete": "Účet smazán",
+    "actionWorkspaceStatus": "Stav pracovního prostoru změněn",
+    "targetWorkspace": "Pracovní prostor {{name}}",
+    "statusChange": "Stav {{from}} → {{to}}",
     "actionOther": "Účet změněn",
     "by": "Provedl {{email}}",
     "target": "Účet {{email}}",
@@ -4666,6 +4669,10 @@
     "reactivateNamed": "Obnovit {{name}}",
     "confirmTitle": "Pozastavit {{name}}?",
     "confirmDescription": "Členové mohou dál číst a exportovat, ale do obnovení nemohou nic měnit. Zastaví se i plánované úlohy.",
+    "reasonLabel": "Důvod této změny",
+    "reasonPlaceholder": "Proč se tento pracovní prostor mění",
+    "reactivateTitle": "Obnovit {{name}}?",
+    "reactivateDescription": "Členové mohou znovu měnit věci a naplánované úlohy pokračují tam, kde se zastavily.",
     "showing": "Zobrazeno {{shown}} z {{total}}. Ostatní najdete vyhledáváním.",
     "updated": "Pracovní prostor aktualizován"
   }

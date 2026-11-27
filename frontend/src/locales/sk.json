@@ -4613,6 +4613,9 @@
     "empty": "Nie sú zaznamenané žiadne administratívne akcie.",
     "actionUpdate": "Účet zmenený",
     "actionDelete": "Účet odstránený",
+    "actionWorkspaceStatus": "Stav pracovného priestoru zmenený",
+    "targetWorkspace": "Pracovný priestor {{name}}",
+    "statusChange": "Stav {{from}} → {{to}}",
     "actionOther": "Účet zmenený",
     "by": "Vykonal {{email}}",
     "target": "Účet {{email}}",
@@ -4650,6 +4653,10 @@
     "reactivateNamed": "Obnoviť {{name}}",
     "confirmTitle": "Pozastaviť {{name}}?",
     "confirmDescription": "Členovia môžu ďalej čítať a exportovať, ale do obnovenia nemôžu nič meniť. Zastavia sa aj naplánované úlohy.",
+    "reasonLabel": "Dôvod tejto zmeny",
+    "reasonPlaceholder": "Prečo sa tento pracovný priestor mení",
+    "reactivateTitle": "Obnoviť {{name}}?",
+    "reactivateDescription": "Členovia môžu znova meniť veci a naplánované úlohy pokračujú tam, kde sa zastavili.",
     "showing": "Zobrazené {{shown}} z {{total}}. Ostatné nájdete vyhľadávaním.",
     "updated": "Pracovný priestor aktualizovaný"
   }

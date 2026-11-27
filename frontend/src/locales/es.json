@@ -4432,6 +4432,9 @@
     "empty": "No hay acciones administrativas registradas.",
     "actionUpdate": "Cuenta modificada",
     "actionDelete": "Cuenta eliminada",
+    "actionWorkspaceStatus": "Estado del espacio de trabajo modificado",
+    "targetWorkspace": "Espacio de trabajo {{name}}",
+    "statusChange": "Estado {{from}} → {{to}}",
     "actionOther": "Cuenta modificada",
     "by": "Por {{email}}",
     "target": "Cuenta {{email}}",
@@ -4469,6 +4472,10 @@
     "reactivateNamed": "Reactivar {{name}}",
     "confirmTitle": "¿Suspender {{name}}?",
     "confirmDescription": "Sus miembros pueden seguir leyendo y exportando, pero no cambiar nada hasta que se reactive. Las tareas programadas también se detienen.",
+    "reasonLabel": "Motivo de este cambio",
+    "reasonPlaceholder": "Por qué se está modificando este espacio de trabajo",
+    "reactivateTitle": "¿Reactivar {{name}}?",
+    "reactivateDescription": "Sus miembros vuelven a poder cambiar cosas, y las tareas programadas se reanudan donde se quedaron.",
     "showing": "Mostrando {{shown}} de {{total}}. Busca para encontrar los demás.",
     "updated": "Espacio de trabajo actualizado"
   }

@@ -4418,6 +4418,9 @@
     "empty": "Keine administrativen Aktionen erfasst.",
     "actionUpdate": "Konto geändert",
     "actionDelete": "Konto gelöscht",
+    "actionWorkspaceStatus": "Status des Arbeitsbereichs geändert",
+    "targetWorkspace": "Arbeitsbereich {{name}}",
+    "statusChange": "Status {{from}} → {{to}}",
     "actionOther": "Konto geändert",
     "by": "Von {{email}}",
     "target": "Konto {{email}}",
@@ -4455,6 +4458,10 @@
     "reactivateNamed": "{{name}} reaktivieren",
     "confirmTitle": "{{name}} sperren?",
     "confirmDescription": "Die Mitglieder können weiterhin lesen und exportieren, aber bis zur Reaktivierung nichts ändern. Auch geplante Aufgaben werden angehalten.",
+    "reasonLabel": "Grund für diese Änderung",
+    "reasonPlaceholder": "Warum dieser Arbeitsbereich geändert wird",
+    "reactivateTitle": "{{name}} reaktivieren?",
+    "reactivateDescription": "Seine Mitglieder können wieder etwas ändern, und geplante Aufgaben laufen dort weiter, wo sie angehalten wurden.",
     "showing": "{{shown}} von {{total}} werden angezeigt. Suche, um die übrigen zu finden.",
     "updated": "Arbeitsbereich aktualisiert"
   }

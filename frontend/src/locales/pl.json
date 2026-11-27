@@ -4579,6 +4579,9 @@
     "empty": "Brak zapisanych działań administracyjnych.",
     "actionUpdate": "Konto zmienione",
     "actionDelete": "Konto usunięte",
+    "actionWorkspaceStatus": "Zmieniono status przestrzeni roboczej",
+    "targetWorkspace": "Przestrzeń robocza {{name}}",
+    "statusChange": "Status {{from}} → {{to}}",
     "actionOther": "Konto zmienione",
     "by": "Przez {{email}}",
     "target": "Konto {{email}}",
@@ -4616,6 +4619,10 @@
     "reactivateNamed": "Przywróć {{name}}",
     "confirmTitle": "Zawiesić {{name}}?",
     "confirmDescription": "Członkowie nadal mogą czytać i eksportować, ale nie mogą nic zmienić do czasu przywrócenia. Zaplanowane zadania też się zatrzymują.",
+    "reasonLabel": "Powód tej zmiany",
+    "reasonPlaceholder": "Dlaczego ta przestrzeń robocza jest zmieniana",
+    "reactivateTitle": "Przywrócić {{name}}?",
+    "reactivateDescription": "Członkowie znów mogą zmieniać rzeczy, a zaplanowane zadania wznawiają się tam, gdzie się zatrzymały.",
     "showing": "Wyświetlono {{shown}} z {{total}}. Użyj wyszukiwania, aby znaleźć pozostałe.",
     "updated": "Przestrzeń robocza zaktualizowana"
   }

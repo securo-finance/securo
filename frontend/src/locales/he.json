@@ -4457,6 +4457,9 @@
     "empty": "לא נרשמו פעולות מנהליות.",
     "actionUpdate": "החשבון עודכן",
     "actionDelete": "החשבון נמחק",
+    "actionWorkspaceStatus": "סטטוס סביבת העבודה שונה",
+    "targetWorkspace": "סביבת עבודה {{name}}",
+    "statusChange": "סטטוס {{from}} → {{to}}",
     "actionOther": "החשבון עודכן",
     "by": "על ידי {{email}}",
     "target": "חשבון {{email}}",
@@ -4494,6 +4497,10 @@
     "reactivateNamed": "הפעלה מחדש של {{name}}",
     "confirmTitle": "להשעות את {{name}}?",
     "confirmDescription": "החברים ימשיכו לקרוא ולייצא, אבל לא יוכלו לשנות דבר עד להפעלה מחדש. גם משימות מתוזמנות נעצרות.",
+    "reasonLabel": "הסיבה לשינוי הזה",
+    "reasonPlaceholder": "למה סביבת העבודה הזו משתנה",
+    "reactivateTitle": "להפעיל מחדש את {{name}}?",
+    "reactivateDescription": "החברים יוכלו שוב לשנות דברים, והמשימות המתוזמנות ימשיכו מהמקום שבו נעצרו.",
     "showing": "מוצגות {{shown}} מתוך {{total}}. חפשו כדי למצוא את השאר.",
     "updated": "סביבת העבודה עודכנה"
   }

@@ -4432,6 +4432,9 @@
     "empty": "Nessuna azione amministrativa registrata.",
     "actionUpdate": "Account modificato",
     "actionDelete": "Account eliminato",
+    "actionWorkspaceStatus": "Stato dello spazio di lavoro modificato",
+    "targetWorkspace": "Spazio di lavoro {{name}}",
+    "statusChange": "Stato {{from}} → {{to}}",
     "actionOther": "Account modificato",
     "by": "Da {{email}}",
     "target": "Account {{email}}",
@@ -4469,6 +4472,10 @@
     "reactivateNamed": "Riattiva {{name}}",
     "confirmTitle": "Sospendere {{name}}?",
     "confirmDescription": "I membri possono ancora leggere ed esportare, ma non modificare nulla fino alla riattivazione. Si fermano anche le attività pianificate.",
+    "reasonLabel": "Motivo di questa modifica",
+    "reasonPlaceholder": "Perché questo spazio di lavoro viene modificato",
+    "reactivateTitle": "Riattivare {{name}}?",
+    "reactivateDescription": "I membri possono di nuovo modificare le cose, e le attività pianificate riprendono da dove si erano fermate.",
     "showing": "Mostrati {{shown}} di {{total}}. Cerca per trovare gli altri.",
     "updated": "Spazio di lavoro aggiornato"
   }

@@ -203,10 +203,19 @@ async def list_workspaces(
 async def update_workspace_status(
     workspace_id: uuid.UUID,
     data: AdminWorkspaceStatusUpdate,
+    request: Request,
     session: AsyncSession = Depends(get_async_session),
-    _user: User = Depends(current_superuser),
+    current_user: User = Depends(current_superuser),
 ):
-    updated = await workspace_status_service.set_status(session, workspace_id, data.status)
+    """Suspend or reactivate a workspace, recording who did it and why (ADR 0042)."""
+    updated = await workspace_status_service.set_status(
+        session,
+        workspace_id,
+        data.status,
+        actor_id=current_user.id,
+        reason=data.reason,
+        ip=client_ip(request),
+    )
     if updated is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
     return _workspace_read(*updated)

@@ -92,12 +92,16 @@ class AdminWorkspaceRead(BaseModel):
 
 
 class AdminAccessLogRead(BaseModel):
-    """One administrative action on an account, as the affected side sees it."""
+    """One administrative action on an account or a workspace, as the affected side sees it."""
 
     id: uuid.UUID
     actor_email: str
-    target_email: str
+    #: The account's address; empty for an entry about a workspace.
+    target_email: Optional[str] = None
     target_user_id: Optional[uuid.UUID] = None
+    #: The workspace acted on, with the name it had at the time (ADR 0042).
+    target_workspace_id: Optional[uuid.UUID] = None
+    target_workspace_name: Optional[str] = None
     action: str
     #: Every field the action changed, old value and new (#556).
     changes: Optional[dict] = None
@@ -114,6 +118,17 @@ class AdminWorkspaceList(BaseModel):
 
 
 class AdminWorkspaceStatusUpdate(BaseModel):
+    """What an administrator sends to suspend or reactivate a workspace.
+
+    The reason is as required here as it is on an account update: every
+    administrative mutation leaves a record that says why (ADR 0042). Unknown
+    fields are refused, the way ``AdminUserUpdate`` refuses them.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    #: Why the workspace is being touched. Required, and logged with the change.
+    reason: AdminReason
     status: WorkspaceStatus
 
 

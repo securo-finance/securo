@@ -4417,6 +4417,9 @@
     "empty": "No administrative actions recorded.",
     "actionUpdate": "Account updated",
     "actionDelete": "Account deleted",
+    "actionWorkspaceStatus": "Workspace status changed",
+    "targetWorkspace": "Workspace {{name}}",
+    "statusChange": "Status {{from}} → {{to}}",
     "actionOther": "Account changed",
     "by": "By {{email}}",
     "target": "Account {{email}}",
@@ -4454,6 +4457,10 @@
     "reactivateNamed": "Reactivate {{name}}",
     "confirmTitle": "Suspend {{name}}?",
     "confirmDescription": "Its members keep reading and exporting, but can't change anything until it is reactivated. Scheduled work stops too.",
+    "reasonLabel": "Reason for this change",
+    "reasonPlaceholder": "Why this workspace is being changed",
+    "reactivateTitle": "Reactivate {{name}}?",
+    "reactivateDescription": "Its members can change things again, and scheduled work resumes where it stopped.",
     "showing": "Showing {{shown}} of {{total}}. Search to find the others.",
     "updated": "Workspace updated"
   }

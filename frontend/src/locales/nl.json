@@ -4419,6 +4419,9 @@
     "empty": "Geen administratieve acties vastgelegd.",
     "actionUpdate": "Account gewijzigd",
     "actionDelete": "Account verwijderd",
+    "actionWorkspaceStatus": "Status van de werkruimte gewijzigd",
+    "targetWorkspace": "Werkruimte {{name}}",
+    "statusChange": "Status {{from}} → {{to}}",
     "actionOther": "Account gewijzigd",
     "by": "Door {{email}}",
     "target": "Account {{email}}",
@@ -4456,6 +4459,10 @@
     "reactivateNamed": "{{name}} heractiveren",
     "confirmTitle": "{{name}} opschorten?",
     "confirmDescription": "Leden kunnen blijven lezen en exporteren, maar niets wijzigen tot de werkruimte wordt geheractiveerd. Ook geplande taken stoppen.",
+    "reasonLabel": "Reden voor deze wijziging",
+    "reasonPlaceholder": "Waarom deze werkruimte wordt gewijzigd",
+    "reactivateTitle": "{{name}} heractiveren?",
+    "reactivateDescription": "De leden kunnen weer dingen wijzigen, en geplande taken gaan verder waar ze stopten.",
     "showing": "{{shown}} van {{total}} getoond. Zoek om de andere te vinden.",
     "updated": "Werkruimte bijgewerkt"
   }

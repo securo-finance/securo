@@ -61,8 +61,12 @@ export interface AccessLogFieldChange {
 export interface AdminAccessLogEntry {
   id: string
   actor_email: string
-  target_email: string
+  /** The account's address; null for an entry about a workspace. */
+  target_email: string | null
   target_user_id: string | null
+  /** The workspace acted on, with the name it had at the time. */
+  target_workspace_id?: string | null
+  target_workspace_name?: string | null
   action: string
   /** Every field the action changed, keyed by field name (#556). */
   changes?: Record<string, AccessLogFieldChange> | null
