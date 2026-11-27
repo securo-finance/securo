@@ -290,6 +290,7 @@ async def test_the_refusal_hands_the_new_account_to_the_service(
     assert resp.status_code == 403, resp.text
     drop.assert_awaited_once()
     session.expire_all()
+    assert drop.await_args is not None
     assert drop.await_args.args[1] is not None
     assert await session.scalar(select(User).where(User.email == "handed@example.com")) is None
 
