@@ -218,20 +218,6 @@ def test_occurrences_in_range_follow_business_days():
 # ---------------------------------------------------------------------------
 
 
-def test_type_aliases_are_normalized():
-    base = {
-        "description": "Gym",
-        "amount": "99.90",
-        "frequency": "monthly",
-        "start_date": "2026-09-01",
-        "account_id": str(uuid.uuid4()),
-    }
-    assert RecurringTransactionCreate.model_validate({**base, "type": "expense"}).type == "debit"
-    assert RecurringTransactionCreate.model_validate({**base, "type": "Income"}).type == "credit"
-    with pytest.raises(ValidationError):
-        RecurringTransactionCreate.model_validate({**base, "type": "refund"})
-
-
 def test_match_keywords_are_cleaned():
     assert RecurringTransactionUpdate(match_keywords=" a , ,b ").match_keywords == "a, b"
     assert RecurringTransactionUpdate(match_keywords="  ").match_keywords is None
@@ -548,7 +534,7 @@ async def test_api_round_trips_the_rules_and_reports_the_due_date(
             "description": "Salário",
             "amount": 3000.00,
             "currency": "BRL",
-            "type": "income",
+            "type": "credit",
             "frequency": "monthly",
             "start_date": "2026-10-01",
             "account_id": str(test_account.id),

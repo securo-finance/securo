@@ -26,20 +26,6 @@ from app.schemas.transaction_split import (
 )
 
 
-# Callers (the agent tools among them) say "expense" and "income" as often as
-# "debit" and "credit". Rows stored with those words were left out of every
-# balance and total, so they are translated rather than stored.
-_TYPE_ALIASES = {"expense": "debit", "income": "credit"}
-
-
-def normalize_transaction_type(value):
-    """``expense``/``income`` (any case, padded) read as ``debit``/``credit``."""
-    if isinstance(value, str):
-        value = value.strip().lower()
-        return _TYPE_ALIASES.get(value, value)
-    return value
-
-
 def _bound_money_field(
     value: Optional[Decimal], info: ValidationInfo
 ) -> Optional[Decimal]:
@@ -70,11 +56,6 @@ class TransactionBase(BaseModel):
     currency: Optional[str] = None
     fx_rate: Optional[Decimal] = None
     payee_raw: Optional[str] = None  # raw payee string from import (OFX/QIF)
-
-    @field_validator("type", mode="before")
-    @classmethod
-    def normalize_type(cls, value):
-        return normalize_transaction_type(value)
 
     @field_validator("currency", mode="before")
     @classmethod
@@ -251,11 +232,6 @@ class TransactionUpdate(BaseModel):
     # same series; "all" touches every row in the series. Ignored when the
     # transaction has no installment fingerprint.
     apply_to: Literal["this", "future", "all"] = "this"
-
-    @field_validator("type", mode="before")
-    @classmethod
-    def normalize_type(cls, value):
-        return normalize_transaction_type(value)
 
     # The column is NOT NULL: an explicit null or an empty code is a 422,
     # not a 500 later on (#497). Leaving it out changes nothing.

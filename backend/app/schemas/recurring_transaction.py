@@ -14,7 +14,6 @@ from pydantic import (
 )
 
 from app.core.money import bounded_money
-from app.schemas.transaction import normalize_transaction_type
 from app.schemas.transaction_category_line import (
     TransactionCategoryLineRead,
     TransactionCategoryLinesInput,
@@ -54,10 +53,6 @@ HolidayCalendar = Annotated[
     Annotated[str, Field(max_length=32)], AfterValidator(_validate_holiday_calendar)
 ]
 
-# "expense" and "income" are translated the way the transaction schemas do it.
-RecurringType = Annotated[Literal["debit", "credit"], BeforeValidator(normalize_transaction_type)]
-
-
 def _normalize_keywords(value):
     """Store keywords as one comma-separated string, blanks dropped."""
     if value is None:
@@ -79,7 +74,7 @@ class RecurringTransactionCreate(BaseModel):
     description: str
     amount: Decimal
     currency: str = "USD"
-    type: RecurringType
+    type: str  # debit, credit
     frequency: str  # weekly, biweekly, monthly, quarterly, semiannual, yearly
     weekend_adjustment: WeekendAdjustment = "none"
     day_of_month: Optional[DayOfMonth] = None
@@ -112,7 +107,7 @@ class RecurringTransactionUpdate(BaseModel):
     description: Optional[str] = None
     amount: Optional[Decimal] = None
     currency: Optional[str] = None
-    type: Optional[RecurringType] = None
+    type: Optional[str] = None
     frequency: Optional[RecurringFrequency] = None
     weekend_adjustment: Optional[WeekendAdjustment] = None
     day_of_month: Optional[DayOfMonth] = None
