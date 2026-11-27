@@ -148,7 +148,11 @@ async def test_business_seed_lists_first_and_covers_every_invoice_state(demo_dat
         assert summary["number_from"] == 1
         assert summary["number_to"] == 17
 
-        invoices = await _invoices(session, business.id)
+        invoices = [
+            row
+            for row in await _invoices(session, business.id)
+            if row.direction == "receivable"
+        ]
         states = {}
         for invoice in invoices:
             state = invoice_service.derive_state(invoice, TODAY)
@@ -353,13 +357,15 @@ async def test_business_seed_records_the_statements_as_imports(demo_database):
             )
 
         # Everything the checking account shows came from a statement, but the
-        # opening balance, which no statement carries, and nothing on the card.
+        # opening balance, which no statement carries, the card payments,
+        # which are one leg of a transfer, and nothing on the card.
         strays = list(
             (
                 await session.execute(
                     select(Transaction).where(
                         Transaction.account_id == checking.id,
                         Transaction.import_id.is_(None),
+                        Transaction.transfer_pair_id.is_(None),
                     )
                 )
             )
@@ -389,6 +395,139 @@ async def test_business_seed_records_the_statements_as_imports(demo_database):
             )
             == 6
         )
+
+
+async def test_business_seed_pays_the_card_and_dates_the_receipts(demo_database):
+    """The card has six months and its due bills paid; receipts keep their day.
+
+    QA on the demo found the card with two months of purchases and no bill
+    paid, and "Received this month" counting every receipt of six months,
+    because the allocations were stamped at the moment of the reset.
+    """
+    session_maker = demo_database
+    demo = _load("seed_demo")
+    seed = demo.business_seed
+    today = date(2026, 11, 27)
+
+    async with session_maker() as session:
+        user = User(
+            email="demo@example.test",
+            hashed_password="not-used-here",
+            is_active=True,
+            is_verified=True,
+            is_superuser=False,
+            preferences={"language": "pt-BR", "currency_display": "BRL"},
+        )
+        session.add(user)
+        await session.commit()
+
+        personal = await demo._ensure_personal_workspace(session, user)
+        business = await seed.ensure_business_workspace(
+            session, user, before=personal.created_at
+        )
+        second = await seed.ensure_second_workspace(
+            session, user, before=personal.created_at, exclude=(business.id,)
+        )
+        summary = await seed.seed_business(session, user, business, months=6, today=today)
+        await seed.seed_second_company(session, user, second, today=today)
+
+        card = await session.scalar(
+            select(Account).where(
+                Account.workspace_id == business.id, Account.type == "credit_card"
+            )
+        )
+        rows = list(
+            (await session.execute(select(Transaction).where(Transaction.account_id == card.id)))
+            .scalars()
+            .all()
+        )
+        purchases = [row for row in rows if row.type == "debit"]
+        payments = [row for row in rows if row.type == "credit"]
+
+        # Purchases in each of the six months, June to November.
+        assert {row.date.month for row in purchases} == {6, 7, 8, 9, 10, 11}
+
+        # Every bill due by today was paid on its due day from checking,
+        # by a transfer whose other leg is on the checking account.
+        due = {}
+        for row in purchases:
+            due[row.effective_date] = due.get(row.effective_date, Decimal("0")) + row.amount
+        paid_bills = {day: total for day, total in due.items() if day <= today}
+        assert summary["card_payments"] == len(paid_bills) == 6
+        assert {row.date: row.amount for row in payments} == paid_bills
+        for row in payments:
+            partner = await session.scalar(
+                select(Transaction).where(
+                    Transaction.transfer_pair_id == row.transfer_pair_id,
+                    Transaction.id != row.id,
+                )
+            )
+            assert partner.type == "debit"
+            assert partner.amount == row.amount
+            assert partner.account_id != card.id
+
+        # What is left on the card is the bill still open, and only that.
+        owed = sum((r.amount for r in purchases), Decimal("0")) - sum(
+            (r.amount for r in payments), Decimal("0")
+        )
+        assert owed == sum(
+            (total for day, total in due.items() if day > today), Decimal("0")
+        )
+        assert Decimal("0") < owed < Decimal("8000")
+
+        # The subscription billed every month says so.
+        assert not any("anual" in row.description for row in purchases)
+
+        # "Received this month" counts November's receipts only.
+        stats = await invoice_service.aging_summary(session, business.id, today)
+        assert stats["received_this_month"] == Decimal("11400.00")
+        # The second company's receipts are days before today, so which month
+        # they land in moves with the date: they must match the transactions.
+        second_receipts = list(
+            (
+                await session.execute(
+                    select(Transaction).where(
+                        Transaction.workspace_id == second.id,
+                        Transaction.description.like("Recebimento%"),
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert len(second_receipts) == 2
+        expected = sum(
+            (
+                row.amount
+                for row in second_receipts
+                if row.date >= today.replace(day=1)
+            ),
+            Decimal("0.00"),
+        )
+        second_stats = await invoice_service.aging_summary(session, second.id, today)
+        assert second_stats["received_this_month"] == expected
+        assert {row.date for row in second_receipts} == {
+            date(2026, 10, 1),
+            date(2026, 10, 30),
+        }
+
+        # The payables side of the same screen.
+        owed_to_suppliers = await invoice_service.aging_summary(
+            session, business.id, today, direction="payable"
+        )
+        assert owed_to_suppliers["outstanding"] == Decimal("1890.00")
+        assert owed_to_suppliers["overdue_count"] == 1
+
+        # Two suppliers' bills to pay, one open and one late, outside the
+        # studio's own numbering.
+        assert summary["payables"] == ["open", "overdue"]
+        payables = [
+            row
+            for row in await _invoices(session, business.id)
+            if row.direction == "payable"
+        ]
+        assert len(payables) == 2
+        assert all(row.number is None and row.external_number for row in payables)
 
 
 async def test_second_company_sits_between_the_studio_and_the_personal_wallet(
@@ -513,7 +652,10 @@ async def test_second_company_sits_between_the_studio_and_the_personal_wallet(
         )
 
         # The studio's ledger and the personal wallet are untouched by it.
-        assert len(await _invoices(session, studio.id)) == studio_summary["invoices"]
+        assert (
+            len(await _invoices(session, studio.id))
+            == studio_summary["invoices"] + len(studio_summary["payables"])
+        )
         assert studio_summary["states"] == {
             "paid": 14,
             "partial": 1,

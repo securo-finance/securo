@@ -470,19 +470,38 @@ MONTHLY_COSTS = (
     (28, None, "Tarifas", Decimal("49.90")),
 )
 
-#: Card purchases, seeded for the last two cycles only, as if the older
-#: statements had already been paid off. `None` on the first row of the
-#: older cycle keeps the description readable in the list.
+#: Card purchases, the same every month: (payee, description, category,
+#: day, amount). Every bill already due is paid from the checking account.
 CARD_PURCHASES = (
     ("cloud", "Nuvem Brasil, hospedagem e banco de dados", "Software e Assinaturas",
      1, Decimal("389.00")),
-    ("design", "Licença Criativa, plano anual", "Software e Assinaturas",
+    ("design", "Licença Criativa, plano mensal", "Software e Assinaturas",
      8, Decimal("189.90")),
     ("ads", "Criativo Ads, campanha do mês", "Marketing",
      15, Decimal("1350.00")),
     ("lunch", "Restaurante Vila", "Alimentação", 17, Decimal("86.00")),
     ("rides", "Corrida App", "Transporte", 19, Decimal("34.50")),
     ("stationery", "Papelaria Central", "Contas e Escritório", 22, Decimal("58.90")),
+)
+
+#: Suppliers' bills still to pay: one open, one past its due date.
+PAYABLES: tuple[dict[str, Any], ...] = (
+    {
+        "supplier": "coworking",
+        "number": "CP-2026-1187",
+        "description": "Sala de reunião e estações extras",
+        "amount": Decimal("640.00"),
+        "issue_days_ago": 4,
+        "due_in_days": 8,
+    },
+    {
+        "supplier": "accounting",
+        "number": "CA-0931",
+        "description": "Honorários extras, abertura da filial",
+        "amount": Decimal("1250.00"),
+        "issue_days_ago": 24,
+        "due_in_days": -9,
+    },
 )
 
 ONE_OFFS: tuple[dict[str, Any], ...] = (
@@ -559,6 +578,11 @@ def _month_day(today: date, months_ago: int, day: int) -> date:
     start = _month_start(today, months_ago)
     last = calendar.monthrange(start.year, start.month)[1]
     return start.replace(day=min(day, last))
+
+
+def _noon_utc(day: date) -> datetime:
+    """Midday of `day` in São Paulo, as UTC, so no timezone moves the date."""
+    return datetime(day.year, day.month, day.day, 15, 0, tzinfo=timezone.utc)
 
 
 def _next_occurrence(today: date, day: int) -> date:
@@ -890,7 +914,15 @@ async def _receive(
         payee=payee,
     )
     await session.flush()
-    await invoice_service.allocate(session, invoice, transaction.id, amount=amount)
+    allocation = await invoice_service.allocate(
+        session, invoice, transaction.id, amount=amount
+    )
+    # `allocate` stamps the moment it runs, which on the demo is the
+    # reset. "Received this month" reads this column, so it has to carry
+    # the day the money landed or every reset would count six months of
+    # receipts as this month's.
+    allocation.allocated_at = _noon_utc(day)
+    await session.flush()
     return transaction
 
 
@@ -1235,6 +1267,39 @@ async def seed_business(
     )
     await session.commit()
 
+    # Bills the studio received and has not paid yet: one still inside its
+    # window and one already late. They are the suppliers' documents, so
+    # they come in as imported, keep the supplier's number and never take
+    # one from the studio's own series.
+    payables: list[Invoice] = []
+    for spec in PAYABLES:
+        issue = today - timedelta(days=spec["issue_days_ago"])
+        payable = await invoice_service.create_invoice(
+            session,
+            wsid,
+            uid,
+            {
+                "payee_id": payees[spec["supplier"]].id,
+                "issue_date": issue,
+                "due_date": today + timedelta(days=spec["due_in_days"]),
+                "currency": BRL,
+                "direction": "payable",
+                "origin": "imported",
+                "external_source": "supplier",
+                "external_id": spec["number"],
+                "external_number": spec["number"],
+                "lines": [
+                    {
+                        "description": spec["description"],
+                        "quantity": Decimal("1"),
+                        "unit_price": spec["amount"],
+                    }
+                ],
+            },
+        )
+        payables.append(payable)
+    await session.commit()
+
     # 8. Cash movement ---------------------------------------------------
     start = _month_start(today, months - 1)
 
@@ -1275,14 +1340,18 @@ async def seed_business(
                 payee=payee,
             )
 
-    # Only the last two card cycles, so the bill in the list is a real
-    # one and not the whole card history.
-    for months_ago in range(min(months, 2)):
+    # The card has the same six months as the checking account, and every
+    # bill already due was paid in full from the checking account on its
+    # due day. What is left on the card is only the bill still open, so
+    # its balance reads like a card in use and not like six months of
+    # debt nobody paid.
+    bills: dict[date, Decimal] = {}
+    for months_ago in range(months):
         for payee_key, description, category_name, day_number, amount in CARD_PURCHASES:
             day = _month_day(today, months_ago, day_number)
             if day > today:
                 continue
-            _add_transaction(
+            row = _add_transaction(
                 session,
                 user_id=uid,
                 workspace_id=wsid,
@@ -1294,6 +1363,28 @@ async def seed_business(
                 category=categories[category_name],
                 payee=payees[payee_key],
             )
+            bills[row.effective_date] = bills.get(row.effective_date, Decimal("0.00")) + amount
+
+    card_payments = 0
+    for due, total in sorted(bills.items()):
+        if due > today:
+            continue
+        pair = uuid.uuid4()
+        description = f"Pagamento da fatura do {card.name}, vencimento {due:%d/%m}"
+        for account, kind in ((checking, "debit"), (card, "credit")):
+            leg = _add_transaction(
+                session,
+                user_id=uid,
+                workspace_id=wsid,
+                account=account,
+                day=due,
+                description=description,
+                amount=total,
+                kind=kind,
+            )
+            leg.source = "transfer"
+            leg.transfer_pair_id = pair
+        card_payments += 1
 
     for spec in ONE_OFFS:
         day = _month_day(today, spec["months_ago"], spec["day"])
@@ -1332,6 +1423,9 @@ async def seed_business(
                         # The opening balance describes where the account
                         # started; no bank statement carries it.
                         Transaction.exclude_from_pnl.is_(False),
+                        # A card payment is one leg of a transfer; undoing
+                        # the statement must not leave the card's leg behind.
+                        Transaction.transfer_pair_id.is_(None),
                     )
                 )
             )
@@ -1465,6 +1559,10 @@ async def seed_business(
         "products": len(products),
         "payees": len(payees),
         "statements": statements,
+        "card_payments": card_payments,
+        "payables": sorted(
+            invoice_service.derive_state(row, today) for row in payables
+        ),
         "schedules": [
             {"id": str(retainer.id), "name": retainer.name, "status": retainer.status},
             {"id": str(churned.id), "name": churned.name, "status": churned.status},
