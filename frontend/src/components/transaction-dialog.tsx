@@ -1293,6 +1293,10 @@ function TransactionForm({
           ? {
               ...(description !== transaction?.description ? { description } : {}),
               category_id: categoryId || null,
+              // Account moves are bookkeeping, not bank truth: allowed on
+              // synced rows too (backend guards transfer-pair collisions).
+              // Send only when changed so untouched rows stay untouched.
+              ...(accountId !== transaction?.account_id && accountId ? { account_id: accountId } : {}),
               payee_id: payeeId || null,
               notes: notes.trim() || null,
               is_ignored: isIgnored,
@@ -1800,7 +1804,7 @@ function TransactionForm({
           hideAmounts={hideAmounts}
         />
       )}
-      <div className={cn("grid gap-4", isSynced ? "grid-cols-1" : "grid-cols-2")}>
+      <div className="grid gap-4 grid-cols-2">
         <div className="space-y-2">
           <div className="flex items-center justify-between gap-2">
             <Label htmlFor={`${id}-payee`} id={`${id}-payee-label`}>{t('payees.payee')}</Label>
@@ -1854,23 +1858,21 @@ function TransactionForm({
             <p className="text-xs text-muted-foreground">{t('payees.rawPayee')}: {transaction.payee}</p>
           )}
         </div>
-        {!isSynced && (
-          <div className="space-y-2">
-            <Label htmlFor={`${id}-account`}>{t('transactions.account')}</Label>
-            <select
-              id={`${id}-account`}
-              className="w-full border border-border rounded-md px-3 py-2 text-sm bg-card focus:outline-none focus-visible:ring-ring/30 focus-visible:ring-[2px]"
-              value={accountId}
-              onChange={(e) => setAccountId(e.target.value)}
-              required
-            >
-              {!accountId && <option value="" disabled hidden>{t('transactions.createCounterpartSelectAccount')}</option>}
-              {sortedAccounts.map((acc) => (
-                <option key={acc.id} value={acc.id}>{getAccountLabel(acc)}</option>
-              ))}
-            </select>
-          </div>
-        )}
+        <div className="space-y-2">
+          <Label htmlFor={`${id}-account`}>{t('transactions.account')}</Label>
+          <select
+            id={`${id}-account`}
+            className="w-full border border-border rounded-md px-3 py-2 text-sm bg-card focus:outline-none focus-visible:ring-ring/30 focus-visible:ring-[2px]"
+            value={accountId}
+            onChange={(e) => setAccountId(e.target.value)}
+            required
+          >
+            {!accountId && <option value="" disabled hidden>{t('transactions.createCounterpartSelectAccount')}</option>}
+            {sortedAccounts.map((acc) => (
+              <option key={acc.id} value={acc.id}>{getAccountLabel(acc)}</option>
+            ))}
+          </select>
+        </div>
       </div>
 
       {seed?.id && isFlagged && (
