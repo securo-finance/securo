@@ -1,4 +1,4 @@
-# 0042. An operator can require a secret key of their own
+# 0048. An operator can require a secret key of their own
 
 - Status: Accepted
 - Date: 2026-11-25

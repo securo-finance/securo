@@ -1,0 +1,96 @@
+name: ADR Index
+
+# The index table in docs/adr/README.md is generated from the ADR files by
+# scripts/gen_adr_index.py, so a pull request that adds an ADR adds its own
+# file and leaves the table alone. This job writes the row the merge made
+# necessary.
+#
+# It runs after CI on main rather than on the push: a merge made by the fast
+# lane is a push with GITHUB_TOKEN, which starts no workflow run, and CI on
+# main is dispatched instead (see fast-lane.yml).
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+# Opening the pull request needs to write a branch; nothing is written to main.
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: adr-index
+  cancel-in-progress: true
+
+jobs:
+  regenerate:
+    name: Regenerate the index
+    if: github.repository == 'securo-finance/securo'
+    runs-on: ubuntu-latest
+    env:
+      BRANCH: adr-index
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+          # A pull request opened with the default GITHUB_TOKEN starts no CI,
+          # so the required checks never report and it cannot be merged. Set
+          # RELEASE_TOKEN (fine-grained PAT with contents and pull requests
+          # write) and the checks run on it like on any other pull request.
+          # Same secret as prepare-release.yml.
+          token: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
+
+      - name: Rebuild the table
+        run: python3 scripts/gen_adr_index.py
+
+      - name: Keep it in a pull request
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
+          HAS_RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN != '' }}
+        run: |
+          set -euo pipefail
+
+          if git diff --quiet -- docs/adr/README.md; then
+            echo "The index already matches the ADR files on main."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -C "$BRANCH"
+          git commit -m "docs(adr): regenerate the index from the ADR files" -- docs/adr/README.md
+          # The branch is regenerated from the head of main every time, so a
+          # pull request it already holds is replaced rather than merged into.
+          git push --force origin "$BRANCH"
+
+          existing="$(gh pr list --head "$BRANCH" --state open --json number --jq '.[].number' | head -n 1)"
+          if [ -n "$existing" ]; then
+            echo "::notice::The index pull request is #$existing"
+            exit 0
+          fi
+
+          cat > /tmp/adr-index-body.md <<'BODY'
+          The index in `docs/adr/README.md` no longer matches the ADR files on main.
+
+          It is generated: `scripts/gen_adr_index.py` built the table in this pull request
+          from the headings and the status lines of `docs/adr/NNNN-*.md`, and nothing in it
+          is hand-written. Merging it puts the index back in step with the files.
+
+          It comes as a pull request and not as a commit on main because main requires the
+          Backend Tests, Frontend Checks and Helm Checks on every commit, and only an
+          organization admin can push past them.
+          BODY
+
+          pr_url="$(gh pr create \
+            --base main \
+            --head "$BRANCH" \
+            --title "docs(adr): regenerate the index from the ADR files" \
+            --body-file /tmp/adr-index-body.md)"
+          echo "::notice::$pr_url"
+          echo "Index pull request: $pr_url" >> "$GITHUB_STEP_SUMMARY"
+
+          if [ "$HAS_RELEASE_TOKEN" != "true" ]; then
+            echo "::warning::No RELEASE_TOKEN secret, so CI did not start on the pull request. Close and reopen it to run the required checks."
+          fi

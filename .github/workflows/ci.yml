@@ -304,6 +304,28 @@ jobs:
       - name: Check the paths AGENTS.md and the ADRs cite
         run: python3 .github/ci/check_doc_paths.py
 
+      - name: Test the ADR index generator
+        run: python3 .github/ci/test_adr_index.py
+
+      # The index in docs/adr/README.md is generated from the ADR files
+      # (scripts/gen_adr_index.py), so adding an ADR is one new file. On a pull
+      # request the table is compared with the base branch, which lets the ADR
+      # the pull request itself adds go unindexed until the job on main writes
+      # its row; on main nothing may be missing.
+      - name: Fetch the base branch
+        if: github.event_name == 'pull_request'
+        run: git fetch --no-tags --depth=1 origin "+refs/heads/${{ github.base_ref }}:refs/remotes/origin/${{ github.base_ref }}"
+
+      - name: Check the ADR index
+        env:
+          BASE_REF: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.base_ref) || '' }}
+        run: |
+          if [ -n "$BASE_REF" ]; then
+            python3 scripts/gen_adr_index.py --check --base "$BASE_REF"
+          else
+            python3 scripts/gen_adr_index.py --check
+          fi
+
   installer:
     name: Installer Script
     runs-on: ubuntu-latest

@@ -9,6 +9,7 @@ Each file here records one decision about how Securo is built: what we chose, wh
 - **A new architecture decision, or a change to one, comes with an ADR in the same pull request.** That covers a new table that breaks a pattern below, a new external call, a new background job family, a new optional service, a change to how money, time, access or storage work.
 - **Name the code.** An ADR points at the files and functions that carry it, and at the tests that keep it true. A decision no test enforces says so under "Enforced by".
 - Cited paths are checked in CI (`.github/ci/check_doc_paths.py`): a renamed file fails the build until the ADR names its new place.
+- **The index below is generated.** `scripts/gen_adr_index.py` writes the table from each ADR's heading and status line, so a pull request that adds an ADR adds only its own file and leaves this one alone; the table is checked in CI and rebuilt on main after a merge.
 - ADRs 0001 to 0018 were written after the fact, from decisions already in the code. Their date is when the decision landed; the pull request that brought it is listed as its origin.
 
 ## Index
@@ -57,9 +58,9 @@ Each file here records one decision about how Securo is built: what we chose, wh
 | [0041](0041-in-app-notifications.md) | Notifications live inside the app, one row per person, and the first kinds are read from stored state |
 | [0042](0042-admin-actions-on-accounts-leave-a-record.md) | An administrator manages accounts, never becomes one, and every action leaves a record the affected side can read |
 | [0043](0043-row-security.md) | Postgres can hold the workspace boundary too |
-| [0044](0044-email-password-recovery.md) | Password recovery goes out over the instance's own SMTP server, behind one switch |
-| [0045](0045-managed-instance.md) | A managed instance keeps its own settings read-only for the customer's admin |
-| [0046](0046-email-provider-and-templates.md) | The mail path is SMTP or a hosted API, and an admin may rewrite the recovery message |
+| [0044](0044-email-password-recovery.md) | Password recovery is sent over the instance's own SMTP server, behind one switch |
+| [0045](0045-managed-instance.md) | A managed instance keeps its own settings out of the admin's reach |
+| [0046](0046-email-provider-and-templates.md) | The hosted instance picks the mail path, and an admin may rewrite the message |
 | [0047](0047-deleting-a-user-keeps-workspace-data.md) | Deleting a user keeps what they added to other people's workspaces |
 | [0048](0048-required-secret-key.md) | An operator can require a secret key of their own |
-| [0050](0050-instance-settings-leave-a-record.md) | Instance settings an administrator changes leave a record, with no account as its target |
+| [0050](0050-instance-settings-leave-a-record.md) | An instance setting an administrator changes leaves a record, with no account as its target |
