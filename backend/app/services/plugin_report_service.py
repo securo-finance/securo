@@ -41,6 +41,7 @@ from app.services._query_filters import (
 )
 from app.services.rule_service import resolve_default_category_keys
 from app.services.admin_service import get_credit_card_accounting_mode
+from app.services.viewer_currency import viewer_currency
 
 #: The key a group's row takes when it has none (no category, no payee).
 NONE_KEY = "none"
@@ -262,7 +263,7 @@ async def run_report(
     report_date = reporting_date_col(accounting_mode)
     end = min(end, app_today())
 
-    amount = line_primary_or_amount()
+    amount = line_primary_or_amount(await viewer_currency(session, currency))
     if report.measure == "expenses":
         types: tuple[str, ...] = ("debit",)
         value = func.abs(amount)
@@ -384,7 +385,8 @@ async def _transactions_input(
     viewer's part of it, so a code report adds up what the native figures
     count. A row the viewer paid with a group split counts only the viewer's
     share (the other members' shares come off, as in `run_report`); any
-    other row counts whole, and `amount_primary` stays as stored.
+    other row counts whole. `amount_primary` is read in the viewer's currency,
+    so another member's stamp is converted like everywhere else (ADR 0032).
     """
     from app.models.transaction_category_line import TransactionCategoryLine
     from app.models.transaction_split import TransactionSplit
@@ -437,12 +439,16 @@ async def _transactions_input(
             if member_id not in viewer_member_ids:
                 others_by_tx[tx_id] += Decimal(str(share or 0))
 
+    viewer = await viewer_currency(session, primary_currency)
     rates: dict[tuple[str, date], Optional[Decimal]] = {}
     out: list[dict[str, Any]] = []
     for (
         tx_id, day, description, amount, kind, currency, amount_primary, category_id, account_id, payee,
         status, source, ignored, owner_id, tx_date,
     ) in rows:
+        amount_primary = await viewer.convert(
+            session, owner_id, amount_primary, tx_date, currency=currency, amount=amount
+        )
         full = abs(Decimal(str(amount or 0)))
         others = others_by_tx.get(tx_id, Decimal("0")) if owner_id == user_id else Decimal("0")
         my_share = full - others

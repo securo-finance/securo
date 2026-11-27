@@ -2,12 +2,12 @@
 
 Splits are always written as integer-cent amounts (Numeric(15,2)) in the
 transaction's currency. Equal/percent inputs are materialized at write
-time and the rounding residual is assigned to the last share so the sum
+time and the rounding residual is assigned to the last share(s) so the sum
 matches the parent amount exactly.
 """
 
 import uuid
-from decimal import ROUND_HALF_UP, Decimal
+from decimal import ROUND_DOWN, ROUND_HALF_UP, Decimal
 from typing import Optional
 
 from sqlalchemy import delete, or_, select
@@ -42,11 +42,12 @@ def _materialize(
         raise ValueError("At least one split is required")
 
     if payload.share_type == "equal":
-        per = _quantize(total / n)
-        # Last share absorbs the rounding residual so the sum is exact.
-        residual = total - (per * (n - 1))
+        per = (total / n).quantize(_CENT, rounding=ROUND_DOWN)
+        # The last shares take the leftover cents, one each, so the sum is
+        # exact and no two shares differ by more than a cent.
+        extra = int((total - per * n) / _CENT)
         return [
-            (s.group_member_id, residual if i == n - 1 else per, None)
+            (s.group_member_id, per + _CENT if i >= n - extra else per, None)
             for i, s in enumerate(payload.splits)
         ]
 

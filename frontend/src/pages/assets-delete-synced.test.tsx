@@ -69,9 +69,10 @@ describe('Deleting an asset a bank connection imported', () => {
     renderWithProviders(<AssetsPage />)
 
     await screen.findByText('CDB Banco')
-    const deleteButton = screen.getByRole('button', { name: t('common.delete') })
-    expect(deleteButton).toBeEnabled()
-    await user.click(deleteButton)
+    await user.click(screen.getByRole('button', { name: `${t('common.more')}: CDB Banco` }))
+    const deleteItem = await screen.findByRole('menuitem', { name: t('common.delete') })
+    expect(deleteItem).not.toHaveAttribute('data-disabled')
+    await user.click(deleteItem)
 
     const dialog = await screen.findByRole('dialog')
     expect(within(dialog).getByText(t('assets.confirmDeleteSynced'))).toBeVisible()
@@ -90,7 +91,8 @@ describe('Deleting an asset a bank connection imported', () => {
     renderWithProviders(<AssetsPage />)
 
     await screen.findByText('CDB Banco')
-    await user.click(screen.getByRole('button', { name: t('common.delete') }))
+    await user.click(screen.getByRole('button', { name: `${t('common.more')}: CDB Banco` }))
+    await user.click(await screen.findByRole('menuitem', { name: t('common.delete') }))
 
     const dialog = await screen.findByRole('dialog')
     expect(within(dialog).getByText(t('assets.confirmDelete'))).toBeVisible()

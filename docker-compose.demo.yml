@@ -15,6 +15,8 @@
 #   AGENTS_ENABLED=false    no AI/MCP/agents UI or routes.
 #   PLUGGY_*=               empty → no bank-sync.
 #   OPENEXCHANGERATES_APP_ID= empty → no FX-rate API calls.
+#   PERFORMANCE_BENCHMARKS_ENABLED=false  no market-index calls; the
+#                           Performance tab shows the portfolio alone.
 
 name: securo-demo
 
@@ -39,6 +41,10 @@ x-backend-env: &backend-env
   # FX provider disabled — seed_demo.py generates daily rates locally.
   OPENEXCHANGERATES_APP_ID: ""
   FX_SYNC_MODE: on_demand
+
+  # Market-index comparison on the Performance tab fetches quotes from Yahoo:
+  # off, so a shared demo never trips its bot heuristics.
+  PERFORMANCE_BENCHMARKS_ENABLED: "false"
 
   # Agents off — no MCP server, no LLM providers, no chat UI.
   AGENTS_ENABLED: "false"

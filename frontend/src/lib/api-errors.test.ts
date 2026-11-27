@@ -132,6 +132,19 @@ describe('localized API errors', () => {
   })
 
   it.each([
+    ['en', '"Household" has other members and no other owner. Make one of them an owner, or remove them, before deleting this user.'],
+    ['pt-BR', '"Household" tem outros membros e nenhum outro dono. Torne um deles dono, ou remova-os, antes de excluir este usuário.'],
+  ])('shows why a user deletion was refused, with the workspace, in %s', async (language, expected) => {
+    await i18n.changeLanguage(language)
+
+    expect(extractApiError(apiError({
+      code: 'user_sole_owner',
+      message: 'English text the API built',
+      workspace: 'Household',
+    }))).toBe(expected)
+  })
+
+  it.each([
     ['en', "This import can't be undone: the holding left without it is too large to store."],
     ['pt-BR', 'Não é possível desfazer esta importação: a posição que sobra sem ela é grande demais para armazenar.'],
   ])('shows the too-large undo refusal in %s', async (language, expected) => {
@@ -239,6 +252,31 @@ describe('localized API errors', () => {
     ]))).toBe('O valor é maior do que o Securo consegue guardar., date: Input should be a valid date')
   })
 
+  // Linking an incoming transaction to a group settlement, refused by the
+  // service: the settle dialog must say why in the user's language (#494).
+  // The sentence names the settlement being saved as the one that goes over,
+  // since the paybacks already there can still be under the credit.
+  it.each([
+    ['en', 'The paybacks linked to this credit would add up to more than its amount.'],
+    ['pt-BR', 'Os acertos vinculados a este crédito passariam do valor dele.'],
+  ])('shows why a payback cannot exceed the credit in %s', async (language, expected) => {
+    await i18n.changeLanguage(language)
+
+    expect(
+      extractApiError(apiError('Settlements linked to this transaction would exceed its amount')),
+    ).toBe(expected)
+  })
+
+  it('translates the other refusals of a linked transaction', async () => {
+    await i18n.changeLanguage('pt-BR')
+
+    expect(extractApiError(apiError('Only the receiver can link their incoming transaction')))
+      .toBe('Só quem recebe o dinheiro pode vincular a transação de entrada.')
+    expect(extractApiError(
+      apiError("Linked transaction must be your own credit in the settlement's currency"),
+    )).toBe('Escolha uma transação de entrada sua, na moeda do acerto.')
+  })
+
   it('falls back to the message of a code it does not know', async () => {
     await i18n.changeLanguage('pt-BR')
 
@@ -246,5 +284,40 @@ describe('localized API errors', () => {
       code: 'some_future_code',
       message: 'Cannot change amount or date on a synchronized transaction',
     }))).toBe('Não é possível alterar o valor ou a data de uma transação sincronizada')
+  })
+
+  // The calendar refuses a month far from today (#598). Its message spells the
+  // window in, so the lookup matches the sentence with the number as a slot:
+  // moving the limit must not send the toast back to English (#600).
+  it.each([
+    ['en', 'This month is too far from today.'],
+    ['pt-BR', 'Este mês está longe demais de hoje.'],
+  ])('shows the calendar month bound in %s', async (language, expected) => {
+    await i18n.changeLanguage(language)
+
+    expect(extractApiError(apiError('month must be within 50 years of today'))).toBe(expected)
+    expect(extractApiError(apiError('month must be within 25 years of today'))).toBe(expected)
+  })
+
+  it('keeps an English message that only looks like the calendar bound', async () => {
+    await i18n.changeLanguage('pt-BR')
+
+    expect(extractApiError(apiError('month must be within 50 days of today'))).toBe(
+      'month must be within 50 days of today',
+    )
+  })
+
+  // The pool refuses with 503 when no database connection is free (#1901).
+  it.each([
+    ['en', 'The instance is at its database connection limit. Try again in a moment.'],
+    ['pt-BR', 'A instância atingiu o limite de conexões com o banco de dados. Tente de novo em instantes.'],
+  ])('shows the database pool refusal in %s', async (language, expected) => {
+    await i18n.changeLanguage(language)
+
+    expect(
+      extractApiError(
+        apiError('The instance is at its database connection limit. Try again in a moment.'),
+      ),
+    ).toBe(expected)
   })
 })

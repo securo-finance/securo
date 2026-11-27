@@ -271,4 +271,36 @@ describe('TransactionDrillDown', () => {
     expect(await screen.findByText('+$10.00')).toBeInTheDocument()
     expect(screen.getByText(/part of \$40\.00/)).toBeInTheDocument()
   })
+
+  it('sorts by reporting date and renders ReportingDateBadge for shifted CC rows', async () => {
+    const tx = (overrides: Record<string, unknown>) => ({
+      id: 'tx', description: 'Dinner', date: '2026-04-05', reporting_date_override: null,
+      type: 'debit', amount: 100, amount_primary: 100, currency: 'USD', status: 'posted',
+      category: null, attachment_count: 0, splits: [], viewer_share: null, is_shared: false,
+      user_id: 'me', ...overrides,
+    })
+    vi.mocked(admin.accountingMode).mockResolvedValue({ mode: 'accrual' } as never)
+    vi.mocked(transactions.list).mockResolvedValue({
+      items: [
+        tx({ id: 'tx-card', description: 'March CC purchase', date: '2026-03-30', reporting_date: '2026-04-10' }),
+        tx({ id: 'tx-rent', description: 'April rent', date: '2026-04-05', reporting_date: '2026-04-05' }),
+      ],
+      total: 2,
+    } as never)
+
+    renderWithProviders(
+      <TransactionDrillDown
+        filter={{ title: 'Expenses', type: 'debit', from: '2026-04-01', to: '2026-04-30' }}
+        onClose={vi.fn()}
+      />,
+    )
+
+    const ccLabel = await screen.findByText('March CC purchase')
+    const rentLabel = screen.getByText('April rent')
+    expect(rentLabel.compareDocumentPosition(ccLabel) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(screen.getByText('4/10/2026')).toBeInTheDocument()
+    expect(screen.getByText('Reporting date: 4/10/2026')).toBeInTheDocument()
+    expect(screen.getByText(/Bank date: 3\/30\/2026/)).toBeInTheDocument()
+    expect(screen.getAllByText(/Bank date:/).length).toBe(1)
+  })
 })

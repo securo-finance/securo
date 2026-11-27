@@ -1,12 +1,15 @@
 import uuid
 from typing import Optional
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
+
+# The icon columns of categories, category groups and goals are String(50).
+ICON_MAX_LENGTH = 50
 
 
 class CategoryBase(BaseModel):
     name: str
-    icon: str = "circle-help"
+    icon: str = Field("circle-help", max_length=ICON_MAX_LENGTH)
     color: str = "#6B7280"
 
 
@@ -18,7 +21,7 @@ class CategoryCreate(CategoryBase):
 
 class CategoryUpdate(BaseModel):
     name: Optional[str] = None
-    icon: Optional[str] = None
+    icon: Optional[str] = Field(None, max_length=ICON_MAX_LENGTH)
     color: Optional[str] = None
     group_id: Optional[uuid.UUID] = None
     treat_as_transfer: Optional[bool] = None

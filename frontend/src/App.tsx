@@ -21,11 +21,14 @@ import { DemoBanner } from '@/components/demo-banner'
 const SetupPage = lazy(() => import('@/pages/setup'))
 const LoginPage = lazy(() => import('@/pages/login'))
 const RegisterPage = lazy(() => import('@/pages/register'))
+const ForgotPasswordPage = lazy(() => import('@/pages/forgot-password'))
+const ResetPasswordPage = lazy(() => import('@/pages/reset-password'))
 const DashboardPage = lazy(() => import('@/pages/dashboard'))
 const TransactionsPage = lazy(() => import('@/pages/transactions'))
 const AccountsPage = lazy(() => import('@/pages/accounts'))
 const AccountDetailPage = lazy(() => import('@/pages/account-detail'))
 const ImportPage = lazy(() => import('@/pages/import'))
+const NotificationsPage = lazy(() => import('@/pages/notifications'))
 const BackupPage = lazy(() => import('@/pages/backups'))
 const RulesPage = lazy(() => import('@/pages/rules'))
 const CategoriesPage = lazy(() => import('@/pages/categories'))
@@ -99,6 +102,10 @@ function App() {
                 <Route path="/login" element={<LoginPage />} />
                 <Route path="/auth/oidc/callback" element={<OIDCCallbackPage />} />
                 <Route path="/register" element={<RegisterPage />} />
+                {/* Password recovery: the link the email carries lands on
+                    /reset-password?token=..., outside the protected routes. */}
+                <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+                <Route path="/reset-password" element={<ResetPasswordPage />} />
                 {/* A client opening a link the sender shared. Deliberately
                     outside ProtectedRoute and outside AppLayout: the
                     recipient has no account, and the token is the whole
@@ -123,6 +130,7 @@ function App() {
                   <Route path="/enable-banking" element={<OAuthCallbackPage />} />
                   <Route path="/import" element={<ModuleRoute module="import"><ImportPage /></ModuleRoute>} />
                   <Route path="/backup" element={<Navigate to="/backups" replace />} />
+                  <Route path="/notifications" element={<NotificationsPage />} />
                   <Route path="/backups" element={<BackupPage />} />
                   <Route path="/rules" element={<ModuleRoute module="rules"><RulesPage /></ModuleRoute>} />
                   <Route path="/categories" element={<ModuleRoute module="categories"><CategoriesPage /></ModuleRoute>} />

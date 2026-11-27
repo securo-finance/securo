@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from app.core.app_clock import use_timezone
 from app.core.config import get_settings
+from app.core.row_security import workspace_makers
 from app.models.workspace import Workspace
 from app.services import invoice_schedule_service, invoice_service
 from app.services.invoice_service import InvoiceError
@@ -69,11 +70,12 @@ async def _generate_one(session_maker, schedule_id) -> int:
 async def _generate_all() -> int:
     engine, session_maker = _make_session_maker()
     try:
-        async with session_maker() as session:
-            schedule_ids = await invoice_schedule_service.due_schedule_ids(session)
         total = 0
-        for schedule_id in schedule_ids:
-            total += await _generate_one(session_maker, schedule_id)
+        for maker in await workspace_makers(session_maker):
+            async with maker() as session:
+                schedule_ids = await invoice_schedule_service.due_schedule_ids(session)
+            for schedule_id in schedule_ids:
+                total += await _generate_one(maker, schedule_id)
     finally:
         await engine.dispose()
     return total

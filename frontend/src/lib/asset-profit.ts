@@ -7,6 +7,7 @@ type ProfitAsset = Pick<
   | 'realized_gain'
   | 'sell_date'
   | 'sell_price'
+  | 'sold_cost'
   | 'total_invested'
   | 'value_count'
 >
@@ -22,7 +23,7 @@ export function getAssetProfit(asset: ProfitAsset) {
 
   if (amount == null) return null
 
-  const cost = asset.total_invested ?? asset.purchase_price
+  const cost = asset.total_invested ?? asset.sold_cost ?? asset.purchase_price
   return {
     amount,
     percentage: cost ? (amount / cost) * 100 : null,

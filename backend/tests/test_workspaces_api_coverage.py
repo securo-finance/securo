@@ -9,6 +9,23 @@ import pytest
 from httpx import AsyncClient
 
 from app.core.auth import get_jwt_strategy
+from app.models.user import User
+
+
+async def _add_user(session, email: str) -> User:
+    """An account stored exactly as typed, the way an import or an older
+    provider can leave one."""
+    user = User(
+        id=uuid.uuid4(),
+        email=email,
+        hashed_password="not-used-here",
+        is_active=True,
+        is_superuser=False,
+        is_verified=True,
+    )
+    session.add(user)
+    await session.commit()
+    return user
 
 
 # ---------------------------------------------------------------------------
@@ -159,6 +176,30 @@ async def test_invite_new_user_member(client: AsyncClient, auth_headers, test_wo
     body = resp.json()
     assert body["email"] == "newcoll@example.com"
     assert body["role"] == "editor"
+
+
+@pytest.mark.asyncio
+async def test_invite_finds_an_account_whose_address_is_stored_with_a_capital(
+    client: AsyncClient, auth_headers, test_workspace, session
+):
+    """The address is one mailbox however it was typed (#556).
+
+    Sign-in resolves it without regard to case, so an account stored as
+    `Capital@example.com` is the person an invite for `capital@example.com`
+    means. Missing them made the route try to create a second account for
+    the same mailbox, which the duplicate check then refused: the owner saw
+    an error instead of adding the person they named.
+    """
+    await _add_user(session, "Capital@example.com")
+
+    resp = await client.post(
+        f"/api/workspaces/{test_workspace.id}/members",
+        headers=auth_headers,
+        json={"email": "capital@example.com", "role": "editor"},
+    )
+
+    assert resp.status_code == 201, resp.text
+    assert resp.json()["email"] == "Capital@example.com"
 
 
 @pytest.mark.asyncio

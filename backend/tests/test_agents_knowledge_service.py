@@ -180,14 +180,23 @@ async def test_mark_status_ready_clears_prior_error(session, test_agent, test_us
         filename="s.txt", mime="text/plain", payload=b"x",
     )
     # Initial failure → error message stored.
-    await knowledge_service.mark_status(session, doc.id, status="failed", error="embed failed: 500")
+    failed = await knowledge_service.mark_status(
+        session, doc.id, status="failed", error="embed failed: 500"
+    )
+    assert failed is not None
+    assert failed.status == "failed"
+    assert failed.updated_at is not None
     refreshed = await knowledge_service.get_doc(session, doc.id, test_user.id)
 
     assert refreshed is not None
     assert refreshed.status == "failed"
     assert "embed failed" in (refreshed.error or "")
     # Subsequent success → status flips AND prior error cleared.
-    await knowledge_service.mark_status(session, doc.id, status="ready", chunk_count=4)
+    ready = await knowledge_service.mark_status(session, doc.id, status="ready", chunk_count=4)
+    assert ready is not None
+    assert ready.status == "ready"
+    assert ready.error is None
+    assert ready.chunk_count == 4
     refreshed = await knowledge_service.get_doc(session, doc.id, test_user.id)
 
     assert refreshed is not None
@@ -215,7 +224,8 @@ async def test_mark_status_failed_preserves_prior_status_metadata(session, test_
 async def test_mark_status_unknown_doc_is_silent_noop(session):
     # No exception even when the doc doesn't exist — used by the
     # Celery task to avoid crashing on a missing row.
-    await knowledge_service.mark_status(session, uuid.uuid4(), status="failed", error="x")
+    res = await knowledge_service.mark_status(session, uuid.uuid4(), status="failed", error="x")
+    assert res is None
 
 
 def test_hash_payload_is_stable_and_unique():

@@ -21,6 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.app_clock import use_resolved_timezone, workspace_timezone
 from app.core.auth import current_active_user
 from app.core.database import get_async_session
+from app.core.row_security import bind_workspace
 from app.core.shared_scope import bound_to_workspace
 from app.models.user import User
 from app.models.workspace import Workspace, WorkspaceMember
@@ -98,6 +99,8 @@ async def current_workspace(
                 raise HTTPException(status_code=403, detail="This access token belongs to another workspace")
         x_workspace_id = str(access_token.workspace_id)
     ctx = await resolve_workspace(x_workspace_id, user, session)
+    # A token gets nothing shared from other workspaces, here as in shared_scope.
+    await bind_workspace(session, ctx.id, user.id if access_token is None else None)
     with (
         use_resolved_timezone(workspace_timezone(ctx.workspace.timezone)),
         bound_to_workspace(ctx.workspace.id if access_token is not None else None),

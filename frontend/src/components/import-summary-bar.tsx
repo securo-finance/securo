@@ -20,7 +20,7 @@ export function ImportSummaryBar({ transactions, userCurrency, locale }: ImportS
     .reduce((sum, t) => sum + (t.type === 'credit' ? Number(t.amount) : -Number(t.amount)), 0)
 
   return (
-    <div className="sticky top-0 z-10 bg-card border border-border px-5 py-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
+    <div className="sticky top-14 z-10 bg-card border lg:top-16 border-border px-5 py-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
       <span className="text-muted-foreground">
         {total} {t('import.transactionsFound')}
       </span>

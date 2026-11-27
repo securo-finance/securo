@@ -35,6 +35,7 @@ from decimal import Decimal
 from typing import Any, Optional
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.reconciliation import ReconciliationSuggestion
@@ -94,7 +95,9 @@ async def record(
     Returns the rows written: several when one payment may be covering
     several promises, and none at all when every pair is already in the
     queue or was already answered. That last case is the common one on a
-    re-sync, and the whole reason the table exists.
+    re-sync, and the whole reason the table exists. Two scans that ask the
+    same question at the same moment get the same answer as two scans in a
+    row: the first writes, the second finds it there.
 
     A payment covering several invoices is stored as a **group**, because
     the question is the whole question. Asking about each invoice
@@ -144,27 +147,56 @@ async def record(
             )
         )
 
-    for suggestion in written:
-        session.add(suggestion)
+    if not written:
+        return []
 
-    if written:
-        # **One event per question, not per invoice inside it.** A payment
-        # offered against three invoices is one thing that happened and one
-        # thing a person will answer; three rows in the stream would be the
-        # same noise the queue collapses, in the place meant for scanning.
-        head = written[0]
-        await reconciliation_history_service.record(
-            session,
-            workspace_id,
-            "suggested",
-            expectation_kind=head.expectation_kind,
-            expectation_id=head.expectation_id,
-            amount=sum((s.amount for s in written), Decimal("0")),
-            transaction_id=transaction_id,
-            strategy_id=head.strategy_id,
-            detail={"of_set": len(written)},
-        )
-        await session.flush()
+    head = written[0]
+    try:
+        # The read above runs at READ COMMITTED, so two scans of the same
+        # workspace can both find the pair unasked and both reach this
+        # insert: a sync and a manual scan, or two quick clicks. The unique
+        # constraint is what actually decides, and the savepoint keeps its
+        # rejection from poisoning the caller's transaction: the loser has
+        # nothing to add, because the question is already in the queue.
+        async with session.begin_nested():
+            for suggestion in written:
+                session.add(suggestion)
+            # **One event per question, not per invoice inside it.** A
+            # payment offered against three invoices is one thing that
+            # happened and one thing a person will answer; three rows in
+            # the stream would be the same noise the queue collapses, in
+            # the place meant for scanning.
+            await reconciliation_history_service.record(
+                session,
+                workspace_id,
+                "suggested",
+                expectation_kind=head.expectation_kind,
+                expectation_id=head.expectation_id,
+                amount=sum((s.amount for s in written), Decimal("0")),
+                transaction_id=transaction_id,
+                strategy_id=head.strategy_id,
+                detail={"of_set": len(written)},
+            )
+            await session.flush()
+    except IntegrityError:
+        # Another request asked this question between our read and our
+        # write. Answer the same way a re-scan does, so the scan that lost
+        # the race responds like any other instead of failing the request.
+        with session.no_autoflush:
+            asked = await session.execute(
+                select(ReconciliationSuggestion.id)
+                .where(
+                    ReconciliationSuggestion.workspace_id == workspace_id,
+                    ReconciliationSuggestion.transaction_id == transaction_id,
+                    ReconciliationSuggestion.expectation_id.in_(
+                        [suggestion.expectation_id for suggestion in written]
+                    ),
+                )
+                .limit(1)
+            )
+        if asked.first() is None:
+            raise
+        return []
     return written
 
 
@@ -223,6 +255,34 @@ async def count_open(session: AsyncSession, workspace_id: uuid.UUID) -> int:
         )
     )
     return int(result.scalar_one() or 0)
+
+
+async def waiting(
+    session: AsyncSession, workspace_id: uuid.UUID
+) -> tuple[int, Optional[datetime]]:
+    """How many questions wait for an answer, and when the newest was asked.
+
+    Questions, not rows: a payment offered against several invoices asks one.
+    Those past `STALE_AFTER_DAYS` are left out; opening the queue expires them."""
+    from sqlalchemy import func
+
+    question = func.coalesce(
+        ReconciliationSuggestion.group_id, ReconciliationSuggestion.id
+    )
+    cutoff = datetime.now(timezone.utc) - timedelta(days=STALE_AFTER_DAYS)
+    row = (
+        await session.execute(
+            select(
+                func.count(question.distinct()),
+                func.max(ReconciliationSuggestion.created_at),
+            ).where(
+                ReconciliationSuggestion.workspace_id == workspace_id,
+                ReconciliationSuggestion.status == "pending",
+                ReconciliationSuggestion.created_at >= cutoff,
+            )
+        )
+    ).one()
+    return row[0], row[1]
 
 
 async def get(

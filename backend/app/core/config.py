@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Literal
 from urllib.parse import urlsplit
 
-from pydantic import PrivateAttr, SecretStr, field_validator, model_validator
+from pydantic import Field, PrivateAttr, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Use the same environment variable that systemd uses: https://systemd.io/CREDENTIALS/
@@ -42,15 +42,48 @@ class Settings(BaseSettings):
     # App
     app_name: str = "Securo"
     debug: bool = False
+    # Hosted instances (ADR 0045). On, the instance-side settings (bank and
+    # rate providers, open registration, defaults and timezone) are the
+    # operator's: the admin screen shows them read-only and the API refuses
+    # writes. Off by default, a self-hosted instance keeps every control.
+    managed_instance: bool = False
+
+    @field_validator("managed_instance", mode="before")
+    @classmethod
+    def _blank_managed_instance_is_off(cls, value: object) -> object:
+        """`MANAGED_INSTANCE=` in a .env — a documented but unset key — arrives as
+        an empty string. Read it as off, the default, instead of failing the boot."""
+        if isinstance(value, str) and not value.strip():
+            return False
+        return value
 
     # Database
     database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/securo"
+    # Connections the API keeps open, and how many extra ones a burst may open
+    # before a request waits for one. Defaults are SQLAlchemy's, so an instance
+    # that sets nothing behaves as before. Raise them together with the
+    # database's own max_connections when many people share an instance: with
+    # 40 simultaneous users the pool ran out and requests failed instead of
+    # queueing (issue #1901). The pool size is always open; overflow may be 0
+    # so that the pool never grows past DB_POOL_SIZE.
+    db_pool_size: int = Field(default=5, ge=1)
+    db_max_overflow: int = Field(default=10, ge=0)
+    # Plan each statement with the values of the call that runs it, instead of
+    # reusing a plan sized for an average call. On an instance with a large
+    # history a 12-month report took about twice as long with the average plan
+    # (issue #584). Off sends nothing and keeps the server's plan_cache_mode,
+    # which is what an instance behind a connection pooler that refuses an
+    # unknown startup parameter needs.
+    db_force_custom_plans: bool = True
 
     # Auth. Signs session and password-reset tokens and derives the key that
     # encrypts saved credentials. Left unset (or on a public default), the
     # instance generates its own and keeps it in the database: see
     # app.core.instance_secrets and get_settings().
     secret_key: SecretStr = SecretStr("")
+    # Refuse to start instead of generating one: an operator who keeps the key
+    # out of the database finds out at startup when it is missing (ADR 0048).
+    require_secret_key: bool = False
     # Keys this instance encrypted with before, tried when opening a saved
     # credential. Never used to sign or check a token.
     _secret_key_fallbacks: tuple[str, ...] = PrivateAttr(default=())
@@ -139,6 +172,10 @@ class Settings(BaseSettings):
     storage_s3_allow_insecure_http: bool = False  # development only: permits http:// endpoints
     storage_s3_addressing_style: str = "auto"  # auto|path|virtual; checked only when S3 is selected
 
+    # Let Postgres hold the workspace boundary too (ADR 0043). DATABASE_URL must
+    # then name a restricted role set up with `app.cli apply-row-security`.
+    row_security_enabled: bool = False
+
     # Registration
     registration_enabled: bool = True
 
@@ -154,6 +191,61 @@ class Settings(BaseSettings):
     # image version comes from the package metadata; this is the source
     # revision baked in at build time (empty when unknown).
     app_revision: str = ""
+
+    # Password recovery by email (ADR 0044). One switch: while it is off no
+    # message is sent and the forgot-password route answers 503 instead of
+    # pretending a mail went out.
+    email_enabled: bool = False
+    # Who carries the message: your own relay, or the hosted API. The switch
+    # above stays the only one; this only picks the path behind it.
+    email_provider: Literal["smtp", "resend"] = "smtp"
+    resend_api_key: SecretStr = SecretStr("")
+    resend_api_url: str = "https://api.resend.com"
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_username: str = ""
+    smtp_password: SecretStr = SecretStr("")
+    # starttls upgrades port 587, ssl connects over TLS on port 465, and none
+    # is only for a relay on a network you already trust.
+    smtp_security: Literal["starttls", "ssl", "none"] = "starttls"
+    # The From address, for example "Securo <no-reply@example.com>". Empty
+    # falls back to the SMTP username.
+    email_from: str = ""
+    # How long a recovery link stays valid.
+    password_reset_token_minutes: int = 60
+
+    @model_validator(mode="after")
+    def validate_email_settings(self):
+        if not self.email_enabled:
+            return self
+        if self.email_provider == "resend":
+            if not self.resend_api_key.get_secret_value():
+                raise ValueError(
+                    "RESEND_API_KEY is required when EMAIL_ENABLED is true and "
+                    "EMAIL_PROVIDER is resend"
+                )
+            if not self.email_from:
+                raise ValueError(
+                    "EMAIL_FROM is required when EMAIL_ENABLED is true and "
+                    "EMAIL_PROVIDER is resend"
+                )
+            # The key travels in a header: never let it go out in the clear.
+            if not self.resend_api_url:
+                raise ValueError(
+                    "RESEND_API_URL is required when EMAIL_ENABLED is true and "
+                    "EMAIL_PROVIDER is resend"
+                )
+            if not self.resend_api_url.startswith("https://"):
+                raise ValueError("RESEND_API_URL must start with https://")
+        elif not self.smtp_host:
+            raise ValueError("SMTP_HOST is required when EMAIL_ENABLED is true")
+        if self.email_provider == "smtp" and not (self.email_from or self.smtp_username):
+            raise ValueError(
+                "EMAIL_FROM (or SMTP_USERNAME) is required when EMAIL_ENABLED is true"
+            )
+        if self.password_reset_token_minutes <= 0:
+            raise ValueError("PASSWORD_RESET_TOKEN_MINUTES must be positive")
+        return self
 
     # OIDC login (works with Authentik, Pocket ID, and other standard OIDC providers)
     oidc_enabled: bool = False
@@ -255,6 +347,13 @@ class Settings(BaseSettings):
     # Set TESOURO_DIRETO_ENABLED=false to fully disable (e.g. to avoid the
     # external dependency on the Brazilian government endpoint).
     tesouro_direto_enabled: bool = True
+
+    # Market indices for the Performance tab: Yahoo Finance, and the B3
+    # Índice DI from the Central Bank of Brazil with Ipeadata as a fallback.
+    # They are only contacted when someone searches for or compares against
+    # an index. Set PERFORMANCE_BENCHMARKS_ENABLED=false to avoid those
+    # external hosts; portfolio returns keep working without them.
+    performance_benchmarks_enabled: bool = True
 
     # Data plugins (categories and rules) from the plugin catalog. Gated by
     # PLUGINS_ENABLED, off by default: while off nothing is fetched and no
@@ -376,10 +475,16 @@ class Settings(BaseSettings):
     # the process environment are ignored by pydantic-settings anyway; without
     # this, the very same key written into the .env file aborted startup with
     # "Extra inputs are not permitted".
+    #
+    # hide_input_in_errors: a validator that refuses the settings prints the
+    # input it refused, and that input is every field the instance was built
+    # from — including the email API key and SECRET_KEY, truncated but legible,
+    # in the log of a container that failed to boot.
     model_config = SettingsConfigDict(
         env_file=(".env", Path(__file__).resolve().parents[2] / ".env"),
         secrets_dir=CREDENTIALS_DIRECTORY,
         extra="ignore",
+        hide_input_in_errors=True,
     )
 
 
@@ -419,12 +524,33 @@ def resolve_secret_key(settings: Settings) -> Settings:
     if not instance.is_public_or_missing(configured):
         # The key stays exactly as given. Anything encrypted while the
         # instance key was in use (SECRET_KEY set after it existed) still
-        # opens: that key is read on first use (secret_key_fallbacks).
-        settings._stored_key_url = settings.database_url
+        # opens: that key is read on first use (secret_key_fallbacks). The
+        # restricted role of row security can't read it (ADR 0043).
+        settings._stored_key_url = None if settings.row_security_enabled else settings.database_url
         settings._secret_key_fallbacks = tuple(
             k for k in instance.PUBLIC_SECRET_KEYS if k != raw
         )
         return settings
+
+    if settings.require_secret_key:
+        raise RuntimeError(
+            "REQUIRE_SECRET_KEY is on, but SECRET_KEY is "
+            + ("a public default" if configured else "not set")
+            + ". Set a unique value (openssl rand -hex 32)."
+        )
+
+    if settings.row_security_enabled:
+        # An install that already ran without SECRET_KEY encrypted its saved
+        # credentials with the stored key: a new key would leave them unreadable.
+        raise RuntimeError(
+            "ROW_SECURITY_ENABLED needs its own SECRET_KEY in the environment: the "
+            "restricted database role can't read or create the stored instance key "
+            "(ADR 0043). On an install that already ran without SECRET_KEY, set it to "
+            "the key stored in the database, read as the owner of the tables with "
+            f"`{instance.STORED_KEY_QUERY}`; a new key would leave the saved "
+            "credentials unreadable. On a new install, generate one with "
+            "`openssl rand -hex 32`."
+        )
 
     if configured:
         logging.getLogger(__name__).warning(

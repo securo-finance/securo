@@ -5,8 +5,12 @@ import type { AxiosResponse } from 'axios'
 import { markDataChanged } from '@/lib/data-changed'
 import type { NumberFormat, DateFormat } from '@/lib/format'
 import type {
+  AppNotificationKind,
+  AppNotificationList,
+  NotificationPreference,
   User,
   AdminUser,
+  AdminAccessLogList,
   AdminUserList,
   Passkey,
   PasskeyOptionsResponse,
@@ -97,6 +101,10 @@ import type {
   AssetValue,
   MarketSymbolMatch,
   MarketSymbolQuote,
+  BenchmarkMatch,
+  HoldingTradeImport,
+  PortfolioPerformance,
+  PortfolioPerformancePeriod,
   Attachment,
   Goal,
   GoalSummary,
@@ -283,6 +291,13 @@ export const auth = {
     const { data } = await api.post('/auth/register', { email, password, preferences })
     return data
   },
+  /** Ask for a recovery link. Unknown addresses get the same answer. */
+  forgotPassword: async (email: string): Promise<void> => {
+    await api.post('/auth/forgot-password', { email }, readOnly)
+  },
+  resetPassword: async (token: string, password: string): Promise<void> => {
+    await api.post('/auth/reset-password', { token, password }, readOnly)
+  },
   me: async (): Promise<User> => {
     const { data } = await api.get('/users/me')
     return data
@@ -294,6 +309,21 @@ export const auth = {
   changePassword: async (password: string): Promise<User> => {
     const { data } = await api.patch('/users/me', { password })
     return data
+  },
+  /**
+   * Move the account to the address an administrator asked for (ADR 0042,
+   * #556). Only the person whose account it is can, from their own session —
+   * which is what makes the request useless as a way into the account.
+   *
+   * `email` is the address that was on screen: sending it back means accepting
+   * the address the person read, not whatever an administrator asked for after.
+   */
+  confirmEmailChange: async (email: string): Promise<User> => {
+    const { data } = await api.post('/users/me/email-change', { email })
+    return data
+  },
+  declineEmailChange: async (): Promise<void> => {
+    await api.delete('/users/me/email-change')
   },
   setup2fa: async (): Promise<{ secret: string; otpauth_uri: string }> => {
     const { data } = await api.post('/auth/2fa/setup')
@@ -362,7 +392,7 @@ export const auth = {
     }, readOnly)
     return data
   },
-  oidcConfig: async (): Promise<{ enabled: boolean; provider_name: string; local_auth_enabled: boolean }> => {
+  oidcConfig: async (): Promise<{ enabled: boolean; provider_name: string; local_auth_enabled: boolean; password_reset_enabled: boolean }> => {
     // The login card blocks on this call while it decides which sign-in
     // methods to offer, so a hung request must fail fast and let the caller
     // fall back instead of leaving the page stuck on its loading state.
@@ -376,6 +406,14 @@ export const auth = {
     // Only the sign-out asks this: it may reach the provider, so it is kept
     // off /config, which the sign-in page waits on.
     const { data } = await api.get('/auth/oidc/logout-url', { timeout: 10000 })
+    return data
+  },
+}
+
+/** Administrative actions on my account, and on members of workspaces I own (ADR 0042). */
+export const accessLog = {
+  mine: async (params?: { page?: number; limit?: number }): Promise<AdminAccessLogList> => {
+    const { data } = await api.get('/access-log/mine', { params })
     return data
   },
 }
@@ -501,8 +539,29 @@ export const connections = {
     const { data } = await api.post(`/connections/${connectionId}/oauth/reauth-url`, undefined, readOnly)
     return data.url
   },
-  sync: async (id: string): Promise<SyncResult> => {
-    const { data } = await api.post(`/connections/${id}/sync`)
+  // retryTradeImport asks the provider again for holdings whose trade
+  // history didn't add up last time, even if no position moved.
+  // workspaceId pins the request to the workspace it was started in, so a
+  // batch that outlives a workspace switch keeps syncing the same one.
+  sync: async (
+    id: string,
+    options?: { retryTradeImport?: boolean; workspaceId?: string | null },
+  ): Promise<SyncResult> => {
+    const config = {
+      ...workspaceHeader(options?.workspaceId),
+      ...(options?.retryTradeImport ? { params: { retry_trade_import: true } } : {}),
+    }
+    const { data } = await api.post(
+      `/connections/${id}/sync`,
+      undefined,
+      Object.keys(config).length ? config : undefined,
+    )
+    return data
+  },
+  // One-time backfill: pairs the transfer rows the active rules are sure
+  // about across the whole history, not only the rows that just arrived.
+  detectTransfers: async (): Promise<{ pairs_created: number }> => {
+    const { data } = await api.post('/connections/transfers/detect')
     return data
   },
   getReconnectToken: async (connectionId: string): Promise<string> => {
@@ -1611,8 +1670,13 @@ export const dashboard = {
 
 // Assets
 export const assets = {
-  list: async (includeArchived = false): Promise<Asset[]> => {
-    const { data } = await api.get('/assets', { params: { include_archived: includeArchived } })
+  // workspaceId pins the read to one workspace, for a caller whose cache
+  // belongs to it while another tab may have switched the shared default.
+  list: async (includeArchived = false, workspaceId?: string | null): Promise<Asset[]> => {
+    const { data } = await api.get('/assets', {
+      params: { include_archived: includeArchived },
+      ...workspaceHeader(workspaceId),
+    })
     return data
   },
   get: async (id: string): Promise<Asset> => {
@@ -1649,6 +1713,51 @@ export const assets = {
   },
   portfolioTrend: async (): Promise<{ assets: { id: string; name: string; type: string; group_id: string | null }[]; trend: Record<string, unknown>[]; total: number }> => {
     const { data } = await api.get('/assets/portfolio-trend')
+    return data
+  },
+  benchmarkSearch: async (q: string, limit = 15): Promise<BenchmarkMatch[]> => {
+    const { data } = await api.get('/assets/benchmarks/search', { params: { q, limit } })
+    return data
+  },
+  performance: async (
+    benchmarks: BenchmarkMatch[],
+    period: PortfolioPerformancePeriod,
+    assetGroupIds?: string[] | null,
+    selectedAssetGroupIds?: string[],
+    assetIds?: string[],
+    workspaceId?: string | null,
+  ): Promise<PortfolioPerformance> => {
+    const hasGroups = assetGroupIds != null && assetGroupIds.length > 0
+    const { data } = await api.get('/assets/performance', {
+      ...workspaceHeader(workspaceId),
+      params: {
+        ...(benchmarks.length
+          ? {
+              provider: benchmarks.map((item) => item.provider),
+              benchmark: benchmarks.map((item) => item.symbol),
+            }
+          : {}),
+        period,
+        ...(hasGroups ? { asset_group_ids: assetGroupIds } : {}),
+        ...(selectedAssetGroupIds?.length
+          ? { selected_asset_group_ids: selectedAssetGroupIds }
+          : {}),
+        ...(assetIds?.length ? { asset_ids: assetIds } : {}),
+      },
+      paramsSerializer: { indexes: null as null },
+    })
+    return data
+  },
+  tradeImport: async (workspaceId?: string | null): Promise<HoldingTradeImport> => {
+    const { data } = await api.get('/assets/performance/trade-import', workspaceHeader(workspaceId))
+    return data
+  },
+  enableTradeImport: async (workspaceId?: string | null): Promise<HoldingTradeImport> => {
+    const { data } = await api.post(
+      '/assets/performance/trade-import',
+      undefined,
+      workspaceHeader(workspaceId),
+    )
     return data
   },
   marketSearch: async (q: string, limit = 15, currency?: string): Promise<MarketSymbolMatch[]> => {
@@ -1753,8 +1862,8 @@ export const assets = {
 
 // Asset Groups ("wallets")
 export const assetGroups = {
-  list: async (): Promise<AssetGroup[]> => {
-    const { data } = await api.get('/asset-groups')
+  list: async (workspaceId?: string | null): Promise<AssetGroup[]> => {
+    const { data } = await api.get('/asset-groups', workspaceHeader(workspaceId))
     return data
   },
   create: async (group: Partial<AssetGroup> & { name: string }): Promise<AssetGroup> => {
@@ -1764,6 +1873,9 @@ export const assetGroups = {
   update: async (id: string, group: Partial<AssetGroup>): Promise<AssetGroup> => {
     const { data } = await api.patch(`/asset-groups/${id}`, group)
     return data
+  },
+  reorder: async (groupIds: string[]): Promise<void> => {
+    await api.put('/asset-groups/order', { group_ids: groupIds })
   },
   delete: async (id: string): Promise<void> => {
     await api.delete(`/asset-groups/${id}`)
@@ -2082,6 +2194,14 @@ export const accountantExport = {
 }
 
 // Admin
+
+/** What the admin screen may change on this instance (ADR 0045). */
+export interface InstanceMode {
+  managed: boolean
+  locked_settings: string[]
+  locked_providers: boolean
+}
+
 export interface ProviderSettingStatus {
   name: string
   configured: boolean
@@ -2106,6 +2226,21 @@ export interface TimezoneSetting {
   available: string[]
 }
 
+export interface EmailTemplate {
+  subject: string
+  body: string
+}
+
+/** How the recovery email is set up, and the templates it would use. */
+export interface EmailState {
+  enabled: boolean
+  provider: 'smtp' | 'resend'
+  /** The From address; read-only, it comes from the server environment. */
+  sender: string
+  /** Keyed by language: 'en' and 'pt'. */
+  templates: Record<string, EmailTemplate>
+}
+
 export const timezones = {
   list: async (): Promise<{ default: string; available: string[] }> => {
     const { data } = await api.get('/timezones')
@@ -2126,15 +2261,33 @@ export const admin = {
     const { data } = await api.post('/admin/users', user)
     return data
   },
-  updateUser: async (id: string, user: Partial<{ email: string; password: string; is_active: boolean; is_superuser: boolean; preferences: Record<string, unknown> }>): Promise<AdminUser> => {
+  /** Changing an account needs a reason, and it is logged (ADR 0042). */
+  updateUser: async (id: string, user: { reason: string; email?: string; is_active?: boolean; is_superuser?: boolean; preferences?: Record<string, unknown> }): Promise<AdminUser> => {
     const { data } = await api.patch(`/admin/users/${id}`, user)
     return data
   },
-  deleteUser: async (id: string): Promise<void> => {
-    await api.delete(`/admin/users/${id}`)
+  deleteUser: async (id: string, reason: string): Promise<void> => {
+    await api.delete(`/admin/users/${id}`, { params: { reason } })
+  },
+  accessLog: async (params?: { user_id?: string; page?: number; limit?: number }): Promise<AdminAccessLogList> => {
+    const { data } = await api.get('/admin/access-log', { params })
+    return data
+  },
+  instanceMode: async (): Promise<InstanceMode> => {
+    const { data } = await api.get('/admin/instance-mode')
+    return data
   },
   providerSettings: async (): Promise<ProviderSettingStatus[]> => {
     const { data } = await api.get('/admin/provider-settings')
+    return data
+  },
+  emailState: async (): Promise<EmailState> => {
+    const { data } = await api.get('/admin/email')
+    return data
+  },
+  /** Replace the recovery templates; an empty object restores the built-in text. */
+  updateEmailTemplates: async (templates: Record<string, EmailTemplate>): Promise<EmailState> => {
+    const { data } = await api.put('/admin/email', { templates })
     return data
   },
   updateProviderSettings: async (
@@ -2207,6 +2360,41 @@ export const uiLayouts = {
   },
 }
 
+// Reading a notification changes nothing other tabs show.
+export type NotificationFilter = 'open' | 'unread' | 'all'
+
+export const notifications = {
+  list: async (
+    params: { status?: NotificationFilter; limit?: number; offset?: number } = {},
+  ): Promise<AppNotificationList> => {
+    const { data } = await api.get('/notifications', { params })
+    return data
+  },
+  preferences: async (): Promise<NotificationPreference[]> => {
+    const { data } = await api.get('/notifications/preferences')
+    return data
+  },
+  // `workspaceId` pins the write: it may wait in line while another tab switches workspace.
+  setPreference: async (change: {
+    kind: AppNotificationKind
+    channel: string
+    enabled: boolean
+    workspaceId?: string
+  }): Promise<void> => {
+    await api.put(
+      `/notifications/preferences/${change.kind}/${change.channel}`,
+      { enabled: change.enabled },
+      { ...readOnly, ...workspaceHeader(change.workspaceId) },
+    )
+  },
+  markRead: async (id: string): Promise<void> => {
+    await api.post(`/notifications/${id}/read`, undefined, readOnly)
+  },
+  markAllRead: async (): Promise<void> => {
+    await api.post('/notifications/read-all', undefined, readOnly)
+  },
+}
+
 // Global search (powers the command palette)
 export type SearchHitType =
   | 'transaction'
@@ -2247,6 +2435,7 @@ export interface AppInfo {
     agents: boolean
     demo?: boolean
     tesouro_direto?: boolean
+    performance_benchmarks?: boolean
     plugins?: boolean
     document_ai?: boolean
   }

@@ -20,6 +20,8 @@ export function useFeatureFlags() {
     isKnown: data !== undefined,
     agentsEnabled: !!data?.features?.agents,
     demoMode: !!data?.features?.demo,
+    // On unless the server says otherwise, matching the backend default.
+    benchmarksEnabled: data?.features?.performance_benchmarks !== false,
     pluginsEnabled: !!data?.features?.plugins,
     documentAiEnabled: !!data?.features?.document_ai,
     // Build identity of the backend answering — null until /api/info lands.

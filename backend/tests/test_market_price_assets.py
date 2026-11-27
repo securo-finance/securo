@@ -666,7 +666,7 @@ async def test_yfinance_batch_closes_keep_their_trading_day():
         patch.object(
             YFinanceProvider,
             "_download_closes_sync",
-            return_value={"EQQQ.L": _close("38450"), "AAPL": _close("181.25")},
+            return_value=({"EQQQ.L": _close("38450"), "AAPL": _close("181.25")}, False),
         ),
         patch.object(YFinanceProvider, "_get_currencies_sync", return_value={"EQQQ.L": "GBp"}),
     ):
@@ -707,7 +707,7 @@ async def test_yfinance_batch_normalizes_gbp_pence_to_pounds():
         patch.object(
             YFinanceProvider,
             "_download_closes_sync",
-            return_value={"EQQQ.L": _close("38450")},
+            return_value=({"EQQQ.L": _close("38450")}, False),
         ),
         patch.object(
             YFinanceProvider,
@@ -728,7 +728,7 @@ async def test_yfinance_batch_normalizes_zac_cents_to_rand():
         patch.object(
             YFinanceProvider,
             "_download_closes_sync",
-            return_value={"NPN.JO": _close("612300")},
+            return_value=({"NPN.JO": _close("612300")}, False),
         ),
         patch.object(
             YFinanceProvider,
@@ -749,7 +749,7 @@ async def test_yfinance_batch_leaves_usd_ticker_unchanged():
         patch.object(
             YFinanceProvider,
             "_download_closes_sync",
-            return_value={"AAPL": _close("181.25")},
+            return_value=({"AAPL": _close("181.25")}, False),
         ),
         patch.object(YFinanceProvider, "_get_currencies_sync") as currencies,
     ):
@@ -766,7 +766,7 @@ async def test_yfinance_batch_keeps_decimal_precision_when_scaling():
         patch.object(
             YFinanceProvider,
             "_download_closes_sync",
-            return_value={"EQQQ.L": _close("123.45678901234567")},
+            return_value=({"EQQQ.L": _close("123.45678901234567")}, False),
         ),
         patch.object(
             YFinanceProvider,
@@ -787,7 +787,7 @@ async def test_yfinance_batch_leaves_major_unit_lse_ticker_unchanged():
         patch.object(
             YFinanceProvider,
             "_download_closes_sync",
-            return_value={"CSPX.L": _close("612.40")},
+            return_value=({"CSPX.L": _close("612.40")}, False),
         ),
         patch.object(
             YFinanceProvider,
@@ -810,11 +810,14 @@ async def test_yfinance_batch_drops_price_when_currency_unknown():
         patch.object(
             YFinanceProvider,
             "_download_closes_sync",
-            return_value={
-                "EQQQ.L": _close("38450"),
-                "SGLN.L": _close("5120"),
-                "AAPL": _close("181.25"),
-            },
+            return_value=(
+                {
+                    "EQQQ.L": _close("38450"),
+                    "SGLN.L": _close("5120"),
+                    "AAPL": _close("181.25"),
+                },
+                False,
+            ),
         ),
         patch.object(
             YFinanceProvider,

@@ -743,6 +743,16 @@
     "email": "E-mail",
     "password": "Wachtwoord",
     "forgotPassword": "Wachtwoord vergeten?",
+    "forgotPasswordDescription": "Voer het e-mailadres van je account in en we sturen je een link om een nieuw wachtwoord te kiezen.",
+    "sendResetLink": "Herstellink versturen",
+    "resetSentTitle": "Controleer je e-mail",
+    "resetSentBody": "Als er een account bestaat voor {{email}}, is er een herstellink onderweg. De link verloopt binnenkort.",
+    "resetUnavailable": "Wachtwoordherstel per e-mail is niet ingeschakeld op deze installatie. Vraag de beheerder.",
+    "resetRequestError": "De herstellink kon niet worden verstuurd. Probeer het opnieuw.",
+    "resetPasswordDescription": "Kies een nieuw wachtwoord voor je account.",
+    "resetPasswordRejected": "Het nieuwe wachtwoord is niet geaccepteerd. Gebruik minstens 8 tekens en probeer het opnieuw.",
+    "resetTokenMissing": "Deze link is onvolledig. Open de link uit de herstelmail opnieuw of vraag een nieuwe aan.",
+    "resetTokenInvalid": "Deze herstellink is ongeldig of verlopen. Vraag een nieuwe aan.",
     "loginDescription": "Log in om toegang te krijgen tot uw account",
     "invalidCredentials": "Ongeldig e-mailadres of wachtwoord",
     "serverError": "Kan geen verbinding maken met de server. Controleer uw verbinding of controleer of de backend actief is en probeer het vervolgens opnieuw.",
@@ -751,6 +761,8 @@
     "changePassword": "Wachtwoord wijzigen",
     "newPassword": "Nieuw wachtwoord",
     "passwordTooShort": "Wachtwoord moet minimaal 8 tekens lang zijn",
+    "passwordTooLong": "Wachtwoord mag maximaal 72 tekens lang zijn",
+    "resetPassword": "Wachtwoord opnieuw instellen",
     "currentPassword": "Huidig wachtwoord",
     "currentPasswordWrong": "Het huidige wachtwoord is onjuist",
     "passwordChanged": "Wachtwoord succesvol gewijzigd",
@@ -899,19 +911,19 @@
   },
   "transactions": {
     "title": "Transacties",
-    "mortgageAllocation": "Verdeling hypotheekbetaling",
+    "mortgageAllocation": "Verdeling leningbetaling",
     "mortgagePrincipal": "Aflossing",
     "mortgageInterest": "Rente",
     "mortgageCurrencyHint": "Vul alle delen in {{currency}} in.",
     "mortgageSplitPercentages": "Verdeling: {{principal}}% aflossing / {{interest}}% rente",
     "mortgagePaymentTotal": "Delen samen: {{currency}} {{total}}; betaling: {{currency}} {{payment}}",
     "saveMortgageAllocation": "Verdeling opslaan",
-    "mortgageSaved": "Hypotheekverdeling opgeslagen",
-    "mortgageRemoved": "Hypotheekverdeling verwijderd",
+    "mortgageSaved": "Leningverdeling opgeslagen",
+    "mortgageRemoved": "Leningverdeling verwijderd",
     "removeMortgageAllocation": "Verdeling verwijderen",
     "mortgageSaveError": "Opslaan mislukt. Controleer of de bedragen samen gelijk zijn aan de betaling.",
     "mortgageSavedSummary": "Opgeslagen: {{currency}} {{principal}} aflossing ({{principalPercentage}}%) en {{currency}} {{interest}} rente ({{interestPercentage}}%)",
-    "mortgageHistoricalNote": "Deze betaling is ouder dan de ingevoerde hypotheekstand. De verdeling is opgeslagen, zonder de schuld opnieuw te verlagen.",
+    "mortgageHistoricalNote": "Deze betaling is ouder dan de ingevoerde leningstand. De verdeling is opgeslagen, zonder de schuld opnieuw te verlagen.",
     "mortgageBankManagedNote": "Je bank levert het saldo van deze lening, dus de verdeling is opgeslagen zonder de aflossing nogmaals te boeken.",
     "section": "Financieel",
     "monthPrevious": "Vorige maand",
@@ -1240,6 +1252,7 @@
     "calendarActivityTrend": "Dagelijkse activiteit",
     "calendarNoActivity": "Geen activiteit deze maand",
     "calendarNoMovements": "Geen bewegingen",
+    "calendarMonthOutOfRange": "Deze maand ligt te ver van vandaag.",
     "calendarActualNet": "Werkelijk netto",
     "calendarTransfersExcluded": "Overdrachten worden niet meegeteld als inkomsten of uitgaven",
     "invoiceBadge": "Invoice {{number}}",
@@ -1776,6 +1789,12 @@
     "sectionHint": "Hoe transacties worden gecategoriseerd.",
     "resetAndReapplyAll": "Resetten en opnieuw aanvragen",
     "confirmResetAndReapplyAll": "Overeenkomende transactiecategorieën, notities en door regels beheerde beschrijvingen resetten en vervolgens alle actieve regels opnieuw toepassen?",
+    "scanForTransfers": "Overdrachten zoeken",
+    "scanningForTransfers": "Bezig met zoeken...",
+    "confirmScanForTransfers": "De hele geschiedenis doorzoeken en overdrachten tussen verschillende rekeningen koppelen? Overdrachten die je handmatig hebt losgekoppeld, kunnen opnieuw worden gekoppeld. Bij een grote geschiedenis kan dit even duren.",
+    "transferScanCreated_one": "{{count}} overdrachtspaar aangemaakt",
+    "transferScanCreated_other": "{{count}} overdrachtsparen aangemaakt",
+    "transferScanNone": "Geen nieuwe overdrachtsparen gevonden",
     "add": "Toevoegen",
     "created": "Regel gemaakt",
     "createdAndApplied": "Regel gemaakt en toegepast op {{count}} transacties",
@@ -2231,6 +2250,14 @@
     "colReturn": "Keer terug",
     "colBalance": "Totaal",
     "colPortfolioPct": "% poort.",
+    "colDates": "Periode",
+    "colAvgBuyPrice": "Gem. koop",
+    "colAvgSellPrice": "Gem. verkoop",
+    "colInvested": "Geïnvesteerd",
+    "colProceeds": "Opbrengst",
+    "colResult": "Resultaat",
+    "soldRealized": "Gerealiseerd",
+    "soldTotalsTitle": "Gerealiseerd resultaat tegen gemiddelde kostprijs, per valuta opgeteld zonder omrekening",
     "addBuys": "aankopen toevoegen",
     "ledgerTitle": "Transacties",
     "noLedgerYet": "Er zijn nog geen transacties voor deze holding.",
@@ -2245,6 +2272,7 @@
     "txSell": "Verkopen",
     "txSplit": "Splitsing",
     "txFee": "Vergoeding",
+    "txSyncedHint": "Geïmporteerd van je bank. De synchronisatie houdt deze transactie bij, dus je kunt hem hier niet bewerken.",
     "txSaved": "Transactie opgeslagen",
     "txDeleted": "Transactie verwijderd",
     "editTransaction": "Transactie bewerken",
@@ -2345,6 +2373,9 @@
     "newWallet": "Nieuwe portemonnee",
     "editWallet": "Portemonnee bewerken",
     "deleteWallet": "Portemonnee verwijderen",
+    "reorderWallet": "Sleep om {{name}} te verplaatsen",
+    "moveWalletUp": "Omhoog verplaatsen",
+    "moveWalletDown": "Omlaag verplaatsen",
     "walletName": "Naam",
     "walletNamePlaceholder": "bijv. Amerikaanse aandelen, vastrentende waarden op lange termijn",
     "walletColor": "Kleur",
@@ -2372,6 +2403,66 @@
     "confirmRegenerateTitle": "Waarden opnieuw genereren?",
     "confirmRegenerate": "Groeiparameters veranderd. Alle automatisch gegenereerde waarden worden verwijderd en opnieuw berekend. Handmatige waarden blijven behouden.",
     "regenerate": "Regenereer",
+    "tabPerformance": "Rendement",
+    "performanceTitle": "Portefeuillerendement",
+    "performanceDescription": "Bekijk hoe uw beleggingen in de loop van de tijd hebben gepresteerd.",
+    "performancePeriod": "Periode",
+    "performanceCompare": "Vergelijken",
+    "performanceMethodology": "Hoe rendementen worden berekend",
+    "performanceRemoveBenchmark": "{{name}} verwijderen",
+    "performancePercentagePoints": "{{value}} pp",
+    "performanceExcessLabel": "Portefeuille ten opzichte van de index",
+    "performanceSelectionCount": "{{count}} geselecteerd",
+    "performanceScope": "Portefeuillebereik",
+    "performanceAllAssets": "Hele portefeuille",
+    "performanceCustomAssets": "Wallets of activa",
+    "performanceSelectAssets": "Wallets en activa selecteren",
+    "performanceBenchmarks": "Vergelijkingsindices",
+    "performanceAddBenchmark": "Zoek om nog een benchmark toe te voegen.",
+    "performanceBenchmarkLimit": "U kunt maximaal vijf benchmarks tegelijk vergelijken.",
+    "performanceNoSelection": "Selecteer ten minste één wallet of activum om het rendement te berekenen.",
+    "performanceExcessVs": "Extra rendement",
+    "benchmarkSearchPlaceholder": "Zoek een index, ETF, aandeel of crypto op naam of symbool…",
+    "benchmarkSearchHint": "Vergelijk uw portefeuille met indices, ETF’s, fondsen, aandelen of crypto, zoals de S&P 500, de Ibovespa of Bitcoin.",
+    "benchmarkNoResults": "Geen overeenkomende benchmarks gevonden.",
+    "changeBenchmark": "Vergelijkingsindex wijzigen",
+    "portfolioReturn": "Bruto portefeuillerendement",
+    "benchmarkReturn": "Indexrendement",
+    "excessReturn": "Overrendement",
+    "performanceNoData": "Er is onvoldoende portefeuillehistorie voor deze periode.",
+    "performanceNoPortfolio": "De actieve collectie bevat geen beleggingsportefeuilles om te vergelijken.",
+    "performanceLoadError": "Rendementsgegevens konden niet worden geladen.",
+    "performanceSourceError": "Fout bij de gegevensbron. Probeer het opnieuw.",
+    "performanceSourceRateLimited": "De gegevensbron beperkt het aantal verzoeken. Probeer het later opnieuw.",
+    "performanceSourceNoData": "De gegevensbron heeft geen historische gegevens voor deze periode teruggegeven.",
+    "performanceSourceNoFxRate": "Er is nog geen wisselkoers opgeslagen om deze index om te rekenen naar de valuta van je portefeuille.",
+    "performanceRetryBenchmark": "{{name}} opnieuw proberen",
+    "performanceViewSave": "Weergave opslaan",
+    "performanceViewNamePlaceholder": "Geef deze selectie een naam (bijv. Pensioen)",
+    "performanceViewUpdate": "“{{name}}” bijwerken",
+    "performanceViewDelete": "“{{name}}” verwijderen",
+    "performanceViewSaved": "Weergave “{{name}}” opgeslagen",
+    "performanceViewDeleted": "Weergave “{{name}}” verwijderd",
+    "performanceViewSaveError": "Kon de weergave niet opslaan",
+    "performanceViewGone": "Weergave “{{name}}” bestaat niet meer. Je selectie blijft behouden, zodat je die als nieuwe weergave kunt opslaan.",
+    "performanceSelectedPeriod": "Geselecteerde periode",
+    "performanceClearSelection": "Selectie wissen",
+    "performanceDragHint": "Sleep over de grafiek om het rendement van een periode te zien.",
+    "performanceChartLabel": "Grafiek van het portefeuillerendement",
+    "performanceKeyboardHint": "Met de grafiek in focus kies je met de pijltjestoetsen een datum, markeer je met Enter of Spatie het begin en daarna het einde van een periode, en wis je die met Esc.",
+    "performanceRangeStartMarked": "Begin van de periode gemarkeerd op {{date}}. Ga naar de einddatum en druk op Enter of Spatie.",
+    "performanceBenchmarkFrom": "vanaf {{date}}",
+    "performanceCashFlowHint": "Tijdgewogen brutorendement: de verandering per periode, gecorrigeerd voor stortingen en opnames, samengesteld. Stortingen en opnames tellen nooit als winst of verlies.",
+    "performanceDashboardHint": "Waarden uit het verleden kunnen hier afwijken van het dashboard. Zodra transacties zijn geïmporteerd, bouwt de pagina Activa de geschiedenis van een gekoppelde belegging daaruit opnieuw op, en dit tabblad meet brutowaarden, vóór inkomstenbelasting. Het dashboard houdt de saldi aan die je bank op elke datum meldde.",
+    "performanceBenchmarkCurrencyHint": "Indices in een andere valuta worden tegen de wisselkoers van elke dag omgerekend naar de valuta van je portefeuille, dus hun rendement bevat de koersbeweging van de valuta, net als bij je eigen buitenlandse beleggingen.",
+    "performanceTradeImportHint": "Importeer de aankoop- en verkoopgeschiedenis van je gekoppelde beleggingen, zodat het rendement elke transactie precies volgt. Dit begint bij de volgende synchronisatie en voegt verzoeken toe aan je bankkoppelingen.",
+    "performanceTradeImportAction": "Transacties importeren",
+    "performanceTradeImportEnabled": "Transacties worden bij de volgende synchronisatie geïmporteerd.",
+    "performanceTradeImportError": "Transactie-import kon niet worden ingeschakeld.",
+    "performanceTradeImportIssues": "De transacties van deze beleggingen konden niet worden geïmporteerd, dus hun rendement wordt geschat op basis van de waarden die de bank doorgeeft:",
+    "performanceTradeImportIncomplete": "Onvolledige geschiedenis",
+    "performanceTradeImportNoHistory": "Geen geschiedenis van de bank",
+    "performanceTradeImportRetry": "Opnieuw proberen",
     "linkedLoans": "Gekoppelde leningen",
     "propertyEquity": "Waarde {{value}} · Schuld {{debt}} · Eigen vermogen {{equity}}"
   },
@@ -2387,6 +2478,8 @@
     "rangeYtd": "YTD",
     "range12m": "12M",
     "range2y": "2J",
+    "range3y": "3J",
+    "range5y": "5J",
     "rangeThisMonth": "Deze maand",
     "rangeLastMonth": "Vorige maand",
     "periodPrev": "Vorige periode",
@@ -2649,6 +2742,7 @@
     "create": "Creëer",
     "loading": "Laden...",
     "retry": "Opnieuw proberen",
+    "databaseBusy": "De instantie heeft de limiet voor databaseverbindingen bereikt. Probeer het zo opnieuw.",
     "error": "Fout",
     "success": "Succes",
     "noIconsFound": "Geen iconen gevonden",
@@ -2758,6 +2852,10 @@
     "searchTransaction": "Zoek transacties op beschrijving...",
     "selectedTransaction": "Geselecteerd",
     "settled": "Facturering geregistreerd",
+    "linkableHint": "Alleen het deel van een tegoed dat nog niet is terugbetaald, kan worden gekoppeld.",
+    "errorExceedsAmount": "De afrekeningen die aan dit tegoed zijn gekoppeld, zouden boven het bedrag uitkomen.",
+    "errorOnlyReceiver": "Alleen wie het geld ontvangt, kan de inkomende transactie koppelen.",
+    "errorReceiverCurrency": "Kies een eigen inkomende transactie in de valuta van de afrekening.",
     "settlements": "Facturen",
     "recordSettlement": "Factuur registreren",
     "noSettlements": "Nog geen facturen.",
@@ -2934,6 +3032,33 @@
     "menuItem": "Controleer op updates"
   },
   "admin": {
+    "email": {
+      "title": "E-mail",
+      "enabled": "E-mail staat aan",
+      "disabled": "E-mail staat uit",
+      "description": "Hoe de e-mails voor wachtwoordherstel verstuurd worden. De provider en afzender komen uit de serverconfiguratie.",
+      "disabledNote": "Zet EMAIL_ENABLED aan op de server om herstellinks te versturen.",
+      "provider": "Provider",
+      "providerSmtp": "SMTP-server",
+      "providerResend": "Resend",
+      "sender": "Afzender",
+      "senderMissing": "Niet ingesteld",
+      "templatesTitle": "Herstelbericht",
+      "templatesDescription": "Wat de persoon leest. Variabelen: {app_name}, {link} en {minutes}; {link} moet alleen op een eigen regel staan en niets anders mag een link zijn.",
+      "subject": "Onderwerp",
+      "body": "Tekst",
+      "linkRequired": "De tekst moet {link} bevatten.",
+      "linkInSubject": "Het onderwerp mag geen {link} of adres bevatten.",
+      "linkOnce": "De tekst moet {link} precies één keer bevatten.",
+      "linkAlone": "De variabele {link} moet alleen op zijn eigen regel staan.",
+      "otherLink": "Het bericht mag nergens anders heen leiden dan naar {link}.",
+      "restoreDefault": "Standaardtekst herstellen",
+      "save": "Sjablonen opslaan",
+      "saved": "Sjablonen opgeslagen",
+      "saveFailed": "De sjablonen konden niet worden opgeslagen",
+      "languageEn": "Engels",
+      "languagePt": "Portugees"
+    },
     "users": {
       "title": "Gebruikersbeheer",
       "searchPlaceholder": "Gebruikers zoeken...",
@@ -2952,16 +3077,24 @@
       "updated": "Gebruiker bijgewerkt",
       "deleted": "Gebruiker verwijderd",
       "confirmDeleteTitle": "Gebruiker verwijderen?",
-      "confirmDeleteDesc": "Hierdoor wordt de gebruiker {{email}} en al zijn gegevens permanent verwijderd. Deze actie kan niet ongedaan worden gemaakt.",
-      "resetPassword": "Wachtwoord opnieuw instellen",
-      "resetPasswordPlaceholder": "Laat dit leeg om actueel te blijven",
+      "confirmDeleteDesc": "Hierdoor worden de gebruiker {{email}} en de workspaces waartoe alleen die gebruiker toegang heeft permanent verwijderd. Wat de gebruiker aan workspaces van anderen heeft toegevoegd, blijft behouden. Deze actie kan niet ongedaan worden gemaakt.",
+      "soleOwner": "\"{{workspace}}\" heeft andere leden en geen andere eigenaar. Maak een van hen eigenaar, of verwijder hen, voordat je deze gebruiker verwijdert.",
+      "reason": "Reden",
+      "reasonPlaceholder": "Waarom wordt deze wijziging gedaan?",
+      "reasonHint": "Wordt vastgelegd in het toegangslogboek en getoond aan het betrokken account.",
       "addDesc": "Maak een nieuw gebruikersaccount aan met toegang tot de applicatie.",
       "adminRole": "Beheerdersrechten",
       "enabled": "Aan",
-      "disabled": "Uit"
+      "disabled": "Uit",
+      "pending": "In afwachting",
+      "pendingEmail": "Aangevraagd: {{email}}, wacht op de houder",
+      "emailPendingHint": "Het adres verandert pas nadat de houder het bevestigt."
     },
     "settings": {
       "title": "Beheerdersinstellingen",
+      "managedTitle": "Deze instantie wordt beheerd door Securo",
+      "managedDesc": "De instellingen van de instantie op deze pagina worden bepaald door wie de instantie beheert. Ze gelden voor iedereen en kunnen hier niet worden gewijzigd.",
+      "managedReadOnly": "Geconfigureerd door Securo",
       "registrationTitle": "Registratie",
       "registration": "Sta gebruikersregistratie toe",
       "registrationDesc": "Indien uitgeschakeld, kunnen alleen beheerders nieuwe gebruikersaccounts maken.",
@@ -3078,8 +3211,8 @@
       "chat": "Chatten"
     },
     "globalChat": {
-      "title": "Chatten",
-      "openHint": "Chat openen",
+      "title": "Agent",
+      "openHint": "Agent openen",
       "history": "Recente gesprekken",
       "selectAgent": "Selecteer agent",
       "openSettings": "Agent-instellingen",
@@ -3628,7 +3761,7 @@
       "notSplittable": "Deze transactie kan niet over categorieën worden verdeeld.",
       "noAmount": "Een transactie zonder bedrag kan niet worden verdeeld.",
       "hasGroupSplit": "Verwijder de verdeling tussen personen voordat je over categorieën verdeelt.",
-      "hasMortgage": "Verwijder de uitsplitsing van de hypotheek voordat je over categorieën verdeelt.",
+      "hasMortgage": "Verwijder de uitsplitsing van de lening voordat je over categorieën verdeelt.",
       "installments": "Een reeks termijnen kan nog niet over categorieën worden verdeeld.",
       "installmentScope": "Een termijn in deze reeks is over categorieën verdeeld; bewerk die afzonderlijk.",
       "categoryAndLines": "Kies één categorie of een verdeling over categorieën, niet allebei.",
@@ -3636,7 +3769,7 @@
       "amountNeedsLines": "Pas de delen samen met het bedrag aan.",
       "undoFirstTransfer": "Maak de verdeling ongedaan voordat je haar als overboeking koppelt.",
       "undoFirstGroupSplit": "Maak de verdeling ongedaan voordat je tussen personen verdeelt.",
-      "undoFirstMortgage": "Maak de verdeling ongedaan voordat je de hypotheek uitsplitst.",
+      "undoFirstMortgage": "Maak de verdeling ongedaan voordat je de lening uitsplitst.",
       "categoryInUse": "Deze categorie bevat delen van verdeelde transacties. Pas die verdelingen eerst aan.",
       "destinationInvalid": "Delen van verdeelde transacties kunnen niet naar een genegeerde of verborgen categorie.",
       "mergeNeedsRate": "Deze budgetten staan in verschillende valuta en er is geen wisselkoers voor hun maand om ze samen te voegen."
@@ -4087,6 +4220,25 @@
     "title": "Server niet bereikbaar",
     "description": "Je bent offline of Securo start opnieuw op. Je gegevens zijn veilig en er is niets gewijzigd. We maken automatisch opnieuw verbinding zodra de server antwoordt."
   },
+  "goalChart": {
+    "region": "Voortgang voor {{name}}",
+    "title": "Historie en prognose",
+    "historyFailed": "De historie kon niet worden geladen. De prognose gebruikt het huidige bedrag van het doel.",
+    "retry": "Opnieuw proberen",
+    "loading": "Historie laden…",
+    "hidden": "Grafiek verborgen in privacymodus",
+    "chartLabel": "Historie en prognose voor {{name}} in {{currency}}",
+    "target": "Doel",
+    "today": "Vandaag",
+    "deadline": "Einddatum",
+    "actual": "Historisch bedrag",
+    "projected": "Prognose",
+    "current": "Huidig bedrag",
+    "notes": {
+      "missing": "Er zijn geen bruikbare historische gegevens voor deze periode ontvangen.",
+      "currency": "De historie is niet beschikbaar in de valuta van dit doel. De prognose gebruikt het huidige bedrag van het doel; er wordt geen wisselkoers aangenomen."
+    }
+  },
   "documentAi": {
     "reading": "Document wordt gelezen…",
     "readingHint": "{{model}} leest het document. Dit kan een minuut duren.",
@@ -4183,5 +4335,132 @@
       "turnedOff": "Documenten lezen uitgeschakeld"
     },
     "unreadPages": "Niet gelezen pagina's (scans, en het model leest geen afbeeldingen): {{pages}}. Hun regels ontbreken in deze controle."
+  },
+  "notifications": {
+    "title": "Meldingen",
+    "unread": "Ongelezen",
+    "unreadLabel": "Meldingen, {{number}} ongelezen",
+    "markAllRead": "Alles als gelezen markeren",
+    "empty": "Niets vraagt je aandacht.",
+    "loadError": "Meldingen konden niet worden geladen.",
+    "connection": {
+      "title": "{{name}} is gestopt met synchroniseren",
+      "rateLimited": "De bank bereikt steeds de daglimiet."
+    },
+    "recurring": {
+      "title": "{{name}} is niet aangemaakt",
+      "detail": "Vervaldatum was {{date}}. Controleer de rekening en instellingen."
+    },
+    "budget": {
+      "close": "{{name}}: {{percent}}% van het budget gebruikt",
+      "reached": "{{name}}: budget opgebruikt",
+      "detail": "{{actual}} van {{budget}}"
+    },
+    "backup": {
+      "title": "Geplande back-up mislukt",
+      "detail": "De laatste poging was op {{date}}. Securo probeert het opnieuw."
+    },
+    "seeAll": "Alle meldingen bekijken",
+    "markRead": "Als gelezen markeren",
+    "loadMore": "Meer laden",
+    "filter": {
+      "all": "Alle",
+      "unread": "Ongelezen"
+    },
+    "emptyFilter": {
+      "all": "Nog geen meldingen.",
+      "unread": "Niets meer te lezen."
+    },
+    "flag": {
+      "title": "Verlopen herinneringen: {{number}}",
+      "detail": "Gemarkeerde transacties waarvan de herinnering voorbij is."
+    },
+    "match": {
+      "title": "Koppelingen om te controleren: {{number}}",
+      "detail": "Securo vond mogelijke koppelingen en heeft je antwoord nodig."
+    },
+    "invoice": {
+      "title": "{{name}}: factuur te laat",
+      "detail": "{{amount}}, vervallen op {{date}}."
+    },
+    "preferences": {
+      "title": "Voorkeuren",
+      "hint": "Kies waarover je bericht wilt in deze werkruimte. Andere leden houden hun eigen keuzes.",
+      "saveError": "Je keuze kon niet worden opgeslagen.",
+      "loadError": "Je voorkeuren konden niet worden geladen."
+    },
+    "kind": {
+      "connection_error": {
+        "label": "Verbindingen",
+        "hint": "Een bank of plugin synchroniseert niet meer."
+      },
+      "budget_threshold": {
+        "label": "Budgetten",
+        "hint": "Een budget bereikte 80% of 100%."
+      },
+      "recurring_failed": {
+        "label": "Terugkerend",
+        "hint": "Een terugkerende transactie is niet aangemaakt."
+      },
+      "flag_overdue": {
+        "label": "Herinneringen",
+        "hint": "De herinneringsdatum van een gemarkeerde transactie is voorbij."
+      },
+      "reconciliation_pending": {
+        "label": "Koppelingen om te controleren",
+        "hint": "Securo vond mogelijke koppelingen en heeft je antwoord nodig."
+      },
+      "invoice_overdue": {
+        "label": "Facturen",
+        "hint": "Een factuur aan een klant is te laat."
+      },
+      "group_expense": {
+        "label": "Gedeelde uitgaven",
+        "hint": "Iemand voegt een uitgave toe die met jou in een groep wordt gedeeld, of wijzigt die."
+      },
+      "group_settlement": {
+        "label": "Groepsbetalingen",
+        "hint": "Iemand legt in een groep een betaling aan jou of van jou vast."
+      },
+      "backup_failed": {
+        "label": "Back-ups",
+        "hint": "Een geplande back-up is mislukt."
+      }
+    },
+    "group": {
+      "added": "{{actor}} heeft {{name}} toegevoegd",
+      "changed": "{{actor}} heeft {{name}} gewijzigd",
+      "batch": "{{actor}} heeft gedeelde uitgaven toegevoegd: {{number}}",
+      "share": "Jouw deel in {{group}}: {{amount}}",
+      "paid": "{{actor}} heeft een betaling vastgelegd"
+    }
+  },
+  "accessLog": {
+    "title": "Toegangslogboek",
+    "description": "Elke administratieve actie op je account en op leden van werkruimten die je bezit.",
+    "empty": "Geen administratieve acties vastgelegd.",
+    "actionUpdate": "Account gewijzigd",
+    "actionDelete": "Account verwijderd",
+    "actionOther": "Account gewijzigd",
+    "by": "Door {{email}}",
+    "target": "Account {{email}}",
+    "ip": "IP {{ip}}",
+    "loadMore": "Meer laden",
+    "loadError": "Het toegangslogboek kon niet worden geladen.",
+    "emailChange": "Adres {{from}} → {{to}}",
+    "emailPending": "wacht op bevestiging door de accounthouder",
+    "otherChanges": "Ook gewijzigd: {{fields}}"
+  },
+  "emailChange": {
+    "title": "Wijziging van e-mailadres",
+    "description": "Een beheerder heeft gevraagd om het adres van je account te wijzigen in {{email}}. Tot je bevestigt, behoudt je account het huidige adres.",
+    "accept": "Nieuw adres overnemen",
+    "decline": "Mijn huidige adres behouden",
+    "accepted": "Je account gebruikt nu {{email}}",
+    "declined": "Je account behoudt het huidige adres",
+    "unavailable": "Dat adres is niet meer beschikbaar",
+    "failed": "Je beslissing kon niet worden opgeslagen",
+    "replaced": "De beheerder heeft een nieuw verzoek gestuurd. Controleer het nieuwe adres voordat je accepteert",
+    "withdrawn": "Het verzoek is ingetrokken. Je account behoudt het huidige adres"
   }
 }

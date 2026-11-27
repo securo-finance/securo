@@ -3900,6 +3900,80 @@ async def test_sync_connection_enable_banking_reworded_remittance_through_sync(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("concept", ["ahorro", "pago alquiler", "regalo cumple ana"])
+async def test_sync_connection_enable_banking_reworded_remittance_short_concept(
+    session: AsyncSession, test_user, test_workspace, concept,
+):
+    """#1744: the reworded text is the bank's label and a short concept, so
+    the shared ending covers every word of it but the label. The held row
+    takes the new id instead of a second row landing next to it."""
+    conn, account = await _eb_account(session, test_user.id, test_workspace.id)
+    account_id = account.id
+    _, held_id = await _hold_reworded_entry(
+        session, test_user.id, test_workspace.id, account,
+        _eb_reworded_payload(
+            None, f"TRANSFERENCIA A FAVOR DE Cuenta Ahorro CONCEPTO: {concept}",
+        ),
+    )
+
+    refetched = _eb_txn(_eb_reworded_payload("2026-11-11.0", f"TRASPASO: {concept}"))
+    await _sync_eb(session, conn, test_workspace.id, test_user.id, [refetched])
+
+    rows = await _account_rows(session, account_id)
+    assert [(row.id, row.external_id) for row in rows] == [(held_id, refetched.external_id)]
+
+
+_TRANSFER_SHORT_CONCEPT_REMITTANCE = "TRANSFERENCIA A FAVOR DE Cuenta Ahorro CONCEPTO: ahorro"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("held", "reworded"),
+    [
+        # Another concept: the endings share nothing.
+        (_TRANSFER_SHORT_CONCEPT_REMITTANCE, "TRASPASO: viaje"),
+        # A one-word text that shares nothing: no word in front is a label then.
+        (_TRANSFER_SHORT_CONCEPT_REMITTANCE, "viaje"),
+        # The shared ending leaves two words of the shorter text, more than a label.
+        (_TRANSFER_SHORT_CONCEPT_REMITTANCE, "PAGO RECIBO: ahorro"),
+        # Texts of the same length: the word that differs may be the merchant.
+        ("ALPHA SHOP", "BETA SHOP"),
+        # One word longer is not a long label swapped for a short one either.
+        ("COMPRA TARJ 1234", "PAGO 1234"),
+        # Two words longer, but no colon marks the word in front as a label:
+        # it is the merchant, whichever of the two entries was held.
+        ("COMPRA EN ALPHA SHOP", "BETA SHOP"),
+        ("BETA SHOP", "COMPRA EN ALPHA SHOP"),
+        # A colon further in does not make the word in front a label.
+        ("COMPRA EN ALPHA SHOP REF: 77", "BETA REF: 77"),
+        # A marked label still needs the long text on the other side.
+        ("ENVIO: ahorro", "TRASPASO: ahorro"),
+        ("ENVIO SEPA: ahorro", "TRASPASO: ahorro"),
+    ],
+)
+async def test_sync_connection_enable_banking_reworded_short_text_needs_the_concept(
+    session: AsyncSession, test_user, test_workspace, held, reworded,
+):
+    """A short text still has to end in the other text's concept with no more
+    than one word in front of it, and that word only passes for a label when
+    the bank marked it with a colon and the other text is at least two words
+    longer. Another entry of the same amount on the same day lands as its own
+    row, also when the held one has left the feed."""
+    conn, account = await _eb_account(session, test_user.id, test_workspace.id)
+    account_id = account.id
+    held_txn, held_id = await _hold_reworded_entry(
+        session, test_user.id, test_workspace.id, account,
+        _eb_reworded_payload(None, held),
+    )
+
+    refetched = _eb_txn(_eb_reworded_payload("2026-11-11.0", reworded))
+    await _sync_eb(session, conn, test_workspace.id, test_user.id, [refetched])
+
+    rows = await _account_rows(session, account_id)
+    assert {row.external_id for row in rows} == {held_txn.external_id, refetched.external_id}
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("held_remittance", "booked_remittance", "held_value_date"),
     [
@@ -8718,6 +8792,115 @@ async def test_sync_upgrades_pending_to_posted_when_twin_arrives(
     assert rows[0].reporting_date_override == date(2026, 3, 31)
 
 
+def _sync_patches(mock_provider):
+    return (
+        patch("app.services.connection_service.get_provider", return_value=mock_provider),
+        patch("app.services.connection_service.detect_transfer_pairs", new_callable=AsyncMock),
+        patch("app.services.connection_service.stamp_primary_amount", new_callable=AsyncMock),
+        patch("app.services.connection_service.apply_rules_to_transaction", new_callable=AsyncMock),
+    )
+
+
+def _eur_checking_provider(account_id: str) -> AsyncMock:
+    mock_provider = AsyncMock()
+    mock_provider.refresh_credentials = AsyncMock(return_value={"token": "t"})
+    mock_provider.get_accounts = AsyncMock(return_value=[
+        AccountData(
+            external_id=account_id, name="Girokonto",
+            type="checking", balance=Decimal("0"), currency="EUR",
+        ),
+    ])
+    return mock_provider
+
+
+@pytest.mark.parametrize(
+    "stored, booked",
+    [
+        ("mandatereference:,creditorid:,remittanceinformation:REWE", "REWE"),
+        ("mandatereference:,creditorid:,remittanceinformation:REWE SAGT", "REWE SAGT"),
+        (
+            "mandatereference:4M5J,creditorid:DE98ZZZ09999999999,"
+            "remittanceinformation:REWE SAGT DANKE",
+            "REWE SAGT DANKE",
+        ),
+    ],
+)
+@pytest.mark.asyncio
+async def test_sync_settles_a_pending_row_stored_with_the_ing_sepa_prefix(
+    session: AsyncSession, test_user, test_workspace, stored, booked,
+):
+    """A pending row stored before #1910 still carries ING's SEPA key prefix.
+    When its booked entry arrives with the clean text, the prefix must not
+    keep the two apart: short texts fell under the overlap threshold."""
+    conn = await _make_connection(session, test_user.id, "ING Prefix Bank")
+    mock_provider = _eur_checking_provider("ing-acc-1")
+    mock_provider.get_transactions = AsyncMock(return_value=[
+        TransactionData(
+            external_id="ing-pending", description=stored,
+            amount=Decimal("12.40"), date=date(2026, 11, 23),
+            type="debit", currency="EUR", status="pending",
+        ),
+    ])
+    p1, p2, p3, p4 = _sync_patches(mock_provider)
+    with p1, p2, p3, p4:
+        await sync_connection(session, conn.id, test_workspace.id, test_user.id)
+
+    mock_provider.get_transactions = AsyncMock(return_value=[
+        TransactionData(
+            external_id="ing-booked", description=booked,
+            amount=Decimal("12.40"), date=date(2026, 11, 23),
+            type="debit", currency="EUR", status="posted",
+        ),
+    ])
+    p1, p2, p3, p4 = _sync_patches(mock_provider)
+    with p1, p2, p3, p4:
+        await sync_connection(session, conn.id, test_workspace.id, test_user.id)
+
+    rows = (await session.execute(
+        select(Transaction).where(
+            Transaction.user_id == test_user.id,
+            Transaction.source == "sync",
+        )
+    )).scalars().all()
+    assert len(rows) == 1
+    assert rows[0].status == "posted"
+    assert rows[0].external_id == "ing-booked"
+
+
+@pytest.mark.asyncio
+async def test_sync_keeps_a_prefixed_pending_row_apart_from_another_merchant(
+    session: AsyncSession, test_user, test_workspace,
+):
+    """Dropping the prefix for the comparison does not loosen it: a booked
+    entry from another merchant on the same day and amount stays its own row."""
+    conn = await _make_connection(session, test_user.id, "ING Other Merchant Bank")
+    mock_provider = _eur_checking_provider("ing-acc-2")
+    mock_provider.get_transactions = AsyncMock(return_value=[
+        TransactionData(
+            external_id="ing-pending-2",
+            description="mandatereference:,creditorid:,remittanceinformation:REWE",
+            amount=Decimal("12.40"), date=date(2026, 11, 23),
+            type="debit", currency="EUR", status="pending",
+        ),
+        TransactionData(
+            external_id="ing-booked-2", description="LIDL",
+            amount=Decimal("12.40"), date=date(2026, 11, 23),
+            type="debit", currency="EUR", status="posted",
+        ),
+    ])
+    p1, p2, p3, p4 = _sync_patches(mock_provider)
+    with p1, p2, p3, p4:
+        await sync_connection(session, conn.id, test_workspace.id, test_user.id)
+
+    rows = (await session.execute(
+        select(Transaction).where(
+            Transaction.user_id == test_user.id,
+            Transaction.source == "sync",
+        )
+    )).scalars().all()
+    assert len(rows) == 2
+
+
 @pytest.mark.asyncio
 async def test_stale_pending_twin_keeps_the_posted_card_ending(
     session: AsyncSession, test_user, test_workspace,
@@ -11548,3 +11731,44 @@ async def test_simplefin_resync_takes_the_corrected_charge_under_the_same_id(
     else:
         assert tx.payee == "Merchant"
         assert tx.payee_id is not None
+
+
+@pytest.mark.asyncio
+async def test_first_import_keeps_the_posted_id_when_a_stale_pending_twin_follows(
+    session: AsyncSession, test_user, test_workspace
+):
+    """The first import collapses a pending entry listed after its posted
+    twin into the posted row, which keeps the posted entry's id: otherwise
+    the next sync would find no row for that id and insert it again."""
+    posted = TransactionData(
+        external_id="p2", description="Example Shop", amount=Decimal("12.34"),
+        date=date(2026, 11, 14), type="debit", status="posted",
+    )
+    pending = TransactionData(
+        external_id="p1", description="Example Shop", amount=Decimal("12.34"),
+        date=date(2026, 11, 14), type="debit", status="pending",
+    )
+    mock_provider = AsyncMock()
+    mock_provider.handle_oauth_callback = AsyncMock(return_value=ConnectionData(
+        external_id="ext-stale-twin",
+        institution_name="Twin Bank",
+        credentials={"token": "x"},
+        accounts=[AccountData(
+            external_id="acc-1", name="Checking", type="checking",
+            balance=Decimal("100.00"), currency="EUR",
+        )],
+    ))
+    mock_provider.get_transactions = AsyncMock(return_value=[posted, pending])
+    mock_provider.get_holdings = AsyncMock(return_value=[])
+
+    with patch("app.services.connection_service.get_provider", return_value=mock_provider), \
+         patch("app.services.connection_service.detect_transfer_pairs", new_callable=AsyncMock):
+        connection = await handle_oauth_callback(
+            session, test_workspace.id, test_user.id, "code", "pluggy",
+        )
+
+    assert connection is not None
+    rows = (
+        await session.execute(select(Transaction).where(Transaction.external_id.is_not(None)))
+    ).scalars().all()
+    assert [(row.external_id, row.status) for row in rows] == [("p2", "posted")]

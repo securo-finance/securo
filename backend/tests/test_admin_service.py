@@ -214,41 +214,47 @@ async def test_get_user_not_found(session: AsyncSession, clean_db):
 # ---------------------------------------------------------------------------
 
 async def test_update_user_email(session: AsyncSession, clean_db):
+    """The administrator asks for the address; the owner applies it (ADR 0042).
+
+    The login address is a recovery credential, so it does not move here: the
+    request waits on the account for the person whose account it is.
+    """
     admin = await _make_user(session, "admin_upd@test.com", is_superuser=True)
     target = await _make_user(session, "target_upd@test.com")
-    data = AdminUserUpdate(email="newemail@test.com")
+    data = AdminUserUpdate(reason="Support ticket 12", email="newemail@test.com")
     result = await update_user(session, target.id, data, admin.id)
 
     assert result is not None
-    assert result.email == "newemail@test.com"
+    assert result.email == "target_upd@test.com"
+    assert result.pending_email == "newemail@test.com"
 
 
 async def test_update_user_email_conflict(session: AsyncSession, clean_db):
     admin = await _make_user(session, "admin_c@test.com", is_superuser=True)
     await _make_user(session, "existing@test.com")
     target = await _make_user(session, "target_c@test.com")
-    data = AdminUserUpdate(email="existing@test.com")
+    data = AdminUserUpdate(reason="Support ticket 12", email="existing@test.com")
     with pytest.raises(ValueError, match="email already exists"):
         await update_user(session, target.id, data, admin.id)
 
 
-async def test_update_user_password(session: AsyncSession, clean_db):
+async def test_update_user_never_touches_the_password(session: AsyncSession, clean_db):
+    """An administrator changes who can sign in, never how (ADR 0042)."""
     admin = await _make_user(session, "admin_pw@test.com", is_superuser=True)
     target = await _make_user(session, "target_pw@test.com")
     old_hash = target.hashed_password
-    data = AdminUserUpdate(password="newpassword123")
+    data = AdminUserUpdate(reason="Support ticket 12", preferences={"language": "pt-BR"})
     result = await update_user(session, target.id, data, admin.id)
 
     assert result is not None
-    # Password should have changed
-    assert result.hashed_password != old_hash
+    assert result.hashed_password == old_hash
 
 
 async def test_update_user_preferences(session: AsyncSession, clean_db):
     admin = await _make_user(session, "admin_pref@test.com", is_superuser=True)
     target = await _make_user(session, "target_pref@test.com")
     new_prefs = {"language": "pt-BR", "currency_display": "BRL"}
-    data = AdminUserUpdate(preferences=new_prefs)
+    data = AdminUserUpdate(reason="Support ticket 12", preferences=new_prefs)
     result = await update_user(session, target.id, data, admin.id)
 
     assert result is not None
@@ -258,21 +264,21 @@ async def test_update_user_preferences(session: AsyncSession, clean_db):
 
 async def test_update_user_not_found(session: AsyncSession, clean_db):
     admin = await _make_user(session, "admin_nf@test.com", is_superuser=True)
-    data = AdminUserUpdate(is_active=False)
+    data = AdminUserUpdate(reason="Support ticket 12", is_active=False)
     result = await update_user(session, uuid.uuid4(), data, admin.id)
     assert result is None
 
 
 async def test_update_user_self_demote(session: AsyncSession, clean_db):
     admin = await _make_user(session, "admin_self@test.com", is_superuser=True)
-    data = AdminUserUpdate(is_superuser=False)
+    data = AdminUserUpdate(reason="Support ticket 12", is_superuser=False)
     with pytest.raises(ValueError, match="own admin"):
         await update_user(session, admin.id, data, admin.id)
 
 
 async def test_update_user_self_deactivate(session: AsyncSession, clean_db):
     admin = await _make_user(session, "admin_deact@test.com", is_superuser=True)
-    data = AdminUserUpdate(is_active=False)
+    data = AdminUserUpdate(reason="Support ticket 12", is_active=False)
     with pytest.raises(ValueError, match="own account"):
         await update_user(session, admin.id, data, admin.id)
 
@@ -280,7 +286,7 @@ async def test_update_user_self_deactivate(session: AsyncSession, clean_db):
 async def test_update_user_is_active_and_superuser(session: AsyncSession, clean_db):
     admin = await _make_user(session, "admin_flags@test.com", is_superuser=True)
     target = await _make_user(session, "target_flags@test.com")
-    data = AdminUserUpdate(is_active=False, is_superuser=True)
+    data = AdminUserUpdate(reason="Support ticket 12", is_active=False, is_superuser=True)
     result = await update_user(session, target.id, data, admin.id)
 
     assert result is not None
@@ -298,7 +304,7 @@ async def test_delete_user_cascade(session: AsyncSession, clean_db):
     target = await _make_user(session, "victim@test.com")
     await _populate_user_data(session, target)
 
-    result = await delete_user(session, target.id, admin.id)
+    result = await delete_user(session, target.id, admin.id, reason="Support ticket 12")
     assert result is True
 
     # Verify user is gone
@@ -345,7 +351,7 @@ async def test_delete_user_keeps_reconciliation_history(postgres_sessions):
         session.add_all([rule, suggestion, event])
         await session.commit()
 
-        assert await delete_user(session, target.id, admin.id) is True
+        assert await delete_user(session, target.id, admin.id, reason="Support ticket 12") is True
 
         for row in (rule, suggestion, event):
             await session.refresh(row)
@@ -357,31 +363,31 @@ async def test_delete_user_keeps_reconciliation_history(postgres_sessions):
 async def test_delete_user_self_protection(session: AsyncSession, clean_db):
     admin = await _make_user(session, "admin_self_del@test.com", is_superuser=True)
     with pytest.raises(ValueError, match="own account"):
-        await delete_user(session, admin.id, admin.id)
+        await delete_user(session, admin.id, admin.id, reason="Support ticket 12")
 
 
 async def test_delete_user_last_superuser(session: AsyncSession, clean_db):
     admin = await _make_user(session, "only_admin@test.com", is_superuser=True)
     target = await _make_user(session, "other@test.com")
     # Can delete non-admin
-    assert await delete_user(session, target.id, admin.id) is True
+    assert await delete_user(session, target.id, admin.id, reason="Support ticket 12") is True
 
 
 async def test_delete_last_superuser_blocked(session: AsyncSession, clean_db):
     admin1 = await _make_user(session, "admin1_last@test.com", is_superuser=True)
     admin2 = await _make_user(session, "admin2_last@test.com", is_superuser=True)
     # admin2 tries to delete admin1 — should succeed (2 admins remain: admin2)
-    assert await delete_user(session, admin1.id, admin2.id) is True
+    assert await delete_user(session, admin1.id, admin2.id, reason="Support ticket 12") is True
 
     # Now create a new target admin, make it the last
     target = await _make_user(session, "last_target@test.com", is_superuser=True)
     # admin2 is one admin, target is another — delete target is fine
-    assert await delete_user(session, target.id, admin2.id) is True
+    assert await delete_user(session, target.id, admin2.id, reason="Support ticket 12") is True
 
 
 async def test_delete_user_not_found(session: AsyncSession, clean_db):
     admin = await _make_user(session, "admin_nf2@test.com", is_superuser=True)
-    result = await delete_user(session, uuid.uuid4(), admin.id)
+    result = await delete_user(session, uuid.uuid4(), admin.id, reason="Support ticket 12")
     assert result is False
 
 

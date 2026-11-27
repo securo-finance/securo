@@ -14,11 +14,13 @@ import json
 import os
 import re
 import threading
+import time
 from pathlib import Path
 
 import pytest
 from pydantic import SecretStr
-from sqlalchemy import text
+from sqlalchemy import make_url, text
+from sqlalchemy.exc import OperationalError, ProgrammingError
 from sqlalchemy.ext.asyncio import create_async_engine
 from sqlalchemy.pool import NullPool
 
@@ -112,6 +114,31 @@ def test_public_secret_key_from_secrets_dir_is_replaced(db_url, monkeypatch, tmp
     )
 
     assert settings.secret_key.get_secret_value() == stored(db_url)[0]
+
+
+@pytest.mark.parametrize("value", [None, "", "   ", *PUBLIC_DEFAULTS, f" {OLD_COMPOSE_DEFAULT}\n"])
+def test_required_secret_key_missing_or_public_refuses_to_start(db_url, monkeypatch, value):
+    monkeypatch.setenv("REQUIRE_SECRET_KEY", "true")
+
+    with pytest.raises(RuntimeError, match="REQUIRE_SECRET_KEY"):
+        settings_for(db_url, value, monkeypatch)
+
+    # Refused before the database was touched.
+    assert run(fetch(db_url, "SELECT name FROM sqlite_master WHERE name = 'instance_secrets'")) == []
+
+
+def test_required_secret_key_refuses_even_with_a_stored_key(db_url, monkeypatch):
+    generated = settings_for(db_url, None, monkeypatch).secret_key.get_secret_value()
+    monkeypatch.setenv("REQUIRE_SECRET_KEY", "true")
+
+    with pytest.raises(RuntimeError, match="REQUIRE_SECRET_KEY"):
+        settings_for(db_url, None, monkeypatch)
+
+    # Giving the instance a key of its own starts it, and what the stored key
+    # encrypted still opens.
+    settings = settings_for(db_url, "a-unique-value-only-this-install-knows", monkeypatch)
+    assert settings.secret_key.get_secret_value() == "a-unique-value-only-this-install-knows"
+    assert settings.secret_key_fallbacks[0] == generated
 
 
 def test_own_secret_key_is_kept_and_nothing_is_written(db_url, monkeypatch):
@@ -611,3 +638,160 @@ def test_the_move_locks_the_rows_it_rewrites(pg_url, monkeypatch):
     settings_for(pg_url, old, monkeypatch)
 
     assert blocked == {"row": True}
+
+
+# --- Refusals fail at once (#601) --------------------------------------------
+
+class _PgError(Exception):
+    def __init__(self, sqlstate: str | None):
+        super().__init__(f"sqlstate {sqlstate}")
+        self.sqlstate = sqlstate
+
+
+def _no_waiting(monkeypatch):
+    """A long deadline, and any wait fails the test."""
+    monkeypatch.setattr(instance, "_CONNECT_DEADLINE_SECONDS", 3600.0)
+
+    def no_sleep(_seconds):
+        raise AssertionError("retried a refusal")
+
+    monkeypatch.setattr(instance.time, "sleep", no_sleep)
+
+
+@pytest.mark.parametrize("sqlstate", ["42501", "28P01"])
+def test_a_refusal_is_not_retried(db_url, monkeypatch, sqlstate):
+    """Permission denied or a wrong password: the database answered, so
+    waiting only delays the same error and blames the network for it."""
+    calls = {"n": 0}
+
+    async def refused(*args, **kwargs):
+        calls["n"] += 1
+        raise ProgrammingError("CREATE TABLE IF NOT EXISTS instance_secrets", {}, _PgError(sqlstate))
+
+    monkeypatch.setattr(instance, "_fetch_or_create", refused)
+    _no_waiting(monkeypatch)
+
+    with pytest.raises(RuntimeError, match="refused") as caught:
+        settings_for(db_url, None, monkeypatch)
+
+    assert calls["n"] == 1
+    assert "SECRET_KEY" in str(caught.value)
+    assert "Could not reach" not in str(caught.value)
+
+
+@pytest.mark.parametrize("sqlstate", [None, "57P03", "08006"])
+def test_an_outage_is_still_retried(db_url, monkeypatch, sqlstate):
+    calls = {"n": 0}
+    real = instance._fetch_or_create
+
+    async def starting(*args, **kwargs):
+        calls["n"] += 1
+        if calls["n"] < 3:
+            raise OperationalError("SELECT 1", {}, _PgError(sqlstate))
+        return await real(*args, **kwargs)
+
+    monkeypatch.setattr(instance, "_fetch_or_create", starting)
+    monkeypatch.setattr(instance.time, "sleep", lambda _s: None)
+
+    key = settings_for(db_url, None, monkeypatch).secret_key.get_secret_value()
+
+    assert calls["n"] == 3
+    assert stored(db_url) == [key]
+
+
+def test_row_security_without_a_secret_key_fails_at_once(monkeypatch):
+    """The restricted role can't read or create the stored key (ADR 0043),
+    so asking the database is pointless: say what to set instead."""
+    monkeypatch.setenv("ROW_SECURITY_ENABLED", "true")
+    called = {"n": 0}
+
+    def must_not_run(*args, **kwargs):
+        called["n"] += 1
+        raise AssertionError("asked the database for the instance key")
+
+    monkeypatch.setattr(instance, "fetch_or_create", must_not_run)
+
+    for value in (None, "", "change-me-in-production"):
+        with pytest.raises(RuntimeError, match="ROW_SECURITY_ENABLED needs its own SECRET_KEY"):
+            settings_for("postgresql+asyncpg://nobody:nothing@127.0.0.1:1/none", value, monkeypatch)
+    assert called["n"] == 0
+
+
+def test_row_security_startup_error_keeps_an_existing_install_on_its_stored_key(
+    app_settings, db_url, monkeypatch
+):
+    """An install that ran without SECRET_KEY encrypted its credentials with
+    the stored key. The error must lead it back to that key, not to a new one."""
+    generated = app_settings(None).secret_key.get_secret_value()
+    saved = crypto.encrypt("bank-token")
+    monkeypatch.setenv("ROW_SECURITY_ENABLED", "true")
+
+    with pytest.raises(RuntimeError) as refused:
+        app_settings(None)
+    message = str(refused.value)
+    query = re.search(r"`(SELECT [^`]+)`", message)
+    assert query is not None, message
+    assert "openssl rand -hex 32" in message  # still the advice for a new install
+
+    # The query the message gives, run as the owner, returns the stored key...
+    assert [v for (v,) in run(fetch(db_url, query.group(1)))] == [generated]
+    # ...and with it the saved credentials still open under row security.
+    app_settings(generated)
+    assert crypto.decrypt(saved) == "bank-token"
+    # A new key instead would have lost them: that's why the message tells apart.
+    app_settings("a-new-key-generated-after-the-error")
+    assert crypto.decrypt(saved) is None
+
+
+def test_row_security_with_its_own_key_never_reads_the_stored_one(monkeypatch):
+    """Each attempt would fail with permission denied and log a warning, on
+    every use of the fallbacks for the life of the process."""
+    monkeypatch.setenv("ROW_SECURITY_ENABLED", "true")
+    reads = {"n": 0}
+
+    def denied(*args, **kwargs):
+        reads["n"] += 1
+        raise PermissionError("permission denied for table instance_secrets")
+
+    monkeypatch.setattr(instance, "read_existing", denied)
+
+    settings = settings_for(
+        "postgresql+asyncpg://nobody:nothing@127.0.0.1:1/none",
+        "a-unique-value-only-this-install-knows",
+        monkeypatch,
+    )
+
+    assert settings.secret_key.get_secret_value() == "a-unique-value-only-this-install-knows"
+    assert set(PUBLIC_DEFAULTS) <= set(settings.secret_key_fallbacks)
+    assert set(PUBLIC_DEFAULTS) <= set(settings.secret_key_fallbacks)
+    assert reads["n"] == 0
+
+
+@pytest.fixture
+def restricted_url(pg_url):
+    """A role like the one apply-row-security sets up: it may use the schema
+    but not create tables in it."""
+    role = "securo_secrets_probe"
+    run(execute(
+        pg_url,
+        (f"DROP ROLE IF EXISTS {role}", {}),
+        (f"CREATE ROLE {role} LOGIN PASSWORD 'probe' NOSUPERUSER", {}),
+        ("REVOKE CREATE ON SCHEMA public FROM PUBLIC", {}),
+        (f"GRANT USAGE ON SCHEMA public TO {role}", {}),
+    ))
+    url = make_url(pg_url).set(username=role, password="probe")
+    yield url.render_as_string(hide_password=False)
+    run(execute(pg_url, (f"DROP OWNED BY {role}", {}), (f"DROP ROLE IF EXISTS {role}", {})))
+
+
+@needs_pg
+def test_a_role_that_cant_create_the_table_fails_at_once(restricted_url, monkeypatch):
+    _no_waiting(monkeypatch)
+    monkeypatch.delenv("ROW_SECURITY_ENABLED", raising=False)
+
+    started = time.monotonic()
+    with pytest.raises(RuntimeError, match="refused") as caught:
+        settings_for(restricted_url, None, monkeypatch)
+
+    assert time.monotonic() - started < 10
+    assert "permission denied" in str(caught.value)

@@ -25,8 +25,10 @@ from app.models.asset_value import AssetValue
 from app.models.fx_rate import FxRate
 from app.models.transaction_attachment import TransactionAttachment
 from app.models.document_extraction import DocumentExtraction, WorkspaceDocumentAiSettings
+from app.models.notification import Notification, NotificationDelivery, NotificationPreference
 from app.models.payee import Payee, PayeeMapping, PayeeTaxId
 from app.models.app_settings import AppSetting
+from app.models.admin_access_log import AdminAccessLog, AdminAccessLogViewer
 from app.models.goal import Goal
 from app.models.credit_card_bill import CreditCardBill
 from app.models.group import Group, GroupMember
@@ -60,6 +62,9 @@ from app.core import workspace_autostamp  # noqa: F401, E402
 
 __all__ = [
     "DocumentExtraction",
+    "Notification",
+    "NotificationDelivery",
+    "NotificationPreference",
     "WorkspaceDocumentAiSettings",
     "AccessToken",
     "User",
@@ -94,6 +99,8 @@ __all__ = [
     "PayeeMapping",
     "PayeeTaxId",
     "AppSetting",
+    "AdminAccessLog",
+    "AdminAccessLogViewer",
     "Goal",
     "CreditCardBill",
     "Group",

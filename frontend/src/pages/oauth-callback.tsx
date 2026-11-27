@@ -5,7 +5,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import axios from 'axios'
 import { connections } from '@/lib/api'
-import { invalidateFinancialQueries } from '@/lib/invalidate-queries'
+import { invalidateSyncedRecords } from '@/lib/invalidate-queries'
 import { Button } from '@/components/ui/button'
 import { Building2, ExternalLink } from 'lucide-react'
 
@@ -56,7 +56,7 @@ export default function OAuthCallbackPage() {
       try {
         const connection = await connections.handleCallback(code, '', state)
         await queryClient.refetchQueries({ queryKey: ['connections'] })
-        invalidateFinancialQueries(queryClient)
+        invalidateSyncedRecords(queryClient)
         if (connection.status === 'error') {
           // The bank is connected; only the first import was refused. The
           // connection card retries it with the credentials already stored.

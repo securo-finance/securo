@@ -42,6 +42,9 @@ async def get_app_info():
             "agents": feature_flag("AGENTS_ENABLED"),
             "demo": feature_flag("DEMO_MODE"),
             "tesouro_direto": feature_flag("TESOURO_DIRETO_ENABLED"),
+            # Read from settings, like the routes that enforce it, so a value
+            # set only in backend/.env reaches the frontend too.
+            "performance_benchmarks": get_settings().performance_benchmarks_enabled,
             "plugins": feature_flag("PLUGINS_ENABLED"),
             # Document reading rides on the agents module (ADR 0037); each
             # workspace turns it on by picking one of its LLM connections.

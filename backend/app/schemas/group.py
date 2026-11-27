@@ -5,6 +5,8 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
+from app.schemas.category import ICON_MAX_LENGTH
+
 GroupKind = Literal["social", "cost_center", "project", "client", "other"]
 
 
@@ -12,7 +14,7 @@ class GroupBase(BaseModel):
     name: str = Field(min_length=1, max_length=100)
     kind: GroupKind = "social"
     default_currency: str = Field(default="USD", min_length=3, max_length=3)
-    icon: str = "users"
+    icon: str = Field("users", max_length=ICON_MAX_LENGTH)
     color: str = "#6B7280"
     notes: Optional[str] = None
 
@@ -25,7 +27,7 @@ class GroupUpdate(BaseModel):
     name: Optional[str] = Field(default=None, min_length=1, max_length=100)
     kind: Optional[GroupKind] = None
     default_currency: Optional[str] = Field(default=None, min_length=3, max_length=3)
-    icon: Optional[str] = None
+    icon: Optional[str] = Field(None, max_length=ICON_MAX_LENGTH)
     color: Optional[str] = None
     notes: Optional[str] = None
     is_archived: Optional[bool] = None
