@@ -5,6 +5,8 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from app.core.money import bounded_asset_value
+
 #: How an asset's current value is kept: recorded by hand, projected by a
 #: growth rule, or read from the market through its ticker. The jobs, the
 #: import and the screens know only these three, so anything else is refused
@@ -302,6 +304,16 @@ class PortfolioPerformanceRead(BaseModel):
 class AssetValueCreate(BaseModel):
     amount: Decimal
     date: _date
+
+    @field_validator("amount")
+    @classmethod
+    def check_amount_bounds(cls, value: Decimal) -> Decimal:
+        # The column's own ceiling, both sides, the same rule the values the
+        # backend works out follow (ADR 0008). Without it a larger value
+        # reached the driver and came back as a raw database error instead of
+        # a 422 (issue #642); the negative side and `-Infinity` had the same
+        # hole.
+        return bounded_asset_value(value)
 
 
 class AssetValueRead(BaseModel):

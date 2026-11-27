@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.auth import current_active_user
 from app.core.config import get_settings
 from app.core.database import get_async_session
+from app.core.money import MoneyOutOfRange
 from app.core.workspace_context import (
     WorkspaceContext,
     current_workspace,
@@ -582,7 +583,10 @@ async def create_asset(
     ctx: WorkspaceContext = Depends(current_writable_workspace),
     session: AsyncSession = Depends(get_async_session),
 ):
-    return await asset_service.create_asset(session, ctx.workspace.id, ctx.user_id, data)
+    try:
+        return await asset_service.create_asset(session, ctx.workspace.id, ctx.user_id, data)
+    except MoneyOutOfRange as e:
+        raise HTTPException(status_code=422, detail=str(e))
 
 
 @router.patch("/{asset_id}", response_model=AssetRead)
@@ -593,9 +597,12 @@ async def update_asset(
     ctx: WorkspaceContext = Depends(current_writable_workspace),
     session: AsyncSession = Depends(get_async_session),
 ):
-    asset = await asset_service.update_asset(
-        session, asset_id, ctx.workspace.id, ctx.user_id, data, regenerate_growth=regenerate_growth
-    )
+    try:
+        asset = await asset_service.update_asset(
+            session, asset_id, ctx.workspace.id, ctx.user_id, data, regenerate_growth=regenerate_growth
+        )
+    except MoneyOutOfRange as e:
+        raise HTTPException(status_code=422, detail=str(e))
     if not asset:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Asset not found")
     return asset
@@ -644,7 +651,10 @@ async def add_asset_value(
     ctx: WorkspaceContext = Depends(current_writable_workspace),
     session: AsyncSession = Depends(get_async_session),
 ):
-    value = await asset_service.add_asset_value(session, asset_id, ctx.workspace.id, data)
+    try:
+        value = await asset_service.add_asset_value(session, asset_id, ctx.workspace.id, data)
+    except MoneyOutOfRange as e:
+        raise HTTPException(status_code=422, detail=str(e))
     if value is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Asset not found")
     return value

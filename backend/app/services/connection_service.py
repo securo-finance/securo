@@ -16,6 +16,7 @@ from sqlalchemy.orm.attributes import flag_modified
 
 from app.core.app_clock import app_today
 from app.core.config import get_settings
+from app.core.money import MoneyOutOfRange, bounded_asset_value
 from app.models.asset import PROVIDER_VALUE_DATE_METADATA_KEY, Asset
 from app.models.asset_group import AssetGroup
 from app.models.asset_transaction import AssetTransaction
@@ -1165,14 +1166,7 @@ async def _sync_holdings(
         # reports the position. Historical values stay; current totals
         # already exclude it via the sell_date filter in rollups.
         if asset.sell_date is None:
-            await _upsert_asset_value_for_today(
-                session,
-                asset,
-                holding.current_value,
-                today,
-                gross_amount=holding.gross_value,
-                price=_snapshot_unit_price(holding),
-            )
+            await _store_todays_snapshot(session, asset, holding, today)
 
     for ext_id, asset in archive_candidates.items():
         if ext_id not in seen and not asset.is_archived:
@@ -1434,14 +1428,7 @@ async def _sync_holding_trades(
         if was_sold and asset.sell_date is None and not holding.is_withdrawn:
             # Reopened by this sync: the value step above skipped it while it
             # still read as sold, so record today's value now.
-            await _upsert_asset_value_for_today(
-                session,
-                asset,
-                holding.current_value,
-                app_today(),
-                gross_amount=holding.gross_value,
-                price=_snapshot_unit_price(holding),
-            )
+            await _store_todays_snapshot(session, asset, holding, app_today())
 
 
 async def _import_holding_trades(
@@ -1680,8 +1667,15 @@ async def _ensure_historical_seed(
 
     Called on every sync but a no-op once the seed exists. Skips if ANY
     AssetValue already exists on that date (even a manual one) — we don't
-    want to stomp a value the user may have entered themselves.
+    want to stomp a value the user may have entered themselves. A price the
+    column cannot hold is left out with a warning: one bad holding must not
+    fail the sync of the whole connection (issue #642).
     """
+    try:
+        seed_amount = bounded_asset_value(purchase_price, "purchase_price")
+    except MoneyOutOfRange as exc:
+        logger.warning("Not seeding a value for asset %s: %s", asset.id, exc)
+        return
     existing = await session.execute(
         select(AssetValue).where(
             AssetValue.asset_id == asset.id,
@@ -1693,8 +1687,8 @@ async def _ensure_historical_seed(
     session.add(
         AssetValue(
             asset_id=asset.id,
-            amount=purchase_price,
-            gross_amount=purchase_price,
+            amount=seed_amount,
+            gross_amount=seed_amount,
             date=purchase_date,
             source="sync",
         )
@@ -1709,7 +1703,7 @@ async def _upsert_asset_value_for_today(
     *,
     gross_amount: Optional[Decimal] = None,
     price: Optional[Decimal] = None,
-) -> None:
+) -> bool:
     """One sync-sourced AssetValue per asset per day, with its unit value.
 
     Re-syncing the same day replaces the amount, gross and price in place;
@@ -1717,7 +1711,23 @@ async def _upsert_asset_value_for_today(
     over time.
     `price` records the unit value so performance can tell buying more
     shares apart from the price going up.
+
+    A balance the column cannot hold (a weak-currency holding past 13 digits)
+    keeps the row it already had and logs, so one holding never fails the
+    sync of the whole connection (issue #642). Returns whether it stored the
+    snapshot: the caller has to know, because the metadata written earlier in
+    the same sync carries the payload's value date.
     """
+    try:
+        stored_amount = bounded_asset_value(amount)
+        stored_gross = (
+            bounded_asset_value(gross_amount, "gross_amount")
+            if gross_amount is not None
+            else None
+        )
+    except MoneyOutOfRange as exc:
+        logger.warning("Not storing today's synced value for asset %s: %s", asset.id, exc)
+        return False
     existing = await session.execute(
         select(AssetValue).where(
             AssetValue.asset_id == asset.id,
@@ -1727,22 +1737,59 @@ async def _upsert_asset_value_for_today(
     )
     row = existing.scalar_one_or_none()
     if row is not None:
-        row.amount = amount
+        row.amount = stored_amount
         row.price = price
         # A same-day re-sync replaces the whole snapshot: a gross the
         # provider no longer reports must not sit next to the new net.
-        row.gross_amount = gross_amount
+        row.gross_amount = stored_gross
     else:
         session.add(
             AssetValue(
                 asset_id=asset.id,
-                amount=amount,
-                gross_amount=gross_amount,
+                amount=stored_amount,
+                gross_amount=stored_gross,
                 price=price,
                 date=today,
                 source="sync",
             )
         )
+    return True
+
+
+def _drop_provider_value_date(asset: Asset) -> None:
+    """Take the provider's value date back off an asset whose snapshot was refused.
+
+    `_upsert_asset_from_holding` already replaced the metadata blob, so by the
+    time the value is refused the marker describes a value that never got
+    stored. Left there it would put the new date over the old amount.
+    """
+    metadata = dict(asset.external_metadata or {})
+    if metadata.pop(PROVIDER_VALUE_DATE_METADATA_KEY, None) is None:
+        return
+    asset.external_metadata = metadata or None
+
+
+async def _store_todays_snapshot(
+    session: AsyncSession,
+    asset: Asset,
+    holding: HoldingData,
+    today: date,
+) -> None:
+    """Store today's synced value, or take the provider's date off the asset.
+
+    The date only makes sense next to the amount the payload brought; when
+    that amount is past the column and left out, it has to go with it.
+    """
+    stored = await _upsert_asset_value_for_today(
+        session,
+        asset,
+        holding.current_value,
+        today,
+        gross_amount=holding.gross_value,
+        price=_snapshot_unit_price(holding),
+    )
+    if not stored:
+        _drop_provider_value_date(asset)
 
 
 def _snapshot_unit_price(holding: HoldingData) -> Optional[Decimal]:

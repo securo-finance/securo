@@ -16,6 +16,7 @@ from app.core.app_clock import (
 )
 from app.worker import celery_app
 from app.core.config import get_settings
+from app.core.money import MoneyOutOfRange, bounded_asset_value
 from app.core.row_security import workspace_makers
 from app.models.asset import Asset
 from app.models.asset_value import AssetValue
@@ -127,9 +128,22 @@ async def _apply_growth_rules_in(session_maker) -> int:
                         else:
                             break
 
+                        try:
+                            amount = bounded_asset_value(Decimal(str(round(current_amount, 6))))
+                        except MoneyOutOfRange as exc:
+                            # The rule outgrew the column: keep the values that
+                            # fit and stop here instead of failing the write at
+                            # flush and retrying the same growth every run
+                            # (issue #642).
+                            logger.warning(
+                                "Growth rule for asset %s stops at %s: %s",
+                                asset.id, next_due, exc,
+                            )
+                            break
+
                         new_value = AssetValue(
                             asset_id=asset.id,
-                            amount=Decimal(str(round(current_amount, 6))),
+                            amount=amount,
                             date=next_due,
                             source="rule",
                         )

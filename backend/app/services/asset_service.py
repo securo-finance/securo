@@ -11,6 +11,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.app_clock import app_timezone, app_today
+from app.core.money import MoneyOutOfRange, bounded_asset_value
 from app.models.account import Account
 from app.models.asset import (
     ASSET_PRICE_DECIMALS,
@@ -97,7 +98,11 @@ def _generate_growth_values(
     """Generate all AssetValue rows from base_date to today using the growth rule.
     When growth_start_date is set, growth iteration begins from that date — not
     from base_date — so the asset accrues no growth for the gap between
-    purchase and the configured growth start."""
+    purchase and the configured growth start.
+
+    Raises `MoneyOutOfRange` when the rule compounds past what the column
+    holds: the rates are the user's, and a series that cannot be stored is
+    refused (a 422) instead of half-written and failing at flush (issue #642)."""
     today = app_today()
     if growth_start_date and today < growth_start_date:
         return []
@@ -123,7 +128,7 @@ def _generate_growth_values(
             break
         values.append(AssetValue(
             asset_id=asset_id,
-            amount=Decimal(str(round(current_amount, 6))),
+            amount=bounded_asset_value(Decimal(str(round(current_amount, 6)))),
             date=next_due,
             source="rule",
         ))
@@ -1037,7 +1042,7 @@ async def create_asset(
         session.add(
             AssetValue(
                 asset_id=asset.id,
-                amount=initial_amount,
+                amount=bounded_asset_value(initial_amount),
                 price=Decimal(str(quote.price)),
                 date=app_today(),
                 source="sync",
@@ -1049,7 +1054,7 @@ async def create_asset(
     if data.current_value is not None:
         value = AssetValue(
             asset_id=asset.id,
-            amount=data.current_value,
+            amount=bounded_asset_value(data.current_value),
             date=app_today(),
             source="manual",
         )
@@ -1059,7 +1064,7 @@ async def create_asset(
         base_date = data.purchase_date or data.growth_start_date or app_today()
         seed = AssetValue(
             asset_id=asset.id,
-            amount=data.purchase_price,
+            amount=bounded_asset_value(data.purchase_price),
             date=base_date,
             source="manual",
         )
@@ -1669,12 +1674,23 @@ async def upsert_today_value(
 
     Leaves `last_price` and `last_price_at` alone, so a change of quantity
     doesn't pass for a new quote.
+
+    A quote and a quantity each fit the column while their product does not,
+    and this runs from the price sweep as well as from the routes: the row
+    keeps the value it had and the move is logged, instead of the whole sync
+    failing at flush with a raw database error (issue #642).
     """
     if not asset.units or asset.units <= 0:
         return
 
     today = value_date or app_today()
-    new_amount = price * Decimal(str(asset.units))
+    try:
+        new_amount = bounded_asset_value(price * Decimal(str(asset.units)))
+    except MoneyOutOfRange as exc:
+        logger.warning(
+            "Not storing today's value for asset %s (units × price): %s", asset.id, exc
+        )
+        return
     existing = await session.execute(
         select(AssetValue)
         .where(AssetValue.asset_id == asset.id, AssetValue.date == today)
