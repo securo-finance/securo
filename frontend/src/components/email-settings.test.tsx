@@ -213,4 +213,19 @@ describe('email settings', () => {
     const region = await screen.findByRole('region', { name: 'Email' })
     expect(await within(region).findByText('Resend')).toBeVisible()
   })
+
+  it('shows the templates without the controls on a managed instance', async () => {
+    renderWithProviders(<EmailSettings readOnly />)
+
+    const region = await screen.findByRole('region', { name: 'Email' })
+    expect(await within(region).findByTestId('email-managed')).toHaveTextContent('Configured by Securo')
+
+    // The text in force stays readable; nothing can be typed or saved over it.
+    const english = within(region).getByRole('group', { name: 'English' })
+    expect(within(english).getByLabelText('Subject')).toBeDisabled()
+    expect(within(english).getByLabelText('Subject')).toHaveValue(state.templates.en.subject)
+    expect(within(english).getByLabelText('Body')).toHaveAttribute('readonly')
+    expect(within(region).queryByRole('button', { name: 'Save templates' })).not.toBeInTheDocument()
+    expect(within(region).queryByRole('button', { name: 'Restore default text' })).not.toBeInTheDocument()
+  })
 })

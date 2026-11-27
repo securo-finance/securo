@@ -8,6 +8,8 @@ import { CategoryIcon } from '@/components/category-icon'
 import { TransactionCategoryIcon } from '@/components/category-lines-display'
 import { isSplitByCategory } from '@/lib/category-lines'
 import { ProjectedTransactionBadge } from '@/components/projected-transaction-badge'
+import { ReportingDateBadge } from '@/components/reporting-date-badge'
+import { listDate } from '@/lib/list-date'
 import { sumDrillDownTotals } from '@/lib/drill-down-totals'
 import { hasOpenDialog, isInsideOverlayLayer } from '@/lib/overlay-layers'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
@@ -218,7 +220,7 @@ export function TransactionDrillDown({
       items.push({
         key: tx.id,
         description: tx.description,
-        date: tx.date,
+        date: listDate(tx),
         type: tx.type as 'debit' | 'credit',
         amount,
         amountPrimary,
@@ -252,8 +254,9 @@ export function TransactionDrillDown({
       if (filter?.category_id && !matchedParts.length && String(pt.category_id) !== filter.category_id) continue
       if (filter?.category_ids && !parts.some((part) => filter.category_ids!.includes(part.category_id)) && !filter.category_ids.includes(String(pt.category_id))) continue
       if (filter?.uncategorized && (pt.category_id != null || parts.length)) continue
-      if (filter?.from && pt.date < filter.from) continue
-      if (filter?.to && pt.date > filter.to) continue
+      const ptDate = pt.reporting_date ?? pt.date
+      if (filter?.from && ptDate < filter.from) continue
+      if (filter?.to && ptDate > filter.to) continue
       if (!filter?.category_id && parts.length) {
         // Income and expense views count only the parts that are income or
         // expense, as the projected totals do.
@@ -264,7 +267,7 @@ export function TransactionDrillDown({
         items.push({
           key: `proj-${pt.recurring_id}-${pt.date}`,
           description: pt.description,
-          date: pt.date,
+          date: ptDate,
           type: pt.type,
           amount: share,
           amountPrimary: pt.amount_primary != null ? pt.amount_primary * ratio : null,
@@ -286,7 +289,7 @@ export function TransactionDrillDown({
         items.push({
           key: `proj-${pt.recurring_id}-${pt.date}`,
           description: pt.description,
-          date: pt.date,
+          date: ptDate,
           type: pt.type,
           amount: share,
           amountPrimary: pt.amount_primary != null ? pt.amount_primary * ratio : null,
@@ -306,7 +309,7 @@ export function TransactionDrillDown({
       items.push({
         key: `proj-${pt.recurring_id}-${pt.date}`,
         description: pt.description,
-        date: pt.date,
+        date: ptDate,
         type: pt.type,
         amount: pt.amount,
         amountPrimary: pt.amount_primary ?? null,
@@ -500,6 +503,7 @@ export function TransactionDrillDown({
                         value: mask(formatCurrency(item.partOf, item.currency ?? userCurrency, locale)),
                       })}`}
                     </p>
+                    {item.transaction && <ReportingDateBadge tx={item.transaction} locale={dateLocale} />}
                     {quickTx && quickCategorize && (
                       // Picking here must not also open the row's dialog.
                       <div

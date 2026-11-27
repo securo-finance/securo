@@ -66,6 +66,7 @@ import { formatCompactCurrency, formatCurrency, ltrAmount } from '@/lib/format'
 import { shouldShowPendingBadge } from '@/lib/transaction-status'
 import { readCalendarDateBasis } from '@/lib/transaction-calendar'
 import { listDate } from '@/lib/list-date'
+import { ReportingDateBadge } from '@/components/reporting-date-badge'
 import { WidgetGrid } from '@/components/widget-grid'
 import {
   AgingWidget,
@@ -779,6 +780,8 @@ export default function DashboardPage() {
     splitSource: Transaction | null
     /** Settlements a credit pays back, to mark it as a payback. */
     settled_by: Transaction['settled_by']
+    /** Underlying real transaction when this row is not a virtual projection. */
+    txRef: Transaction | null
   }
 
   const [txPerPage, setTxPerPage] = useState<number>(() => {
@@ -832,6 +835,7 @@ export default function DashboardPage() {
         showPendingBadge: shouldShowPendingBadge(tx),
         splitSource: isSplitByCategory(tx) ? tx : null,
         settled_by: tx.settled_by,
+        txRef: tx,
       })
     }
     for (const pt of projectedTxs ?? []) {
@@ -863,6 +867,7 @@ export default function DashboardPage() {
         showPendingBadge: false,
         splitSource: projectedSplit,
         settled_by: undefined,
+        txRef: null,
       })
     }
     rows.sort((a, b) => txSortDesc ? b.date.localeCompare(a.date) : a.date.localeCompare(b.date))
@@ -1725,6 +1730,7 @@ export default function DashboardPage() {
                           {!row.accountId && (
                             <p className="text-xs text-muted-foreground mt-0.5">{formatDate(row.date, dateLocale)}</p>
                           )}
+                          {row.txRef && <ReportingDateBadge tx={row.txRef} locale={dateLocale} />}
                         </div>
 
                         {/* Amount */}
@@ -1835,6 +1841,7 @@ export default function DashboardPage() {
                                     <Paperclip size={12} className="text-muted-foreground shrink-0" />
                                   )}
                                 </div>
+                                {row.txRef && <ReportingDateBadge tx={row.txRef} locale={dateLocale} />}
                                 <p className="text-xs text-muted-foreground sm:hidden">{formatDate(row.date, dateLocale)}</p>
                               </div>
                             </div>
@@ -2092,6 +2099,7 @@ export default function DashboardPage() {
           type: a.type,
           currency: a.currency,
           secured_asset_id: a.secured_asset_id,
+          loan_kind: a.loan_kind,
         }))}
         onSave={(data, _recurring, _installment, _files, action) => {
           if (editingTx) updateMutation.mutate({ id: editingTx.id, ...data, action })

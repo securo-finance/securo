@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Literal
 from urllib.parse import urlsplit
 
-from pydantic import PrivateAttr, SecretStr, field_validator, model_validator
+from pydantic import Field, PrivateAttr, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Use the same environment variable that systemd uses: https://systemd.io/CREDENTIALS/
@@ -42,15 +42,48 @@ class Settings(BaseSettings):
     # App
     app_name: str = "Securo"
     debug: bool = False
+    # Hosted instances (ADR 0045). On, the instance-side settings (bank and
+    # rate providers, open registration, defaults and timezone) are the
+    # operator's: the admin screen shows them read-only and the API refuses
+    # writes. Off by default, a self-hosted instance keeps every control.
+    managed_instance: bool = False
+
+    @field_validator("managed_instance", mode="before")
+    @classmethod
+    def _blank_managed_instance_is_off(cls, value: object) -> object:
+        """`MANAGED_INSTANCE=` in a .env — a documented but unset key — arrives as
+        an empty string. Read it as off, the default, instead of failing the boot."""
+        if isinstance(value, str) and not value.strip():
+            return False
+        return value
 
     # Database
     database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/securo"
+    # Connections the API keeps open, and how many extra ones a burst may open
+    # before a request waits for one. Defaults are SQLAlchemy's, so an instance
+    # that sets nothing behaves as before. Raise them together with the
+    # database's own max_connections when many people share an instance: with
+    # 40 simultaneous users the pool ran out and requests failed instead of
+    # queueing (issue #1901). The pool size is always open; overflow may be 0
+    # so that the pool never grows past DB_POOL_SIZE.
+    db_pool_size: int = Field(default=5, ge=1)
+    db_max_overflow: int = Field(default=10, ge=0)
+    # Plan each statement with the values of the call that runs it, instead of
+    # reusing a plan sized for an average call. On an instance with a large
+    # history a 12-month report took about twice as long with the average plan
+    # (issue #584). Off sends nothing and keeps the server's plan_cache_mode,
+    # which is what an instance behind a connection pooler that refuses an
+    # unknown startup parameter needs.
+    db_force_custom_plans: bool = True
 
     # Auth. Signs session and password-reset tokens and derives the key that
     # encrypts saved credentials. Left unset (or on a public default), the
     # instance generates its own and keeps it in the database: see
     # app.core.instance_secrets and get_settings().
     secret_key: SecretStr = SecretStr("")
+    # Refuse to start instead of generating one: an operator who keeps the key
+    # out of the database finds out at startup when it is missing (ADR 0048).
+    require_secret_key: bool = False
     # Keys this instance encrypted with before, tried when opening a saved
     # credential. Never used to sign or check a token.
     _secret_key_fallbacks: tuple[str, ...] = PrivateAttr(default=())
@@ -138,6 +171,10 @@ class Settings(BaseSettings):
     storage_s3_endpoint_url: str = ""  # for S3-compatible services (MinIO, DigitalOcean Spaces)
     storage_s3_allow_insecure_http: bool = False  # development only: permits http:// endpoints
     storage_s3_addressing_style: str = "auto"  # auto|path|virtual; checked only when S3 is selected
+
+    # Let Postgres hold the workspace boundary too (ADR 0043). DATABASE_URL must
+    # then name a restricted role set up with `app.cli apply-row-security`.
+    row_security_enabled: bool = False
 
     # Registration
     registration_enabled: bool = True
@@ -297,6 +334,13 @@ class Settings(BaseSettings):
     # Set TESOURO_DIRETO_ENABLED=false to fully disable (e.g. to avoid the
     # external dependency on the Brazilian government endpoint).
     tesouro_direto_enabled: bool = True
+
+    # Market indices for the Performance tab: Yahoo Finance, and the B3
+    # Índice DI from the Central Bank of Brazil with Ipeadata as a fallback.
+    # They are only contacted when someone searches for or compares against
+    # an index. Set PERFORMANCE_BENCHMARKS_ENABLED=false to avoid those
+    # external hosts; portfolio returns keep working without them.
+    performance_benchmarks_enabled: bool = True
 
     # Data plugins (categories and rules) from the plugin catalog. Gated by
     # PLUGINS_ENABLED, off by default: while off nothing is fetched and no
@@ -467,12 +511,33 @@ def resolve_secret_key(settings: Settings) -> Settings:
     if not instance.is_public_or_missing(configured):
         # The key stays exactly as given. Anything encrypted while the
         # instance key was in use (SECRET_KEY set after it existed) still
-        # opens: that key is read on first use (secret_key_fallbacks).
-        settings._stored_key_url = settings.database_url
+        # opens: that key is read on first use (secret_key_fallbacks). The
+        # restricted role of row security can't read it (ADR 0043).
+        settings._stored_key_url = None if settings.row_security_enabled else settings.database_url
         settings._secret_key_fallbacks = tuple(
             k for k in instance.PUBLIC_SECRET_KEYS if k != raw
         )
         return settings
+
+    if settings.require_secret_key:
+        raise RuntimeError(
+            "REQUIRE_SECRET_KEY is on, but SECRET_KEY is "
+            + ("a public default" if configured else "not set")
+            + ". Set a unique value (openssl rand -hex 32)."
+        )
+
+    if settings.row_security_enabled:
+        # An install that already ran without SECRET_KEY encrypted its saved
+        # credentials with the stored key: a new key would leave them unreadable.
+        raise RuntimeError(
+            "ROW_SECURITY_ENABLED needs its own SECRET_KEY in the environment: the "
+            "restricted database role can't read or create the stored instance key "
+            "(ADR 0043). On an install that already ran without SECRET_KEY, set it to "
+            "the key stored in the database, read as the owner of the tables with "
+            f"`{instance.STORED_KEY_QUERY}`; a new key would leave the saved "
+            "credentials unreadable. On a new install, generate one with "
+            "`openssl rand -hex 32`."
+        )
 
     if configured:
         logging.getLogger(__name__).warning(

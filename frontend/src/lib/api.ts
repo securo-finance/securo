@@ -102,6 +102,10 @@ import type {
   AssetValue,
   MarketSymbolMatch,
   MarketSymbolQuote,
+  BenchmarkMatch,
+  HoldingTradeImport,
+  PortfolioPerformance,
+  PortfolioPerformancePeriod,
   Attachment,
   Goal,
   GoalSummary,
@@ -536,8 +540,23 @@ export const connections = {
     const { data } = await api.post(`/connections/${connectionId}/oauth/reauth-url`, undefined, readOnly)
     return data.url
   },
-  sync: async (id: string): Promise<SyncResult> => {
-    const { data } = await api.post(`/connections/${id}/sync`)
+  // retryTradeImport asks the provider again for holdings whose trade
+  // history didn't add up last time, even if no position moved.
+  // workspaceId pins the request to the workspace it was started in, so a
+  // batch that outlives a workspace switch keeps syncing the same one.
+  sync: async (
+    id: string,
+    options?: { retryTradeImport?: boolean; workspaceId?: string | null },
+  ): Promise<SyncResult> => {
+    const config = {
+      ...workspaceHeader(options?.workspaceId),
+      ...(options?.retryTradeImport ? { params: { retry_trade_import: true } } : {}),
+    }
+    const { data } = await api.post(
+      `/connections/${id}/sync`,
+      undefined,
+      Object.keys(config).length ? config : undefined,
+    )
     return data
   },
   // One-time backfill: pairs the transfer rows the active rules are sure
@@ -1665,8 +1684,13 @@ export const dashboard = {
 
 // Assets
 export const assets = {
-  list: async (includeArchived = false): Promise<Asset[]> => {
-    const { data } = await api.get('/assets', { params: { include_archived: includeArchived } })
+  // workspaceId pins the read to one workspace, for a caller whose cache
+  // belongs to it while another tab may have switched the shared default.
+  list: async (includeArchived = false, workspaceId?: string | null): Promise<Asset[]> => {
+    const { data } = await api.get('/assets', {
+      params: { include_archived: includeArchived },
+      ...workspaceHeader(workspaceId),
+    })
     return data
   },
   get: async (id: string): Promise<Asset> => {
@@ -1703,6 +1727,51 @@ export const assets = {
   },
   portfolioTrend: async (): Promise<{ assets: { id: string; name: string; type: string; group_id: string | null }[]; trend: Record<string, unknown>[]; total: number }> => {
     const { data } = await api.get('/assets/portfolio-trend')
+    return data
+  },
+  benchmarkSearch: async (q: string, limit = 15): Promise<BenchmarkMatch[]> => {
+    const { data } = await api.get('/assets/benchmarks/search', { params: { q, limit } })
+    return data
+  },
+  performance: async (
+    benchmarks: BenchmarkMatch[],
+    period: PortfolioPerformancePeriod,
+    assetGroupIds?: string[] | null,
+    selectedAssetGroupIds?: string[],
+    assetIds?: string[],
+    workspaceId?: string | null,
+  ): Promise<PortfolioPerformance> => {
+    const hasGroups = assetGroupIds != null && assetGroupIds.length > 0
+    const { data } = await api.get('/assets/performance', {
+      ...workspaceHeader(workspaceId),
+      params: {
+        ...(benchmarks.length
+          ? {
+              provider: benchmarks.map((item) => item.provider),
+              benchmark: benchmarks.map((item) => item.symbol),
+            }
+          : {}),
+        period,
+        ...(hasGroups ? { asset_group_ids: assetGroupIds } : {}),
+        ...(selectedAssetGroupIds?.length
+          ? { selected_asset_group_ids: selectedAssetGroupIds }
+          : {}),
+        ...(assetIds?.length ? { asset_ids: assetIds } : {}),
+      },
+      paramsSerializer: { indexes: null as null },
+    })
+    return data
+  },
+  tradeImport: async (workspaceId?: string | null): Promise<HoldingTradeImport> => {
+    const { data } = await api.get('/assets/performance/trade-import', workspaceHeader(workspaceId))
+    return data
+  },
+  enableTradeImport: async (workspaceId?: string | null): Promise<HoldingTradeImport> => {
+    const { data } = await api.post(
+      '/assets/performance/trade-import',
+      undefined,
+      workspaceHeader(workspaceId),
+    )
     return data
   },
   marketSearch: async (q: string, limit = 15, currency?: string): Promise<MarketSymbolMatch[]> => {
@@ -1807,8 +1876,8 @@ export const assets = {
 
 // Asset Groups ("wallets")
 export const assetGroups = {
-  list: async (): Promise<AssetGroup[]> => {
-    const { data } = await api.get('/asset-groups')
+  list: async (workspaceId?: string | null): Promise<AssetGroup[]> => {
+    const { data } = await api.get('/asset-groups', workspaceHeader(workspaceId))
     return data
   },
   create: async (group: Partial<AssetGroup> & { name: string }): Promise<AssetGroup> => {
@@ -1818,6 +1887,9 @@ export const assetGroups = {
   update: async (id: string, group: Partial<AssetGroup>): Promise<AssetGroup> => {
     const { data } = await api.patch(`/asset-groups/${id}`, group)
     return data
+  },
+  reorder: async (groupIds: string[]): Promise<void> => {
+    await api.put('/asset-groups/order', { group_ids: groupIds })
   },
   delete: async (id: string): Promise<void> => {
     await api.delete(`/asset-groups/${id}`)
@@ -2136,6 +2208,14 @@ export const accountantExport = {
 }
 
 // Admin
+
+/** What the admin screen may change on this instance (ADR 0045). */
+export interface InstanceMode {
+  managed: boolean
+  locked_settings: string[]
+  locked_providers: boolean
+}
+
 export interface ProviderSettingStatus {
   name: string
   configured: boolean
@@ -2205,6 +2285,10 @@ export const admin = {
   },
   accessLog: async (params?: { user_id?: string; page?: number; limit?: number }): Promise<AdminAccessLogList> => {
     const { data } = await api.get('/admin/access-log', { params })
+    return data
+  },
+  instanceMode: async (): Promise<InstanceMode> => {
+    const { data } = await api.get('/admin/instance-mode')
     return data
   },
   providerSettings: async (): Promise<ProviderSettingStatus[]> => {
@@ -2357,7 +2441,7 @@ export const search = {
 
 // App-level feature flags (whether optional modules like agents are mounted)
 export interface AppInfo {
-  features: { agents: boolean; tesouro_direto?: boolean; plugins?: boolean; document_ai?: boolean }
+  features: { agents: boolean; tesouro_direto?: boolean; performance_benchmarks?: boolean; plugins?: boolean; document_ai?: boolean }
 }
 
 export const info = {

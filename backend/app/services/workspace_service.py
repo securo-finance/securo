@@ -13,6 +13,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
+from app.core.row_security import bind_workspace
 from app.models.user import User
 from app.models.workspace import (
     MANAGER_VIRTUAL_ROLE,
@@ -75,6 +76,7 @@ async def create_personal_workspace_for_user(
     )
     session.add(workspace)
     await session.flush()
+    await bind_workspace(session, workspace.id, user.id)
 
     membership = WorkspaceMember(
         workspace_id=workspace.id,
@@ -249,6 +251,7 @@ async def create_workspace(
     )
     session.add(workspace)
     await session.flush()
+    await bind_workspace(session, workspace.id, creator.id)
     if self_membership:
         session.add(
             WorkspaceMember(
@@ -342,6 +345,13 @@ async def add_member(
     return member
 
 
+async def _lock_workspace(session: AsyncSession, workspace_id: uuid.UUID) -> None:
+    """Owner changes take turns, with each other and with a user deletion."""
+    await session.execute(
+        select(Workspace.id).where(Workspace.id == workspace_id).with_for_update()
+    )
+
+
 async def update_member_role(
     session: AsyncSession,
     workspace_id: uuid.UUID,
@@ -350,6 +360,7 @@ async def update_member_role(
 ) -> WorkspaceMember:
     if new_role not in WORKSPACE_ROLES:
         raise HTTPException(status_code=400, detail=f"Invalid role: {new_role}")
+    await _lock_workspace(session, workspace_id)
     member = await get_membership(session, workspace_id, user_id)
     if member is None:
         raise HTTPException(status_code=404, detail="Member not found")
@@ -440,6 +451,7 @@ async def remove_member(
     workspace_id: uuid.UUID,
     user_id: uuid.UUID,
 ) -> None:
+    await _lock_workspace(session, workspace_id)
     member = await get_membership(session, workspace_id, user_id)
     if member is None:
         raise HTTPException(status_code=404, detail="Member not found")

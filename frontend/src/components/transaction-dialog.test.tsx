@@ -1512,3 +1512,170 @@ describe('TransactionDialog duplicate draft conversion (#481)', () => {
     })
   })
 })
+
+it('renders loan breakdown and localized loan_kind badge for an unsecured student loan and saves allocation', async () => {
+  vi.spyOn(currencies, 'list').mockResolvedValue([])
+  vi.spyOn(payees, 'list').mockResolvedValue([])
+  vi.spyOn(groups, 'list').mockResolvedValue([])
+  const listAssets = vi.spyOn(assets, 'list').mockResolvedValue([])
+  vi.spyOn(mortgagePayments, 'get').mockResolvedValue({
+    payment_transaction_id: 'tx-1160-leg',
+    payment_amount: 250,
+    currency: 'USD',
+    payment_account_name: 'Zeta Bank',
+    allocations: [],
+    principal_total: 0,
+    interest_total: 0,
+    principal_percentage: 0,
+    interest_percentage: 0,
+  })
+  const replaceAllocations = vi.spyOn(mortgagePayments, 'replace').mockResolvedValue({
+    payment_transaction_id: 'tx-1160-leg',
+    payment_amount: 250,
+    currency: 'USD',
+    payment_account_name: 'Zeta Bank',
+    allocations: [],
+    principal_total: 200,
+    interest_total: 50,
+    principal_percentage: 80,
+    interest_percentage: 20,
+  })
+  const studentLoan = {
+    id: 'loan-student',
+    name: 'College Debt',
+    type: 'loan',
+    currency: 'USD',
+    secured_asset_id: null,
+    loan_kind: 'student',
+  } as Account
+
+  const { user } = renderWithProviders(
+    <TransactionDialog
+      open
+      onClose={vi.fn()}
+      transaction={transferLegFixture('pair-1160', { source: 'sync', transfer_pair_id: null })}
+      categories={[]}
+      categoryGroups={[]}
+      accounts={[...accountFixtures, studentLoan]}
+      onSave={vi.fn()}
+      loading={false}
+      error={null}
+    />,
+  )
+
+  await user.click(await screen.findByRole('button', { name: t('transactions.mortgageAllocation') }))
+
+  const breakdownSection = screen
+    .getByRole('button', { name: t('transactions.mortgageAllocation') })
+    .closest('section')!
+  expect(within(breakdownSection).getByText('College Debt')).toBeInTheDocument()
+  expect(within(breakdownSection).getByText(t('accounts.loanKinds.student'))).toBeInTheDocument()
+  expect(listAssets).not.toHaveBeenCalled()
+
+  await user.type(within(breakdownSection).getByLabelText(t('transactions.mortgagePrincipal')), '200')
+  await user.type(within(breakdownSection).getByLabelText(t('transactions.mortgageInterest')), '50')
+  await user.click(within(breakdownSection).getByRole('button', { name: t('transactions.saveMortgageAllocation') }))
+
+  expect(replaceAllocations).toHaveBeenCalledWith('tx-1160-leg', [
+    { loan_account_id: 'loan-student', principal_amount: 200, interest_amount: 50 },
+  ])
+})
+
+it('hides loan breakdown and skips mortgagePayments.get when loans use a different currency', () => {
+  vi.spyOn(currencies, 'list').mockResolvedValue([])
+  vi.spyOn(payees, 'list').mockResolvedValue([])
+  vi.spyOn(groups, 'list').mockResolvedValue([])
+  const getAllocations = vi.spyOn(mortgagePayments, 'get').mockResolvedValue({
+    payment_transaction_id: 'tx-1160-leg',
+    payment_amount: 250,
+    currency: 'USD',
+    payment_account_name: 'Zeta Bank',
+    allocations: [],
+    principal_total: 0,
+    interest_total: 0,
+    principal_percentage: 0,
+    interest_percentage: 0,
+  })
+  const eurStudentLoan = {
+    id: 'loan-student-eur',
+    name: 'Euro Student Loan',
+    type: 'loan',
+    currency: 'EUR',
+    secured_asset_id: null,
+    loan_kind: 'student',
+  } as Account
+
+  renderWithProviders(
+    <TransactionDialog
+      open
+      onClose={vi.fn()}
+      transaction={transferLegFixture('pair-1160', { source: 'sync', transfer_pair_id: null })}
+      categories={[]}
+      categoryGroups={[]}
+      accounts={[...accountFixtures, eurStudentLoan]}
+      onSave={vi.fn()}
+      loading={false}
+      error={null}
+    />,
+  )
+
+  expect(screen.queryByRole('button', { name: t('transactions.mortgageAllocation') })).not.toBeInTheDocument()
+  expect(getAllocations).not.toHaveBeenCalled()
+})
+
+it('shows propertyName for a secured loan and loan_kind badge for an unsecured loan together', async () => {
+  vi.spyOn(currencies, 'list').mockResolvedValue([])
+  vi.spyOn(payees, 'list').mockResolvedValue([])
+  vi.spyOn(groups, 'list').mockResolvedValue([])
+  vi.spyOn(assets, 'list').mockResolvedValue([{ id: 'property-1', name: 'Main House' } as never])
+  vi.spyOn(mortgagePayments, 'get').mockResolvedValue({
+    payment_transaction_id: 'tx-1160-leg',
+    payment_amount: 250,
+    currency: 'USD',
+    payment_account_name: 'Zeta Bank',
+    allocations: [],
+    principal_total: 0,
+    interest_total: 0,
+    principal_percentage: 0,
+    interest_percentage: 0,
+  })
+  const securedLoan = {
+    id: 'loan-1',
+    name: 'Mortgage',
+    type: 'loan',
+    currency: 'USD',
+    secured_asset_id: 'property-1',
+    loan_kind: 'mortgage',
+  } as Account
+  const personalLoan = {
+    id: 'loan-2',
+    name: 'Personal Credit',
+    type: 'loan',
+    currency: 'USD',
+    secured_asset_id: null,
+    loan_kind: 'personal',
+  } as Account
+
+  const { user } = renderWithProviders(
+    <TransactionDialog
+      open
+      onClose={vi.fn()}
+      transaction={transferLegFixture('pair-1160', { source: 'sync', transfer_pair_id: null })}
+      categories={[]}
+      categoryGroups={[]}
+      accounts={[...accountFixtures, securedLoan, personalLoan]}
+      onSave={vi.fn()}
+      loading={false}
+      error={null}
+    />,
+  )
+
+  await user.click(await screen.findByRole('button', { name: t('transactions.mortgageAllocation') }))
+
+  const breakdownSection = screen
+    .getByRole('button', { name: t('transactions.mortgageAllocation') })
+    .closest('section')!
+  expect(await within(breakdownSection).findByText(/Main House/)).toBeInTheDocument()
+  expect(within(breakdownSection).getByText(t('accounts.loanKinds.personal'))).toBeInTheDocument()
+  expect(within(breakdownSection).queryByText(t('accounts.loanKinds.mortgage'))).not.toBeInTheDocument()
+})

@@ -20,6 +20,7 @@ from app.models.mortgage_payment_allocation import (
 )
 from app.models.transaction import Transaction
 from app.services import mortgage_service
+from app.services.fx_rate_service import _resolve_rate
 
 router = APIRouter(prefix="/api/mortgage-payments", tags=["mortgage payments"])
 
@@ -100,7 +101,11 @@ async def _get_payment(
     if lock:
         # Replacing a breakdown deletes and re-inserts its rows; two saves of
         # the same payment must take turns, or both insert the same loan part.
-        query = query.with_for_update(of=Transaction)
+        # populate_existing ensures any ORM instance already in the identity map
+        # reflects the committed state observed once the lock is acquired.
+        query = query.with_for_update(of=Transaction).execution_options(
+            populate_existing=True
+        )
     result = await session.execute(query)
     return result.one_or_none()
 
@@ -154,17 +159,13 @@ async def get_mortgage_payment_allocations(
     return _payment_read(payment, payment_account, rows)
 
 
-@router.put("/{payment_id}")
-async def replace_mortgage_payment_allocations(
-    payment_id: uuid.UUID,
+async def _validate_payment_and_allocations(
+    session: AsyncSession,
+    workspace_id: uuid.UUID,
+    payment: Transaction,
+    payment_account: Account,
     data: AllocationReplace,
-    ctx: WorkspaceContext = Depends(current_writable_workspace),
-    session: AsyncSession = Depends(get_async_session),
-):
-    payment_row = await _get_payment(session, payment_id, ctx.workspace.id, lock=True)
-    if payment_row is None:
-        raise HTTPException(404, "Payment transaction not found")
-    payment, payment_account = payment_row
+) -> dict[uuid.UUID, Account]:
     if payment.type != "debit" or payment_account.type == "loan" or payment.amount <= 0:
         raise HTTPException(400, "Mortgage allocations require a debit from a non-loan account")
     if payment.status != "posted":
@@ -192,19 +193,57 @@ async def replace_mortgage_payment_allocations(
     result = await session.execute(
         select(Account).where(
             Account.id.in_(ids),
-            Account.workspace_id == ctx.workspace.id,
+            Account.workspace_id == workspace_id,
             Account.type == "loan",
         )
     )
     loans = {account.id: account for account in result.scalars().all()}
     if len(loans) != len(ids):
         raise HTTPException(400, "Every linked account must be a loan in this workspace")
-    if any(account.secured_asset_id is None for account in loans.values()):
-        raise HTTPException(400, "Every loan part must be linked to a property")
     if any(account.currency != payment.currency for account in loans.values()):
         raise HTTPException(400, "Payment and loan parts must use the same currency")
+    return loans
 
-    await _delete_allocations(session, payment_id, ctx.workspace.id)
+
+@router.put("/{payment_id}")
+async def replace_mortgage_payment_allocations(
+    payment_id: uuid.UUID,
+    data: AllocationReplace,
+    ctx: WorkspaceContext = Depends(current_writable_workspace),
+    session: AsyncSession = Depends(get_async_session),
+):
+    # Read scalar identifiers before any rollback, which expires session-bound ORM objects.
+    workspace_id = ctx.workspace.id
+    user_id = ctx.user_id
+    primary_currency = ctx.user.primary_currency
+
+    payment_row = await _get_payment(session, payment_id, workspace_id, lock=False)
+    if payment_row is None:
+        raise HTTPException(404, "Payment transaction not found")
+    payment, payment_account = payment_row
+    # Reject invalid requests before pre-warming FX rates so malformed 400s
+    # never initiate an on-demand FX sync.
+    await _validate_payment_and_allocations(
+        session, workspace_id, payment, payment_account, data
+    )
+    initial_currency, initial_date = payment.currency, payment.date
+    if initial_currency != primary_currency:
+        # Pre-warm FX rates outside the FOR UPDATE transaction because
+        # sync_rates commits its session even when zero rates are synced.
+        await _resolve_rate(session, initial_currency, primary_currency, initial_date)
+    # End any open pre-warm read transaction cleanly before acquiring FOR UPDATE.
+    if session.in_transaction():
+        await session.rollback()
+
+    payment_row = await _get_payment(session, payment_id, workspace_id, lock=True)
+    if payment_row is None:
+        raise HTTPException(404, "Payment transaction not found")
+    payment, payment_account = payment_row
+    loans = await _validate_payment_and_allocations(
+        session, workspace_id, payment, payment_account, data
+    )
+
+    await _delete_allocations(session, payment_id, workspace_id)
 
     allocation_rows: list[tuple[MortgagePaymentAllocation, Account]] = []
     for item in data.allocations:
@@ -214,14 +253,17 @@ async def replace_mortgage_payment_allocations(
         if mortgage_service.posts_principal(
             loan, item.principal_amount, payment.date, opening_date
         ):
-            loan_tx = mortgage_service.principal_entry(
-                loan, ctx.user_id, payment, item.principal_amount
+            loan_tx = await mortgage_service.create_principal_entry(
+                session,
+                loan,
+                user_id,
+                payment,
+                item.principal_amount,
+                allow_fetch=False,
             )
-            session.add(loan_tx)
-            await session.flush()
             loan_tx_id = loan_tx.id
         allocation = MortgagePaymentAllocation(
-            workspace_id=ctx.workspace.id,
+            workspace_id=workspace_id,
             payment_transaction_id=payment_id,
             loan_account_id=loan.id,
             principal_amount=item.principal_amount,

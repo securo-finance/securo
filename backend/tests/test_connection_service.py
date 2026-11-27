@@ -8792,6 +8792,115 @@ async def test_sync_upgrades_pending_to_posted_when_twin_arrives(
     assert rows[0].reporting_date_override == date(2026, 3, 31)
 
 
+def _sync_patches(mock_provider):
+    return (
+        patch("app.services.connection_service.get_provider", return_value=mock_provider),
+        patch("app.services.connection_service.detect_transfer_pairs", new_callable=AsyncMock),
+        patch("app.services.connection_service.stamp_primary_amount", new_callable=AsyncMock),
+        patch("app.services.connection_service.apply_rules_to_transaction", new_callable=AsyncMock),
+    )
+
+
+def _eur_checking_provider(account_id: str) -> AsyncMock:
+    mock_provider = AsyncMock()
+    mock_provider.refresh_credentials = AsyncMock(return_value={"token": "t"})
+    mock_provider.get_accounts = AsyncMock(return_value=[
+        AccountData(
+            external_id=account_id, name="Girokonto",
+            type="checking", balance=Decimal("0"), currency="EUR",
+        ),
+    ])
+    return mock_provider
+
+
+@pytest.mark.parametrize(
+    "stored, booked",
+    [
+        ("mandatereference:,creditorid:,remittanceinformation:REWE", "REWE"),
+        ("mandatereference:,creditorid:,remittanceinformation:REWE SAGT", "REWE SAGT"),
+        (
+            "mandatereference:4M5J,creditorid:DE98ZZZ09999999999,"
+            "remittanceinformation:REWE SAGT DANKE",
+            "REWE SAGT DANKE",
+        ),
+    ],
+)
+@pytest.mark.asyncio
+async def test_sync_settles_a_pending_row_stored_with_the_ing_sepa_prefix(
+    session: AsyncSession, test_user, test_workspace, stored, booked,
+):
+    """A pending row stored before #1910 still carries ING's SEPA key prefix.
+    When its booked entry arrives with the clean text, the prefix must not
+    keep the two apart: short texts fell under the overlap threshold."""
+    conn = await _make_connection(session, test_user.id, "ING Prefix Bank")
+    mock_provider = _eur_checking_provider("ing-acc-1")
+    mock_provider.get_transactions = AsyncMock(return_value=[
+        TransactionData(
+            external_id="ing-pending", description=stored,
+            amount=Decimal("12.40"), date=date(2026, 11, 23),
+            type="debit", currency="EUR", status="pending",
+        ),
+    ])
+    p1, p2, p3, p4 = _sync_patches(mock_provider)
+    with p1, p2, p3, p4:
+        await sync_connection(session, conn.id, test_workspace.id, test_user.id)
+
+    mock_provider.get_transactions = AsyncMock(return_value=[
+        TransactionData(
+            external_id="ing-booked", description=booked,
+            amount=Decimal("12.40"), date=date(2026, 11, 23),
+            type="debit", currency="EUR", status="posted",
+        ),
+    ])
+    p1, p2, p3, p4 = _sync_patches(mock_provider)
+    with p1, p2, p3, p4:
+        await sync_connection(session, conn.id, test_workspace.id, test_user.id)
+
+    rows = (await session.execute(
+        select(Transaction).where(
+            Transaction.user_id == test_user.id,
+            Transaction.source == "sync",
+        )
+    )).scalars().all()
+    assert len(rows) == 1
+    assert rows[0].status == "posted"
+    assert rows[0].external_id == "ing-booked"
+
+
+@pytest.mark.asyncio
+async def test_sync_keeps_a_prefixed_pending_row_apart_from_another_merchant(
+    session: AsyncSession, test_user, test_workspace,
+):
+    """Dropping the prefix for the comparison does not loosen it: a booked
+    entry from another merchant on the same day and amount stays its own row."""
+    conn = await _make_connection(session, test_user.id, "ING Other Merchant Bank")
+    mock_provider = _eur_checking_provider("ing-acc-2")
+    mock_provider.get_transactions = AsyncMock(return_value=[
+        TransactionData(
+            external_id="ing-pending-2",
+            description="mandatereference:,creditorid:,remittanceinformation:REWE",
+            amount=Decimal("12.40"), date=date(2026, 11, 23),
+            type="debit", currency="EUR", status="pending",
+        ),
+        TransactionData(
+            external_id="ing-booked-2", description="LIDL",
+            amount=Decimal("12.40"), date=date(2026, 11, 23),
+            type="debit", currency="EUR", status="posted",
+        ),
+    ])
+    p1, p2, p3, p4 = _sync_patches(mock_provider)
+    with p1, p2, p3, p4:
+        await sync_connection(session, conn.id, test_workspace.id, test_user.id)
+
+    rows = (await session.execute(
+        select(Transaction).where(
+            Transaction.user_id == test_user.id,
+            Transaction.source == "sync",
+        )
+    )).scalars().all()
+    assert len(rows) == 2
+
+
 @pytest.mark.asyncio
 async def test_stale_pending_twin_keeps_the_posted_card_ending(
     session: AsyncSession, test_user, test_workspace,

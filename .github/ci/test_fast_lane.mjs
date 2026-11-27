@@ -437,21 +437,21 @@ scenario('the closing keywords of the description reach the squash commit',
       'the title keeps the pull request number GitHub appends by default');
   });
 
-// No keyword in the description means there is nothing to carry: the call
-// stays as it was and GitHub builds its default message, which already covers
-// a keyword written in a commit. Neither field may be sent: passing either one
-// replaces that message instead of appending to it.
-scenario('a description with no closing keyword leaves the default message',
+// No keyword in the description still sends both fields. Left out, GitHub
+// builds the message from every commit of the branch, trailers included, and
+// #1903 and #1904 landed on main with `Co-authored-by` lines that way. The
+// empty string is what replaces that message: `undefined` would fall back to it.
+scenario('a description with no closing keyword sends an empty message',
   async () => {
     const { merged, mergeParams, log } = await evaluate({
       threads: [],
       body: '## Summary\n\nA cleanup with nothing to close.',
     });
     assert.ok(merged, `expected a merge, got: ${log}`);
-    assert.equal(mergeParams.commit_title, undefined,
-      'the title is not sent alone: it would replace the default message');
-    assert.equal(mergeParams.commit_message, undefined,
-      'no closing keyword means GitHub builds the message as before');
+    assert.match(mergeParams.commit_title, /\(#42\)$/,
+      'the title is sent even with nothing to close');
+    assert.strictEqual(mergeParams.commit_message, '',
+      'an empty message keeps the commit messages and their trailers out');
   });
 
 // The bug of #221: the lane knew sync and money only by the file name, and
@@ -609,6 +609,98 @@ scenario('a service named for a sync still refuses as sync or plugin', async () 
   });
   assert.ok(!merged, `expected a refusal, got a merge: ${log}`);
   assert.ok(log.includes('(sync or plugin)'), `expected the old reason: ${log}`);
+});
+
+// A backend test's name says what it checks. "author" in
+// test_invoice_schedule_author.py held #1900 with no auth code in it.
+for (const file of [
+  'backend/tests/test_invoice_schedule_author.py',
+  'backend/tests/test_auth_api.py',
+  'backend/tests/api_contract/test_access_tokens.py',
+  // The word is still compared regardless of case; only the directory is not.
+  'backend/tests/test_AUTH_api.py',
+]) {
+  scenario(`${file} is not held by the auth word rule`, async () => {
+    const { merged, log } = await evaluate({ threads: [], files: [{ filename: file }] });
+    assert.ok(merged, `expected a merge, got: ${log}`);
+  });
+}
+
+// Only the word rule skips tests: the code a test sits beside is still read,
+// the same word outside backend/tests/ still refuses, and the path rules
+// still read a test.
+for (const [file, what] of [
+  ['backend/app/core/auth.py', 'auth or secrets'],
+  ['backend/app/services/access_token_service.py', 'auth or credentials'],
+  ['frontend/src/components/access-token-dialog.test.tsx', 'auth or credentials'],
+  ['backend/testsuite/test_auth.py', 'auth or credentials'],
+  // The directory is matched case sensitively, the word is not: these are not
+  // the test directory, and on main they were held.
+  ['backend/Tests/test_auth.py', 'auth or credentials'],
+  ['Backend/tests/test_auth.py', 'auth or credentials'],
+  ['backend/tests/test_plugin_runner.py', 'executes third-party code'],
+]) {
+  scenario(`${file} still refuses as ${what}`, async () => {
+    const { merged, log } = await evaluate({ threads: [], files: [{ filename: file }] });
+    assert.ok(!merged, `expected a refusal, got a merge: ${log}`);
+    assert.ok(log.includes(`(${what})`), `expected the reason "${what}": ${log}`);
+  });
+}
+
+// The tests that are a gate themselves stay held by name: a pull request that
+// only loosens or deletes one of them would otherwise merge on its own.
+for (const file of [
+  'backend/tests/test_write_permission_coverage.py',
+  'backend/tests/test_write_permission_gate.py',
+  'backend/tests/test_oidc_auth.py',
+  'backend/tests/test_passkeys.py',
+  'backend/tests/test_access_tokens.py',
+  'backend/tests/test_mcp_jwt_secret.py',
+  'backend/tests/test_instance_secrets.py',
+  'backend/tests/test_oauth_state.py',
+]) {
+  scenario(`${file} refuses as a security test`, async () => {
+    const { merged, log } = await evaluate({ threads: [], files: [{ filename: file }] });
+    assert.ok(!merged, `expected a refusal, got a merge: ${log}`);
+    assert.ok(log.includes('(security test)'), `expected the reason "security test": ${log}`);
+  });
+}
+
+// Deleting one is refused too: the lane reads the path, not the change.
+scenario('a deleted write permission sweep refuses', async () => {
+  const { merged, log } = await evaluate({
+    threads: [],
+    files: [{ filename: 'backend/tests/test_write_permission_coverage.py', status: 'removed' }],
+  });
+  assert.ok(!merged, `expected a refusal, got a merge: ${log}`);
+  assert.ok(log.includes('(security test)'), log);
+});
+
+// A test that comes with the code it covers is still held by that code.
+scenario('a test beside an auth file still refuses for the auth file', async () => {
+  const { merged, log } = await evaluate({
+    threads: [],
+    files: [
+      { filename: 'backend/tests/test_access_token_service.py' },
+      { filename: 'backend/app/services/access_token_service.py' },
+    ],
+  });
+  assert.ok(!merged, `expected a refusal, got a merge: ${log}`);
+  assert.ok(log.includes('access_token_service.py'), log);
+});
+
+// Renaming a file into backend/tests/ does not take it out of the rule: the
+// old path is read too.
+scenario('an auth file renamed into backend/tests still refuses', async () => {
+  const { merged, log } = await evaluate({
+    threads: [],
+    files: [{
+      filename: 'backend/tests/fixtures/access_token_service.py',
+      previous_filename: 'backend/app/services/access_token_service.py',
+    }],
+  });
+  assert.ok(!merged, `expected a refusal, got a merge: ${log}`);
+  assert.ok(log.includes('(auth or credentials)'), log);
 });
 
 scenario('a frontend page outside every group still merges', async () => {

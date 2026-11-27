@@ -1,12 +1,14 @@
 import uuid
 from typing import Optional
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+from app.schemas.category import ICON_MAX_LENGTH
 
 
 class AssetGroupBase(BaseModel):
     name: str
-    icon: str = "wallet"
+    icon: str = Field("wallet", max_length=ICON_MAX_LENGTH)
     color: str = "#0EA5E9"
     position: int = 0
 
@@ -17,9 +19,20 @@ class AssetGroupCreate(AssetGroupBase):
 
 class AssetGroupUpdate(BaseModel):
     name: Optional[str] = None
-    icon: Optional[str] = None
+    icon: Optional[str] = Field(None, max_length=ICON_MAX_LENGTH)
     color: Optional[str] = None
     position: Optional[int] = None
+
+
+class AssetGroupReorder(BaseModel):
+    group_ids: list[uuid.UUID] = Field(min_length=1)
+
+    @field_validator("group_ids")
+    @classmethod
+    def group_ids_must_be_unique(cls, group_ids: list[uuid.UUID]) -> list[uuid.UUID]:
+        if len(group_ids) != len(set(group_ids)):
+            raise ValueError("group_ids must be unique")
+        return group_ids
 
 
 class AssetGroupRead(AssetGroupBase):

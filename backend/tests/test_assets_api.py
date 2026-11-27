@@ -88,6 +88,30 @@ async def test_create_asset(client: AsyncClient, auth_headers: dict):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("value", ["market", "marketprice", "Manual", ""])
+async def test_create_refuses_a_valuation_method_the_product_does_not_use(
+    client: AsyncClient, auth_headers: dict, value: str
+):
+    # Anything but the three known values would be stored and never priced:
+    # the daily sweep and the refresh only look for "market_price", and the
+    # ticker/units validation keys off it too, so a typo quietly disables it.
+    response = await client.post(
+        "/api/assets",
+        headers=auth_headers,
+        json={
+            "name": f"Unpriceable {value!r}",
+            "type": "investment",
+            "currency": "USD",
+            "valuation_method": value,
+        },
+    )
+
+    assert response.status_code == 422
+    listed = await client.get("/api/assets", headers=auth_headers)
+    assert all(a["name"] != f"Unpriceable {value!r}" for a in listed.json())
+
+
+@pytest.mark.asyncio
 async def test_create_asset_with_external_id_returns_it_via_rest(
     client: AsyncClient, auth_headers: dict
 ):
@@ -239,6 +263,25 @@ async def test_update_asset(client: AsyncClient, auth_headers: dict, test_asset_
     )
     assert response.status_code == 200
     assert response.json()["name"] == "Updated House"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("value", ["market", "marketprice", "Manual", ""])
+async def test_update_refuses_a_valuation_method_the_product_does_not_use(
+    client: AsyncClient, auth_headers: dict, test_asset_api: Asset, value: str
+):
+    # The edit form always sends valuation_method back, so an asset holding a
+    # value outside the set would make every later edit fail. Refusing it here
+    # keeps the row as it was instead of writing an unpriced one.
+    response = await client.patch(
+        f"/api/assets/{test_asset_api.id}",
+        headers=auth_headers,
+        json={"valuation_method": value},
+    )
+
+    assert response.status_code == 422
+    unchanged = await client.get(f"/api/assets/{test_asset_api.id}", headers=auth_headers)
+    assert unchanged.json()["valuation_method"] == "manual"
 
 
 @pytest.mark.asyncio

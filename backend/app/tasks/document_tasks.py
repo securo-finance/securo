@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from sqlalchemy.pool import NullPool
 
 from app.core.config import get_settings
+from app.core.row_security import maker_for_row
 from app.worker import celery_app
 
 
@@ -28,7 +29,8 @@ async def _extract(extraction_id: uuid.UUID) -> None:
     engine = create_async_engine(get_settings().database_url, poolclass=NullPool)
     session_maker = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
     try:
-        async with session_maker() as session:
+        maker = await maker_for_row(session_maker, "document_extractions", extraction_id)
+        async with maker() as session:
             await run_extraction(session, extraction_id)
     finally:
         await engine.dispose()

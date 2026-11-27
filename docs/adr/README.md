@@ -39,6 +39,7 @@ Each file here records one decision about how Securo is built: what we chose, wh
 | [0022](0022-provider-reserved-balances.md) | Provider reserved balances are shown, never summed into a total |
 | [0023](0023-new-bank-providers-are-plugins.md) | New bank sync providers are plugins; the core keeps the pipeline |
 | [0024](0024-client-ip-behind-trusted-proxies.md) | The client IP is read through trusted proxies only |
+| [0025](0025-performance-benchmark-sources.md) | Performance benchmarks come from Yahoo Finance, the Central Bank of Brazil and Ipeadata |
 | [0026](0026-plugin-icons-outside-the-catalog.md) | Installed plugins show their catalog icon, read from the catalog only while one is on screen |
 | [0027](0027-amount-in-account-currency.md) | A row's value in its account's currency has its own column |
 | [0028](0028-plugin-reports.md) | Plugins add reports: a query Securo runs, or their own code in the runner, drawn by Securo |
@@ -55,5 +56,10 @@ Each file here records one decision about how Securo is built: what we chose, wh
 | [0040](0040-viewer-currency-reads-own-amount.md) | A row already in the viewer's currency reads as its own amount |
 | [0041](0041-in-app-notifications.md) | Notifications live inside the app, one row per person, and the first kinds are read from stored state |
 | [0042](0042-admin-actions-on-accounts-leave-a-record.md) | An administrator manages accounts, never becomes one, and every action leaves a record the affected side can read |
+| [0043](0043-row-security.md) | Postgres can hold the workspace boundary too |
 | [0044](0044-email-password-recovery.md) | Password recovery goes out over the instance's own SMTP server, behind one switch |
+| [0045](0045-managed-instance.md) | A managed instance keeps its own settings read-only for the customer's admin |
 | [0046](0046-email-provider-and-templates.md) | The mail path is SMTP or a hosted API, and an admin may rewrite the recovery message |
+| [0047](0047-deleting-a-user-keeps-workspace-data.md) | Deleting a user keeps what they added to other people's workspaces |
+| [0048](0048-required-secret-key.md) | An operator can require a secret key of their own |
+| [0050](0050-instance-settings-leave-a-record.md) | Instance settings an administrator changes leave a record, with no account as its target |

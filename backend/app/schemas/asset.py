@@ -1,9 +1,17 @@
 import uuid
 from datetime import date as _date, datetime
 from decimal import Decimal
-from typing import Optional
+from typing import Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+from app.core.money import bounded_asset_value
+
+#: How an asset's current value is kept: recorded by hand, projected by a
+#: growth rule, or read from the market through its ticker. The jobs, the
+#: import and the screens know only these three, so anything else is refused
+#: when it arrives instead of being stored and never priced.
+AssetValuationMethod = Literal["manual", "growth_rule", "market_price"]
 
 
 class AssetCreate(BaseModel):
@@ -11,7 +19,7 @@ class AssetCreate(BaseModel):
     type: str
     currency: str = "USD"
     units: Optional[Decimal] = None
-    valuation_method: str = "manual"
+    valuation_method: AssetValuationMethod = "manual"
     purchase_date: Optional[_date] = None
     purchase_price: Optional[Decimal] = None
     sell_date: Optional[_date] = None
@@ -53,7 +61,7 @@ class AssetUpdate(BaseModel):
     type: Optional[str] = None
     currency: Optional[str] = None
     units: Optional[Decimal] = None
-    valuation_method: Optional[str] = None
+    valuation_method: Optional[AssetValuationMethod] = None
     purchase_date: Optional[_date] = None
     purchase_price: Optional[Decimal] = None
     sell_date: Optional[_date] = None
@@ -224,9 +232,88 @@ class MarketSymbolMatch(BaseModel):
     quote_type: Optional[str] = None
 
 
+class HoldingTradeImportIssueRead(BaseModel):
+    """A connected holding whose provider trades could not be imported:
+    the history the provider returned doesn't add up to the share count it
+    reports (``incomplete``), or it returned none (``no_history``)."""
+
+    connection_id: uuid.UUID
+    asset_id: uuid.UUID
+    name: str
+    ticker: Optional[str] = None
+    status: Literal["incomplete", "no_history"]
+
+
+class HoldingTradeImportRead(BaseModel):
+    """Whether bank sync imports the trades behind connected holdings."""
+
+    available: bool
+    enabled: bool
+    issues: list[HoldingTradeImportIssueRead] = Field(default_factory=list)
+
+
+class BenchmarkMatch(BaseModel):
+    """A searchable comparison index exposed by a benchmark provider."""
+
+    symbol: str
+    name: str
+    exchange: Optional[str] = None
+    provider: str
+
+
+BenchmarkSourceError = Literal["unavailable", "rate_limited", "no_data", "no_fx_rate"]
+
+
+class BenchmarkPerformanceRead(BaseModel):
+    """Final metrics for one of the requested comparison indices."""
+
+    key: str
+    symbol: str
+    provider: str
+    #: First date this benchmark is compared from: the portfolio's start, or
+    #: the benchmark's first close when its history begins later. None when
+    #: it has no usable data. Its return and excess cover this date to the end.
+    start_date: Optional[_date] = None
+    benchmark_return: Optional[float] = None
+    excess_return: Optional[float] = None
+    source_error: Optional[BenchmarkSourceError] = None
+
+
+class PortfolioPerformancePoint(BaseModel):
+    date: _date
+    portfolio: float
+    #: The first requested benchmark's value; None before its start or when it failed.
+    benchmark: Optional[float] = None
+    #: Only benchmarks that have started by this date, rebased to 0 on their start.
+    benchmarks: dict[str, float] = Field(default_factory=dict)
+
+
+class PortfolioPerformanceRead(BaseModel):
+    benchmark_symbol: Optional[str] = None
+    benchmark_provider: Optional[str] = None
+    period: str
+    start_date: _date
+    end_date: _date
+    portfolio_return: Optional[float] = None
+    benchmark_return: Optional[float] = None
+    excess_return: Optional[float] = None
+    benchmarks: list[BenchmarkPerformanceRead] = Field(default_factory=list)
+    points: list[PortfolioPerformancePoint] = Field(default_factory=list)
+
+
 class AssetValueCreate(BaseModel):
     amount: Decimal
     date: _date
+
+    @field_validator("amount")
+    @classmethod
+    def check_amount_bounds(cls, value: Decimal) -> Decimal:
+        # The column's own ceiling, both sides, the same rule the values the
+        # backend works out follow (ADR 0008). Without it a larger value
+        # reached the driver and came back as a raw database error instead of
+        # a 422 (issue #642); the negative side and `-Infinity` had the same
+        # hole.
+        return bounded_asset_value(value)
 
 
 class AssetValueRead(BaseModel):
