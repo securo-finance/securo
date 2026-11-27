@@ -137,7 +137,9 @@ async def create(
 
     if manifest.api_scopes:
         # The token shows in the workspace's access tokens, named after the
-        # plugin, and is revoked with the connection.
+        # plugin, and is revoked with the connection. It stays in this
+        # transaction: the connection and its bank row commit with it, so the
+        # quota lock taken above covers the insert it guards (ADR 0049).
         token, raw = await access_token_service.create_token(
             session,
             workspace_id=workspace_id,
@@ -146,6 +148,7 @@ async def create(
             name=f"{localized(manifest.name, lang)}: {name}"[:100],
             scopes=[s.scope for s in manifest.api_scopes],
             expires_in_days=None,
+            commit=False,
         )
         secrets[_API_TOKEN] = raw
         token_id: uuid.UUID | None = token.id

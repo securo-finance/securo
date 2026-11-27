@@ -8,15 +8,22 @@ first, keyed on the owner (workspaces, connections) or on the workspace
 the transaction that passed a gate holds it until it ends, and a parallel one
 cannot take the same key.
 """
+import asyncio
 import uuid
+from unittest.mock import patch
 
 import pytest
+from fastapi import HTTPException
 from sqlalchemy import text
 
 from app.core.config import get_settings
 from app.models.user import User
 from app.models.workspace import Workspace
-from app.services import quota_service
+from app.models.workspace_plugin import WorkspacePlugin
+from app.plugins import connections
+from app.services import access_token_service, quota_service
+from tests import test_provider_plugins as provider_plugins
+from tests.test_code_plugins import PLUGIN
 
 #: How many advisory locks this very transaction holds for `key`, computed the
 #: same way `pg_advisory_xact_lock(hashtext(key))` stores it: the 8-byte key is
@@ -122,3 +129,100 @@ async def test_no_lock_when_the_limit_does_not_apply(postgres_sessions, unmanage
         await quota_service.check_new_bank_connection(session, uuid.uuid4())
         await quota_service.check_new_member(session, workspace.id, user.id)
         assert await session.scalar(_HELD_ANY) == 0
+
+
+async def _plugin_workspace(maker, **limits) -> tuple[uuid.UUID, uuid.UUID]:
+    """A workspace with the provider plugin installed and a limit on connections."""
+    async with maker() as session:
+        user = User(
+            id=uuid.uuid4(),
+            email=f"{uuid.uuid4().hex}@example.com",
+            hashed_password="x",
+            is_active=True,
+            is_verified=True,
+        )
+        session.add(user)
+        await session.flush()
+        workspace = Workspace(id=uuid.uuid4(), name="W", kind="personal", created_by_user_id=user.id)
+        session.add(workspace)
+        await session.flush()
+        session.add(
+            WorkspacePlugin(
+                workspace_id=workspace.id,
+                plugin_id=PLUGIN,
+                name={"en": "Ledger"},
+                version="1.0.0",
+                commit="c0ffee",
+                manifest=provider_plugins._provider_manifest(),
+            )
+        )
+        await quota_service.set_quota(session, user.id, limits)
+        await session.commit()
+        return workspace.id, user.id
+
+
+async def test_a_plugin_connection_cannot_pass_the_limit_while_its_token_is_created(postgres_sessions, managed):
+    """The lock taken before the count still covers the insert after the token.
+
+    The plugin creates its API token between the count and the connection
+    row. Committed on its own, that token releases the lock before this
+    request inserts, and a parallel one counts first: both pass. The token is
+    made inside the connection's transaction (`commit=False`), so the second
+    waits and then counts the row.
+    """
+    maker = postgres_sessions
+    workspace_id, user_id = await _plugin_workspace(maker, max_bank_connections=1)
+
+    real_lock = quota_service._lock
+    real_create_token = access_token_service.create_token
+    at_token = asyncio.Event()
+    at_gate = asyncio.Event()
+    gate_calls = 0
+
+    async def counting_lock(session, key):
+        nonlocal gate_calls
+        gate_calls += 1
+        if gate_calls == 2:
+            at_gate.set()
+        await real_lock(session, key)
+
+    async def pausing_create_token(*args, **kwargs):
+        # Hold the first request right where the plugin's token is made, and
+        # only then let the second one reach its own count.
+        created = await real_create_token(*args, **kwargs)
+        at_token.set()
+        await asyncio.wait_for(at_gate.wait(), 30)
+        return created
+
+    async def connect(waits_for=None):
+        if waits_for is not None:
+            await waits_for.wait()
+        async with maker() as session:
+            try:
+                return await connections.create(
+                    session,
+                    workspace_id=workspace_id,
+                    user_id=user_id,
+                    can_write=True,
+                    plugin_id=PLUGIN,
+                    integration_key="keys",
+                    name="Ledger",
+                    values={"api_key": "sk_live_1"},
+                    lang="en",
+                )
+            finally:
+                await session.rollback()
+
+    with patch.object(quota_service, "_lock", counting_lock), patch.object(
+        access_token_service, "create_token", pausing_create_token
+    ):
+        first = asyncio.create_task(connect())
+        second = asyncio.create_task(connect(at_token))
+        results = await asyncio.wait_for(asyncio.gather(first, second, return_exceptions=True), 60)
+
+    refused = [r for r in results if isinstance(r, HTTPException)]
+    assert len(refused) == 1, results
+    assert refused[0].status_code == 403 and isinstance(refused[0].detail, dict)
+    assert refused[0].detail["counter"] == "max_bank_connections"
+    async with maker() as check:
+        assert await quota_service.count_bank_connections(check, user_id) == 1

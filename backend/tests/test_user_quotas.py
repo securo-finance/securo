@@ -12,13 +12,17 @@ import pytest
 from fastapi import HTTPException
 from httpx import AsyncClient
 from pydantic import SecretStr
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
+from app.models.access_token import AccessToken
 from app.models.account import Account
 from app.models.bank_connection import BankConnection
+from app.models.plugin_connection import PluginConnection
 from app.models.user import User
 from app.models.workspace import Workspace, WorkspaceMember
+from app.plugins import connections
 from app.providers.base import ConnectionData
 from app.services import quota_service, workspace_service
 from app.services.connection_service import handle_oauth_callback
@@ -238,6 +242,28 @@ async def test_the_plugin_path_counts_when_room_is_left(managed, session: AsyncS
     await _limit(session, user_id, max_bank_connections=1)
     await provider_plugins._provider_connection(session, ids)
     assert await quota_service.count_bank_connections(session, user_id) == 1
+
+
+@pytest.mark.asyncio
+async def test_a_connection_that_fails_takes_its_token_with_it(
+    managed, session: AsyncSession, ids, provider_catalog, plugin_runner
+):
+    """The plugin's token is created in the connection's transaction.
+
+    A token committed on its own would outlive a connection that never
+    happens, and would release the quota lock taken before it.
+    """
+    workspace_id, user_id = ids
+    await _limit(session, user_id, max_bank_connections=5)
+    await provider_plugins._apply(session, workspace_id, user_id)
+    with patch.object(connections, "_add_bank", side_effect=RuntimeError("the bank insert failed")):
+        with pytest.raises(RuntimeError):
+            await provider_plugins._connect(session, workspace_id, user_id)
+    await session.rollback()
+    tokens = await session.scalars(select(AccessToken).where(AccessToken.workspace_id == workspace_id))
+    assert list(tokens) == []
+    rows = await session.scalars(select(PluginConnection).where(PluginConnection.workspace_id == workspace_id))
+    assert list(rows) == []
 
 
 # --- Fit check -----------------------------------------------------------------
