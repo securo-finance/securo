@@ -14,9 +14,9 @@ from app.models.asset_group import AssetGroup
 from app.models.goal import Goal
 from app.models.user import User
 from app.schemas.goal import GoalCreate, GoalRead, GoalSummary, GoalUpdate
-from app.services.asset_service import _compute_current_value, _get_latest_value, get_asset_values_at
+from app.services.asset_service import _compute_current_value, _get_value_as_of, get_asset_values_at
 from app.services.dashboard_service import _account_balance_at, _get_open_accounts
-from app.services.account_service import get_account_name
+from app.services.account_service import get_account_name, get_account_with_balances
 from app.services.fx_rate_service import convert
 
 
@@ -71,14 +71,22 @@ async def _resolve_current_amount(
     if goal.tracking_type == "account" and goal.account_id:
         account = await session.get(Account, goal.account_id)
         if account:
-            # Use dashboard's balance logic so manual accounts are computed correctly
-            bal = Decimal(str(await _account_balance_at(session, account, app_today())))
+            # The balance the Accounts screen shows for this account, so a card
+            # goal reads the debt with its liability sign and pending card rows
+            # included (#640). A closed account is not listed there; fall back
+            # to the posted balance for it.
+            listed = await get_account_with_balances(session, account.id, workspace_id)
+            if listed is not None:
+                bal = Decimal(str(listed["current_balance"]))
+            else:
+                bal = Decimal(str(await _account_balance_at(session, account, app_today())))
             return await _convert_amount(session, bal, account.currency, goal_currency)
         return goal.current_amount
     elif goal.tracking_type == "asset" and goal.asset_id:
         asset = await session.get(Asset, goal.asset_id)
         if asset:
-            latest = await _get_latest_value(session, asset.id)
+            # A valuation dated after today has not happened yet (#640).
+            latest = await _get_value_as_of(session, asset.id, app_today())
             value = _compute_current_value(asset, latest)
             if value is not None:
                 return await _convert_amount(session, Decimal(str(value)), asset.currency, goal_currency)
@@ -86,8 +94,11 @@ async def _resolve_current_amount(
     elif goal.tracking_type == "asset_group" and goal.asset_group_id:
         group = await session.get(AssetGroup, goal.asset_group_id)
         if group:
+            # Valued at today, like the dashboard and the net worth report:
+            # a valuation dated in the future does not count yet (#640).
             assets_by_currency, _ = await get_asset_values_at(
-                session, workspace_id, by_workspace=True, group_ids=[group.id]
+                session, workspace_id, as_of_date=app_today(), by_workspace=True,
+                group_ids=[group.id],
             )
             return await _sum_native_totals_in_currency(session, assets_by_currency, goal_currency)
         return goal.current_amount
@@ -108,8 +119,11 @@ async def _resolve_current_amount(
             bal = Decimal(str(await _account_balance_at(session, acc, today)))
             total += await _convert_amount(session, bal, acc.currency, goal_currency)
 
-        # Add asset values (scoped by the goal's workspace).
-        assets_by_currency, _ = await get_asset_values_at(session, workspace_id, by_workspace=True)
+        # Add asset values (scoped by the goal's workspace), at today like the
+        # dashboard's net worth, so a future-dated valuation stays out (#640).
+        assets_by_currency, _ = await get_asset_values_at(
+            session, workspace_id, as_of_date=today, by_workspace=True
+        )
         total += await _sum_native_totals_in_currency(session, assets_by_currency, goal_currency)
 
         return total
@@ -191,7 +205,10 @@ def _compute_on_track(
     # actual_progress = how much has been saved since creation
     total_needed = target - initial_amount
     if total_needed <= 0:
-        return "achieved"
+        # The baseline was already at or past the target but the current amount
+        # is below it (a card balance recorded as positive debt before it was
+        # read with its liability sign): the goal has fallen behind, not been met.
+        return "behind"
 
     elapsed_days = (today - start).days
     expected_progress = total_needed * Decimal(str(elapsed_days / total_days))
