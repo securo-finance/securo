@@ -1,7 +1,7 @@
 """Asset values the backend works out stay inside what the column holds.
 
-`asset_values.amount` keeps 6 decimals and its own width — `Numeric(15, 6)`
-today, 9 integer digits, fewer than the money columns. A growth rule
+`asset_values.amount` keeps 6 decimals and its own width — `Numeric(19, 6)`
+today, 13 integer digits, read from the model. A growth rule
 compounded for years, a provider balance in a weak currency or units × price
 can go past that while every input fits; unbounded, the write failed at flush
 with a raw `NumericValueOutOfRangeError` — a 500 instead of an answer (issue
