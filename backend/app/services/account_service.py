@@ -26,6 +26,7 @@ from app.models.transaction import Transaction
 from app.schemas.account import (
     AccountCardLabelUpdate,
     AccountCreate,
+    AccountOrdering,
     AccountUpdate,
     LoanBalanceUpdate,
 )
@@ -698,6 +699,43 @@ async def create_account(
     await session.commit()
     await session.refresh(account)
     return account
+
+
+async def bulk_order_accounts(
+    session: AsyncSession,
+    workspace_id: uuid.UUID,
+    ordering: list[AccountOrdering],
+) -> None:
+    account_ids = [item.account_id for item in ordering]
+    if len(account_ids) != len(set(account_ids)):
+        raise ValueError("Duplicate account IDs are not allowed")
+
+    found_ids = set(
+        (
+            await session.execute(
+                select(Account.id).where(Account.id.in_(account_ids))
+            )
+        ).scalars()
+    )
+    if found_ids != set(account_ids):
+        raise LookupError("Account not found")
+
+    visible_ids = set(
+        await _account_ids_in_scope(
+            session,
+            workspace_id,
+        )
+    )
+
+    for item in ordering:
+        if item.account_id not in visible_ids:
+            continue
+        await session.execute(
+            update(Account)
+            .where(Account.id == item.account_id)
+            .values(order=item.order)
+        )
+    await session.commit()
 
 
 async def update_account(

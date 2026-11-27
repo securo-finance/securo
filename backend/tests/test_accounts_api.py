@@ -6,6 +6,7 @@ from httpx import AsyncClient
 
 from app.models.account import Account
 from app.models.account_card import AccountCard
+from app.models.workspace import Workspace
 
 
 @pytest.mark.asyncio
@@ -46,6 +47,48 @@ async def test_bulk_ordering_invalid_batch_leaves_all_orders_unchanged(
     assert response.status_code == 404
     account = (await client.get(f"/api/accounts/{test_account.id}", headers=auth_headers)).json()
     assert account["order"] == 0
+
+
+@pytest.mark.asyncio
+async def test_bulk_ordering_does_not_update_account_from_another_workspace(
+    client: AsyncClient,
+    auth_headers,
+    session,
+    test_user,
+    test_account: Account,
+):
+    other_workspace = Workspace(
+        id=uuid.uuid4(),
+        name="Other workspace",
+        created_by_user_id=test_user.id,
+    )
+    foreign_account = Account(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=other_workspace.id,
+        name="Foreign",
+        type="checking",
+        balance=Decimal("0.00"),
+        currency="BRL",
+        order=41,
+    )
+    session.add_all([other_workspace, foreign_account])
+    await session.commit()
+
+    response = await client.patch(
+        "/api/accounts/bulk_ordering",
+        headers=auth_headers,
+        json=[
+            {"account_id": str(test_account.id), "order": 4},
+            {"account_id": str(foreign_account.id), "order": 99},
+        ],
+    )
+
+    assert response.status_code == 204
+    await session.refresh(test_account)
+    await session.refresh(foreign_account)
+    assert test_account.order == 4
+    assert foreign_account.order == 41
 
 
 @pytest.mark.asyncio
