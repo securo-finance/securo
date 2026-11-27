@@ -2374,10 +2374,16 @@ async def _apply_update_to_row(
                         paired_date_changed = update_data[key] != paired_tx.date
                     setattr(paired_tx, key, update_data[key])
             if paired_amount_changed or paired_date_changed:
-                _drop_typed_primary(paired_tx)
+                if paired_amount_changed:
+                    _drop_typed_primary(paired_tx)
+                paired_user_id = paired_tx.user_id or user_id
                 await stamp_primary_amount(
-                    session, paired_tx.user_id or user_id, paired_tx, restamp_account=True
+                    session, paired_user_id, paired_tx, restamp_account=True
                 )
+                if await _restore_typed_primary(session, paired_tx, paired_user_id):
+                    await stamp_account_amount(
+                        session, paired_tx, typed_primary=True, recompute=False
+                    )
             if paired_date_changed:
                 paired_account = await session.get(Account, paired_tx.account_id)
                 apply_effective_date(paired_tx, paired_account)
@@ -3190,19 +3196,19 @@ async def _restamp_posted_leg(
 ) -> None:
     """Stamp a leg that was just posted today.
 
-    When posting moved the date, the account amount follows it and a
-    conversion typed for the old date no longer holds (ADR 0031). A leg
-    already dated today changed nothing a conversion depends on, so what the
-    user typed stays.
+    Posting only moves the date, so a conversion the owner typed stays
+    (ADR 0039). A derived primary stamp still follows today's rate, and when
+    the date moved the account leg restamps too before any typed figure is
+    put back on an owner-currency account.
     """
     date_changed = transaction.date != previous_date
-    if date_changed:
-        _drop_typed_primary(transaction)
     await stamp_primary_amount(
         session, transaction.user_id, transaction, restamp_account=date_changed
     )
-    if not date_changed:
-        await _restore_typed_primary(session, transaction, transaction.user_id)
+    if await _restore_typed_primary(session, transaction, transaction.user_id):
+        await stamp_account_amount(
+            session, transaction, typed_primary=True, recompute=False
+        )
 
 
 async def toggle_ignore_transaction(
