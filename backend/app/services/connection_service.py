@@ -40,7 +40,6 @@ from app.models.transaction_attachment import TransactionAttachment
 from app.models.transaction_split import TransactionSplit
 from app.models.transaction_category_line import TransactionCategoryLine
 from app.models.user import User
-from app.models.workspace import Workspace
 from app.plugins.contract import SYNCED_TEXT, column_amount
 from app.plugins.provider import is_plugin_provider
 from app.providers import get_provider
@@ -59,8 +58,9 @@ from app.providers.base import (
     ProviderUserActionRequired,
     SessionExpiredError,
     TransactionData,
-    fingerprint_uses_current_key,
     fingerprints_conflict,
+    fingerprints_match,
+    prefer_fingerprint,
 )
 from app.services.provider_settings import resolve_settings
 from app.services import oauth_state
@@ -2303,11 +2303,7 @@ async def _find_cross_connection_match(
         return None
 
     # Tier 1: High-confidence keyed HMAC account_fingerprint + same provider + same currency + same type.
-    if acc_data.account_fingerprint:
-        candidate_fps = {
-            acc_data.account_fingerprint,
-            *acc_data.fallback_account_fingerprints,
-        }
+    if acc_data.account_fingerprint or acc_data.fallback_account_fingerprints:
         fp_matches = [
             acc
             for acc, cand_conn in candidates
@@ -2315,10 +2311,18 @@ async def _find_cross_connection_match(
             and acc.currency == acc_data.currency
             and acc.type == acc_data.type
             and (
-                acc.account_fingerprint in candidate_fps
+                fingerprints_match(
+                    acc.account_fingerprint,
+                    acc_data.account_fingerprint,
+                    fallback_fps=acc_data.fallback_account_fingerprints,
+                )
                 or any(
                     link.status == "active"
-                    and link.account_fingerprint in candidate_fps
+                    and fingerprints_match(
+                        link.account_fingerprint,
+                        acc_data.account_fingerprint,
+                        fallback_fps=acc_data.fallback_account_fingerprints,
+                    )
                     for link in acc.connection_links
                 )
             )
@@ -2405,7 +2409,9 @@ async def _ensure_account_link(
         if acc_data.stable_external_id is not None:
             existing.stable_external_id = acc_data.stable_external_id
         if acc_data.account_fingerprint is not None:
-            existing.account_fingerprint = acc_data.account_fingerprint
+            existing.account_fingerprint = prefer_fingerprint(
+                existing.account_fingerprint, acc_data.account_fingerprint
+            )
         existing.is_primary_feed = is_primary_feed
         existing.status = status
         if last_synced_at is not None:
@@ -2426,6 +2432,29 @@ async def _ensure_account_link(
     session.add(link)
     await session.flush()
     return link
+
+
+async def _lock_workspace_for_account_matching(
+    session: AsyncSession, workspace_id: uuid.UUID
+) -> None:
+    """Serialize cross-connection account matching and creation within a workspace.
+
+    Uses a transaction-scoped PostgreSQL advisory lock (same pattern as
+    ``quota_service._lock``) so concurrent OAuth callbacks and regular syncs
+    cannot both miss the cross-connection lookup and create duplicate accounts,
+    without conflicting with ``FOR KEY SHARE`` foreign-key checks on
+    ``workspaces``. SQLite serializes writers on its own.
+    """
+    bind = session.bind
+    if bind is None or bind.dialect.name != "postgresql":
+        return
+    await session.execute(
+        select(
+            func.pg_advisory_xact_lock(
+                func.hashtext(f"account-match:{workspace_id}")
+            )
+        )
+    )
 
 
 async def _has_healthy_primary_connection(
@@ -2552,15 +2581,11 @@ async def handle_oauth_callback(
         session, connection, holdings, connection_data.accounts
     )
 
-    # Serialize concurrent first OAuth callbacks within the same workspace so
-    # two simultaneous logins for a joint account cannot both miss the
-    # cross-connection lookup and create duplicate accounts. Held only through
-    # the commit below, before the bank transaction import begins.
-    await session.execute(
-        select(Workspace.id)
-        .where(Workspace.id == workspace_id)
-        .with_for_update()
-    )
+    # Serialize concurrent first OAuth callbacks and regular syncs within the
+    # same workspace so two simultaneous logins/syncs for a joint account
+    # cannot both miss the cross-connection lookup and create duplicate
+    # accounts. Held only through the commit below, before bank imports begin.
+    await _lock_workspace_for_account_matching(session, workspace_id)
 
     institution_cache: dict[str, Institution] = {}
     synced_accounts: list[tuple[Account, AccountData]] = []
@@ -2597,12 +2622,18 @@ async def handle_oauth_callback(
                 session, matched_account.id, connection.id
             )
             if matched_account.is_closed or has_primary:
-                if (
-                    acc_data.account_fingerprint is not None
-                    and matched_account.account_fingerprint
-                    in acc_data.fallback_account_fingerprints
+                if acc_data.account_fingerprint is not None and (
+                    matched_account.account_fingerprint is None
+                    or fingerprints_match(
+                        matched_account.account_fingerprint,
+                        acc_data.account_fingerprint,
+                        fallback_fps=acc_data.fallback_account_fingerprints,
+                    )
                 ):
-                    matched_account.account_fingerprint = acc_data.account_fingerprint
+                    matched_account.account_fingerprint = prefer_fingerprint(
+                        matched_account.account_fingerprint,
+                        acc_data.account_fingerprint,
+                    )
                 await _ensure_account_link(
                     session,
                     workspace_id,
@@ -2634,7 +2665,10 @@ async def handle_oauth_callback(
             if acc_data.stable_external_id is not None:
                 matched_account.stable_external_id = acc_data.stable_external_id
             if acc_data.account_fingerprint is not None:
-                matched_account.account_fingerprint = acc_data.account_fingerprint
+                matched_account.account_fingerprint = prefer_fingerprint(
+                    matched_account.account_fingerprint,
+                    acc_data.account_fingerprint,
+                )
             await _ensure_account_link(
                 session,
                 workspace_id,
@@ -2961,6 +2995,9 @@ async def _run_first_import(
             # When the same logical operation comes back under a new external
             # id with a different status, fingerprint match prevents the
             # second copy from landing.
+            account_failover_dedup = bool(
+                failover_account_ids and account.id in failover_account_ids
+            )
             synced_dup = await _find_synced_duplicate(
                 session,
                 account.id,
@@ -2969,9 +3006,7 @@ async def _run_first_import(
                 live_external_ids=hold_live_ids,
                 incoming_batch=transactions_data,
                 provider=connection.provider,
-                allow_booked_dedup=bool(
-                    failover_account_ids and account.id in failover_account_ids
-                ),
+                allow_booked_dedup=account_failover_dedup,
             )
             if synced_dup:
                 settles = synced_dup.status == "pending" and txn_data.status == "posted"
@@ -3019,6 +3054,16 @@ async def _run_first_import(
                         txn_data,
                         replace_external_id=_takes_twin_key(synced_dup, txn_data),
                     )
+                continue
+
+            if (
+                connection.provider == "enable_banking"
+                and account_failover_dedup
+                and partial_feed
+                and await _should_defer_partial_eb_failover_booked(
+                    session, account.id, txn_data, incoming_external_ids
+                )
+            ):
                 continue
 
             installment_source = await _find_installment_source(
@@ -3367,15 +3412,15 @@ async def _resolve_sync_account(
         and link.account is not None
         and link.account_id not in claimed_account_ids
     ]
-    if acc_data.account_fingerprint:
-        candidate_fps = {
-            acc_data.account_fingerprint,
-            *acc_data.fallback_account_fingerprints,
-        }
+    if acc_data.account_fingerprint or acc_data.fallback_account_fingerprints:
         fp_links = [
             link
             for link in unclaimed_links
-            if link.account_fingerprint in candidate_fps
+            if fingerprints_match(
+                link.account_fingerprint,
+                acc_data.account_fingerprint,
+                fallback_fps=acc_data.fallback_account_fingerprints,
+            )
         ]
         picked_acc = _disambiguate_account_candidates(
             [link.account for link in fp_links if link.account is not None], acc_data
@@ -3383,12 +3428,27 @@ async def _resolve_sync_account(
         if picked_acc is not None:
             matched_link = next(link for link in fp_links if link.account_id == picked_acc.id)
             matched_link.external_id = acc_data.external_id
-            matched_link.account_fingerprint = acc_data.account_fingerprint
+            if acc_data.account_fingerprint is not None:
+                matched_link.account_fingerprint = prefer_fingerprint(
+                    matched_link.account_fingerprint, acc_data.account_fingerprint
+                )
             if matched_link.is_primary_feed:
                 picked_acc.external_id = acc_data.external_id
-                picked_acc.account_fingerprint = acc_data.account_fingerprint
-            elif picked_acc.account_fingerprint in acc_data.fallback_account_fingerprints:
-                picked_acc.account_fingerprint = acc_data.account_fingerprint
+                if acc_data.account_fingerprint is not None:
+                    picked_acc.account_fingerprint = prefer_fingerprint(
+                        picked_acc.account_fingerprint, acc_data.account_fingerprint
+                    )
+            elif acc_data.account_fingerprint is not None and (
+                picked_acc.account_fingerprint is None
+                or fingerprints_match(
+                    picked_acc.account_fingerprint,
+                    acc_data.account_fingerprint,
+                    fallback_fps=acc_data.fallback_account_fingerprints,
+                )
+            ):
+                picked_acc.account_fingerprint = prefer_fingerprint(
+                    picked_acc.account_fingerprint, acc_data.account_fingerprint
+                )
             if matched_link.status == "pending":
                 return picked_acc, matched_link, "pending"
             return (
@@ -3449,10 +3509,18 @@ async def _resolve_sync_account(
         if (
             link_status == "active"
             and acc_data.account_fingerprint is not None
-            and matched_account.account_fingerprint
-            in acc_data.fallback_account_fingerprints
+            and (
+                matched_account.account_fingerprint is None
+                or fingerprints_match(
+                    matched_account.account_fingerprint,
+                    acc_data.account_fingerprint,
+                    fallback_fps=acc_data.fallback_account_fingerprints,
+                )
+            )
         ):
-            matched_account.account_fingerprint = acc_data.account_fingerprint
+            matched_account.account_fingerprint = prefer_fingerprint(
+                matched_account.account_fingerprint, acc_data.account_fingerprint
+            )
         link = await _ensure_account_link(
             session,
             connection.workspace_id,
@@ -4292,6 +4360,116 @@ def _eb_purchase_date(raw: dict, booked_on: date) -> Optional[date]:
     return None
 
 
+async def _find_booked_rekey_candidates(
+    session: AsyncSession,
+    account_id: uuid.UUID,
+    txn_data,
+    incoming_external_ids: set[str],
+    *,
+    provider: Optional[str],
+) -> list[Transaction]:
+    """Find stored posted sync transactions that match ``txn_data`` under another external_id."""
+    raw = txn_data.raw_data if isinstance(txn_data.raw_data, dict) else {}
+    is_eb = provider == "enable_banking"
+    date_lower = (
+        txn_data.date - timedelta(days=1 + _EB_HOLD_SETTLE_DAYS)
+        if is_eb
+        else txn_data.date
+    )
+    date_upper = txn_data.date + timedelta(days=1) if is_eb else txn_data.date
+    stmt = select(Transaction).where(
+        Transaction.account_id == account_id,
+        Transaction.source == "sync",
+        Transaction.status == "posted",
+        Transaction.date >= date_lower,
+        Transaction.date <= date_upper,
+        Transaction.amount == txn_data.amount,
+        Transaction.type == txn_data.type,
+        Transaction.external_id != txn_data.external_id,
+    )
+    if txn_data.currency is not None:
+        stmt = stmt.where(Transaction.currency == txn_data.currency)
+    result = await session.execute(stmt)
+    booked_matches: list[Transaction] = []
+    incoming_cp = _eb_counterparty(raw) if is_eb else None
+    for candidate in result.scalars():
+        if candidate.external_id and candidate.external_id.startswith("bill_charge:"):
+            continue
+        if candidate.external_id in incoming_external_ids:
+            continue
+        if is_eb:
+            candidate_raw = (
+                candidate.raw_data if isinstance(candidate.raw_data, dict) else {}
+            )
+            if candidate_raw:
+                candidate_ref = candidate_raw.get("entry_reference")
+                if isinstance(candidate_ref, str):
+                    candidate_ref = candidate_ref.strip()
+                if candidate_ref not in (None, "", "0"):
+                    continue
+                stored_date = _eb_entry_date(candidate_raw)
+                if candidate.date != txn_data.date and stored_date != txn_data.date:
+                    continue
+                candidate_cp = _eb_counterparty(candidate_raw)
+                if (
+                    incoming_cp
+                    and candidate_cp
+                    and token_overlap(candidate_cp, incoming_cp) < 0.9
+                ):
+                    continue
+            elif candidate.date != txn_data.date:
+                continue
+        else:
+            if candidate.date != txn_data.date:
+                continue
+            if (
+                txn_data.payee
+                and candidate.payee
+                and token_overlap(candidate.payee, txn_data.payee) < 0.9
+            ):
+                continue
+        if (
+            token_overlap(
+                candidate.original_description or candidate.description,
+                txn_data.description,
+            )
+            < 0.9
+        ):
+            continue
+        booked_matches.append(candidate)
+    return booked_matches
+
+
+async def _should_defer_partial_eb_failover_booked(
+    session: AsyncSession,
+    account_id: uuid.UUID,
+    txn_data,
+    incoming_external_ids: set[str],
+) -> bool:
+    """True when a partial Enable Banking failover feed returns a reference-less
+    booked transaction that matches an already-stored booked row under another
+    UID. Deferring insertion until the first complete read lets Path 4b adopt
+    the existing row cleanly instead of inserting a duplicate that exact-ID
+    matching would keep forever."""
+    if txn_data.status != "posted":
+        return False
+    raw = txn_data.raw_data if isinstance(txn_data.raw_data, dict) else {}
+    entry_ref = raw.get("entry_reference")
+    if isinstance(entry_ref, str):
+        entry_ref = entry_ref.strip()
+    if entry_ref not in (None, "", "0"):
+        return False
+    return bool(
+        await _find_booked_rekey_candidates(
+            session,
+            account_id,
+            txn_data,
+            incoming_external_ids,
+            provider="enable_banking",
+        )
+    )
+
+
 async def _find_synced_duplicate(
     session: AsyncSession,
     account_id: uuid.UUID,
@@ -4572,73 +4750,13 @@ async def _find_synced_duplicate(
         # settled up to `_EB_HOLD_SETTLE_DAYS` earlier), or for non-EB providers
         # (Pluggy/plugins) during cross-connection failover/takeover where each
         # connection assigns its own transaction IDs.
-        is_eb = provider == "enable_banking"
-        date_lower = (
-            txn_data.date - timedelta(days=1 + _EB_HOLD_SETTLE_DAYS)
-            if is_eb
-            else txn_data.date
+        booked_matches = await _find_booked_rekey_candidates(
+            session,
+            account_id,
+            txn_data,
+            incoming_external_ids,
+            provider=provider,
         )
-        date_upper = txn_data.date + timedelta(days=1) if is_eb else txn_data.date
-        stmt = select(Transaction).where(
-            Transaction.account_id == account_id,
-            Transaction.source == "sync",
-            Transaction.status == "posted",
-            Transaction.date >= date_lower,
-            Transaction.date <= date_upper,
-            Transaction.amount == txn_data.amount,
-            Transaction.type == txn_data.type,
-            Transaction.external_id != txn_data.external_id,
-        )
-        if txn_data.currency is not None:
-            stmt = stmt.where(Transaction.currency == txn_data.currency)
-        result = await session.execute(stmt)
-        booked_matches = []
-        incoming_cp = _eb_counterparty(raw) if is_eb else None
-        for candidate in result.scalars():
-            if candidate.external_id and candidate.external_id.startswith("bill_charge:"):
-                continue
-            if candidate.external_id in incoming_external_ids:
-                continue
-            if is_eb:
-                candidate_raw = (
-                    candidate.raw_data if isinstance(candidate.raw_data, dict) else {}
-                )
-                if candidate_raw:
-                    candidate_ref = candidate_raw.get("entry_reference")
-                    if isinstance(candidate_ref, str):
-                        candidate_ref = candidate_ref.strip()
-                    if candidate_ref not in (None, "", "0"):
-                        continue
-                    stored_date = _eb_entry_date(candidate_raw)
-                    if candidate.date != txn_data.date and stored_date != txn_data.date:
-                        continue
-                    candidate_cp = _eb_counterparty(candidate_raw)
-                    if (
-                        incoming_cp
-                        and candidate_cp
-                        and token_overlap(candidate_cp, incoming_cp) < 0.9
-                    ):
-                        continue
-                elif candidate.date != txn_data.date:
-                    continue
-            else:
-                if candidate.date != txn_data.date:
-                    continue
-                if (
-                    txn_data.payee
-                    and candidate.payee
-                    and token_overlap(candidate.payee, txn_data.payee) < 0.9
-                ):
-                    continue
-            if (
-                token_overlap(
-                    candidate.original_description or candidate.description,
-                    txn_data.description,
-                )
-                < 0.9
-            ):
-                continue
-            booked_matches.append(candidate)
         if len(booked_matches) == 1 and not _eb_exact_twin_in_batch(
             booked_matches[0], txn_data, incoming_batch
         ):
@@ -5930,13 +6048,108 @@ async def sync_connection(
         failover_dedup_ids = _failover_dedup_account_ids(conn_settings)
         pending_failover_dedup_ids: set[str] = set()
         cleared_failover_dedup_ids: set[str] = set()
-        connection_had_links = (
-            await session.scalar(
-                select(AccountConnectionLink.id)
-                .where(AccountConnectionLink.connection_id == connection.id)
-                .limit(1)
+        existing_conn_links = (
+            await session.scalars(
+                select(AccountConnectionLink).where(
+                    AccountConnectionLink.connection_id == connection.id
+                )
             )
-        ) is not None
+        ).all()
+        connection_had_links = bool(existing_conn_links)
+        known_link_ext_ids = {
+            link.external_id
+            for link in existing_conn_links
+            if link.status != "rejected"
+        }
+        # Serialize cross-connection account matching and creation across
+        # concurrent syncs / OAuth callbacks in the same workspace whenever
+        # this sync sees an account not yet bound to an existing link. Commit
+        # the new accounts and links immediately so the workspace lock is never
+        # held across bank bill/transaction reads.
+        if any(
+            acc_data.external_id not in known_link_ext_ids
+            for acc_data in accounts_data
+        ):
+            await _lock_workspace_for_account_matching(session, workspace_id)
+            reg_institution_cache: dict[str, Institution] = {}
+            reg_claimed_ids: set[uuid.UUID] = set()
+            for acc_data in accounts_data:
+                reg_inst = await _resolve_institution(
+                    session, connection.id, reg_institution_cache, acc_data
+                )
+                reg_acc, _, reg_status = await _resolve_sync_account(
+                    session,
+                    connection,
+                    acc_data,
+                    reg_inst,
+                    incoming_external_ids,
+                    incoming_institution_external_ids,
+                    reg_claimed_ids,
+                )
+                if reg_acc is not None:
+                    reg_claimed_ids.add(reg_acc.id)
+                    continue
+                if reg_status != "new":
+                    continue
+                is_cc = acc_data.type == "credit_card"
+                new_account = Account(
+                    user_id=user_id,
+                    workspace_id=workspace_id,
+                    connection_id=connection.id,
+                    external_id=acc_data.external_id,
+                    stable_external_id=acc_data.stable_external_id,
+                    account_fingerprint=acc_data.account_fingerprint,
+                    name=acc_data.name,
+                    display_name=reg_inst.name if reg_inst else None,
+                    masked_number=acc_data.masked_number,
+                    type=acc_data.type,
+                    balance=_provider_to_internal_balance(
+                        connection.provider,
+                        acc_data.type,
+                        _account_balance(acc_data, auto_invested_deducted),
+                        available_credit=acc_data.available_credit,
+                        credit_limit=acc_data.credit_limit if is_cc else None,
+                    ),
+                    currency=acc_data.currency,
+                    credit_limit=acc_data.credit_limit if is_cc else None,
+                    statement_close_day=acc_data.statement_close_day if is_cc else None,
+                    payment_due_day=acc_data.payment_due_day if is_cc else None,
+                    minimum_payment=acc_data.minimum_payment if is_cc else None,
+                    card_brand=acc_data.card_brand if is_cc else None,
+                    card_level=acc_data.card_level if is_cc else None,
+                    shared_balance_group=(
+                        f"{connection.id}:{acc_data.shared_balance_group}"
+                        if acc_data.shared_balance_group else None
+                    ),
+                    institution_id=reg_inst.id if reg_inst else None,
+                )
+                session.add(new_account)
+                await session.flush()
+                await _ensure_account_link(
+                    session,
+                    workspace_id,
+                    new_account.id,
+                    connection.id,
+                    acc_data,
+                    is_primary_feed=True,
+                    status="active",
+                    last_synced_at=(
+                        connection.last_sync_at if not connection_had_links else None
+                    ),
+                )
+                reg_claimed_ids.add(new_account.id)
+            connection.credentials = credentials
+            flag_modified(connection, "credentials")
+            await session.commit()
+            reloaded = await get_connection(
+                session, connection_id, workspace_id, for_update=True
+            )
+            if not reloaded or reloaded.status == DISCONNECTED_STATUS:
+                raise ConnectionDisconnectedError("Connection was removed during sync")
+            connection = reloaded
+            conn_settings = connection.settings or {}
+            failover_dedup_ids = _failover_dedup_account_ids(conn_settings)
+            connection_had_links = True
         for acc_data in accounts_data:
             institution = await _resolve_institution(
                 session, connection.id, institution_cache, acc_data
@@ -5961,7 +6174,9 @@ async def sync_connection(
                 if acc_data.stable_external_id is not None:
                     active_link.stable_external_id = acc_data.stable_external_id
                 if acc_data.account_fingerprint is not None:
-                    active_link.account_fingerprint = acc_data.account_fingerprint
+                    active_link.account_fingerprint = prefer_fingerprint(
+                        active_link.account_fingerprint, acc_data.account_fingerprint
+                    )
                 if account.is_closed:
                     continue
                 promoted = await _maybe_promote_secondary_link(
@@ -5988,15 +6203,16 @@ async def sync_connection(
                         )
                         if acc_data.account_fingerprint is not None and (
                             account.account_fingerprint is None
-                            or (
-                                not fingerprint_uses_current_key(
-                                    account.account_fingerprint
-                                )
-                                and account.account_fingerprint
-                                in acc_data.fallback_account_fingerprints
+                            or fingerprints_match(
+                                account.account_fingerprint,
+                                acc_data.account_fingerprint,
+                                fallback_fps=acc_data.fallback_account_fingerprints,
                             )
                         ):
-                            account.account_fingerprint = acc_data.account_fingerprint
+                            account.account_fingerprint = prefer_fingerprint(
+                                account.account_fingerprint,
+                                acc_data.account_fingerprint,
+                            )
                     continue
 
             if account is not None:
@@ -6126,12 +6342,16 @@ async def sync_connection(
                 if acc_data.stable_external_id is not None:
                     account.stable_external_id = acc_data.stable_external_id
                 if acc_data.account_fingerprint is not None:
-                    account.account_fingerprint = acc_data.account_fingerprint
+                    account.account_fingerprint = prefer_fingerprint(
+                        account.account_fingerprint, acc_data.account_fingerprint
+                    )
                 if active_link is not None:
                     if acc_data.stable_external_id is not None:
                         active_link.stable_external_id = acc_data.stable_external_id
                     if acc_data.account_fingerprint is not None:
-                        active_link.account_fingerprint = acc_data.account_fingerprint
+                        active_link.account_fingerprint = prefer_fingerprint(
+                            active_link.account_fingerprint, acc_data.account_fingerprint
+                        )
                 # Backfills existing accounts on next sync (issue #345).
                 if institution is not None:
                     account.institution_id = institution.id
@@ -6467,6 +6687,16 @@ async def sync_connection(
                         )
                     continue
 
+                if (
+                    connection.provider == "enable_banking"
+                    and account_failover_dedup
+                    and partial_feed
+                    and await _should_defer_partial_eb_failover_booked(
+                        session, account.id, txn_data, incoming_txn_external_ids
+                    )
+                ):
+                    continue
+
                 incoming_currency = (
                     txn_data.currency or acc_data.currency or user_currency
                 )
@@ -6680,7 +6910,7 @@ async def sync_connection(
             if not partial_feed:
                 if str(account.id) in failover_dedup_ids:
                     cleared_failover_dedup_ids.add(str(account.id))
-            elif promoted:
+            elif account_failover_dedup:
                 pending_failover_dedup_ids.add(str(account.id))
 
             # Re-read by date the pending rows the listing above no longer returns.

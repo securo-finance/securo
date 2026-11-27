@@ -141,11 +141,7 @@ async def _lookup_bank_info(compe: str) -> Optional[dict]:
 
 
 async def _annotate_institutions(
-    raw_accounts: list[dict],
-    accounts: list[AccountData],
-    *,
-    connector_id: object = None,
-    connector_name: object = None,
+    raw_accounts: list[dict], accounts: list[AccountData]
 ) -> None:
     """Tell apart same-subtype accounts that belong to different legal
     institutions under one Pluggy connection.
@@ -161,8 +157,7 @@ async def _annotate_institutions(
     resolve and set the institution_* hint fields — which `_resolve_institution`
     (connection_service.py) turns into an `Institution` row, same mechanism
     SimpleFIN already uses for its own multi-institution connections
-    (issue #345) — and include the COMPE code in those accounts' fingerprints
-    so distinct institutions under the same connector cannot collide.
+    (issue #345).
     """
     codes_by_external_id: dict[str, str] = {}
     codes_by_type: dict[str, set[str]] = {}
@@ -177,25 +172,12 @@ async def _annotate_institutions(
     if not ambiguous_types:
         return
 
-    base_inst = _pluggy_institution_key(
-        connector_id=connector_id,
-        connector_name=connector_name,
-    )
-    for raw, acc in zip(raw_accounts, accounts):
+    for acc in accounts:
         if acc.type not in ambiguous_types:
             continue
         code = codes_by_external_id.get(acc.external_id)
         if not code:
             continue
-        raw_number = raw.get("number")
-        scoped_inst = f"{base_inst}|compe:{code}" if base_inst else f"compe:{code}"
-        acc.account_fingerprint, acc.fallback_account_fingerprints = (
-            hash_account_identifier_with_fallbacks(
-                "pluggy",
-                raw_number if isinstance(raw_number, str) else None,
-                institution=scoped_inst,
-            )
-        )
         info = await _lookup_bank_info(code)
         if info:
             acc.institution_external_id = code
@@ -696,37 +678,40 @@ def _auto_invested_portion(account: dict) -> Decimal:
     return min(_auto_invested_balance(account), balance)
 
 
-def _pluggy_institution_key(
+def _pluggy_institution_scope(
     connector_id: object = None,
     connector_name: object = None,
     acc: Optional[dict] = None,
-) -> Optional[str]:
-    """Institution scope for Pluggy account fingerprints.
+) -> tuple[Optional[str], Optional[str]]:
+    """Return ``(institution, sub_institution)`` scope for Pluggy fingerprints.
 
     Pluggy's ``number`` is a branch/account string with no bank code, so two
     different banks (e.g. Itaú ``1234-56789`` and Bradesco ``1234/5678-9``)
-    normalize to identical digits. Scoped to the stable Pluggy connector
-    identity so optional ``bankData.transferNumber`` metadata present on one
-    feed and absent on another never breaks joint-account matching. Falls back
-    to the COMPE code only when connector identity is unavailable; multi-COMPE
-    connectors of the same account type are disambiguated in
-    ``_annotate_institutions``.
+    normalize to identical digits. The primary scope binds the stable Pluggy
+    connector identity; when ``bankData.transferNumber`` exposes a COMPE code,
+    it is bound as ``sub_institution`` so two distinct COMPE institutions under
+    the same connector never share a fingerprint across feeds while a feed that
+    omits optional ``transferNumber`` still matches a feed that includes it.
+    Falls back to COMPE as the primary scope only when connector metadata is
+    unavailable.
     """
+    compe = (
+        _compe_from_transfer_number((acc.get("bankData") or {}).get("transferNumber"))
+        if isinstance(acc, dict)
+        else None
+    )
+    sub_inst = f"compe:{compe}" if compe else None
     if connector_id is not None and not isinstance(connector_id, bool):
         cid = str(connector_id).strip()
         if cid:
-            return f"connector:{cid}"
+            return f"connector:{cid}", sub_inst
     if isinstance(connector_name, str) and connector_name.strip():
         cname = " ".join(connector_name.strip().lower().split())
         if cname and cname != "unknown bank":
-            return f"connector_name:{cname}"
-    if isinstance(acc, dict):
-        compe = _compe_from_transfer_number(
-            (acc.get("bankData") or {}).get("transferNumber")
-        )
-        if compe:
-            return f"compe:{compe}"
-    return None
+            return f"connector_name:{cname}", sub_inst
+    if sub_inst:
+        return sub_inst, None
+    return None, None
 
 
 def _build_account_data(
@@ -765,7 +750,7 @@ def _build_account_data(
 
     account_currency = acc.get("currencyCode", "USD")
     raw_number = acc.get("number")
-    institution_key = _pluggy_institution_key(
+    institution_key, sub_institution_key = _pluggy_institution_scope(
         connector_id=connector_id,
         connector_name=connector_name,
         acc=acc,
@@ -774,6 +759,7 @@ def _build_account_data(
         "pluggy",
         raw_number if isinstance(raw_number, str) else None,
         institution=institution_key,
+        sub_institution=sub_institution_key,
     )
 
     return AccountData(
@@ -928,12 +914,7 @@ class PluggyProvider(BankProvider):
                     connector_name=connector_name,
                 )
             )
-        await _annotate_institutions(
-            raw_accounts,
-            account_list,
-            connector_id=connector_id,
-            connector_name=connector_name,
-        )
+        await _annotate_institutions(raw_accounts, account_list)
 
         creds: dict = {"item_id": item_id}
         if connector_id is not None and not isinstance(connector_id, bool):
@@ -1015,12 +996,7 @@ class PluggyProvider(BankProvider):
                     connector_name=connector_name,
                 )
             )
-        await _annotate_institutions(
-            data.get("results", []),
-            accounts,
-            connector_id=connector_id,
-            connector_name=connector_name,
-        )
+        await _annotate_institutions(data.get("results", []), accounts)
         return accounts
 
     async def get_transactions(

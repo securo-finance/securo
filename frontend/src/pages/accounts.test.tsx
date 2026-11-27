@@ -470,7 +470,9 @@ describe('AccountsPage joint accounts & pending links', () => {
         makeConnection({
           id: 'conn-2',
           institution_name: 'Partner Bank',
-          account_links: confirmed ? [confirmedLink] : [pendingLink, fallbackPendingLink],
+          account_links: confirmed
+            ? [confirmedLink, fallbackPendingLink]
+            : [pendingLink, fallbackPendingLink],
         }),
       ]),
     )
@@ -493,7 +495,12 @@ describe('AccountsPage joint accounts & pending links', () => {
 
     expect(api.resolveAccountLink).toHaveBeenCalledWith('conn-2', 'link-pending', 'confirm')
     await waitFor(() => {
-      expect(screen.queryByTestId('pending-account-links')).not.toBeInTheDocument()
+      const updatedBanner = screen.getByTestId('pending-account-links')
+      expect(updatedBanner).not.toHaveTextContent('Healthy Checking •••• 4321')
+      expect(updatedBanner).toHaveTextContent('Unloaded Savings •••• 8877')
+      expect(
+        within(updatedBanner).getAllByRole('button', { name: t('accounts.confirmJointAccount') }),
+      ).toHaveLength(1)
     })
     expect(await screen.findByText(t('accounts.jointAccount'))).toBeInTheDocument()
     expect(screen.getByText(t('accounts.jointSecondaryFeed'))).toBeInTheDocument()

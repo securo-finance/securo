@@ -40,6 +40,7 @@ from app.providers.base import (
     TransactionData,
     default_oauth_redirect_uri,
     fingerprint_uses_current_key,
+    fingerprint_uses_fallback_key,
     hash_account_identifier,
     hash_account_identifier_with_fallbacks,
     mask_last4,
@@ -1197,9 +1198,14 @@ class EnableBankingProvider(BankProvider):
             isinstance(fp, str)
             and inst_scope is not None
             and cached.get("account_fingerprint_scope") == inst_scope
-            and fingerprint_uses_current_key(fp)
         ):
-            account.account_fingerprint = fp
+            if fingerprint_uses_current_key(fp):
+                account.account_fingerprint = fp
+            elif fingerprint_uses_fallback_key(fp):
+                account.account_fingerprint = None
+                account.fallback_account_fingerprints = (fp,)
+            else:
+                account.account_fingerprint = None
         else:
             account.account_fingerprint = None
         return account
