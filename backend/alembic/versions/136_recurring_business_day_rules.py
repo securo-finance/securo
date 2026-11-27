@@ -1,16 +1,17 @@
 """recurring schedule rules: business day, holidays, grace, keywords, tolerance
 
-Revision ID: 134
-Revises: 133
+Revision ID: 136
+Revises: 135
 
 Adds the rules a salary paid on the fifth business day and a rent that may be
-paid a day late need, and repairs two kinds of rows the old API let through:
+paid a day late need, and repairs a pointer that sits on ``start_date`` when
+``day_of_month`` says another day (start 1 Aug, day 17): the first occurrence
+was due on the wrong day, so a charge on the 17th could never be matched to it.
 
-- ``type`` values other than ``debit``/``credit`` (``expense``/``income``),
-  which every balance and total silently left out;
-- a pointer that sits on ``start_date`` when ``day_of_month`` says another
-  day (start 1 Aug, day 17), so the first occurrence was due on the wrong day
-  and a charge on the 17th could never be matched to it.
+``holiday_calendar`` takes any country the ``holidays`` package supports,
+optionally with a subdivision (``BR``, ``BR-SP``, ``US-NY``). The API
+validates the code, where the list can follow the package, so the database
+does not pin it.
 """
 import calendar
 from datetime import date
@@ -19,8 +20,8 @@ import sqlalchemy as sa
 
 from alembic import op
 
-revision = "134"
-down_revision = "133"
+revision = "136"
+down_revision = "135"
 branch_labels = None
 depends_on = None
 
@@ -57,7 +58,7 @@ def _add_columns() -> None:
     )
     op.add_column(
         "recurring_transactions",
-        sa.Column("holiday_calendar", sa.String(length=10), nullable=True),
+        sa.Column("holiday_calendar", sa.String(length=32), nullable=True),
     )
     op.add_column(
         "recurring_transactions",
@@ -91,19 +92,10 @@ def _add_columns() -> None:
         "recurring_transactions",
         "grace_days >= 0 AND grace_days <= 15",
     )
-    op.create_check_constraint(
-        "ck_recurring_transactions_holiday_calendar",
-        "recurring_transactions",
-        "holiday_calendar IS NULL OR holiday_calendar IN ('BR')",
-    )
 
 
 def _repair_rows() -> None:
     conn = op.get_bind()
-    for table in ("recurring_transactions", "transactions"):
-        conn.execute(sa.text(f"UPDATE {table} SET type = 'debit' WHERE type = 'expense'"))
-        conn.execute(sa.text(f"UPDATE {table} SET type = 'credit' WHERE type = 'income'"))
-
     rows = conn.execute(
         sa.text(
             "SELECT id, frequency, day_of_month, next_occurrence "
@@ -126,7 +118,6 @@ def _repair_rows() -> None:
 def downgrade() -> None:
     for name in (
         "ck_recurring_transactions_amount_tolerance",
-        "ck_recurring_transactions_holiday_calendar",
         "ck_recurring_transactions_grace_days",
         "ck_recurring_transactions_business_day",
     ):
