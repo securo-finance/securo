@@ -1628,6 +1628,7 @@
     "allocationFor": "{{name}} के लिए आवंटन",
     "allocationExceedsTransaction": "पॉकेट आवंटन लेन-देन की राशि से अधिक हैं।",
     "allocationExceedsPocket": "कोई आवंटन उस पॉकेट में उपलब्ध राशि से अधिक है।",
+    "pocketSpendingDependsOnDeposit": "इस लेनदेन ने पॉकेट में जो पैसा रखा था, वह पहले ही खर्च हो चुका है। पहले पॉकेट से वह खर्च हटाएँ।",
     "choosePockets": "पॉकेट चुनें",
     "editPockets": "पॉकेट संपादित करें",
     "searchPockets": "पॉकेट खोजें...",

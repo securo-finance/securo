@@ -1628,6 +1628,7 @@
     "allocationFor": "Allocation for {{name}}",
     "allocationExceedsTransaction": "Pocket allocations exceed the transaction amount.",
     "allocationExceedsPocket": "An allocation exceeds the amount available in that pocket.",
+    "pocketSpendingDependsOnDeposit": "Money this transaction put in a pocket has already been spent. Remove that pocket spending first.",
     "choosePockets": "Choose pockets",
     "editPockets": "Edit pockets",
     "searchPockets": "Search pockets...",

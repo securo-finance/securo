@@ -10,6 +10,7 @@ import i18n from 'i18next'
  * spell a number into the sentence are matched by `MESSAGE_PATTERNS` instead.
  */
 const KNOWN_MESSAGES: Record<string, string> = {
+  'Remove pocket spending assignments before reducing its allocated deposits': 'goals.pocketSpendingDependsOnDeposit',
   'Enter a valid http or https endpoint URL': 'agents.connections.baseUrlInvalid',
   'Cannot change amount or date on a synchronized transaction': 'transactions.syncedAmountDateError',
   'A category split needs at least two lines': 'categoryLines.errors.tooFewLines',

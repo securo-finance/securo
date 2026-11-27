@@ -1698,6 +1698,7 @@
     "allocationFor": "Pridelenie pre {{name}}",
     "allocationExceedsTransaction": "Pridelenia do Pocketov presahujú sumu transakcie.",
     "allocationExceedsPocket": "Pridelenie presahuje sumu dostupnú v tomto Pockete.",
+    "pocketSpendingDependsOnDeposit": "Peniaze, ktoré táto transakcia vložila do Pocketu, už boli minuté. Najprv odstráňte tieto výdavky z Pocketu.",
     "choosePockets": "Vybrať Pockety",
     "editPockets": "Upraviť Pockety",
     "searchPockets": "Hľadať Pockety...",

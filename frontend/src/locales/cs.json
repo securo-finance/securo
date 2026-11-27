@@ -1778,6 +1778,7 @@
     "allocationFor": "Přiřazení pro {{name}}",
     "allocationExceedsTransaction": "Přiřazení do kapes překračují částku transakce.",
     "allocationExceedsPocket": "Přiřazení překračuje částku dostupnou v dané kapse.",
+    "pocketSpendingDependsOnDeposit": "Peníze, které tato transakce vložila do kapsy, už byly utraceny. Nejprve odeberte tyto výdaje z kapsy.",
     "choosePockets": "Vybrat kapsy",
     "editPockets": "Upravit kapsy",
     "searchPockets": "Hledat kapsy...",

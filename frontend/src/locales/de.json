@@ -1629,6 +1629,7 @@
     "allocationFor": "Zuordnung für {{name}}",
     "allocationExceedsTransaction": "Die Pocket-Zuordnungen überschreiten den Transaktionsbetrag.",
     "allocationExceedsPocket": "Eine Zuordnung überschreitet den verfügbaren Betrag dieses Pockets.",
+    "pocketSpendingDependsOnDeposit": "Geld, das diese Buchung in ein Pocket gelegt hat, wurde bereits ausgegeben. Entferne zuerst die Ausgaben aus diesem Pocket.",
     "choosePockets": "Pockets auswählen",
     "editPockets": "Pockets bearbeiten",
     "searchPockets": "Pockets durchsuchen...",

@@ -1651,6 +1651,7 @@
     "allocationFor": "Распределение для {{name}}",
     "allocationExceedsTransaction": "Распределение по Pocket превышает сумму транзакции.",
     "allocationExceedsPocket": "Распределение превышает сумму, доступную в этом Pocket.",
+    "pocketSpendingDependsOnDeposit": "Деньги, которые эта операция положила в Pocket, уже потрачены. Сначала уберите эти расходы из Pocket.",
     "choosePockets": "Выбрать Pocket",
     "editPockets": "Изменить Pocket",
     "searchPockets": "Поиск Pocket...",

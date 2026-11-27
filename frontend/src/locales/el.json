@@ -1628,6 +1628,7 @@
     "allocationFor": "Κατανομή για {{name}}",
     "allocationExceedsTransaction": "Οι κατανομές σε Pockets υπερβαίνουν το ποσό της συναλλαγής.",
     "allocationExceedsPocket": "Μια κατανομή υπερβαίνει το διαθέσιμο ποσό αυτού του Pocket.",
+    "pocketSpendingDependsOnDeposit": "Τα χρήματα που έβαλε αυτή η συναλλαγή σε ένα Pocket έχουν ήδη ξοδευτεί. Αφαιρέστε πρώτα αυτές τις δαπάνες από το Pocket.",
     "choosePockets": "Επιλογή Pockets",
     "editPockets": "Επεξεργασία Pockets",
     "searchPockets": "Αναζήτηση Pockets...",

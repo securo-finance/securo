@@ -1684,6 +1684,7 @@
     "allocationFor": "Hozzárendelés: {{name}}",
     "allocationExceedsTransaction": "A zsebekhez rendelt összegek meghaladják a tranzakció összegét.",
     "allocationExceedsPocket": "Egy hozzárendelés meghaladja az adott zsebben elérhető összeget.",
+    "pocketSpendingDependsOnDeposit": "A tranzakció által zsebbe tett pénzt már elköltötték. Előbb távolítsd el ezeket a zsebből fizetett kiadásokat.",
     "choosePockets": "Zsebek kiválasztása",
     "editPockets": "Zsebek szerkesztése",
     "searchPockets": "Zsebek keresése...",

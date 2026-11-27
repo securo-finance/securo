@@ -1630,6 +1630,7 @@
     "allocationFor": "Toewijzing voor {{name}}",
     "allocationExceedsTransaction": "De Pocket-toewijzingen overschrijden het transactiebedrag.",
     "allocationExceedsPocket": "Een toewijzing overschrijdt het beschikbare bedrag in die Pocket.",
+    "pocketSpendingDependsOnDeposit": "Geld dat deze transactie in een Pocket heeft gezet, is al uitgegeven. Verwijder eerst die uitgaven uit de Pocket.",
     "choosePockets": "Kies Pockets",
     "editPockets": "Pockets bewerken",
     "searchPockets": "Pockets zoeken...",

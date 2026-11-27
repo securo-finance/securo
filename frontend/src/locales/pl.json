@@ -1683,6 +1683,7 @@
     "allocationFor": "Przydział dla {{name}}",
     "allocationExceedsTransaction": "Przydziały do Pocketów przekraczają kwotę transakcji.",
     "allocationExceedsPocket": "Przydział przekracza kwotę dostępną w tym Pockecie.",
+    "pocketSpendingDependsOnDeposit": "Pieniądze, które ta transakcja odłożyła do Pocketu, zostały już wydane. Najpierw usuń te wydatki z Pocketu.",
     "choosePockets": "Wybierz Pockety",
     "editPockets": "Edytuj Pockety",
     "searchPockets": "Szukaj Pocketów...",

@@ -1699,6 +1699,7 @@
     "allocationFor": "הקצאה עבור {{name}}",
     "allocationExceedsTransaction": "הקצאות הכיסים חורגות מסכום התנועה.",
     "allocationExceedsPocket": "הקצאה חורגת מהסכום הזמין בכיס זה.",
+    "pocketSpendingDependsOnDeposit": "הכסף שהעסקה הזו הכניסה לכיס כבר הוצא. הסירו קודם את ההוצאות האלה מהכיס.",
     "choosePockets": "בחירת כיסים",
     "editPockets": "עריכת כיסים",
     "searchPockets": "חיפוש כיסים...",

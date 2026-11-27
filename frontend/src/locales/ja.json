@@ -1628,6 +1628,7 @@
     "allocationFor": "{{name}} への割り当て",
     "allocationExceedsTransaction": "ポケットへの割り当てが取引金額を超えています。",
     "allocationExceedsPocket": "割り当てがそのポケットの利用可能額を超えています。",
+    "pocketSpendingDependsOnDeposit": "この取引でポケットに入れたお金はすでに使われています。先にそのポケットの支出を外してください。",
     "choosePockets": "ポケットを選択",
     "editPockets": "ポケットを編集",
     "searchPockets": "ポケットを検索...",

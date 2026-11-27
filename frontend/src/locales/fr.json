@@ -1634,6 +1634,7 @@
     "allocationFor": "Affectation pour {{name}}",
     "allocationExceedsTransaction": "Les affectations aux Pockets dépassent le montant de la transaction.",
     "allocationExceedsPocket": "Une affectation dépasse le montant disponible dans ce Pocket.",
+    "pocketSpendingDependsOnDeposit": "L'argent que cette opération a placé dans un Pocket a déjà été dépensé. Retirez d'abord ces dépenses du Pocket.",
     "choosePockets": "Choisir des Pockets",
     "editPockets": "Modifier les Pockets",
     "searchPockets": "Rechercher des Pockets...",
