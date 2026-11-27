@@ -209,6 +209,50 @@ async def test_a_reference_already_used_for_another_email_is_refused(managed, op
     assert await _accounts(session, "bia@example.com") == []
 
 
+def _lose_the_race():
+    """The first lookup misses, as if the winner had not committed yet."""
+    real = operator_account_service._existing
+    calls = 0
+
+    async def existing(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        return None if calls == 1 else await real(*args, **kwargs)
+
+    return patch.object(operator_account_service, "_existing", existing)
+
+
+@pytest.mark.asyncio
+async def test_losing_the_race_answers_what_the_winner_opened(
+    managed, operator, client: AsyncClient, session: AsyncSession
+):
+    first = await client.post(URL, json=_body(), headers=operator)
+    assert first.status_code == 201, first.text
+    with _lose_the_race():
+        again = await client.post(URL, json=_body(), headers=operator)
+    assert again.status_code == 200, again.text
+    assert again.json()["created"] is False
+    assert again.json()["user_id"] == first.json()["user_id"]
+    assert again.json()["workspaces"] == first.json()["workspaces"]
+
+    user_id = uuid.UUID(first.json()["user_id"])
+    assert len(await _accounts(session, "ana@example.com")) == 1
+    assert await _count(session, Workspace, Workspace.created_by_user_id == user_id) == 1
+    assert await _count(session, AdminAccessLog, AdminAccessLog.target_user_id == user_id) == 1
+
+
+@pytest.mark.asyncio
+async def test_losing_the_race_to_another_email_is_refused(
+    managed, operator, client: AsyncClient, session: AsyncSession
+):
+    assert (await client.post(URL, json=_body(), headers=operator)).status_code == 201
+    with _lose_the_race():
+        resp = await client.post(URL, json=_body(email="bia@example.com"), headers=operator)
+    assert resp.status_code == 409, resp.text
+    assert resp.json()["detail"]["code"] == "external_reference_taken"
+    assert await _accounts(session, "bia@example.com") == []
+
+
 @pytest.mark.asyncio
 async def test_a_taken_email_is_refused_not_merged(
     managed, operator, client: AsyncClient, session: AsyncSession, test_user
