@@ -37,7 +37,13 @@ from app.schemas.asset import (
     MarketSymbolMatch,
 )
 from app.services.asset_group_service import ensure_group_in_workspace
-from app.services.fx_rate_service import convert, convert_or_none, has_rate, stamp_primary_amount
+from app.services.fx_rate_service import (
+    DatedRateBook,
+    convert,
+    convert_or_none,
+    has_rate,
+    stamp_primary_amount,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -231,14 +237,12 @@ def _asset_to_read(
 
 
 async def _get_latest_value(session: AsyncSession, asset_id: uuid.UUID) -> Optional[AssetValue]:
-    """Get the most recent AssetValue for an asset."""
-    result = await session.execute(
-        select(AssetValue)
-        .where(AssetValue.asset_id == asset_id)
-        .order_by(desc(AssetValue.date), desc(AssetValue.id))
-        .limit(1)
-    )
-    return result.scalar_one_or_none()
+    """Get the AssetValue an asset is worth today.
+
+    A valuation dated after today has not happened yet, so it is left out,
+    as the dashboard, net worth and goals leave it out (#646).
+    """
+    return await _get_value_as_of(session, asset_id, app_today())
 
 
 async def _get_value_as_of(
@@ -1519,6 +1523,8 @@ async def get_portfolio_trend(
     # Each native-currency amount is converted at the display date `d` so that
     # fill-forwarded values reflect current FX rates — consistent with
     # get_asset_values_at(as_of_date=d).
+    # One series read per currency instead of several lookups per point.
+    rates = DatedRateBook(session)
     trend = []
     last_known: dict[str, float] = {}  # native currency amounts
     for aid in [a["id"] for a in asset_meta]:
@@ -1544,8 +1550,8 @@ async def get_portfolio_trend(
             # Convert native amount to primary currency at this display date
             currency = asset_currency[aid]
             if native != 0.0 and currency != primary_currency:
-                converted, _ = await convert(
-                    session, Decimal(str(native)), currency, primary_currency, d,
+                converted, _ = await rates.convert(
+                    Decimal(str(native)), currency, primary_currency, d,
                     decimals=ASSET_PRICE_DECIMALS,
                 )
                 val = converted
