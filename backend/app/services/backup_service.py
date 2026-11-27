@@ -36,6 +36,7 @@ from app.models.category import Category
 from app.models.category_group import CategoryGroup
 from app.models.collection import Collection, collection_accounts, collection_asset_groups
 from app.models.credit_card_bill import CreditCardBill
+from app.models.expected_income import ExpectedIncome
 from app.models.goal import Goal
 from app.models.group import Group, GroupMember
 from app.models.group_settlement import GroupSettlement
@@ -153,6 +154,7 @@ RESTORE_ORDER: list[str] = [
     "rules",
     "reconciliation_rules",
     "budgets",
+    "expected_incomes",
     "recurring_transactions",
     "recurring_transaction_category_lines",
     "import_logs",
@@ -200,6 +202,7 @@ MODEL_SPECS: dict[str, EntitySpec] = {
     "rules": EntitySpec("rules", Rule),
     "reconciliation_rules": EntitySpec("reconciliation_rules", ReconciliationRule),
     "budgets": EntitySpec("budgets", Budget),
+    "expected_incomes": EntitySpec("expected_incomes", ExpectedIncome),
     "recurring_transactions": EntitySpec("recurring_transactions", RecurringTransaction),
     "recurring_transaction_category_lines": EntitySpec(
         "recurring_transaction_category_lines", RecurringTransactionCategoryLine
@@ -283,6 +286,7 @@ CONFIG_NAMES = [
     "rules",
     "reconciliation_rules",
     "budgets",
+    "expected_incomes",
     "recurring_transactions",
     "recurring_transaction_category_lines",
     "products",
@@ -307,6 +311,7 @@ DATA_NAMES = [
     "collection_accounts",
     "collection_asset_groups",
     "budgets",
+    "expected_incomes",
     "recurring_transactions",
     "recurring_transaction_category_lines",
     "import_logs",
@@ -1674,6 +1679,7 @@ async def _clear_workspace_entities(
         "assets",
         "collections",
         "budgets",
+        "expected_incomes",
         "recurring_transaction_category_lines",
         "recurring_transactions",
         "reconciliation_rules",
