@@ -65,6 +65,20 @@ it('lists tokens with their scopes, read-only and expired state', async () => {
   expect(screen.queryByLabelText(t('accessTokens.name'))).not.toBeInTheDocument()
   expect(within(row).getByText(t('accessTokens.expiredBadge'))).toBeInTheDocument()
   expect(within(row).getByText(t('accessTokens.readOnlyBadge'))).toBeInTheDocument()
+  // A long name truncates, so the full one is in the tooltip.
+  expect(within(row).getByText(existing.name)).toHaveAttribute('title', existing.name)
+})
+
+it('lists a resource once when a token carries both its read and write scopes', async () => {
+  vi.spyOn(accessTokens, 'list').mockResolvedValue([
+    { ...existing, scopes: ['accounts:read', 'accounts:write', 'reports:read'] },
+  ])
+  renderWithProviders(<AccessTokensDialog open onClose={vi.fn()} />)
+
+  await screen.findByText(existing.name)
+  const row = rowOf(existing.name)
+  expect(within(row).getByText(t('plugins.code.write', { what: 'accounts' }))).toBeInTheDocument()
+  expect(within(row).getByText(t('plugins.code.read', { what: 'reports' }))).toBeInTheDocument()
 })
 
 it("names the member who created another member's token", async () => {

@@ -64,6 +64,17 @@ function toResources(scopes: string[]): ScopeResource[] {
   return [...resources.values()]
 }
 
+/** The list row for a new token. Only the one-time panel holds the plaintext. */
+function withoutSecret(created: AccessTokenCreated): AccessToken {
+  const listed: Partial<AccessTokenCreated> = { ...created }
+  delete listed.token
+  return listed as AccessToken
+}
+
+// The server's `is_active` is the same check (not revoked, not expired) at the
+// time of the request. Expiry is recomputed here so a token that expires while
+// the dialog is open is shown as expired. If the server ever deactivates
+// tokens for another reason, the row has to read `is_active` too.
 function isExpired(token: AccessToken): boolean {
   return token.expires_at !== null && new Date(token.expires_at).getTime() <= Date.now()
 }
@@ -136,10 +147,12 @@ function AccessTokensSession({ open, onClose }: AccessTokensDialogProps) {
   /** What a token may do, as one sentence per level: "Read and change accounts, rules". */
   const describeScopes = (scopes: string[]): string[] => {
     const list = new Intl.ListFormat(i18n.language, { style: 'short', type: 'unit' })
-    const labelsFor = (level: Level) =>
-      scopes.filter((scope) => scope.endsWith(`:${level}`)).map((scope) => resourceLabel(scope.split(':')[0]))
-    const write = labelsFor('write')
-    const read = labelsFor('read')
+    const resourcesAt = (level: Level) =>
+      new Set(scopes.filter((scope) => scope.endsWith(`:${level}`)).map((scope) => scope.split(':')[0]))
+    // Write includes read, so a resource with both is listed once, under write.
+    const writeResources = resourcesAt('write')
+    const write = [...writeResources].map(resourceLabel)
+    const read = [...resourcesAt('read')].filter((r) => !writeResources.has(r)).map(resourceLabel)
     return [
       ...(write.length > 0 ? [t('plugins.code.write', { what: list.format(write) })] : []),
       ...(read.length > 0 ? [t('plugins.code.read', { what: list.format(read) })] : []),
@@ -196,7 +209,7 @@ function AccessTokensSession({ open, onClose }: AccessTokensDialogProps) {
         },
         workspaceId,
       )
-      setTokens((existing) => [result, ...existing])
+      setTokens((existing) => [withoutSecret(result), ...existing])
       setCreated(result)
       setCopied(false)
       setName('')
@@ -294,7 +307,7 @@ function AccessTokensSession({ open, onClose }: AccessTokensDialogProps) {
         </div>
 
         <div className="space-y-1.5">
-          <div className="overflow-hidden rounded-lg border">
+          <div className="overflow-x-auto rounded-lg border">
             <table className="w-full text-sm">
               <thead className="bg-muted/50 text-xs text-muted-foreground">
                 <tr>
@@ -464,7 +477,9 @@ function AccessTokensSession({ open, onClose }: AccessTokensDialogProps) {
                   </div>
                   <div className={`min-w-0 flex-1 space-y-1 ${revoked || expired ? 'opacity-60' : ''}`}>
                     <div className="flex flex-wrap items-center gap-1.5">
-                      <p className="truncate text-sm font-medium">{token.name}</p>
+                      <p title={token.name} className="truncate text-sm font-medium">
+                        {token.name}
+                      </p>
                       {readOnly && <Badge variant="secondary">{t('accessTokens.readOnlyBadge')}</Badge>}
                       {revoked && <Badge variant="destructive">{t('accessTokens.revokedBadge')}</Badge>}
                       {expired && <Badge variant="destructive">{t('accessTokens.expiredBadge')}</Badge>}
