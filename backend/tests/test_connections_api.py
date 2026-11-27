@@ -347,6 +347,91 @@ async def test_sync_connection_success_reports_refreshed_outcome(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(("params", "retry"), [({}, False), ({"retry_trade_import": "true"}, True)])
+async def test_sync_connection_retries_trade_import_only_when_asked(
+    client: AsyncClient, auth_headers, test_connection: BankConnection, params, retry
+):
+    """A manual sync keeps the request-saving rule; only the Performance
+    tab's retry asks for unresolved trade histories again."""
+    with patch(
+        "app.services.connection_service.sync_connection",
+        new_callable=AsyncMock,
+        return_value=(test_connection, 0, "refreshed"),
+    ) as mock_sync:
+        resp = await client.post(
+            f"/api/connections/{test_connection.id}/sync",
+            params=params,
+            headers=auth_headers,
+        )
+
+    assert resp.status_code == 200
+    assert mock_sync.await_args is not None
+    assert mock_sync.await_args.kwargs["retry_trade_import"] is retry
+
+
+async def _editor_headers(session: AsyncSession, client: AsyncClient, workspace_id) -> dict:
+    import bcrypt
+
+    from app.models.workspace import WorkspaceMember
+
+    editor = User(
+        id=uuid.uuid4(),
+        email="editor-role@example.com",
+        hashed_password=bcrypt.hashpw(b"editorpass123", bcrypt.gensalt()).decode(),
+        is_active=True,
+        is_superuser=False,
+        is_verified=True,
+    )
+    session.add(editor)
+    await session.flush()
+    session.add(
+        WorkspaceMember(
+            id=uuid.uuid4(), workspace_id=workspace_id, user_id=editor.id, role="editor"
+        )
+    )
+    await session.commit()
+    login = await client.post(
+        "/api/auth/login",
+        data={"username": "editor-role@example.com", "password": "editorpass123"},
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+    )
+    assert login.status_code == 200, login.text
+    return {
+        "Authorization": f"Bearer {login.json()['access_token']}",
+        "X-Workspace-Id": str(workspace_id),
+    }
+
+
+@pytest.mark.asyncio
+async def test_an_editor_syncs_but_cannot_retry_trade_import(
+    client: AsyncClient,
+    session: AsyncSession,
+    test_workspace,
+    test_connection: BankConnection,
+):
+    """Retrying trade histories spends provider requests the owner opted into."""
+    headers = await _editor_headers(session, client, test_workspace.id)
+    with patch(
+        "app.services.connection_service.sync_connection",
+        new_callable=AsyncMock,
+        return_value=(test_connection, 0, "refreshed"),
+    ) as mock_sync:
+        retry = await client.post(
+            f"/api/connections/{test_connection.id}/sync",
+            params={"retry_trade_import": "true"},
+            headers=headers,
+        )
+        assert retry.status_code == 403
+        assert mock_sync.await_count == 0
+
+        plain = await client.post(f"/api/connections/{test_connection.id}/sync", headers=headers)
+
+    assert plain.status_code == 200
+    assert mock_sync.await_args is not None
+    assert mock_sync.await_args.kwargs["retry_trade_import"] is False
+
+
+@pytest.mark.asyncio
 async def test_sync_connection_rate_limited_reports_outcome(
     client: AsyncClient, auth_headers, test_connection: BankConnection
 ):

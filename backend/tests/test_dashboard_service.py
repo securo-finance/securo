@@ -1340,7 +1340,8 @@ async def test_balance_history_resolves_each_rate_once(
     assert history.current and history.opening_balance is not None
     rates = [s for s in statements if "fx_rates" in s.lower()]
     settings = [s for s in statements if "app_settings" in s.lower()]
-    assert len(settings) <= 1, f"{len(settings)} app_settings reads for one chart"
+    # One read for credit_card_accounting_mode plus at most one for FX provider settings.
+    assert len(settings) <= 2, f"{len(settings)} app_settings reads for one chart"
     assert len(rates) <= 4, f"{len(rates)} fx_rates statements for one chart"
 
 

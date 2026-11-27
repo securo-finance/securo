@@ -1391,3 +1391,34 @@ describe('Dashboard uncategorized drill-down', () => {
     expect(within(screen.getByRole('dialog')).getByDisplayValue('Third row')).toBeInTheDocument()
   })
 })
+
+it('renders ReportingDateBadge on shifted credit-card rows in Dashboard Period Transactions (#1379)', async () => {
+  api.transactions.list.mockResolvedValue({
+    items: [{
+      id: 'tx-cc-shifted',
+      description: 'October Cafe Charge',
+      date: '2026-10-27',
+      reporting_date: '2026-11-11',
+      reporting_date_override: null,
+      type: 'debit',
+      amount: 383.4,
+      amount_primary: 383.4,
+      currency: 'USD',
+      status: 'posted',
+      category: null,
+      account_id: 'acc-cc',
+      attachment_count: 0,
+      splits: [],
+      is_shared: false,
+      is_ignored: false,
+      installment_number: null,
+      total_installments: null,
+      user_id: 'me',
+    }],
+    total: 1,
+  })
+  renderWithProviders(<TooltipProvider><DashboardPage /></TooltipProvider>, { route: '/?month=2026-11' })
+  expect(await screen.findByText('October Cafe Charge')).toBeInTheDocument()
+  expect(screen.getByText(/Reporting date:/)).toBeInTheDocument()
+  expect(screen.getByText(/Bank date:/)).toBeInTheDocument()
+})

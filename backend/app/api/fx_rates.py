@@ -8,7 +8,7 @@ from app.core.config import get_settings
 from app.core.database import get_async_session
 from app.models.fx_rate import FxRate
 from app.models.user import User
-from app.services.fx_rate_service import sync_rates
+from app.services.fx_rate_service import reset_fx_failure_cache, sync_rates
 from app.services.provider_settings import resolve_settings
 
 router = APIRouter(prefix="/api/fx-rates", tags=["fx-rates"])
@@ -35,6 +35,9 @@ async def refresh_rates(
             status_code=502,
             detail="Exchange rates could not be fetched. Check the Open Exchange Rates app ID in Settings.",
         ) from None
+    # A person asked the provider again: forget the failures remembered while
+    # the on-demand path was backing off.
+    reset_fx_failure_cache()
     return {"synced": True, "rates_count": count, "date": today.isoformat()}
 
 

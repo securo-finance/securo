@@ -29,6 +29,7 @@ Securo's promise is that a person's financial data stays on their own infrastruc
   Paths are under `backend/app/` except `plugin_runner/`, under `backend/`.
 - Extended by [0019](0019-s3-storage.md), which adds S3-compatible object storage for files, called only with `STORAGE_PROVIDER=s3`.
 - Extended by [0021](0021-plugin-icons.md), which adds plugin icons, fetched from the plugin catalog's host when a browser asks Securo for one.
+- Extended by [0025](0025-performance-benchmark-sources.md), which adds the Performance tab's market indices: Yahoo Finance for index search and history, and the Central Bank of Brazil and Ipeadata for the Índice DI, behind `PERFORMANCE_BENCHMARKS_ENABLED`.
 - Extended by [0037](0037-document-reading.md), which sends an uploaded document to the provider of the agents LLM connection a workspace picked for reading, when someone uploads one.
 - Extended by [0026](0026-plugin-icons-outside-the-catalog.md), which also fetches the plugin index when Connect Bank or Accounts shows an installed plugin's avatar.
 - Extended by [0046](0046-email-provider-and-templates.md), which adds the hosted email API as the second path behind `EMAIL_ENABLED`, next to the instance's SMTP relay.

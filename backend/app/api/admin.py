@@ -31,6 +31,7 @@ from app.schemas.admin import (
     AppSettingRead,
     AppSettingUpdate,
     EmailStateRead,
+    InstanceModeRead,
     ProviderSettingRead,
     TimezoneSettingRead,
     clean_reason,
@@ -38,6 +39,7 @@ from app.schemas.admin import (
 from app.services import admin_service
 from app.services import email_service
 from app.services import provider_settings
+from app.services.user_removal_service import SoleOwnerError
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
@@ -51,6 +53,34 @@ ALLOWED_SETTINGS = {
     "date_format",
     "timezone",
 }
+
+#: On a managed instance these belong to the operator, not to the person
+#: logging in as admin: every one of them is instance-wide and changes what
+#: everybody sees (ADR 0045).
+INSTANCE_SETTINGS = frozenset(ALLOWED_SETTINGS)
+
+
+def _refuse_managed_write(what: str) -> None:
+    """403 with a code the admin screen reads, when the operator owns `what`."""
+    if get_settings().managed_instance:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "code": "instance_managed",
+                "message": f"'{what}' is configured by the operator on this instance",
+            },
+        )
+
+
+@router.get("/instance-mode", response_model=InstanceModeRead)
+async def instance_mode(_user: User = Depends(current_superuser)):
+    """What this instance lets its administrator change (ADR 0045)."""
+    managed = get_settings().managed_instance
+    return InstanceModeRead(
+        managed=managed,
+        locked_settings=sorted(INSTANCE_SETTINGS) if managed else [],
+        locked_providers=managed,
+    )
 
 
 @router.get("/users", response_model=AdminUserList)
@@ -131,6 +161,15 @@ async def delete_user(
         deleted = await admin_service.delete_user(
             session, user_id, current_user.id, reason=reason, ip=client_ip(request)
         )
+    except SoleOwnerError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "code": "user_sole_owner",
+                "message": str(e),
+                "workspace": e.workspace_name,
+            },
+        )
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     if not deleted:
@@ -184,6 +223,7 @@ async def update_provider_settings(
     session: AsyncSession = Depends(get_async_session),
     _user: User = Depends(current_superuser),
 ):
+    _refuse_managed_write(provider)
     # Parse explicitly so schema validation errors cannot echo submitted secrets.
     try:
         body = await request.json()
@@ -209,6 +249,7 @@ async def update_setting(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Setting '{key}' is not configurable",
         )
+    _refuse_managed_write(key)
     if key == "timezone" and not is_valid_timezone(data.value):
         raise HTTPException(status_code=400, detail="Invalid IANA timezone")
     SETTING_VALIDATORS = {
@@ -250,6 +291,7 @@ async def delete_setting(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Setting '{key}' is not configurable",
         )
+    _refuse_managed_write(key)
     await admin_service.delete_app_setting(session, key)
     if key == "timezone":
         invalidate_timezone_cache()
@@ -282,14 +324,18 @@ async def email_state(
 async def update_email_state(
     request: Request,
     session: AsyncSession = Depends(get_async_session),
-    _user: User = Depends(current_superuser),
+    current_user: User = Depends(current_superuser),
 ):
     """Replace the recovery templates, or clear them back to the built-in text.
 
     The body is read here instead of through a model so a broken template
     answers 400 with what is wrong, rather than a schema error nobody can act
-    on. Nothing is saved unless every template sent validates.
+    on. Nothing is saved unless every template sent validates, and what is
+    saved is recorded with who saved it and what the text was before (#605).
     """
+    # The message goes out from the operator's sender to every user of the
+    # instance, so on a hosted instance its text is the operator's (ADR 0045).
+    _refuse_managed_write("email")
     try:
         body = json.loads(await request.body())
     except (ValueError, RecursionError):
@@ -311,7 +357,9 @@ async def update_email_state(
         templates = email_service.validate_templates(body["templates"])
     except email_service.TemplateError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
-    await admin_service.save_email_templates(session, templates)
+    await admin_service.update_email_templates(
+        session, templates, current_user.id, ip=client_ip(request)
+    )
     return await _email_state(session)
 
 

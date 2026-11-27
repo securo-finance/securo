@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { admin as adminApi, currencies as currenciesApi } from '@/lib/api'
+import { extractApiError } from '@/lib/api-errors'
 import { resolveDisplayLocale, resolveDateLocale, type NumberFormat, type DateFormat } from '@/lib/format'
 import { resolveSupportedLang, SUPPORTED_LANGS } from '@/lib/i18n'
 import { useAuth } from '@/contexts/auth-context'
@@ -33,13 +34,29 @@ import { ProviderSettings } from '@/components/provider-settings'
 import { EmailSettings } from '@/components/email-settings'
 import { DEFAULT_COLORS_QUERY_KEY } from '@/hooks/use-app-theme'
 import { useLocalAuthEnabled } from '@/hooks/use-local-auth'
-import { Search, Plus, Trash2, Shield, ShieldOff, UserCog, Users, Scale, Tag, Palette, Save, Hash, CalendarDays } from 'lucide-react'
+import { Search, Plus, Trash2, Shield, ShieldOff, UserCog, Users, Scale, Tag, Palette, Save, Hash, CalendarDays, Lock } from 'lucide-react'
 import type { AdminUser } from '@/types'
+
+/** The one line a locked section shows in place of its control (ADR 0045). */
+function ManagedNote() {
+  const { t } = useTranslation()
+  return (
+    <p className="text-xs font-medium text-primary">{t('admin.settings.managedReadOnly')}</p>
+  )
+}
 
 export default function AdminSettingsPage() {
   const { t, i18n } = useTranslation()
   const { user: currentUser } = useAuth()
   const queryClient = useQueryClient()
+
+  // A managed instance belongs to whoever runs it: the instance-wide settings
+  // are theirs, and this screen shows them without the controls (ADR 0045).
+  const { data: instanceMode } = useQuery({
+    queryKey: ['admin', 'instance-mode'],
+    queryFn: adminApi.instanceMode,
+  })
+  const managed = instanceMode?.managed === true
 
   const [search, setSearch] = useState('')
   const [createOpen, setCreateOpen] = useState(false)
@@ -106,8 +123,8 @@ export default function AdminSettingsPage() {
       setDeleteUser(null)
       toast.success(t('admin.users.deleted'))
     },
-    onError: (err: { response?: { data?: { detail?: string } } }) => {
-      toast.error(err.response?.data?.detail || t('common.error'))
+    onError: (err) => {
+      toast.error(extractApiError(err, t('common.error')))
     },
   })
 
@@ -304,6 +321,19 @@ export default function AdminSettingsPage() {
         }
       />
 
+      {managed && (
+        <div
+          role="status"
+          className="mb-6 flex items-start gap-3 rounded-xl border border-primary/20 bg-primary/5 px-4 py-3"
+        >
+          <Lock size={16} className="mt-0.5 shrink-0 text-primary" aria-hidden="true" />
+          <div>
+            <p className="text-sm font-medium text-foreground">{t('admin.settings.managedTitle')}</p>
+            <p className="mt-0.5 text-xs text-muted-foreground">{t('admin.settings.managedDesc')}</p>
+          </div>
+        </div>
+      )}
+
       {/* Search */}
       <div className="relative max-w-md mb-5">
         <Search size={16} className="absolute start-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
@@ -388,9 +418,9 @@ export default function AdminSettingsPage() {
         )}
       </div>
 
-      <TimezoneSettings />
-      <EmailSettings />
-      <ProviderSettings />
+      <TimezoneSettings readOnly={managed} />
+      <EmailSettings readOnly={managed} />
+      <ProviderSettings readOnly={managed} />
 
       {/* Theme and Customization Section */}
       <div className="grid grid-cols-1 gap-6 mb-8">
@@ -400,13 +430,17 @@ export default function AdminSettingsPage() {
               <Palette size={15} className="text-muted-foreground" />
               <h3 className="text-sm font-semibold text-foreground">{t('settings.customization')}</h3>
             </div>
-            <Button
-              onClick={() => saveColorsMutation.mutate()}
-              disabled={saveColorsMutation.isPending}
-            >
-              <Save size={13} />
-              {saveColorsMutation.isPending ? t('common.loading') : t('common.save')}
-            </Button>
+            {managed ? (
+              <ManagedNote />
+            ) : (
+              <Button
+                onClick={() => saveColorsMutation.mutate()}
+                disabled={saveColorsMutation.isPending}
+              >
+                <Save size={13} />
+                {saveColorsMutation.isPending ? t('common.loading') : t('common.save')}
+              </Button>
+            )}
           </div>
           <div className="p-5 grid grid-cols-1 md:grid-cols-2 gap-6">
             {/* Light Mode Colors */}
@@ -417,11 +451,12 @@ export default function AdminSettingsPage() {
               <div className="space-y-1.5">
                 <Label className="text-xs">{t('settings.themeColor')}</Label>
                 <div className="flex items-center gap-2">
-                  <Input 
-                    type="color" 
-                    className="w-12 h-9 p-1 cursor-pointer" 
+                  <Input
+                    type="color"
+                    className="w-12 h-9 p-1 cursor-pointer"
                     value={localLight}
                     onChange={(e) => setLocalLight(e.target.value)}
+                    disabled={managed}
                   />
                   <span className="text-xs font-mono text-muted-foreground">{localLight}</span>
                 </div>
@@ -436,11 +471,12 @@ export default function AdminSettingsPage() {
               <div className="space-y-1.5">
                 <Label className="text-xs">{t('settings.themeColor')}</Label>
                 <div className="flex items-center gap-2">
-                  <Input 
-                    type="color" 
-                    className="w-12 h-9 p-1 cursor-pointer" 
+                  <Input
+                    type="color"
+                    className="w-12 h-9 p-1 cursor-pointer"
                     value={localDark}
                     onChange={(e) => setLocalDark(e.target.value)}
+                    disabled={managed}
                   />
                   <span className="text-xs font-mono text-muted-foreground">{localDark}</span>
                 </div>
@@ -458,12 +494,13 @@ export default function AdminSettingsPage() {
             <h3 className="text-sm font-semibold text-foreground">{t('admin.settings.accountingTitle')}</h3>
           </div>
           <p className="text-xs text-muted-foreground">{t('admin.settings.accountingSubtitle')}</p>
+          {managed && <div className="mt-1"><ManagedNote /></div>}
         </div>
         <div className="divide-y divide-border/40">
           <button
             type="button"
             onClick={() => updateAccountingModeMutation.mutate('cash')}
-            disabled={updateAccountingModeMutation.isPending}
+            disabled={managed || updateAccountingModeMutation.isPending}
             className="flex items-start gap-3 w-full px-5 py-4 text-start hover:bg-muted/40 transition-colors"
           >
             <div className={`mt-0.5 h-4 w-4 rounded-full border-2 shrink-0 ${accountingMode === 'cash' ? 'border-primary bg-primary' : 'border-muted-foreground/40'}`}>
@@ -477,7 +514,7 @@ export default function AdminSettingsPage() {
           <button
             type="button"
             onClick={() => updateAccountingModeMutation.mutate('accrual')}
-            disabled={updateAccountingModeMutation.isPending}
+            disabled={managed || updateAccountingModeMutation.isPending}
             className="flex items-start gap-3 w-full px-5 py-4 text-start hover:bg-muted/40 transition-colors"
           >
             <div className={`mt-0.5 h-4 w-4 rounded-full border-2 shrink-0 ${accountingMode === 'accrual' ? 'border-primary bg-primary' : 'border-muted-foreground/40'}`}>
@@ -498,6 +535,7 @@ export default function AdminSettingsPage() {
             <Tag size={15} className="text-muted-foreground" />
             <h3 className="text-sm font-semibold text-foreground">{t('admin.settings.providerCategoriesTitle')}</h3>
           </div>
+          {managed && <ManagedNote />}
         </div>
         <div className="px-5 py-4 flex items-center justify-between">
           <div>
@@ -507,7 +545,7 @@ export default function AdminSettingsPage() {
           <button
             aria-label={t('admin.settings.providerCategories')}
             onClick={() => updateProviderCatsMutation.mutate(useProviderCats ? 'false' : 'true')}
-            disabled={updateProviderCatsMutation.isPending}
+            disabled={managed || updateProviderCatsMutation.isPending}
             className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${useProviderCats ? 'bg-primary' : 'bg-muted-foreground/20'}`}
           >
             <span
@@ -525,6 +563,7 @@ export default function AdminSettingsPage() {
             <h3 className="text-sm font-semibold text-foreground">{t('admin.settings.numberFormatTitle')}</h3>
           </div>
           <p className="text-xs text-muted-foreground">{t('admin.settings.numberFormatDesc')}</p>
+          {managed && <div className="mt-1"><ManagedNote /></div>}
         </div>
         <div className="divide-y divide-border/40">
           {([
@@ -543,7 +582,7 @@ export default function AdminSettingsPage() {
                 key={opt.value}
                 type="button"
                 onClick={() => updateNumberFormatMutation.mutate(opt.value)}
-                disabled={updateNumberFormatMutation.isPending}
+                disabled={managed || updateNumberFormatMutation.isPending}
                 className="flex items-start gap-3 w-full px-5 py-4 text-start hover:bg-muted/40 transition-colors"
               >
                 <div className={`mt-0.5 h-4 w-4 rounded-full border-2 shrink-0 ${numberFormat === opt.value ? 'border-primary bg-primary' : 'border-muted-foreground/40'}`}>
@@ -572,6 +611,7 @@ export default function AdminSettingsPage() {
             <h3 className="text-sm font-semibold text-foreground">{t('admin.settings.dateFormatTitle')}</h3>
           </div>
           <p className="text-xs text-muted-foreground">{t('admin.settings.dateFormatDesc')}</p>
+          {managed && <div className="mt-1"><ManagedNote /></div>}
         </div>
         <div className="divide-y divide-border/40">
           {([
@@ -591,7 +631,7 @@ export default function AdminSettingsPage() {
                 key={opt.value}
                 type="button"
                 onClick={() => updateDateFormatMutation.mutate(opt.value)}
-                disabled={updateDateFormatMutation.isPending}
+                disabled={managed || updateDateFormatMutation.isPending}
                 className="flex items-start gap-3 w-full px-5 py-4 text-start hover:bg-muted/40 transition-colors"
               >
                 <div className={`mt-0.5 h-4 w-4 rounded-full border-2 shrink-0 ${dateFormat === opt.value ? 'border-primary bg-primary' : 'border-muted-foreground/40'}`}>
@@ -621,6 +661,7 @@ export default function AdminSettingsPage() {
             <UserCog size={15} className="text-muted-foreground" />
             <h3 className="text-sm font-semibold text-foreground">{t('admin.settings.registrationTitle')}</h3>
           </div>
+          {managed && <ManagedNote />}
         </div>
 
         {settingsLoading ? (
@@ -636,7 +677,7 @@ export default function AdminSettingsPage() {
             <button
               aria-label={t('admin.settings.registration')}
               onClick={() => updateSettingMutation.mutate(isEnabled ? 'false' : 'true')}
-              disabled={updateSettingMutation.isPending}
+              disabled={managed || updateSettingMutation.isPending}
               className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${isEnabled ? 'bg-primary' : 'bg-muted-foreground/20'}`}
             >
               <span

@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from sqlalchemy.pool import NullPool
 
 from app.core.config import get_settings
+from app.core.row_security import maker_for_row
 from app.worker import celery_app
 
 logger = logging.getLogger(__name__)
@@ -38,7 +39,8 @@ async def _async_ingest(doc_id_str: str, agent_id_str: str) -> dict:
     engine = create_async_engine(get_settings().database_url, poolclass=NullPool)
     session_maker = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
     try:
-        return await _do_ingest(session_maker, doc_id, agent_id)
+        maker = await maker_for_row(session_maker, "agents", agent_id)
+        return await _do_ingest(maker, doc_id, agent_id)
     finally:
         await engine.dispose()
 

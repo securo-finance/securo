@@ -1,4 +1,21 @@
-import { useState, useMemo, useEffect, useRef, useId } from 'react'
+import { useState, useMemo, useEffect, useRef, useId, type ButtonHTMLAttributes, type ReactNode } from 'react'
+import {
+  closestCenter,
+  DndContext,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from '@dnd-kit/core'
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
 import { useTranslation } from 'react-i18next'
 import { useDisplayLocale, useDateLocale } from '@/hooks/use-display-locale'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -8,6 +25,13 @@ import { dateTickFormatter, localDateString, todayInTimezone } from '@/lib/date-
 import { useEffectiveTimezone } from '@/hooks/use-timezone'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
@@ -34,6 +58,8 @@ import {
   ChevronDown,
   ChevronUp,
   ChevronRight,
+  EllipsisVertical,
+  GripVertical,
   RefreshCw,
   Wallet,
   FolderInput,
@@ -43,6 +69,7 @@ import {
   PieChart,
   AlertTriangle,
   Upload,
+  Activity,
 } from 'lucide-react'
 import {
   AreaChart,
@@ -55,6 +82,7 @@ import {
 } from 'recharts'
 import { useNavigate } from 'react-router-dom'
 import { PageHeader } from '@/components/page-header'
+import { PortfolioPerformance } from '@/components/portfolio-performance'
 import { ExchangeRateSetupAction, ExchangeRateSetupIcon } from '@/components/exchange-rate-setup-notice'
 import { needsConversion, useExchangeRatesNeedSetup } from '@/hooks/use-exchange-rates-need-setup'
 import { PropertyEquitySummary } from '@/components/property-equity-summary'
@@ -69,6 +97,7 @@ import { getAssetValuePrimary, getPortfolioShare, getPortfolioTotalPrimary } fro
 import { formatTransactionTotal, getTransactionTotalCurrency } from '@/lib/asset-transaction-total'
 import { MAX_SPLIT_UNITS, canRecordSplit, formatSplitRatio, parseSplitUnits } from '@/lib/asset-split'
 import { formatCurrency } from '@/lib/format'
+import { applyWalletOrder } from '@/lib/wallet-order'
 
 // Renders a logo image when one is available, falling back to the asset's
 // type-based Lucide icon on missing URL or broken image. Uses the type's
@@ -178,6 +207,38 @@ const VALUATION_METHODS = ['manual', 'growth_rule', 'market_price'] as const
 const GROWTH_TYPES = ['percentage', 'absolute'] as const
 const GROWTH_FREQUENCIES = ['daily', 'weekly', 'monthly', 'yearly'] as const
 
+type DragHandleProps = ButtonHTMLAttributes<HTMLButtonElement> & {
+  ref: (element: HTMLElement | null) => void
+}
+
+function SortableWalletSection({
+  id,
+  disabled,
+  children,
+}: {
+  id: string
+  disabled: boolean
+  children: (dragHandle: DragHandleProps) => ReactNode
+}) {
+  const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } = useSortable({
+    id,
+    disabled,
+  })
+
+  return (
+    <div
+      ref={setNodeRef}
+      // Translate only: scaling would squash a wallet into its neighbour's height.
+      style={{ transform: CSS.Translate.toString(transform), transition }}
+      className={`space-y-2 rounded-xl ${
+        isDragging ? 'relative z-20 bg-background/90 opacity-75 shadow-xl ring-2 ring-primary/30' : ''
+      }`}
+    >
+      {children({ ...attributes, ...listeners, ref: setActivatorNodeRef })}
+    </div>
+  )
+}
+
 // Column template shared by the holdings table header + rows so they align:
 // Ativo · Quant. · Preço Médio · Preço Atual · Rentab. · Saldo · % · actions.
 const HOLDINGS_GRID = 'minmax(0,2.4fr) 0.7fr 1.1fr 1fr 0.9fr 1.3fr 0.6fr 4.5rem'
@@ -195,6 +256,25 @@ const SHOW_SOLD_KEY = 'securo:assets:showSold'
 // diagnosable — e.g. the oversell guard message, or a "Not Found" when a
 // transaction endpoint is missing because the backend is older than the
 // frontend (issue #315) — rather than a cryptic "Error".
+// A trade a connected bank reported. Its sync rewrites it from the bank's
+// data, so editing or deleting it here would be silently undone.
+function isSyncedTransaction(tx: AssetTransaction): boolean {
+  return tx.source !== 'manual' && tx.source !== 'import'
+}
+
+function SyncedTransactionBadge() {
+  const { t } = useTranslation()
+  return (
+    <Badge
+      variant="outline"
+      className="text-[10px] px-1.5 py-0 shrink-0 text-muted-foreground"
+      title={t('assets.txSyncedHint')}
+    >
+      {t('assets.sourceSync')}
+    </Badge>
+  )
+}
+
 function assetErrorMessage(e: unknown, fallback: string): string {
   const resp = (e as { response?: { data?: { detail?: unknown }; status?: number } })?.response
   const detail = resp?.data?.detail
@@ -241,6 +321,22 @@ function splitRatio(tx: AssetTransaction, locale: string): string {
   return formatSplitRatio(tx.old_units ?? 0, tx.new_units ?? 0, locale)
 }
 
+type AssetsTab = 'holdings' | 'transactions' | 'performance'
+const ASSETS_TABS: AssetsTab[] = ['holdings', 'transactions', 'performance']
+const ASSETS_TAB_STORAGE_KEY = 'securo.assetsTab'
+
+function readInitialAssetsTab(): AssetsTab {
+  const fromUrl = new URLSearchParams(window.location.search).get('tab')
+  if (ASSETS_TABS.includes(fromUrl as AssetsTab)) return fromUrl as AssetsTab
+  try {
+    const stored = localStorage.getItem(ASSETS_TAB_STORAGE_KEY)
+    if (ASSETS_TABS.includes(stored as AssetsTab)) return stored as AssetsTab
+  } catch {
+    // Storage unavailable: fall back to holdings.
+  }
+  return 'holdings'
+}
+
 export default function AssetsPage() {
   const { t } = useTranslation()
   const navigate = useNavigate()
@@ -248,7 +344,7 @@ export default function AssetsPage() {
   const dateLocale = useDateLocale()
   const { mask } = usePrivacyMode()
   const { user } = useAuth()
-  const { canWrite, current: workspace } = useWorkspace()
+  const { canWrite, canManage, current: workspace } = useWorkspace()
   // The day the server keeps the books in, so the staleness badge agrees with
   // the dates it writes, not the browser's clock. Until that timezone is known
   // there is no day to compare against, so the badge waits for it instead of
@@ -264,7 +360,20 @@ export default function AssetsPage() {
     staleTime: Infinity,
   })
 
-  const [activeTab, setActiveTab] = useState<'holdings' | 'transactions'>('holdings')
+  // Reopen on the tab used last; `?tab=performance` links straight to one.
+  const [activeTab, setActiveTabState] = useState<AssetsTab>(readInitialAssetsTab)
+  // When Performance was last opened: an inventory read before that is not
+  // trusted to prune a selection (see performanceInventory).
+  const [performanceOpenedAt, setPerformanceOpenedAt] = useState(() => Date.now())
+  const setActiveTab = (tab: AssetsTab) => {
+    if (tab === 'performance' && activeTab !== 'performance') setPerformanceOpenedAt(Date.now())
+    setActiveTabState(tab)
+    try {
+      localStorage.setItem(ASSETS_TAB_STORAGE_KEY, tab)
+    } catch {
+      // Storage unavailable: the tab just isn't remembered.
+    }
+  }
   // Holding id for the lightweight "add transaction to this holding" dialog,
   // opened from the holdings table ("+ add buys") and the inline ledger.
   const [addTxAssetId, setAddTxAssetId] = useState<string | null>(null)
@@ -441,6 +550,7 @@ export default function AssetsPage() {
     queryClient.refetchQueries({ queryKey: ['portfolio-trend'] })
     queryClient.refetchQueries({ queryKey: ['asset-trend'] })
     queryClient.refetchQueries({ queryKey: ['dashboard'] })
+    queryClient.invalidateQueries({ queryKey: ['asset-performance'] })
   }
 
   const createMutation = useMutation({
@@ -586,11 +696,35 @@ export default function AssetsPage() {
       // Deleting a wallet un-groups its assets (backend sets group_id=null).
       queryClient.refetchQueries({ queryKey: ['asset-groups'] })
       queryClient.refetchQueries({ queryKey: ['assets'] })
+      queryClient.invalidateQueries({ queryKey: ['asset-performance'] })
       setDeletingWalletId(null)
       toast.success(t('assets.walletDeleted'))
     },
     onError: (e) => toast.error(assetErrorMessage(e, t('common.error'))),
   })
+
+  const reorderWalletsMutation = useMutation({
+    mutationFn: (groupIds: string[]) => assetGroups.reorder(groupIds),
+    onMutate: async (groupIds) => {
+      await queryClient.cancelQueries({ queryKey: ['asset-groups'], exact: true })
+      const previous = queryClient.getQueryData<AssetGroup[]>(['asset-groups'])
+      if (previous) {
+        queryClient.setQueryData(['asset-groups'], applyWalletOrder(previous, groupIds))
+      }
+      return { previous }
+    },
+    onError: (error, _groupIds, context) => {
+      if (context?.previous) queryClient.setQueryData(['asset-groups'], context.previous)
+      toast.error(assetErrorMessage(error, t('common.error')))
+    },
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ['asset-groups'] }),
+  })
+
+  const walletSensors = useSensors(
+    // A few pixels of travel before a drag starts, so a click on the handle stays a click.
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  )
 
   const moveAssetMutation = useMutation({
     mutationFn: ({ id, groupId }: { id: string; groupId: string | null }) =>
@@ -598,6 +732,7 @@ export default function AssetsPage() {
     onSuccess: () => {
       queryClient.refetchQueries({ queryKey: ['assets'] })
       queryClient.refetchQueries({ queryKey: ['asset-groups'] })
+      queryClient.invalidateQueries({ queryKey: ['asset-performance'] })
       setMovingAsset(null)
       toast.success(t('assets.moved'))
     },
@@ -656,6 +791,8 @@ export default function AssetsPage() {
       .map(([currency, cents]): [string, number] => [currency, cents / 100])
       .sort(([a], [b]) => a === userCurrency ? -1 : b === userCurrency ? 1 : a.localeCompare(b))
   })()
+  // Performance can measure a holding after it is sold, over the time it was held.
+  const performanceHoldings = useMemo(() => assetsList?.filter(a => !a.is_archived) ?? [], [assetsList])
   // Denominator for the "% of portfolio" column: current holdings only, in the
   // user's primary currency, so the active rows add up to 100%. Assets with
   // no resolvable FX rate are left out of the denominator (their rows show
@@ -834,7 +971,11 @@ export default function AssetsPage() {
       type: formType,
       currency: formCurrency,
       group_id: formGroupId || null,
-      valuation_method: formMethod,
+      // Only a create picks how the value is kept: an edit cannot change it
+      // (the buttons are disabled and the service drops the field), so sending
+      // the stored value back would only let a row outside the accepted set
+      // fail every later edit with a 422.
+      ...(editingAsset ? {} : { valuation_method: formMethod }),
     }
 
     // A ledger-backed holding derives its buy date, quantity and cost basis
@@ -1242,6 +1383,44 @@ export default function AssetsPage() {
     return (walletsList ?? []).slice().sort((a, b) => a.position - b.position || a.name.localeCompare(b.name))
   }, [walletsList])
 
+  // Performance tells a deleted wallet or holding (dropped from a saved or
+  // remembered selection) from one the collection hides or that is archived
+  // (kept), so it needs the whole workspace, archived holdings included.
+  // Both reads name the workspace, in the key and on the request: another tab
+  // switching workspace changes the shared default, and an inventory from the
+  // wrong workspace would prune this one's remembered selection. Each opening
+  // of Performance is its own read (the opening time is in the key): a copy
+  // cached earlier, or a request still running from the last visit, can miss
+  // a wallet or holding created meanwhile and would drop it from the selection.
+  const inventoryWorkspaceId = workspace?.id ?? null
+  const inventoryAssetsQuery = useQuery({
+    queryKey: ['assets', 'including-archived', inventoryWorkspaceId, performanceOpenedAt],
+    queryFn: () => assets.list(true, inventoryWorkspaceId),
+    enabled: activeTab === 'performance' && !!inventoryWorkspaceId,
+  })
+  const inventoryWalletsQuery = useQuery({
+    queryKey: ['asset-groups', 'inventory', inventoryWorkspaceId, performanceOpenedAt],
+    queryFn: () => assetGroups.list(inventoryWorkspaceId),
+    enabled: activeTab === 'performance' && !!inventoryWorkspaceId,
+  })
+  const inventoryAssets = inventoryAssetsQuery.data
+  const inventoryWallets = inventoryWalletsQuery.data
+  const performanceInventory = useMemo(
+    () =>
+      inventoryAssets && inventoryWallets
+        ? {
+            walletIds: inventoryWallets.map((wallet) => wallet.id),
+            assetIds: inventoryAssets.map((asset) => asset.id),
+          }
+        : null,
+    [inventoryAssets, inventoryWallets],
+  )
+  const inventoryError = inventoryAssetsQuery.isError || inventoryWalletsQuery.isError
+  const retryInventory = () => {
+    if (inventoryAssetsQuery.isError) void inventoryAssetsQuery.refetch()
+    if (inventoryWalletsQuery.isError) void inventoryWalletsQuery.refetch()
+  }
+
   const ungroupedAssets = assetsByGroup.get(null) ?? []
 
   function toggleWalletCollapse(id: string) {
@@ -1277,7 +1456,25 @@ export default function AssetsPage() {
     }
   }
 
-  function renderWalletSection(wallet: AssetGroup, walletAssets: Asset[]) {
+  function moveWallet(from: number, to: number) {
+    if (from === to || from < 0 || to < 0 || to >= sortedWallets.length) return
+    reorderWalletsMutation.mutate(arrayMove(sortedWallets.map(wallet => wallet.id), from, to))
+  }
+
+  function handleWalletDragEnd({ active, over }: DragEndEvent) {
+    if (!over || reorderWalletsMutation.isPending) return
+    moveWallet(
+      sortedWallets.findIndex(wallet => wallet.id === active.id),
+      sortedWallets.findIndex(wallet => wallet.id === over.id),
+    )
+  }
+
+  function renderWalletSection(
+    wallet: AssetGroup,
+    walletAssets: Asset[],
+    walletIndex: number,
+    dragHandle: DragHandleProps,
+  ) {
     const isCollapsed = collapsedWallets.has(wallet.id)
     const isSynced = wallet.source !== 'manual'
     // Sum in the user's primary currency. Fall back to the wallet's own
@@ -1306,8 +1503,21 @@ export default function AssetsPage() {
       !!wallet.institution_name && wallet.institution_name !== wallet.name
 
     return (
-      <div key={wallet.id} className="space-y-2">
+      <>
         <div className="flex items-center gap-3 px-1">
+          {canWrite && sortedWallets.length > 1 && (
+            <button
+              {...dragHandle}
+              // Marked aria-disabled by the sortable while saving, never `disabled`:
+              // that would drop keyboard focus right after a drop.
+              type="button"
+              className="-me-1 touch-none cursor-grab rounded-md p-1 text-muted-foreground/60 transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:cursor-grabbing aria-disabled:cursor-default aria-disabled:opacity-30"
+              aria-label={t('assets.reorderWallet', { name: wallet.name })}
+              title={t('assets.reorderWallet', { name: wallet.name })}
+            >
+              <GripVertical size={15} />
+            </button>
+          )}
           <button
             onClick={() => toggleWalletCollapse(wallet.id)}
             className="flex items-center gap-2 flex-1 min-w-0 group"
@@ -1349,24 +1559,49 @@ export default function AssetsPage() {
             ))}
           </div>
           {canWrite && (
-            <>
-              <button
-                onClick={() => openEditWallet(wallet)}
-                className="p-1 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
-                title={t('assets.editWallet')}
-              >
-                <Pencil size={12} />
-              </button>
-              {!isSynced && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
                 <button
-                  onClick={() => setDeletingWalletId(wallet.id)}
-                  className="p-1 rounded-lg text-muted-foreground hover:text-rose-600 hover:bg-rose-50 transition-colors"
-                  title={t('assets.deleteWallet')}
+                  type="button"
+                  className="rounded-lg p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                  aria-label={`${t('common.more')}: ${wallet.name}`}
+                  title={t('common.more')}
                 >
-                  <Trash2 size={12} />
+                  <EllipsisVertical size={14} />
                 </button>
-              )}
-            </>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-44">
+                {sortedWallets.length > 1 && (
+                  <>
+                    <DropdownMenuItem
+                      disabled={walletIndex === 0 || reorderWalletsMutation.isPending}
+                      onSelect={() => moveWallet(walletIndex, walletIndex - 1)}
+                    >
+                      <ChevronUp />
+                      {t('assets.moveWalletUp')}
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      disabled={walletIndex === sortedWallets.length - 1 || reorderWalletsMutation.isPending}
+                      onSelect={() => moveWallet(walletIndex, walletIndex + 1)}
+                    >
+                      <ChevronDown />
+                      {t('assets.moveWalletDown')}
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                  </>
+                )}
+                <DropdownMenuItem onSelect={() => openEditWallet(wallet)}>
+                  <Pencil />
+                  {t('assets.editWallet')}
+                </DropdownMenuItem>
+                {!isSynced && (
+                  <DropdownMenuItem variant="destructive" onSelect={() => setDeletingWalletId(wallet.id)}>
+                    <Trash2 />
+                    {t('assets.deleteWallet')}
+                  </DropdownMenuItem>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
           )}
         </div>
         {!isCollapsed && walletAssets.length > 0 && (
@@ -1379,7 +1614,7 @@ export default function AssetsPage() {
             {t('assets.emptyWallet')}
           </div>
         )}
-      </div>
+      </>
     )
   }
 
@@ -1423,29 +1658,42 @@ export default function AssetsPage() {
 
       {/* Holdings (consolidated by ticker) vs. the buy/sell ledger (#235) */}
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="inline-flex items-center rounded-lg border border-border p-0.5 bg-muted/40">
+        <div className="inline-flex max-w-full flex-wrap items-center gap-1 rounded-lg border border-border p-0.5 bg-muted/40">
           <button
             onClick={() => setActiveTab('holdings')}
+            aria-pressed={activeTab === 'holdings'}
             className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${activeTab === 'holdings' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
           >
             {t('assets.tabHoldings')}
           </button>
           <button
             onClick={() => setActiveTab('transactions')}
+            aria-pressed={activeTab === 'transactions'}
             className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${activeTab === 'transactions' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
           >
             {t('assets.tabTransactions')}
           </button>
+          <button
+            onClick={() => setActiveTab('performance')}
+            aria-pressed={activeTab === 'performance'}
+            className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors inline-flex items-center gap-1.5 ${activeTab === 'performance' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+          >
+            <Activity size={14} />
+            {t('assets.tabPerformance')}
+          </button>
         </div>
-        <label className="flex items-center gap-2 text-xs text-muted-foreground">
-          <input
-            type="checkbox"
-            checked={showArchived}
-            onChange={(e) => toggleArchived(e.target.checked)}
-            className="h-3.5 w-3.5 rounded border-border accent-primary"
-          />
-          {t('assets.showArchived')}
-        </label>
+        {/* Archived holdings never enter performance, so the toggle is moot there. */}
+        {activeTab !== 'performance' && (
+          <label className="flex items-center gap-2 text-xs text-muted-foreground">
+            <input
+              type="checkbox"
+              checked={showArchived}
+              onChange={(e) => toggleArchived(e.target.checked)}
+              className="h-3.5 w-3.5 rounded border-border accent-primary"
+            />
+            {t('assets.showArchived')}
+          </label>
+        )}
       </div>
 
       {activeTab === 'transactions' ? (
@@ -1457,6 +1705,21 @@ export default function AssetsPage() {
           mask={mask}
           canWrite={canWrite}
           onChanged={refetchAssetViews}
+        />
+      ) : activeTab === 'performance' && workspace ? (
+        <PortfolioPerformance
+          key={workspace.id}
+          workspaceId={workspace.id}
+          assetGroupIds={activeWalletIds}
+          holdings={performanceHoldings}
+          wallets={sortedWallets}
+          inventory={performanceInventory}
+          inventoryError={inventoryError}
+          onRetryInventory={retryInventory}
+          locale={locale}
+          dateLocale={dateLocale}
+          mask={mask}
+          canManage={canManage}
         />
       ) : (
       <>
@@ -1499,7 +1762,19 @@ export default function AssetsPage() {
           {/* Wallets (active assets grouped) */}
           {(sortedWallets.length > 0 || ungroupedAssets.length > 0) && (
             <div className="space-y-4">
-              {sortedWallets.map(w => renderWalletSection(w, assetsByGroup.get(w.id) ?? []))}
+              <DndContext sensors={walletSensors} collisionDetection={closestCenter} onDragEnd={handleWalletDragEnd}>
+                <SortableContext items={sortedWallets.map(w => w.id)} strategy={verticalListSortingStrategy}>
+                  {sortedWallets.map((w, index) => (
+                    <SortableWalletSection
+                      key={w.id}
+                      id={w.id}
+                      disabled={!canWrite || sortedWallets.length < 2 || reorderWalletsMutation.isPending}
+                    >
+                      {(dragHandle) => renderWalletSection(w, assetsByGroup.get(w.id) ?? [], index, dragHandle)}
+                    </SortableWalletSection>
+                  ))}
+                </SortableContext>
+              </DndContext>
 
               {ungroupedAssets.length > 0 && (
                 <div className="space-y-2">
@@ -2523,6 +2798,7 @@ function AssetDetail({ assetId, currency, locale: loc, dateLocale: dateLoc, purc
       queryClient.refetchQueries({ queryKey: ['asset-trend', assetId] })
       queryClient.refetchQueries({ queryKey: ['portfolio-trend'] })
       queryClient.refetchQueries({ queryKey: ['dashboard'] })
+      queryClient.invalidateQueries({ queryKey: ['asset-performance'] })
       setValueAmount('')
       toast.success(t('assets.valueAdded'))
     },
@@ -2537,6 +2813,7 @@ function AssetDetail({ assetId, currency, locale: loc, dateLocale: dateLoc, purc
       queryClient.refetchQueries({ queryKey: ['asset-trend', assetId] })
       queryClient.refetchQueries({ queryKey: ['portfolio-trend'] })
       queryClient.refetchQueries({ queryKey: ['dashboard'] })
+      queryClient.invalidateQueries({ queryKey: ['asset-performance'] })
       toast.success(t('assets.valueDeleted'))
     },
     onError: (e) => toast.error(assetErrorMessage(e, t('common.error'))),
@@ -2991,7 +3268,8 @@ function AssetTransactionsTab({
                     )}
                   </div>
                 )}
-                {canWrite && (
+                {isSyncedTransaction(tx) && <SyncedTransactionBadge />}
+                {canWrite && !isSyncedTransaction(tx) && (
                   <div className="flex items-center gap-1 shrink-0">
                     <button
                       onClick={() => openEdit(tx)}
@@ -3255,7 +3533,8 @@ export function HoldingLedger({
                   {mask(formatCurrency(tx.quantity * tx.price, asset.currency, locale))}
                 </span>
               )}
-              {canWrite && (
+              {isSyncedTransaction(tx) && <SyncedTransactionBadge />}
+              {canWrite && !isSyncedTransaction(tx) && (
                 <button
                   onClick={() => deleteMutation.mutate(tx.id)}
                   disabled={deleteMutation.isPending}

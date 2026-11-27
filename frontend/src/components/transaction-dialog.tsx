@@ -17,6 +17,7 @@ import { findCategoryReference, getRuleCategoryId } from '@/lib/category-referen
 import { flattenConditions, hasConditionGroups } from '@/lib/rule-conditions'
 import { cn, normalizeText } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { DescriptionInput } from '@/components/description-input'
 import { Label } from '@/components/ui/label'
@@ -162,7 +163,7 @@ export function TransactionDialog({
   transaction: Transaction | null
   categories: Category[]
   categoryGroups: CategoryGroup[]
-  accounts: { id: string; name: string; display_name?: string | null; type?: string; currency?: string; secured_asset_id?: string | null }[]
+  accounts: { id: string; name: string; display_name?: string | null; type?: string; currency?: string; secured_asset_id?: string | null; loan_kind?: string | null }[]
   recurringMatch?: RecurringTransaction
   onSave: (data: TransactionSavePayload, recurringData?: { frequency: string; end_date?: string }, installmentData?: InstallmentSeriesInput, pendingFiles?: File[], action?: SaveAction) => void
   onDelete?: () => void
@@ -539,7 +540,7 @@ function TransactionForm({
   defaultAccountId?: string
   categories: Category[]
   categoryGroups: CategoryGroup[]
-  accounts: { id: string; name: string; display_name?: string | null; type?: string; currency?: string; secured_asset_id?: string | null }[]
+  accounts: { id: string; name: string; display_name?: string | null; type?: string; currency?: string; secured_asset_id?: string | null; loan_kind?: string | null }[]
   recurringMatch?: RecurringTransaction
   onSave: (data: TransactionEditPayload, recurringData?: { frequency: string; end_date?: string }, installmentData?: InstallmentSeriesInput, pendingFiles?: File[], action?: SaveAction) => void
   onDelete?: () => void
@@ -2029,7 +2030,7 @@ function TransactionForm({
         />
       )}
 
-      {!isCreating && !splitByCategory && !transaction?.has_category_lines && transaction?.type === 'debit' && transaction.status === 'posted' && !transaction.is_ignored && !transaction.transfer_pair_id && !transaction.category?.is_ignored && Number(transaction.amount) > 0 && accounts.find(a => a.id === transaction.account_id)?.type !== 'loan' && accounts.some(a => a.type === 'loan' && a.secured_asset_id) && (
+      {!isCreating && !splitByCategory && !transaction?.has_category_lines && transaction?.type === 'debit' && transaction.status === 'posted' && !transaction.is_ignored && !transaction.transfer_pair_id && !transaction.category?.is_ignored && Number(transaction.amount) > 0 && accounts.find(a => a.id === transaction.account_id)?.type !== 'loan' && accounts.some(a => a.type === 'loan' && Boolean(transaction.currency) && a.currency === transaction.currency) && (
         <MortgagePaymentEditor transaction={transaction} accounts={accounts} />
       )}
 
@@ -2355,18 +2356,20 @@ function TransactionForm({
   )
 }
 
+const KNOWN_LOAN_KINDS = new Set(['mortgage', 'auto', 'personal', 'student', 'other'])
+
 function MortgagePaymentEditor({
   transaction,
   accounts,
 }: {
   transaction: Transaction
-  accounts: { id: string; name: string; display_name?: string | null; type?: string; currency?: string; secured_asset_id?: string | null }[]
+  accounts: { id: string; name: string; display_name?: string | null; type?: string; currency?: string; secured_asset_id?: string | null; loan_kind?: string | null }[]
 }) {
   const { t } = useTranslation()
   const id = useId()
   const queryClient = useQueryClient()
   const loans = useMemo(
-    () => accounts.filter(account => account.type === 'loan' && account.secured_asset_id && account.currency === transaction.currency),
+    () => accounts.filter(account => account.type === 'loan' && Boolean(transaction.currency) && account.currency === transaction.currency),
     [accounts, transaction.currency],
   )
   const account = accounts.find(item => item.id === transaction.account_id)
@@ -2383,6 +2386,7 @@ function MortgagePaymentEditor({
   const { data: propertyAssets } = useQuery({
     queryKey: ['assets'],
     queryFn: () => assetsApi.list(),
+    enabled: loans.some(loan => Boolean(loan.secured_asset_id)),
   })
   const refreshMortgageData = async () => {
     invalidateFinancialQueries(queryClient)
@@ -2442,9 +2446,22 @@ function MortgagePaymentEditor({
       {loans.map(loan => {
         const value = amounts[loan.id] ?? { principal: '', interest: '' }
         const propertyName = propertyAssets?.find(asset => asset.id === loan.secured_asset_id)?.name
+        const loanKindLabel =
+          !loan.secured_asset_id && loan.loan_kind && KNOWN_LOAN_KINDS.has(loan.loan_kind)
+            ? t(`accounts.loanKinds.${loan.loan_kind}`)
+            : null
         return (
           <div key={loan.id} className="rounded-md bg-muted/40 p-3 space-y-2">
-            <div className="text-sm font-medium">{loan.display_name || loan.name}{propertyName ? <span className="ms-1 text-xs font-normal text-muted-foreground">· {propertyName}</span> : null}</div>
+            <div className="flex flex-wrap items-center gap-1.5 text-sm font-medium">
+              <span>{loan.display_name || loan.name}</span>
+              {propertyName ? (
+                <span className="text-xs font-normal text-muted-foreground">· {propertyName}</span>
+              ) : loanKindLabel ? (
+                <Badge variant="secondary" className="font-normal">
+                  {loanKindLabel}
+                </Badge>
+              ) : null}
+            </div>
             <div className="grid grid-cols-2 gap-3">
               <label htmlFor={`${id}-${loan.id}-principal`} className="text-xs text-muted-foreground">{t('transactions.mortgagePrincipal')}
               <Input id={`${id}-${loan.id}-principal`} type="number" min="0" step="0.01" value={value.principal} onKeyDown={e => { if (e.key === 'Enter') e.preventDefault() }} onChange={e => setDraftAmounts(prev => ({ ...(prev ?? amounts), [loan.id]: { ...value, principal: e.target.value } }))} />

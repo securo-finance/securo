@@ -3,10 +3,12 @@ from typing import Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.schemas.category import ICON_MAX_LENGTH
+
 
 class CollectionBase(BaseModel):
     name: str = Field(min_length=1, max_length=100)
-    icon: str = "folder"
+    icon: str = Field("folder", max_length=ICON_MAX_LENGTH)
     color: str = "#6366F1"
     position: int = 0
 
@@ -19,7 +21,7 @@ class CollectionCreate(CollectionBase):
 
 class CollectionUpdate(BaseModel):
     name: Optional[str] = Field(default=None, min_length=1, max_length=100)
-    icon: Optional[str] = None
+    icon: Optional[str] = Field(None, max_length=ICON_MAX_LENGTH)
     color: Optional[str] = None
     position: Optional[int] = None
     # When provided, replaces that membership wholesale. None leaves it untouched.

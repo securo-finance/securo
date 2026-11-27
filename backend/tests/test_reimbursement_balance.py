@@ -256,3 +256,39 @@ async def test_a_link_to_a_closed_account_is_not_netted_on_one_side_only(
     _, net = await _curve(session, test_user, test_workspace, LAST_MONTH)
 
     assert net == real
+
+
+@pytest.mark.asyncio
+async def test_a_linked_card_purchase_in_accrual_mode_nets_on_the_bill_date(
+    session, make_tx, test_user, test_workspace
+):
+    from app.models.account import Account
+    from app.services import admin_service
+
+    # In accrual mode the curve moves a card purchase to its bill date, so the
+    # linked part must leave the curve there too, not on the purchase date.
+    await admin_service.set_app_setting(session, "credit_card_accounting_mode", "accrual")
+    card = Account(
+        user_id=test_user.id, workspace_id=test_workspace.id, name="Card", type="credit_card",
+        balance=0, currency="BRL", statement_close_day=31, payment_due_day=15,
+    )
+    session.add(card)
+    await session.flush()
+    purchase = Transaction(
+        id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id, account_id=card.id,
+        description="Dinner", amount=Decimal("400"), currency=card.currency,
+        date=LAST_MONTH.replace(day=3), effective_date=LAST_MONTH.replace(day=15),
+        type="debit", source="manual",
+    )
+    session.add(purchase)
+    await session.flush()
+    payback = await make_tx(100, "credit", LAST_MONTH.replace(day=20))
+    await _link(session, purchase, (payback, 100))
+
+    _, real = await _curve(session, test_user, test_workspace, LAST_MONTH, netting=False)
+    _, net = await _curve(session, test_user, test_workspace, LAST_MONTH)
+
+    assert (real[3], real[15], real[20]) == (0, -400, -300)
+    assert {day: net[day] - real[day] for day in real} == {
+        day: 100 if 15 <= day < 20 else 0 for day in real
+    }

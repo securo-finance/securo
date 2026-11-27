@@ -137,13 +137,7 @@ class KnownBug:
 
 # The baseline records the correct status; the case is a strict xfail until
 # the fix lands, at which point the unexpected pass forces this entry out.
-KNOWN_BUGS: dict[tuple[str, str, str], KnownBug] = {
-    (VARIANT_OK, "POST", "/api/agents/{agent_id}/knowledge"): KnownBug(
-        201,
-        "500 MissingGreenlet when the Celery dispatch fails: mark_status() commits, "
-        "expiring the doc that _serialize() then reads",
-    ),
-}
+KNOWN_BUGS: dict[tuple[str, str, str], KnownBug] = {}
 
 # Routes that answer 500 on purpose, by an explicit HTTPException. The 500
 # guard skips these; each one is a design choice worth revisiting, not a crash.

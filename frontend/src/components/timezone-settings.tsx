@@ -35,7 +35,7 @@ const calendarQueryKeys = new Set([
 /** The option that means "nothing saved, follow the server". */
 const SERVER_DEFAULT = ''
 
-export function TimezoneSettings() {
+export function TimezoneSettings({ readOnly = false }: { readOnly?: boolean } = {}) {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
   const [draft, setDraft] = useState<string>()
@@ -87,6 +87,9 @@ export function TimezoneSettings() {
             {t('admin.settings.timezoneTitle')}
           </h2>
         </div>
+        {readOnly && (
+          <p className="text-xs font-medium text-primary">{t('admin.settings.managedReadOnly')}</p>
+        )}
       </div>
       <div className="p-5 space-y-3">
         <div className="space-y-1">
@@ -120,6 +123,11 @@ export function TimezoneSettings() {
                 </span>
               </div>
             )}
+            {readOnly ? (
+              <p className="text-sm text-foreground" data-testid="timezone-managed">
+                {setting.timezone}
+              </p>
+            ) : (
             <div className="flex flex-wrap items-center gap-3">
               <TimezoneSelect
                 id="application-timezone"
@@ -138,6 +146,7 @@ export function TimezoneSettings() {
                 {saveTimezone.isPending ? t('common.loading') : t('common.save')}
               </Button>
             </div>
+            )}
           </>
         )}
       </div>
