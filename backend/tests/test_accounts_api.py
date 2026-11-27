@@ -258,6 +258,40 @@ async def test_update_connected_account_order(
 
 
 @pytest.mark.asyncio
+async def test_update_account_without_order_preserves_order(
+    client: AsyncClient, auth_headers, test_account: Account,
+):
+    reordered = await client.patch(
+        f"/api/accounts/{test_account.id}", headers=auth_headers,
+        json={"order": 7},
+    )
+    assert reordered.status_code == 200
+    response = await client.patch(
+        f"/api/accounts/{test_account.id}", headers=auth_headers,
+        json={"display_name": "Renamed"},
+    )
+    assert response.status_code == 200
+    assert response.json()["order"] == 7
+    detail = await client.get(
+        f"/api/accounts/{test_account.id}", headers=auth_headers,
+    )
+    assert detail.status_code == 200
+    assert detail.json()["order"] == 7
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("order", [-1, 2_147_483_648, None])
+async def test_update_account_rejects_invalid_order(
+    client: AsyncClient, auth_headers, test_account: Account, order,
+):
+    response = await client.patch(
+        f"/api/accounts/{test_account.id}", headers=auth_headers,
+        json={"order": order},
+    )
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
 async def test_list_accounts_sorts_by_order_then_absolute_primary_balance_then_display_name(
     client: AsyncClient, auth_headers, test_account: Account
 ):

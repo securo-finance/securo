@@ -55,6 +55,7 @@ class AccountCreate(BaseModel):
 class AccountUpdate(BaseModel):
     name: Optional[str] = None
     display_name: Optional[str] = None
+    order: int = Field(default=0, ge=0, le=2_147_483_647)
     type: Optional[str] = None
     secured_asset_id: Optional[uuid.UUID] = None
     balance: Optional[Decimal] = None
@@ -99,6 +100,7 @@ class AccountRead(AccountBase):
     connection_id: Optional[uuid.UUID] = None
     external_id: Optional[str] = None
     display_name: Optional[str] = None
+    order: int = 0
     # Last 4 chars of the bank's identifier, when the provider exposes one.
     # Read-only: absent from AccountUpdate because sync owns it.
     masked_number: Optional[str] = None

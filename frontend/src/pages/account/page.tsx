@@ -9,6 +9,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import axios from 'axios'
 import { accounts, assets, connections, currencies, plugins as pluginsApi } from '@/lib/api'
 import { localDateString, todayInTimezone } from '@/lib/date-utils'
+import { extractApiError } from '@/lib/api-errors'
 import { invalidateFinancialQueries, invalidateSyncedRecords } from '@/lib/invalidate-queries'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -192,8 +193,7 @@ export default function AccountsPage() {
   const syncMutation = useMutation({
     mutationFn: (id: string) => connections.sync(id),
     onSuccess: (result) => {
-      invalidateFinancialQueries(queryClient)
-      queryClient.invalidateQueries({ queryKey: ['connections'] })
+      invalidateSyncedRecords(queryClient)
       // The provider can throttle the sync (429) and still return success
       // without pulling anything: say so instead of a false "Sync completed".
       if (result.sync_outcome === 'rate_limited') {
@@ -230,11 +230,7 @@ export default function AccountsPage() {
     mutationFn: ({ id, keepAccounts }: { id: string; keepAccounts: boolean }) =>
       connections.delete(id, { keepAccounts }),
     onSuccess: (_data, { keepAccounts }) => {
-      invalidateFinancialQueries(queryClient)
-      queryClient.invalidateQueries({ queryKey: ['connections'] })
-      queryClient.invalidateQueries({ queryKey: ['assets'] })
-      queryClient.invalidateQueries({ queryKey: ['asset-groups'] })
-      queryClient.invalidateQueries({ queryKey: ['portfolio-trend'] })
+      invalidateSyncedRecords(queryClient)
       setDisconnectingConnection(null)
       toast.success(t(keepAccounts ? 'accounts.disconnectedKept' : 'accounts.disconnected'))
     },
@@ -255,7 +251,7 @@ export default function AccountsPage() {
       setDialogOpen(false)
       toast.success(t('accounts.created'))
     },
-    onError: () => toast.error(t('common.error')),
+    onError: (error) => toast.error(extractApiError(error, t('common.error'))),
   })
 
   const updateMutation = useMutation({
@@ -847,6 +843,16 @@ export function AccountDialog({
     && balance !== '' && parseFloat(balance) !== Number(account.balance)
   const effectiveBalanceDate = autoBalanceDate ? todayInTimezone(timeZone) : balanceDate
 
+  // New accounts must send a currency supported by this instance, even when
+  // the user's preference is no longer offered. Existing accounts keep theirs.
+  const supportedCodes = supportedCurrencies?.map((c) => c.code)
+  const effectiveCurrency =
+    !account && supportedCodes?.length && !supportedCodes.includes(currency)
+      ? supportedCodes.includes(userCurrency)
+        ? userCurrency
+        : supportedCodes[0]
+      : currency
+
   return (
     <Dialog open={open} onOpenChange={onClose}>
       <DialogContent>
@@ -872,7 +878,7 @@ export function AccountDialog({
                 name,
                 balance: parseFloat(balance),
                 ...(dateChanged && { balance_date: effectiveBalanceDate }),
-                currency,
+                currency: effectiveCurrency,
               }),
               type,
               ...(type === 'loan' && {
@@ -942,7 +948,7 @@ export function AccountDialog({
                   <Label>{t('accounts.currency')}</Label>
                   <select
                     className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-card text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
-                    value={currency}
+                    value={effectiveCurrency}
                     onChange={(e) => setCurrency(e.target.value)}
                   >
                     {(supportedCurrencies ?? [{ code: userCurrency, symbol: userCurrency, name: userCurrency, flag: '' }]).map((c) => (

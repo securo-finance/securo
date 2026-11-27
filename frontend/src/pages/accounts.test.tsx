@@ -172,6 +172,22 @@ describe('AccountsPage connection row actions', () => {
     expect(api.sync).toHaveBeenCalledWith('conn-err')
   })
 
+  it('invalidates investment data after a manual sync', async () => {
+    api.connectionsList.mockResolvedValue([makeConnection({ status: 'active' })])
+    const { user, queryClient } = renderWithProviders(<AccountsPage />, { route: '/accounts' })
+    for (const key of ['asset-transactions', 'asset-performance']) {
+      queryClient.setQueryDefaults([key], { gcTime: Infinity })
+      queryClient.setQueryData([key, 'holding-1'], [])
+    }
+
+    await user.click(await screen.findByRole('button', { name: t('accounts.sync') }))
+
+    await waitFor(() => {
+      expect(queryClient.getQueryState(['asset-transactions', 'holding-1'])?.isInvalidated).toBe(true)
+      expect(queryClient.getQueryState(['asset-performance', 'holding-1'])?.isInvalidated).toBe(true)
+    })
+  })
+
   it('warns instead of reporting success when only some accounts could be synced', async () => {
     api.connectionsList.mockResolvedValue([makeConnection({ id: 'conn-ok', status: 'active' })])
     api.sync.mockResolvedValue({ sync_outcome: 'partial', merged_count: 0 })
@@ -339,7 +355,11 @@ describe('AccountsPage disconnect dialog', () => {
 
   it('deletes accounts and transactions when the box is checked', async () => {
     api.connectionsList.mockResolvedValue([makeConnection({ id: 'conn-d', status: 'active' })])
-    const { user } = renderWithProviders(<AccountsPage />, { route: '/accounts' })
+    const { user, queryClient } = renderWithProviders(<AccountsPage />, { route: '/accounts' })
+    for (const key of ['asset-values', 'asset-transactions', 'asset-performance']) {
+      queryClient.setQueryDefaults([key], { gcTime: Infinity })
+      queryClient.setQueryData([key, 'holding-1'], [])
+    }
 
     await user.click(await screen.findByTitle(t('accounts.disconnect')))
     await user.click(screen.getByRole('checkbox', { name: t('accounts.disconnectAlsoDelete') }))
@@ -349,6 +369,11 @@ describe('AccountsPage disconnect dialog', () => {
     await user.click(screen.getByRole('button', { name: t('accounts.disconnect') }))
 
     expect(api.deleteConnection).toHaveBeenCalledExactlyOnceWith('conn-d', { keepAccounts: false })
+    await waitFor(() => {
+      expect(queryClient.getQueryState(['asset-values', 'holding-1'])?.isInvalidated).toBe(true)
+      expect(queryClient.getQueryState(['asset-transactions', 'holding-1'])?.isInvalidated).toBe(true)
+      expect(queryClient.getQueryState(['asset-performance', 'holding-1'])?.isInvalidated).toBe(true)
+    })
   })
 
   it('offers reconnect and removal for a disconnected connection', async () => {
