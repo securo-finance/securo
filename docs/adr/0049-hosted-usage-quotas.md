@@ -2,6 +2,8 @@
 
 - Status: Accepted
 - Date: 2026-11-27
+- Origin: #1959 (a ceiling per account on a managed instance with open sign-up)
+- Extends: [0045](0045-managed-instance.md)
 
 ## Context
 
@@ -21,7 +23,7 @@ ADR 0045 already separates the operator from the customer with one switch, `MANA
 
 - Creating a workspace (`create_workspace` in `backend/app/services/workspace_service.py`) counts the workspaces of the same `kind` (`personal` or `business`, in `backend/app/models/workspace.py`) that the user created, by `created_by_user_id`. A workspace someone was invited into never fills a number of theirs.
 - Creating a bank connection counts the `BankConnection` rows (`backend/app/models/bank_connection.py`) across every workspace the user created, in both paths that can create one: the native one in `backend/app/services/connection_service.py` and the plugin one (`_add_bank` in `backend/app/plugins/connections.py`). Connections, not accounts: one connection brings several accounts and it is the connection that is opened and renewed, while accounts typed in by hand are free.
-- Adding a member (`add_member` in `backend/app/services/workspace_service.py`, and the invite path of #542) counts the members of the workspaces the user created and refuses past `max_members_per_workspace`.
+- Adding a member (`add_member` in `backend/app/services/workspace_service.py`, and the invite path once it is on main) counts the members of the workspaces the user created and refuses past `max_members_per_workspace`.
 
 **Over a limit**, the route answers `403` with `detail.code = "quota_exceeded"`, naming the counter that filled and its current count and maximum, so a screen can say what happened. The response carries the counter, its count and its maximum, and nothing the operator did not give it as a number.
 
@@ -29,7 +31,7 @@ ADR 0045 already separates the operator from the customer with one switch, `MANA
 
 **Only the operator writes the numbers.** A route outside the customer's admin — `/api/operator/quotas`, guarded by the `OPERATOR_TOKEN` setting (unset means the route answers `404`) — upserts a user's four numbers. It cannot be the instance superuser's route: on a managed instance the customer's administrator is a superuser (ADR 0045 says so), and these numbers are the operator's.
 
-**Lowering the limits deletes nothing, and is refused while the account is above them.** `check_fit(user_id, target)` answers, per counter, the current count, the target and the resources over it. An operator can ask that question before writing lower numbers, and the answer is what a screen would need to say "remove one workspace and two connections". Until the account fits, nothing is forced: the person removes the excess themselves — deleting a workspace, deleting a connection, leaving or removing a member — and asks again. Choosing what to keep stays with the person, so nothing has to guess.
+**Lowering the limits deletes nothing and never refuses.** The route writes the four numbers as they come, and an account already above them keeps working; refusing there would leave the operator unable to bring an account down to the numbers it should have had. `check_fit(user_id, target)` answers, per counter, the current count, the target and the excess, so the operator sees what removal a lower number implies before writing it, and the answer is what a screen would need to say "remove one workspace and two connections". Until the account fits, nothing is forced: the person removes the excess themselves — deleting a workspace, deleting a connection, leaving or removing a member — and the count comes back under the number on its own. Choosing what to keep stays with the person, so nothing has to guess.
 
 **Left open, and not to be invented by the code:** an account that has to come down to lower limits without the person acting has no rule here. What happens to the excess then — read-only, sync paused, or a grace period — is a product decision, not this code's.
 
@@ -39,10 +41,10 @@ ADR 0045 already separates the operator from the customer with one switch, `MANA
 - `workspace_members` and `workspaces` are read whole, as ADR 0045 and the row-security work already accept. The quota reads them only to answer the caller's own count, and it is not a reason to leave either one out of the policy.
 - On a managed instance a user with no row is unlimited. Writing the row when the account is opened is the operator's job, and a sign-up path that forgets it hands out an unlimited account.
 - An invited member occupies a seat in the owner's number and frees it when they leave. The invited person's own workspace numbers never count workspaces they were invited into.
-- Deleting a user or closing a workspace (#543, #580) gives the seats back for free, because every count is derived from the rows and never stored as a counter.
+- Deleting a user (ADR 0047) or closing a workspace gives the seats back for free, because every count is derived from the rows and never stored as a counter.
 - Changing what an account may hold is a rewrite of four numbers by the operator: no release, and nothing in the app needs to learn why the numbers changed.
 - The backup on demand (`POST /api/backups/run`) is not one of these counters. It stays without a per-account limit until it is decided which counter it becomes.
 
 ## Enforced by
 
-Nothing yet: this ADR records the decision before the code. The pull request that adds the table and the checks brings the tests, in a new module under `backend/tests/`: the switch off enforces nothing; each counter refuses at its own gate; a workspace someone was invited into never counts; connections are counted across every workspace the user created and in both creation paths, while manual accounts are free; `check_fit` reports the excess per counter and refuses while it is above zero; and the operator route answers `404` without `OPERATOR_TOKEN` and `403` to an instance superuser.
+#1964, which adds the table, the gates and the operator route, brings the tests in new modules under `backend/tests/`: the switch off enforces nothing; each counter refuses at its own gate; a workspace someone was invited into never counts; connections are counted across every workspace the user created and in both creation paths, while manual accounts are free; `check_fit` reports the excess per counter and writes nothing; and the operator route answers `404` without `OPERATOR_TOKEN` and `403` to an instance superuser. The count and the insert that follows it hold one lock, keyed by the account (workspaces and connections) or by the workspace (members), so two requests that arrive together cannot both pass the last free place; the lock is taken before the count, one at a time and never nested, and it is not taken at all when the quota does not apply.
