@@ -182,6 +182,7 @@ def _make_toggleable_runner(monkeypatch, *, down: bool = False) -> dict[str, Any
         "health_calls": 0,
         "timeouts": [],
         "installed": installed,
+        "install_status": None,
     }
 
     def handle(request: httpx.Request) -> httpx.Response:
@@ -192,6 +193,8 @@ def _make_toggleable_runner(monkeypatch, *, down: bool = False) -> dict[str, Any
         if request.method == "GET" and request.url.path == "/plugins":
             return httpx.Response(200, json=installed)
         if request.method == "PUT" and request.url.path.startswith("/plugins/"):
+            if state["install_status"] is not None:
+                return httpx.Response(state["install_status"], json={"detail": "install refused"})
             plugin_id = request.url.path.removeprefix("/plugins/")
             row = {"id": plugin_id, "commit": V1, "hosts": ["api.ledger.example:443"]}
             installed.append(row)
@@ -282,6 +285,34 @@ async def test_reachable_returns_false_on_error_responses(monkeypatch, status_co
             super().__init__(transport=transport)
 
     monkeypatch.setattr(runner, "RunnerClient", ErrorClient)
+    assert await runner.reachable() is False
+
+
+@pytest.mark.asyncio
+async def test_reachable_returns_false_on_timeout_and_non_json_health(monkeypatch):
+    _configure_settings(monkeypatch)
+
+    def timeout_handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ReadTimeout("timed out", request=request)
+
+    class TimeoutClient(runner.RunnerClient):
+        def __init__(self, transport_=None):
+            super().__init__(transport=httpx.MockTransport(timeout_handler))
+
+    monkeypatch.setattr(runner, "RunnerClient", TimeoutClient)
+    assert await runner.reachable() is False
+
+    runner.reset_reachability_cache()
+
+    class NonJsonClient(runner.RunnerClient):
+        def __init__(self, transport_=None):
+            super().__init__(
+                transport=httpx.MockTransport(
+                    lambda req: httpx.Response(200, content=b"<html>ok</html>", headers={"content-type": "text/html"})
+                )
+            )
+
+    monkeypatch.setattr(runner, "RunnerClient", NonJsonClient)
     assert await runner.reachable() is False
 
 
@@ -457,3 +488,134 @@ async def test_startup_check_logs_warning_when_runner_unreachable(monkeypatch, c
     with caplog.at_level(logging.WARNING, logger="app.main"):
         await _check_plugin_runner()
     assert caplog.records == []
+
+
+@pytest.mark.asyncio
+async def test_apply_422_refusal_returns_409_without_resetting_cache_and_5xx_resets(
+    client: AsyncClient, auth_headers: dict, mixed_catalog: MixedCatalog, monkeypatch
+):
+    state = _make_toggleable_runner(monkeypatch, down=False)
+
+    plan_resp = await client.get(
+        f"/api/plugins/{CODE_PLUGIN}/plan", params={"action": "install"}, headers=auth_headers
+    )
+    assert plan_resp.status_code == 200
+    plan = plan_resp.json()
+    assert state["health_calls"] == 1
+
+    # 4xx RunnerRefused (e.g. 422 lockfile/archive error) is a package refusal, not a dead runner.
+    state["install_status"] = 422
+    refused_422 = await client.post(
+        f"/api/plugins/{CODE_PLUGIN}/apply",
+        json={"action": "install", "commit": plan["commit"], "token": plan["token"]},
+        headers=auth_headers,
+    )
+    assert refused_422.status_code == 409
+    assert "install refused" in refused_422.json()["detail"].lower()
+
+    # Reachability cache stayed intact, so catalog reuses it without probing /health again.
+    catalog_resp = await client.get("/api/plugins/catalog", headers=auth_headers)
+    assert catalog_resp.status_code == 200
+    assert state["health_calls"] == 1
+
+    # 5xx RunnerRefused (e.g. 502 from a proxy) IS treated as runner unavailability and resets cache.
+    state["install_status"] = 502
+    refused_502 = await client.post(
+        f"/api/plugins/{CODE_PLUGIN}/apply",
+        json={"action": "install", "commit": plan["commit"], "token": plan["token"]},
+        headers=auth_headers,
+    )
+    assert refused_502.status_code == 503
+
+    catalog_after_502 = await client.get("/api/plugins/catalog", headers=auth_headers)
+    assert catalog_after_502.status_code == 200
+    assert state["health_calls"] == 2
+
+
+@pytest.mark.asyncio
+async def test_remove_succeeds_and_update_returns_503_when_runner_unreachable(
+    client: AsyncClient, auth_headers: dict, mixed_catalog: MixedCatalog, monkeypatch
+):
+    state = _make_toggleable_runner(monkeypatch, down=False)
+
+    # Install v1 while the runner is healthy.
+    install_plan = (
+        await client.get(
+            f"/api/plugins/{CODE_PLUGIN}/plan", params={"action": "install"}, headers=auth_headers
+        )
+    ).json()
+    install_resp = await client.post(
+        f"/api/plugins/{CODE_PLUGIN}/apply",
+        json={"action": "install", "commit": install_plan["commit"], "token": install_plan["token"]},
+        headers=auth_headers,
+    )
+    assert install_resp.status_code == 200
+
+    # Publish v2 in the catalog, then take the runner down.
+    v2 = "2" * 40
+    mixed_catalog.code_manifest["version"] = "1.1.0"
+    mixed_catalog.code_extra = {"commit": v2}
+    state["down"] = True
+    runner.reset_reachability_cache()
+
+    # Updating a code plugin while the runner is down returns 503 on both plan and apply.
+    update_plan = await client.get(
+        f"/api/plugins/{CODE_PLUGIN}/plan", params={"action": "update"}, headers=auth_headers
+    )
+    assert update_plan.status_code == 503
+    update_apply = await client.post(
+        f"/api/plugins/{CODE_PLUGIN}/apply",
+        json={"action": "update", "commit": v2, "token": "0" * 64},
+        headers=auth_headers,
+    )
+    assert update_apply.status_code == 503
+
+    # Removing an installed code plugin still succeeds when the runner is down.
+    remove_plan_resp = await client.get(
+        f"/api/plugins/{CODE_PLUGIN}/plan", params={"action": "remove"}, headers=auth_headers
+    )
+    assert remove_plan_resp.status_code == 200
+    remove_plan = remove_plan_resp.json()
+    remove_apply = await client.post(
+        f"/api/plugins/{CODE_PLUGIN}/apply",
+        json={"action": "remove", "commit": remove_plan["commit"], "token": remove_plan["token"]},
+        headers=auth_headers,
+    )
+    assert remove_apply.status_code == 200
+
+    installed_resp = await client.get("/api/plugins", headers=auth_headers)
+    assert installed_resp.status_code == 200
+    assert installed_resp.json() == []
+
+
+@pytest.mark.asyncio
+async def test_catalog_skips_runner_probe_when_no_entry_requires_runner(
+    client: AsyncClient, auth_headers: dict, monkeypatch
+):
+    data_only = MixedCatalog()
+
+    def data_only_handle(request: httpx.Request) -> httpx.Response:
+        if str(request.url) == INDEX_URL:
+            return httpx.Response(
+                200,
+                json={"plugins": [data_only._entry(DATA_PLUGIN, data_only.data_manifest, None)]},
+            )
+        return data_only.handle(request)
+
+    monkeypatch.setattr(
+        index, "http_client", lambda: httpx.AsyncClient(transport=httpx.MockTransport(data_only_handle))
+    )
+    monkeypatch.setenv("PLUGINS_ENABLED", "true")
+    _configure_settings(monkeypatch)
+
+    async def fail_if_called(*args, **kwargs):
+        raise AssertionError("runner.reachable() must not be called when no catalog entry requires_runner")
+
+    monkeypatch.setattr(runner, "reachable", fail_if_called)
+
+    resp = await client.get("/api/plugins/catalog", headers=auth_headers)
+    assert resp.status_code == 200
+    entries = resp.json()
+    assert len(entries) == 1
+    assert entries[0]["id"] == DATA_PLUGIN
+    assert entries[0]["supported"] is True

@@ -456,9 +456,14 @@ async def _install_code(entry: index.IndexEntry, manifest: Manifest) -> bool:
         raise PluginUnavailable("plugins with code need the plugin runner (the `plugins` profile)")
     try:
         return await install_on_runner(entry, manifest)
-    except (runner.RunnerUnavailable, runner.RunnerRefused) as exc:
+    except runner.RunnerUnavailable as exc:
         runner.reset_reachability_cache()
         raise PluginRunnerUnavailable(str(exc)) from exc
+    except runner.RunnerRefused as exc:
+        if exc.status >= 500:
+            runner.reset_reachability_cache()
+            raise PluginRunnerUnavailable(str(exc)) from exc
+        raise PluginUnavailable(str(exc)) from exc
 
 
 async def install_on_runner(entry: index.IndexEntry, manifest: Manifest) -> bool:

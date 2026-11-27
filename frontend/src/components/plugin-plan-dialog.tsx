@@ -65,6 +65,8 @@ export function PluginPlanDialog({ target, onClose }: { target: PluginTarget; on
         toast.error(t('plugins.code.ownerOnly'))
       } else if (status === 503) {
         toast.error(t('plugins.runnerUnavailable'))
+        void queryClient.invalidateQueries({ queryKey: ['plugins', 'catalog'] })
+        void queryClient.invalidateQueries({ queryKey: ['plugins', 'detail', target.id] })
       } else if (status === 409) {
         // The plugin or the workspace changed since this plan: show the current one.
         toast.error(t('plugins.planChanged'))

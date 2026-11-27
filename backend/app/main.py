@@ -172,6 +172,10 @@ async def lifespan(app: FastAPI):
         app.state.plugin_runner_check_task = asyncio.create_task(_check_plugin_runner())
     yield
     # Shutdown
+    task = getattr(app.state, "plugin_runner_check_task", None)
+    if task is not None and not task.done():
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
     await close_redis()
 
 
