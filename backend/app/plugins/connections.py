@@ -43,7 +43,7 @@ from app.plugins import logos, runner, vault
 from app.plugins.contract import PayloadError, parse_payload
 from app.plugins.manifest import FormField, Integration, Manifest, localized, parse_manifest
 from app.plugins.provider import PluginPayloadProvider, provider_name
-from app.services import access_token_service, notification_service, oauth_state
+from app.services import access_token_service, notification_service, oauth_state, quota_service
 
 logger = logging.getLogger(__name__)
 
@@ -129,6 +129,9 @@ async def create(
     """A new connection, and the sign-in link when the integration uses OAuth."""
     record, manifest = await _installed(session, workspace_id, plugin_id)
     integration = _integration(manifest, integration_key)
+    if integration.is_provider:
+        # It brings a bank connection, which counts toward the account's limit (ADR 0049).
+        await quota_service.check_new_bank_connection(session, workspace_id)
     config, secrets = _split(integration, values)
     name = name.strip() or localized(integration.name, lang)
 
