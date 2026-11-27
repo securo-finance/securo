@@ -245,8 +245,11 @@ async def test_the_plugin_path_counts_when_room_is_left(managed, session: AsyncS
 
 @pytest.mark.asyncio
 async def test_check_downgrade_reports_the_excess_per_counter(session: AsyncSession, test_user, test_workspace):
-    second = await _workspace(session, test_user)
-    session.add_all([_connection(test_workspace, test_user.id), _connection(second, test_user.id)])
+    """Two workspaces and three connections over the target, as the downgrade screen would show."""
+    second, third = await _workspace(session, test_user), await _workspace(session, test_user)
+    session.add_all([
+        _connection(test_workspace, test_user.id), _connection(second, test_user.id), _connection(third, test_user.id),
+    ])
     for email in ("m1@example.com", "m2@example.com", "m3@example.com"):
         member = await _user(session, email)
         session.add(WorkspaceMember(workspace_id=test_workspace.id, user_id=member.id, role="viewer"))
@@ -259,14 +262,14 @@ async def test_check_downgrade_reports_the_excess_per_counter(session: AsyncSess
     assert not result.allowed
     by = {f.counter: (f.current, f.target, f.excess) for f in result.counters}
     assert by == {
-        "max_personal_workspaces": (2, 1, 1),
+        "max_personal_workspaces": (3, 1, 2),
         "max_business_workspaces": (0, None, 0),
-        "max_bank_connections": (2, 0, 2),
+        "max_bank_connections": (3, 0, 3),
         "max_members_per_workspace": (3, 1, 2),
     }
 
     fits = await quota_service.check_downgrade(session, test_user.id, {
-        "max_personal_workspaces": 2, "max_bank_connections": 2, "max_members_per_workspace": 3,
+        "max_personal_workspaces": 3, "max_bank_connections": 3, "max_members_per_workspace": 3,
     })
     assert fits.allowed and all(f.excess == 0 for f in fits.counters)
 
