@@ -220,6 +220,50 @@ async def test_an_account_created_by_an_invite_that_loses_the_last_seat_is_remov
 
 
 @pytest.mark.asyncio
+async def test_a_refused_invite_keeps_an_account_another_workspace_already_added(
+    managed, client: AsyncClient, session, test_user, test_workspace, auth_headers
+):
+    """A parallel invite elsewhere can add the new account and commit before
+    this one is refused; deleting it then would cascade that membership away."""
+    await _limit(session, test_user.id, max_members_per_workspace=1)
+    elsewhere_owner = await _user(session, "elsewhere-owner@example.com")
+    elsewhere = await _workspace(session, elsewhere_owner, "business")
+    elsewhere_id = elsewhere.id
+    await session.commit()
+    real = quota_service.check_new_member
+    calls = 0
+
+    async def added_elsewhere_then_seat_taken(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            return await real(*args, **kwargs)
+        created = await session.scalar(select(User).where(User.email == "shared@example.com"))
+        session.add(WorkspaceMember(workspace_id=elsewhere_id, user_id=created.id, role="editor"))
+        await session.commit()
+        raise quota_service._refuse("max_members_per_workspace", 1, 1)
+
+    # No Personal workspace, so the only membership is the one made elsewhere.
+    with patch.object(quota_service, "check_new_member", added_elsewhere_then_seat_taken), \
+            patch.object(workspace_service, "create_personal_workspace_for_user", AsyncMock()):
+        resp = await client.post(
+            f"/api/workspaces/{test_workspace.id}/members",
+            json={"email": "shared@example.com", "role": "editor", "password": "a-long-password-1"},
+            headers=auth_headers,
+        )
+    assert calls == 2
+    assert resp.status_code == 403, resp.text
+    assert resp.json()["detail"]["code"] == "quota_exceeded"
+    session.expire_all()
+    kept = await session.scalar(select(User).where(User.email == "shared@example.com"))
+    assert kept is not None
+    memberships = (await session.execute(
+        select(WorkspaceMember.workspace_id).where(WorkspaceMember.user_id == kept.id)
+    )).scalars().all()
+    assert memberships == [elsewhere_id]
+
+
+@pytest.mark.asyncio
 async def test_an_invite_with_room_still_creates_the_account(managed, client: AsyncClient, session, test_user, test_workspace, auth_headers):
     await _limit(session, test_user.id, max_members_per_workspace=1)
     resp = await client.post(
