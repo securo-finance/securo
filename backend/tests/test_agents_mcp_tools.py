@@ -1796,8 +1796,9 @@ async def test_asset_update_date_validation_and_atomic_rest_routes(
 
     # Snapshot amount exceeding asset_values.amount column ceiling returns 422
     from app.core.money import MAX_MONEY_AMOUNT, max_asset_value
+    from app.services import asset_service
 
-    too_big_snapshot = max_asset_value() + Decimal("0.000001")
+    too_big_snapshot = max_asset_value() + Decimal("0.0000004")
     overflow_backfill = await client.post(
         f"/api/assets/{manual_a.id}/backfill",
         headers=auth_headers,
@@ -1805,6 +1806,17 @@ async def test_asset_update_date_validation_and_atomic_rest_routes(
     )
     assert overflow_backfill.status_code == 422
     assert str(max_asset_value()) in str(overflow_backfill.json()["detail"])
+
+    # Direct service apply enforces the same pre-rounding ceiling as REST
+    with pytest.raises(ValueError, match=str(max_asset_value())):
+        await asset_service.backfill_asset_purchase_history(
+            session,
+            manual_a.id,
+            test_workspace.id,
+            test_user.id,
+            values=[(date(2025, 2, 1), too_big_snapshot)],
+        )
+    await session.rollback()
 
     # Same-currency purchase_price exceeding Numeric(15, 2) ceiling returns 422 (not 500)
     too_big_price = MAX_MONEY_AMOUNT + Decimal("0.01")

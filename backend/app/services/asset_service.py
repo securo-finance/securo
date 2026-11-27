@@ -1297,7 +1297,10 @@ async def update_asset(
                 await session.scalar(
                     select(func.count())
                     .select_from(AssetTransaction)
-                    .where(AssetTransaction.asset_id == asset_id)
+                    .where(
+                        AssetTransaction.asset_id == asset_id,
+                        AssetTransaction.workspace_id == workspace_id,
+                    )
                 )
                 or 0
             )
@@ -1348,7 +1351,12 @@ async def update_asset(
             update_data.setdefault("position", 0)
 
     tx_count = await session.scalar(
-        select(func.count()).select_from(AssetTransaction).where(AssetTransaction.asset_id == asset.id)
+        select(func.count())
+        .select_from(AssetTransaction)
+        .where(
+            AssetTransaction.asset_id == asset.id,
+            AssetTransaction.workspace_id == workspace_id,
+        )
     ) or 0
     # Ledger-backed holdings derive their position (units, cost basis, buy and
     # sell dates) from the transactions ledger. Editing the holding itself
@@ -1552,7 +1560,10 @@ async def set_assets_archived(
 
     tx_counts_result = await session.execute(
         select(AssetTransaction.asset_id, func.count())
-        .where(AssetTransaction.asset_id.in_([a.id for a in rows]))
+        .where(
+            AssetTransaction.asset_id.in_([a.id for a in rows]),
+            AssetTransaction.workspace_id == workspace_id,
+        )
         .group_by(AssetTransaction.asset_id)
     )
     tx_counts = {aid: int(cnt) for aid, cnt in tx_counts_result.all()}
@@ -1603,6 +1614,7 @@ async def backfill_asset_purchase_history(
         seen_dates.add(dt)
         if not amt.is_finite() or amt < 0:
             raise ValueError("value amount must be a finite non-negative number")
+        bounded_asset_value(amt, "value amount")
         try:
             q_amt = amt.quantize(_ASSET_VALUE_QUANT)
         except InvalidOperation as exc:
@@ -1644,7 +1656,10 @@ async def backfill_asset_purchase_history(
                 await session.scalar(
                     select(func.count())
                     .select_from(AssetTransaction)
-                    .where(AssetTransaction.asset_id == asset_id)
+                    .where(
+                        AssetTransaction.asset_id == asset_id,
+                        AssetTransaction.workspace_id == workspace_id,
+                    )
                 )
                 or 0
             )
@@ -1680,7 +1695,10 @@ async def backfill_asset_purchase_history(
         await session.scalar(
             select(func.count())
             .select_from(AssetTransaction)
-            .where(AssetTransaction.asset_id == asset.id)
+            .where(
+                AssetTransaction.asset_id == asset.id,
+                AssetTransaction.workspace_id == workspace_id,
+            )
         )
         or 0
     )
@@ -1695,6 +1713,7 @@ async def backfill_asset_purchase_history(
             await session.execute(
                 select(AssetValue.date, AssetValue.amount).where(
                     AssetValue.asset_id == asset.id,
+                    AssetValue.workspace_id == workspace_id,
                     AssetValue.date.in_(seen_dates),
                 )
             )

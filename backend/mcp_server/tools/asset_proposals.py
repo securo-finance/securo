@@ -12,6 +12,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
+from app.core.money import bounded_asset_value
 from app.models.asset import Asset
 from app.models.asset_group import AssetGroup
 from app.models.asset_transaction import AssetTransaction
@@ -76,12 +77,17 @@ async def _default_currency(session: AsyncSession, user_id: uuid.UUID) -> str:
     return get_settings().default_currency.upper()
 
 
-async def _asset_tx_count(session: AsyncSession, asset_id: uuid.UUID) -> int:
+async def _asset_tx_count(
+    session: AsyncSession, asset_id: uuid.UUID, workspace_id: uuid.UUID
+) -> int:
     return int(
         await session.scalar(
             select(func.count())
             .select_from(AssetTransaction)
-            .where(AssetTransaction.asset_id == asset_id)
+            .where(
+                AssetTransaction.asset_id == asset_id,
+                AssetTransaction.workspace_id == workspace_id,
+            )
         )
         or 0
     )
@@ -354,7 +360,10 @@ async def propose_create_asset(
         "Build a preview for updating a manual or growth-rule asset's metadata "
         "(name, type, currency, units, purchase/sell metadata, growth rule "
         "parameters, group_id — pass '' to ungroup — or regenerate_growth). "
-        "Refuses market-priced, synced, or ledger-backed holdings."
+        "Eligibility refusals for market-priced, ticker-linked, synced, or "
+        "ledger-backed holdings apply when building the proposal preview; "
+        "applying via PATCH /api/assets/{asset_id} follows standard asset "
+        "update semantics and always protects ledger-derived fields."
     ),
     parameters={
         "type": "object",
@@ -419,7 +428,7 @@ async def propose_update_asset(
     if asset is None:
         return {"error": "asset not found"}
 
-    tx_count = await _asset_tx_count(session, asset.id)
+    tx_count = await _asset_tx_count(session, asset.id, ws_id)
     refusal = _manual_asset_refusal(asset, tx_count)
     if refusal:
         return {"error": refusal}
@@ -639,7 +648,10 @@ async def propose_archive_assets(
 
     tx_counts_result = await session.execute(
         select(AssetTransaction.asset_id, func.count())
-        .where(AssetTransaction.asset_id.in_([a.id for a in rows]))
+        .where(
+            AssetTransaction.asset_id.in_([a.id for a in rows]),
+            AssetTransaction.workspace_id == ws_id,
+        )
         .group_by(AssetTransaction.asset_id)
     )
     tx_counts = {aid: int(cnt) for aid, cnt in tx_counts_result.all()}
@@ -748,7 +760,7 @@ async def propose_asset_purchase_backfill(
     if asset is None:
         return {"error": "asset not found"}
 
-    tx_count = await _asset_tx_count(session, asset.id)
+    tx_count = await _asset_tx_count(session, asset.id, ws_id)
     if asset.valuation_method == "market_price" or asset.ticker is not None:
         return {"error": "market-priced assets are not supported by purchase backfill"}
     if asset.average_price is not None or tx_count > 0:
@@ -809,6 +821,7 @@ async def propose_asset_purchase_backfill(
                 return {"error": "amount must be a number"}
             try:
                 amt = _finite_decimal(float(raw_amt), "amount", allow_zero=True)
+                bounded_asset_value(amt, "amount")
             except (ValueError, TypeError, ArithmeticError) as exc:
                 return {"error": str(exc)}
             parsed_values.append((dt, amt))
