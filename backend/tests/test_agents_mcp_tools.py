@@ -1794,14 +1794,41 @@ async def test_asset_update_date_validation_and_atomic_rest_routes(
     assert rename_legacy.status_code == 200
     assert rename_legacy.json()["name"] == "Legacy Renamed"
 
-    # Snapshot amount exceeding Numeric(15, 6) range returns 422 instead of DB overflow
+    # Snapshot amount exceeding asset_values.amount column ceiling returns 422
+    from app.core.money import MAX_MONEY_AMOUNT, max_asset_value
+
+    too_big_snapshot = max_asset_value() + Decimal("0.000001")
     overflow_backfill = await client.post(
         f"/api/assets/{manual_a.id}/backfill",
         headers=auth_headers,
-        json={"values": [{"date": "2025-02-01", "amount": "1000000000"}]},
+        json={"values": [{"date": "2025-02-01", "amount": str(too_big_snapshot)}]},
     )
     assert overflow_backfill.status_code == 422
-    assert "supported range" in overflow_backfill.json()["detail"]
+    assert str(max_asset_value()) in str(overflow_backfill.json()["detail"])
+
+    # Same-currency purchase_price exceeding Numeric(15, 2) ceiling returns 422 (not 500)
+    too_big_price = MAX_MONEY_AMOUNT + Decimal("0.01")
+    overflow_price_backfill = await client.post(
+        f"/api/assets/{manual_a.id}/backfill",
+        headers=auth_headers,
+        json={"purchase_price": str(too_big_price)},
+    )
+    assert overflow_price_backfill.status_code == 422
+    assert str(MAX_MONEY_AMOUNT) in str(overflow_price_backfill.json()["detail"])
+    await session.refresh(manual_a)
+    assert manual_a.purchase_price is None
+
+    # Zero purchase_price remains accepted (allow_zero=True)
+    zero_price_backfill = await client.post(
+        f"/api/assets/{manual_a.id}/backfill",
+        headers=auth_headers,
+        json={"purchase_price": "0"},
+    )
+    assert zero_price_backfill.status_code == 200
+    await session.refresh(manual_a)
+    assert manual_a.purchase_price == Decimal("0.00")
+    manual_a.purchase_price = None
+    await session.commit()
 
     # Atomic archive: protected asset in batch rejects entire batch (manual_a unchanged)
     bad_archive = await client.post(
@@ -1957,3 +1984,124 @@ async def test_asset_write_locks_refresh_stale_identity_map_rows(
             uid,
             purchase_date=date(2025, 4, 1),
         )
+
+
+async def test_asset_backfill_and_patch_uncached_fx_overflow_is_atomic(
+    client,
+    auth_headers,
+    session: AsyncSession,
+    test_user,
+    test_workspace,
+):
+    """Pre-warming FX rates before locking/mutating ensures an uncached
+    sync_rates() commit cannot persist half of a rejected backfill or
+    date-only PATCH when primary-currency conversion overflows."""
+    from unittest.mock import patch
+
+    from sqlalchemy import select
+    from app.models.asset import Asset
+    from app.models.asset_value import AssetValue
+    from app.models.fx_rate import FxRate
+
+    test_user.preferences = {**(test_user.preferences or {}), "currency_display": "BRL"}
+    asset_id = uuid.uuid4()
+    asset = Asset(
+        id=asset_id,
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        name="USD Foreign Holding",
+        type="valuable",
+        currency="USD",
+        valuation_method="manual",
+        source="manual",
+        purchase_date=date(2020, 1, 1),
+        purchase_price=Decimal("100.00"),
+    )
+    session.add(asset)
+    await session.commit()
+
+    synced_dates: list[date] = []
+
+    async def fake_sync_rates(db: AsyncSession, target: date) -> int:
+        # Mirror real fx_rate_service.sync_rates(): upsert FX rate and commit
+        # the shared session.
+        synced_dates.append(target)
+        db.add(
+            FxRate(
+                base_currency="USD",
+                quote_currency="BRL",
+                date=target,
+                rate=Decimal("5.0000000000"),
+                source="test",
+            )
+        )
+        await db.commit()
+        return 1
+
+    with patch("app.services.fx_rate_service.sync_rates", side_effect=fake_sync_rates):
+        # 1. Backfill with uncached FX date and overflowing conversion (3e12 * 5 > 1e13)
+        bad_backfill = await client.post(
+            f"/api/assets/{asset_id}/backfill",
+            headers=auth_headers,
+            json={
+                "purchase_date": "2021-06-01",
+                "purchase_price": "3000000000000",
+                "values": [{"date": "2021-06-01", "amount": "500"}],
+            },
+        )
+        assert bad_backfill.status_code == 422, bad_backfill.text
+        assert date(2021, 6, 1) in synced_dates
+
+        session.expire_all()
+        stored = await session.get(Asset, asset_id)
+        assert stored is not None
+        assert stored.purchase_date == date(2020, 1, 1)
+        assert stored.purchase_price == Decimal("100.00")
+        assert stored.purchase_price_primary is None
+        assert (
+            await session.execute(select(AssetValue).where(AssetValue.asset_id == asset_id))
+        ).scalars().all() == []
+
+        # 2. Date-only PATCH on an asset whose existing purchase_price overflows BRL
+        stored.purchase_price = Decimal("3000000000000.00")
+        await session.commit()
+
+        bad_patch = await client.patch(
+            f"/api/assets/{asset_id}",
+            headers=auth_headers,
+            json={"purchase_date": "2021-07-01"},
+        )
+        assert bad_patch.status_code == 422, bad_patch.text
+        assert date(2021, 7, 1) in synced_dates
+
+        session.expire_all()
+        stored = await session.get(Asset, asset_id)
+        assert stored is not None
+        assert stored.purchase_date == date(2020, 1, 1)
+        assert stored.purchase_price == Decimal("3000000000000.00")
+        assert stored.purchase_price_primary is None
+
+        # 3. Control: valid foreign-currency backfill with uncached FX date succeeds
+        ok_backfill = await client.post(
+            f"/api/assets/{asset_id}/backfill",
+            headers=auth_headers,
+            json={
+                "purchase_date": "2021-08-01",
+                "purchase_price": "1000",
+                "values": [{"date": "2021-08-01", "amount": "1200"}],
+            },
+        )
+        assert ok_backfill.status_code == 200, ok_backfill.text
+        assert date(2021, 8, 1) in synced_dates
+
+        session.expire_all()
+        stored = await session.get(Asset, asset_id)
+        assert stored is not None
+        assert stored.purchase_date == date(2021, 8, 1)
+        assert stored.purchase_price == Decimal("1000.00")
+        assert stored.purchase_price_primary == Decimal("5000.00")
+        vals = (
+            await session.execute(select(AssetValue).where(AssetValue.asset_id == asset_id))
+        ).scalars().all()
+        assert len(vals) == 1
+        assert vals[0].amount == Decimal("1200.000000")

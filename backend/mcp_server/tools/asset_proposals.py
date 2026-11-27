@@ -570,6 +570,7 @@ async def propose_update_asset(
                 regenerate_growth=bool(regenerate_growth),
             )
         except ValueError as exc:
+            await session.rollback()
             return {**preview, "error": str(exc)}
         if updated is None:
             return {**preview, "error": "asset not found"}
@@ -680,6 +681,7 @@ async def propose_archive_assets(
                 is_archived=target_state,
             )
         except ValueError as exc:
+            await session.rollback()
             return {**preview, "error": str(exc)}
         return {**preview, "applied": True, "updated_count": updated_count}
 
@@ -842,6 +844,7 @@ async def propose_asset_purchase_backfill(
                 values=parsed_values,
             )
         except ValueError as exc:
+            await session.rollback()
             return {**preview, "error": str(exc)}
         if res is None:
             return {**preview, "error": "asset not found"}

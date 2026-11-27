@@ -11,7 +11,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.app_clock import app_timezone, app_today
-from app.core.money import MoneyOutOfRange, bounded_asset_value
+from app.core.money import MoneyOutOfRange, bounded_asset_value, bounded_money
 from app.models.account import Account
 from app.models.asset import (
     ASSET_PRICE_DECIMALS,
@@ -41,6 +41,8 @@ from app.services.ordering import place_in_order
 from app.services.asset_group_service import ensure_group_in_workspace
 from app.services.fx_rate_service import (
     DatedRateBook,
+    _code,
+    _resolve_rate,
     convert,
     convert_or_none,
     has_rate,
@@ -1234,6 +1236,28 @@ async def reorder_assets(
     return True
 
 
+async def _warm_purchase_fx_rate(
+    session: AsyncSession,
+    user_id: uuid.UUID,
+    currency: str,
+    target_date: Optional[date],
+) -> None:
+    """Pre-warm the FX rate for ``currency -> user.primary_currency`` before
+    taking a ``FOR UPDATE`` lock or mutating any ORM row.
+
+    ``fx_rate_service.sync_rates()`` calls ``session.commit()`` when fetching
+    missing rates. Running it before any write ensures a later validation or
+    ``MoneyOutOfRange`` error persists no partial asset edits and keeps the
+    ``FOR UPDATE`` lock intact through the final commit.
+    """
+    user = await session.get(User, user_id)
+    if not user or not user.primary_currency or _code(currency) == _code(user.primary_currency):
+        return
+    await _resolve_rate(
+        session, currency, user.primary_currency, target_date, allow_fetch=True
+    )
+
+
 async def update_asset(
     session: AsyncSession,
     asset_id: uuid.UUID,
@@ -1243,6 +1267,70 @@ async def update_asset(
     regenerate_growth: bool = False,
 ) -> Optional[AssetRead]:
     """Partial update of an asset."""
+    update_data = data.model_dump(exclude_unset=True)
+    # Prevent changing valuation_method on existing assets
+    update_data.pop("valuation_method", None)
+    # Stored uppercase, as on create, so the ledger's ticker filter (which
+    # compares against the uppercased input) keeps matching after an edit.
+    if update_data.get("ticker"):
+        update_data["ticker"] = update_data["ticker"].upper()
+
+    if (
+        "purchase_price" in update_data
+        or "purchase_date" in update_data
+        or "currency" in update_data
+    ):
+        pre_row = (
+            await session.execute(
+                select(
+                    Asset.currency,
+                    Asset.purchase_price,
+                    Asset.purchase_date,
+                    Asset.sell_date,
+                    Asset.average_price,
+                ).where(Asset.id == asset_id, Asset.workspace_id == workspace_id)
+            )
+        ).one_or_none()
+        if pre_row is not None:
+            cur_currency, cur_price, cur_pdate, cur_sdate, cur_avg = pre_row
+            pre_tx_count = (
+                await session.scalar(
+                    select(func.count())
+                    .select_from(AssetTransaction)
+                    .where(AssetTransaction.asset_id == asset_id)
+                )
+                or 0
+            )
+            pre_is_ledger = cur_avg is not None or pre_tx_count > 0
+            eff_price = (
+                cur_price
+                if pre_is_ledger or "purchase_price" not in update_data
+                else update_data["purchase_price"]
+            )
+            eff_date = (
+                cur_pdate
+                if pre_is_ledger or "purchase_date" not in update_data
+                else update_data["purchase_date"]
+            )
+            eff_sell = (
+                cur_sdate
+                if pre_is_ledger or "sell_date" not in update_data
+                else update_data["sell_date"]
+            )
+            eff_currency = update_data.get("currency") or cur_currency
+            dates_ok = not (
+                ("purchase_date" in update_data or "sell_date" in update_data)
+                and eff_date is not None
+                and eff_sell is not None
+                and eff_date > eff_sell
+            )
+            will_restamp = (
+                not pre_is_ledger
+                and ("purchase_price" in update_data or "purchase_date" in update_data)
+            ) or "currency" in update_data
+            if will_restamp and dates_ok and eff_price is not None and eff_currency:
+                await _warm_purchase_fx_rate(session, user_id, eff_currency, eff_date)
+
     result = await session.execute(
         select(Asset)
         .where(Asset.id == asset_id, Asset.workspace_id == workspace_id)
@@ -1253,18 +1341,11 @@ async def update_asset(
     if not asset:
         return None
 
-    update_data = data.model_dump(exclude_unset=True)
     if "group_id" in update_data:
         await ensure_group_in_workspace(session, update_data["group_id"], workspace_id)
         if update_data["group_id"] != asset.group_id:
             # Its place belonged to the old wallet: unplaced, it goes to the end.
             update_data.setdefault("position", 0)
-    # Prevent changing valuation_method on existing assets
-    update_data.pop("valuation_method", None)
-    # Stored uppercase, as on create, so the ledger's ticker filter (which
-    # compares against the uppercased input) keeps matching after an edit.
-    if update_data.get("ticker"):
-        update_data["ticker"] = update_data["ticker"].upper()
 
     tx_count = await session.scalar(
         select(func.count()).select_from(AssetTransaction).where(AssetTransaction.asset_id == asset.id)
@@ -1336,6 +1417,7 @@ async def update_asset(
                 primary_field="purchase_price_primary",
                 rate_field="_no_rate",
                 date_field="purchase_date",
+                allow_fetch=False,
             )
 
     # If units change on a market-priced asset, rewrite today's AssetValue with
@@ -1438,7 +1520,6 @@ def _validate_manual_snapshot_asset(asset: Asset, tx_count: int) -> None:
 
 
 _ASSET_VALUE_QUANT = Decimal("0.000001")
-_ASSET_VALUE_MAX = Decimal("999999999.999999")
 
 
 async def set_assets_archived(
@@ -1509,6 +1590,82 @@ async def backfill_asset_purchase_history(
     snapshots, while distinct amounts on an existing date are appended
     (matching ``add_asset_value``).
     """
+    if purchase_price is not None:
+        purchase_price = bounded_money(
+            purchase_price, "purchase_price", allow_zero=True
+        )
+
+    seen_dates: set[date] = set()
+    normalized_values: list[tuple[date, Decimal]] = []
+    for dt, amt in values:
+        if dt in seen_dates:
+            raise ValueError(f"duplicate value date: {dt.isoformat()}")
+        seen_dates.add(dt)
+        if not amt.is_finite() or amt < 0:
+            raise ValueError("value amount must be a finite non-negative number")
+        try:
+            q_amt = amt.quantize(_ASSET_VALUE_QUANT)
+        except InvalidOperation as exc:
+            raise ValueError("value amount exceeds supported range") from exc
+        bounded_asset_value(q_amt, "value amount")
+        normalized_values.append((dt, q_amt))
+
+    # Pre-warm FX rate before taking FOR UPDATE or mutating `asset` so an
+    # on-demand sync_rates() commit carries zero pending asset writes.
+    if purchase_price is not None or purchase_date is not None:
+        pre_row = (
+            await session.execute(
+                select(
+                    Asset.currency,
+                    Asset.purchase_price,
+                    Asset.purchase_date,
+                    Asset.sell_date,
+                    Asset.valuation_method,
+                    Asset.ticker,
+                    Asset.average_price,
+                    Asset.connection_id,
+                    Asset.source,
+                ).where(Asset.id == asset_id, Asset.workspace_id == workspace_id)
+            )
+        ).one_or_none()
+        if pre_row is not None:
+            (
+                cur_currency,
+                cur_price,
+                cur_pdate,
+                cur_sdate,
+                cur_method,
+                cur_ticker,
+                cur_avg,
+                cur_conn,
+                cur_source,
+            ) = pre_row
+            pre_tx_count = (
+                await session.scalar(
+                    select(func.count())
+                    .select_from(AssetTransaction)
+                    .where(AssetTransaction.asset_id == asset_id)
+                )
+                or 0
+            )
+            eff_price = purchase_price if purchase_price is not None else cur_price
+            eff_date = purchase_date if purchase_date is not None else cur_pdate
+            is_eligible = (
+                cur_method != "market_price"
+                and cur_ticker is None
+                and cur_avg is None
+                and pre_tx_count == 0
+                and cur_conn is None
+                and cur_source == "manual"
+                and not (
+                    purchase_date is not None
+                    and cur_sdate is not None
+                    and purchase_date > cur_sdate
+                )
+            )
+            if is_eligible and eff_price is not None and cur_currency:
+                await _warm_purchase_fx_rate(session, user_id, cur_currency, eff_date)
+
     result = await session.execute(
         select(Asset)
         .where(Asset.id == asset_id, Asset.workspace_id == workspace_id)
@@ -1531,24 +1688,6 @@ async def backfill_asset_purchase_history(
 
     if purchase_date is not None and asset.sell_date is not None and purchase_date > asset.sell_date:
         raise ValueError("purchase_date cannot be after sell_date")
-    if purchase_price is not None and purchase_price < 0:
-        raise ValueError("purchase_price cannot be negative")
-
-    seen_dates: set[date] = set()
-    normalized_values: list[tuple[date, Decimal]] = []
-    for dt, amt in values:
-        if dt in seen_dates:
-            raise ValueError(f"duplicate value date: {dt.isoformat()}")
-        seen_dates.add(dt)
-        if not amt.is_finite() or amt < 0:
-            raise ValueError("value amount must be a finite non-negative number")
-        try:
-            q_amt = amt.quantize(_ASSET_VALUE_QUANT)
-        except InvalidOperation as exc:
-            raise ValueError("value amount exceeds supported range") from exc
-        if q_amt > _ASSET_VALUE_MAX:
-            raise ValueError("value amount exceeds supported range")
-        normalized_values.append((dt, q_amt))
 
     existing_keys: set[tuple[date, Decimal]] = set()
     if seen_dates:
@@ -1581,6 +1720,7 @@ async def backfill_asset_purchase_history(
             primary_field="purchase_price_primary",
             rate_field="_no_rate",
             date_field="purchase_date",
+            allow_fetch=False,
         )
 
     inserted_count = 0
