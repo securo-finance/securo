@@ -15,6 +15,7 @@ from typing import Optional
 
 import pytest
 import pytest_asyncio
+from fastapi import HTTPException
 from httpx import AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -522,29 +523,34 @@ async def test_link_ticker_endpoint_surfaces_rate_limit(
 
 
 @pytest.mark.asyncio
-async def test_buy_by_ticker_never_lands_on_a_synced_holding(
+async def test_buy_by_ticker_into_a_linked_holding_is_refused(
     session: AsyncSession, test_user: User, test_workspace, synced_asset: Asset, market: _FakeMarket,
 ):
+    """A linked ticker makes the holding one a buy by ticker finds, and the
+    connection owns its position, so the buy is refused like any hand trade
+    on a synced holding (#1874)."""
     market.quotes["PSSA3.SA"] = _quote("PSSA3.SA", 44.00)
     from app.services import asset_service
 
     await asset_service.link_market_ticker(session, synced_asset, "PSSA3.SA")
     await session.commit()
 
-    bought = await asset_transaction_service.buy_into_holding(
-        session,
-        test_workspace.id,
-        test_user.id,
-        AssetBuyCreate(
-            ticker="PSSA3.SA",
-            quantity=Decimal("2"),
-            price=Decimal("40"),
-            date=date(2026, 11, 1),
-            group_id=synced_asset.group_id,
-        ),
-    )
+    with pytest.raises(HTTPException) as refused:
+        await asset_transaction_service.buy_into_holding(
+            session,
+            test_workspace.id,
+            test_user.id,
+            AssetBuyCreate(
+                ticker="PSSA3.SA",
+                quantity=Decimal("2"),
+                price=Decimal("40"),
+                date=date(2026, 11, 1),
+                group_id=synced_asset.group_id,
+            ),
+        )
 
-    assert bought.id != synced_asset.id
+    assert refused.value.status_code == 422
+    await session.rollback()
     await session.refresh(synced_asset)
     assert synced_asset.units == Decimal("7")
 

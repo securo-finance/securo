@@ -18,7 +18,7 @@ A market price and a provider-owned position are not exclusive: the bank knows h
 - A holding that already has a ticker is never re-linked by the sync, so a ticker the user chose wins. `POST /api/assets/{asset_id}/link-ticker` links or re-links one by hand, for holdings the detection could not read; only holdings of a bank connection accept it.
 - `DELETE /api/assets/{asset_id}/link-ticker` is the way back: the holding returns to `valuation_method="manual"`, its cached quote is cleared (out of the daily refresh) and today's point is rewritten from the provider's last reported value, kept in `external_metadata` for this. The ticker stays as a label, which is what keeps the sync from linking it again; linking by hand prices it from the market again.
 - A market-priced synced holding's daily point stores the quote it was valued at (`AssetValue.price`), like a manual ticker holding's, so the history is recomputed from the ledger when trades move units across dates. A raw (non-quotable) label from the provider never replaces the ticker of a market-priced holding.
-- The connection keeps owning the position: units are rewritten on every sync, the row stays read-only, and buys by ticker and order imports never consolidate onto it.
+- The connection keeps owning the position: units are rewritten on every sync, the row stays read-only, a buy by ticker that would land on it is refused like any trade typed on a synced holding, and imported orders get a holding of their own.
 - A market-priced synced holding keeps its own ledger only when it holds trades the user entered (another source); one priced by a linked ticker still takes the provider's trades, since only its price source changed.
 - This amends the Yahoo Finance row of ADR 0016:
 
