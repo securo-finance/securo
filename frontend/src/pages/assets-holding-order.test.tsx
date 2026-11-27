@@ -93,7 +93,7 @@ describe('Holding ordering', () => {
     openMenu('Alpha')
     fireEvent.click(await screen.findByRole('menuitem', { name: t('assets.moveDown') }))
 
-    await waitFor(() => expect(api.assets.reorder).toHaveBeenCalledWith(['beta', 'alpha', 'gamma']))
+    await waitFor(() => expect(api.assets.reorder).toHaveBeenCalledWith(['beta', 'alpha']))
     // Drawn in the new order while the save is still pending.
     await waitFor(() => expect(shownOrder()).toEqual(['Beta', 'Alpha', 'Gamma']))
   })

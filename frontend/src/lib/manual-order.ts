@@ -28,3 +28,23 @@ export function applyWalletOrder(wallets: AssetGroup[], orderedIds: string[]): A
   if (placed === sorted) return wallets
   return placed.map((wallet, position) => ({ ...wallet, position }))
 }
+
+/** The most ids one reorder request may name: the API refuses longer lists. */
+export const MAX_ORDERED_IDS = 1000
+
+/**
+ * The ids to send to move the item at `from` to `to`: only those whose slot
+ * changes, from the moved item to its target, in their new order. The API
+ * keeps every other item in its slot. Null when nothing moves, or when that
+ * span alone passes the API's limit, so no request is made.
+ */
+export function movedSpan(ids: string[], from: number, to: number): string[] | null {
+  if (from === to || from < 0 || to < 0 || from >= ids.length || to >= ids.length) return null
+  const [low, high] = from < to ? [from, to] : [to, from]
+  if (high - low + 1 > MAX_ORDERED_IDS) return null
+  const span = ids.slice(low, high + 1)
+  const [moved] = span.splice(from - low, 1)
+  span.splice(to - low, 0, moved)
+  return span
+}
+

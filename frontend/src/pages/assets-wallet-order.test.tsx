@@ -86,7 +86,7 @@ describe('Wallet ordering', () => {
     openMenu('Brokerage')
     fireEvent.click(await screen.findByRole('menuitem', { name: t('assets.moveDown') }))
 
-    await waitFor(() => expect(api.assetGroups.reorder).toHaveBeenCalledWith(['pension', 'brokerage', 'savings']))
+    await waitFor(() => expect(api.assetGroups.reorder).toHaveBeenCalledWith(['pension', 'brokerage']))
     // Drawn in the new order while the save is still pending.
     await waitFor(() => expect(shownOrder()).toEqual(['Pension', 'Brokerage', 'Savings']))
     finish()

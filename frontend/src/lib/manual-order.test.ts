@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { AssetGroup } from '../types'
-import { applyWalletOrder, placeInOrder } from './manual-order'
+import { applyWalletOrder, MAX_ORDERED_IDS, movedSpan, placeInOrder } from './manual-order'
 
 function wallet(id: string, position: number): AssetGroup {
   return {
@@ -59,3 +59,32 @@ describe('placeInOrder', () => {
     expect(placeInOrder(rows, ['a', 'a'])).toBe(rows)
   })
 })
+
+describe('movedSpan', () => {
+  const ids = ['a', 'b', 'c', 'd', 'e']
+
+  it('names only the items between the moved one and its target', () => {
+    expect(movedSpan(ids, 1, 3)).toEqual(['c', 'd', 'b'])
+    expect(movedSpan(ids, 3, 1)).toEqual(['d', 'b', 'c'])
+  })
+
+  it('gives the same list as placing the whole new order', () => {
+    const items = ids.map(id => ({ id }))
+    const whole = ['a', 'c', 'd', 'b', 'e']
+    expect(placeInOrder(items, movedSpan(ids, 1, 3)!)).toEqual(placeInOrder(items, whole))
+  })
+
+  it('sends nothing for a move that goes nowhere', () => {
+    expect(movedSpan(ids, 2, 2)).toBeNull()
+    expect(movedSpan(ids, 0, -1)).toBeNull()
+    expect(movedSpan(ids, 4, 5)).toBeNull()
+  })
+
+  it('keeps a long list under the limit, and sends nothing past it', () => {
+    const many = Array.from({ length: MAX_ORDERED_IDS + 1 }, (_, i) => `id-${i}`)
+    expect(movedSpan(many, MAX_ORDERED_IDS, MAX_ORDERED_IDS - 1)).toHaveLength(2)
+    expect(movedSpan(many, 0, MAX_ORDERED_IDS - 1)).toHaveLength(MAX_ORDERED_IDS)
+    expect(movedSpan(many, 0, MAX_ORDERED_IDS)).toBeNull()
+  })
+})
+

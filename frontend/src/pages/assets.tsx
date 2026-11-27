@@ -9,7 +9,6 @@ import {
   type DraggableSyntheticListeners,
 } from '@dnd-kit/core'
 import {
-  arrayMove,
   SortableContext,
   sortableKeyboardCoordinates,
   useSortable,
@@ -98,7 +97,7 @@ import { formatTransactionTotal, getTransactionTotalCurrency } from '@/lib/asset
 import { MAX_SPLIT_UNITS, canRecordSplit, formatSplitRatio, parseSplitUnits } from '@/lib/asset-split'
 import { formatCurrency } from '@/lib/format'
 import { SurfacePointerSensor } from '@/lib/drag-surface'
-import { applyWalletOrder, compareWallets, placeInOrder } from '@/lib/manual-order'
+import { applyWalletOrder, compareWallets, movedSpan, placeInOrder } from '@/lib/manual-order'
 
 // Renders a logo image when one is available, falling back to the asset's
 // type-based Lucide icon on missing URL or broken image. Uses the type's
@@ -1153,8 +1152,8 @@ export default function AssetsPage() {
   // are fully populated; holdings with no recorded cost show "—" for the
   // cost-based columns and offer a one-tap way to add their buys.
   function moveHolding(rows: Asset[], from: number, to: number) {
-    if (from === to || from < 0 || to < 0 || to >= rows.length) return
-    reorderHoldingsMutation.mutate(arrayMove(rows.map(row => row.id), from, to))
+    const span = movedSpan(rows.map(row => row.id), from, to)
+    if (span) reorderHoldingsMutation.mutate(span)
   }
 
   // `order` makes the row movable among `rows`, by its handle or its menu.
@@ -1559,8 +1558,8 @@ export default function AssetsPage() {
   }
 
   function moveWallet(from: number, to: number) {
-    if (from === to || from < 0 || to < 0 || to >= sortedWallets.length) return
-    reorderWalletsMutation.mutate(arrayMove(sortedWallets.map(wallet => wallet.id), from, to))
+    const span = movedSpan(sortedWallets.map(wallet => wallet.id), from, to)
+    if (span) reorderWalletsMutation.mutate(span)
   }
 
   function handleWalletDragEnd({ active, over }: DragEndEvent) {
