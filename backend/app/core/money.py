@@ -45,12 +45,14 @@ def bounded_conversion(value: Decimal, field: str = "amount_primary") -> Decimal
 
     The rate comes from the stored FX table, not from the client, so a large
     amount in a weak currency can convert past the column even though the
-    amount itself fits: 2e12 USD is about 1e13 BRL (issue #422). Refused with
+    amount itself fits: 2e12 USD is about 1e13 BRL (issue #1795). Refused with
     `MoneyOutOfRange` (a 422 on the routes) instead of failing at flush with a
     raw database error.
     Pass the value already rounded the way the caller stores it; it comes
     back unchanged. The sign is kept: callers stamp signed amounts too.
     """
+    if not value.is_finite():
+        raise MoneyOutOfRange(f"{field} must be a finite number")
     if abs(value) > MAX_MONEY_AMOUNT:
         raise MoneyOutOfRange(f"{field} must be at most {MAX_MONEY_AMOUNT}")
     return value

@@ -1156,7 +1156,7 @@ async def enrich_with_category_suggestions(
 
 def _cents(value: Decimal) -> Decimal:
     """A conversion as `Numeric(15, 2)` stores it, rounded before it is bounded:
-    9999999999999.9918 fits as 9999999999999.99 (issue #422)."""
+    9999999999999.9918 fits as 9999999999999.99 (issue #1795)."""
     return as_stored_amount(value)
 
 

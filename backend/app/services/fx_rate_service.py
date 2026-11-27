@@ -15,7 +15,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from app.core.app_clock import app_today
 from app.core.config import get_settings
 from app.core.currency import same_currency
-from app.core.money import MoneyOutOfRange, bounded_conversion
+from app.core.money import MAX_MONEY_AMOUNT, MoneyOutOfRange, bounded_conversion
 from app.models.account import Account
 from app.models.fx_rate import FxRate
 from app.models.transaction import Transaction
@@ -739,7 +739,7 @@ async def stamp_primary_amount(
                 recompute=restamp_account,
             )
         except MoneyOutOfRange:
-            # The account leg converts past the column (issue #422): put the
+            # The account leg converts past the column (issue #1795): put the
             # primary stamp back, so the row is left as it was instead of
             # half stamped and out of the healers' reach.
             setattr(obj, primary_field, before[0])
@@ -790,7 +790,13 @@ async def stamp_account_amount(
         transaction.amount_account_source = None
         return
     if bank_amount is not None:
-        transaction.amount_account = Decimal(str(bank_amount)).quantize(Decimal("0.01"))
+        raw_bank = Decimal(str(bank_amount))
+        if not raw_bank.is_finite() or abs(raw_bank) > MAX_MONEY_AMOUNT + Decimal("1"):
+            bounded_conversion(raw_bank, "amount_account")
+        transaction.amount_account = bounded_conversion(
+            raw_bank.quantize(Decimal("0.01")),
+            "amount_account",
+        )
         transaction.amount_account_source = ACCOUNT_AMOUNT_FROM_BANK
         return
     if (
@@ -854,7 +860,7 @@ async def resolve_primary_stamp(
     instead of guessing (issue #271).
 
     Raises ``MoneyOutOfRange`` when the conversion does not fit the column
-    (issue #422).
+    (issue #1795).
     """
     amount_dec = Decimal(str(amount))
 

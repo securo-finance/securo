@@ -1,4 +1,4 @@
-"""The conversion the backend works out itself is bounded too (issue #422).
+"""The conversion the backend works out itself is bounded too (issue #1795).
 
 #1730 bounded `amount_primary` when it is typed or derived from the pair the
 client sent. With neither, the backend converts the amount at the stored rate,

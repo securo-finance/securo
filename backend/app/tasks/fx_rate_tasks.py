@@ -123,7 +123,7 @@ async def _restamp_fallback_transactions_in(session_maker) -> int:
             try:
                 await stamp_primary_amount(session, tx.user_id, tx, allow_fetch=False)
             except MoneyOutOfRange:
-                continue  # converts past the column: left as it was (#422)
+                continue  # converts past the column: left as it was (#1795)
             if (tx.amount_primary, tx.fx_rate_used) != before:
                 count += 1
         await session.commit()

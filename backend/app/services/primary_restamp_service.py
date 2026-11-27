@@ -117,7 +117,7 @@ async def _converted(
     try:
         primary = bounded_conversion((amount * rate).quantize(CENT))
     except MoneyOutOfRange:
-        # Past what the column holds in the new currency (issue #422): left
+        # Past what the column holds in the new currency (issue #1795): left
         # "not converted", like a row with no rate, instead of failing the
         # whole restamp at commit.
         stats.unconverted += 1
