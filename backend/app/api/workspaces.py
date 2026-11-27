@@ -9,7 +9,7 @@ import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi_users import schemas as fu_schemas
-from sqlalchemy import select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.app_clock import is_valid_timezone
@@ -28,7 +28,12 @@ from app.schemas.workspace import (
     WorkspaceRead,
     WorkspaceUpdate,
 )
-from app.services import account_lookup_service, module_service, workspace_service
+from app.services import (
+    account_lookup_service,
+    module_service,
+    quota_service,
+    workspace_service,
+)
 from app.services.primary_restamp_service import (
     fetch_missing_today_rates,
     restamp_user_primary_amounts,
@@ -194,6 +199,29 @@ async def list_workspace_members(
     ]
 
 
+async def _drop_unattached_account(session: AsyncSession, user_id: uuid.UUID) -> bool:
+    """Delete an account made for a refused invite, unless it belongs anywhere.
+
+    Once created, the account is visible to other invites: a parallel one in
+    another workspace can add it and commit before this refusal. Deleting it
+    then would cascade away that membership, so the account is removed only
+    while it has no workspace at all. The row lock waits for an insert that
+    references it still in flight, so the count below sees that member.
+    """
+    await session.execute(
+        select(User.id).where(User.id == user_id).with_for_update()
+    )
+    memberships = await session.scalar(
+        select(func.count()).select_from(WorkspaceMember).where(
+            WorkspaceMember.user_id == user_id
+        )
+    )
+    if memberships:
+        return False
+    await session.execute(delete(User).where(User.id == user_id))
+    return True
+
+
 @router.post(
     "/{workspace_id}/members",
     response_model=MemberRead,
@@ -238,6 +266,10 @@ async def invite_member(
                 status_code=400,
                 detail="User not found. Provide a password to create them.",
             )
+        # Creating the account commits on its own, so the member limit is
+        # checked first: a refusal after it would leave a user with no
+        # workspace who can sign in with the password typed here.
+        await quota_service.check_new_member(session, workspace_id, None)
         try:
             create_payload = fu_schemas.BaseUserCreate(
                 email=body.email,
@@ -264,14 +296,26 @@ async def invite_member(
             await workspace_service.create_personal_workspace_for_user(session, target)
         except Exception as e:
             raise HTTPException(status_code=400, detail=f"Could not create user: {e}")
+        created_user_id = target.id
+    else:
+        created_user_id = None
 
-    member = await workspace_service.add_member(
-        session,
-        workspace_id=workspace_id,
-        user_id=target.id,
-        role=body.role,
-        invited_by_user_id=user.id,
-    )
+    try:
+        member = await workspace_service.add_member(
+            session,
+            workspace_id=workspace_id,
+            user_id=target.id,
+            role=body.role,
+            invited_by_user_id=user.id,
+        )
+    except HTTPException:
+        # The seat can go to a parallel invite between the check above and
+        # this one; the account made for this invite goes with the refusal.
+        if created_user_id is not None:
+            await session.rollback()
+            await _drop_unattached_account(session, created_user_id)
+            await session.commit()
+        raise
     await session.commit()
     return MemberRead(
         id=member.id,
