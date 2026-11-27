@@ -35,6 +35,8 @@ from app.providers.enable_banking import (
     _map_cash_account_type,
     _repeat_external_id,
     _txn_fingerprint,
+    dated_by_booking_only,
+    entry_date,
 )
 from app.providers.psu import PsuContext, psu_present
 
@@ -1663,13 +1665,103 @@ def test_build_transaction_prefers_transaction_date_over_booking_date():
     assert tx.raw_data["booking_date"] == "2026-09-02"
 
 
-def test_build_transaction_falls_back_to_booking_date_without_transaction_date():
+def test_build_transaction_takes_earlier_value_date_without_transaction_date():
+    """#664: a card purchase on Saturday is booked on Monday.
+
+    The fixture mirrors an OTP banka (Slovenia) card entry: the bank sends no
+    transaction date, the value date is the day of the purchase and the
+    booking date is the next working day.
+    """
+    provider = EnableBankingProvider()
+    raw = {
+        "transaction_amount": {"amount": "3.81", "currency": "EUR"},
+        "credit_debit_indicator": "DBIT",
+        "booking_date": "2026-11-23",
+        "value_date": "2026-11-21",
+        "transaction_date": None,
+    }
+    tx = provider._build_transaction("acc-1", raw, "posted", "auto")
+    assert tx is not None
+    assert tx.date == date(2026, 11, 21)
+
+
+def test_build_transaction_keeps_a_month_end_purchase_in_its_month():
+    """A card purchase on Saturday 31 October is booked on Monday 2 November.
+
+    Dated by the booking date it moved into November's spending; the value
+    date keeps it in October.
+    """
+    provider = EnableBankingProvider()
+    raw = {
+        "transaction_amount": {"amount": "12.40", "currency": "EUR"},
+        "credit_debit_indicator": "DBIT",
+        "booking_date": "2026-11-02",
+        "value_date": "2026-10-31",
+        "transaction_date": None,
+    }
+    tx = provider._build_transaction("acc-1", raw, "posted", "auto")
+    assert tx is not None
+    assert tx.date == date(2026, 10, 31)
+
+
+def test_build_transaction_keeps_booking_date_before_a_later_value_date():
+    """A value date after the booking date is not the day the entry happened.
+
+    Banks set one for interest on a card statement or a forward-dated credit,
+    so the earlier booking date stays the date.
+    """
+    provider = EnableBankingProvider()
+    raw = {
+        "transaction_amount": {"amount": "20.00", "currency": "EUR"},
+        "credit_debit_indicator": "CRDT",
+        "booking_date": "2026-09-02",
+        "value_date": "2026-09-04",
+    }
+    tx = provider._build_transaction("acc-1", raw, "posted", "auto")
+    assert tx is not None
+    assert tx.date == date(2026, 9, 2)
+
+
+@pytest.mark.parametrize(
+    "value_date",
+    ["0001-01-01", "1970-01-01", "2026-08-25"],
+    ids=["year-one", "epoch", "weeks-before-booking"],
+)
+def test_entry_date_keeps_booking_date_over_an_implausible_value_date(value_date):
+    """A placeholder value date, or one weeks before the booking date, is not
+    the day the entry happened, so the booking date stays."""
+    raw = {"booking_date": "2026-09-02", "value_date": value_date, "transaction_date": None}
+    assert entry_date(raw) == date(2026, 9, 2)
+
+
+def test_entry_date_takes_value_date_when_booking_date_is_a_placeholder():
+    raw = {"booking_date": "1970-01-01", "value_date": "2026-09-01"}
+    assert entry_date(raw) == date(2026, 9, 1)
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ({"booking_date": "2026-09-02"}, True),
+        ({"booking_date": "2026-09-02", "value_date": "1970-01-01"}, True),
+        ({"booking_date": "2026-09-02", "value_date": "2026-09-01"}, False),
+        ({"booking_date": "2026-09-02", "transaction_date": "2026-08-31"}, False),
+    ],
+    ids=["booking-only", "placeholder-value-date", "value-date", "transaction-date"],
+)
+def test_dated_by_booking_only(raw, expected):
+    """A placeholder date is no date of the entry's own."""
+    assert dated_by_booking_only(raw) is expected
+
+
+def test_build_transaction_falls_back_to_booking_date_alone():
     provider = EnableBankingProvider()
     raw = {
         "transaction_amount": {"amount": "20.00", "currency": "EUR"},
         "credit_debit_indicator": "DBIT",
         "booking_date": "2026-09-02",
-        "value_date": "2026-09-01",
+        "value_date": None,
+        "transaction_date": None,
     }
     tx = provider._build_transaction("acc-1", raw, "posted", "auto")
     assert tx is not None
@@ -2017,7 +2109,8 @@ async def test_get_transactions_drops_pending_twin_of_a_booked_entry(eb_keys):
             {"session_id": "sess-x"}, "acc-1", date(2026, 5, 1)
         )
 
-    assert [(t.status, t.date) for t in txns] == [("posted", date(2026, 5, 11))]
+    # Dated by its value date, the earlier of the booked entry's two dates.
+    assert [(t.status, t.date) for t in txns] == [("posted", date(2026, 5, 10))]
 
 
 @pytest.mark.asyncio

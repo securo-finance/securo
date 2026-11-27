@@ -41,7 +41,14 @@ from app.models.user import User
 from app.plugins.contract import SYNCED_TEXT, column_amount
 from app.plugins.provider import is_plugin_provider
 from app.providers import get_provider
-from app.providers.enable_banking import SKIPPED_TRANSACTION_STATUSES, is_account_txn_id
+from app.providers.enable_banking import (
+    MAX_VALUE_DATE_LEAD,
+    SKIPPED_TRANSACTION_STATUSES,
+    booking_date,
+    dated_by_booking_only,
+    entry_date,
+    is_account_txn_id,
+)
 from app.providers.base import (
     AccountData,
     BankProvider,
@@ -3208,30 +3215,21 @@ def _eb_exact_twin_in_batch(
     referenced copy of ALPHA in the same fetch landed as a new row.
     """
     held_text = held.original_description or held.description
+    # A row stored before the provider's date order changed keeps the date it
+    # was given then; its payload names the date its entry carries now.
+    held_dates = {held.date}
+    if isinstance(held.raw_data, dict):
+        held_dates.add(entry_date(held.raw_data))
     return any(
         other.external_id != txn_data.external_id
         and other.amount == held.amount
         and other.type == held.type
         and other.currency == held.currency
-        and other.date == held.date
+        and other.date in held_dates
         and other.status == held.status
         and token_overlap(held_text, other.description) >= 0.9
         for other in incoming_batch
     )
-
-
-def _eb_entry_date(raw: dict) -> Optional[date]:
-    """The date an Enable Banking payload gives its entry, read the way the
-    provider reads it: the transaction date, else the booking date, else the
-    value date."""
-    for key in ("transaction_date", "booking_date", "value_date"):
-        value = raw.get(key)
-        if isinstance(value, str):
-            try:
-                return date.fromisoformat(value[:10])
-            except ValueError:
-                continue
-    return None
 
 
 async def _find_settled_eb_hold(
@@ -3277,7 +3275,9 @@ async def _find_settled_eb_hold(
             Transaction.currency == txn_data.currency,
             Transaction.type == txn_data.type,
             Transaction.date >= txn_data.date - timedelta(days=_EB_HOLD_SETTLE_DAYS),
-            Transaction.date <= txn_data.date,
+            # A hold stored before the provider read the value date keeps the
+            # later booking date; its payload date is checked below.
+            Transaction.date <= txn_data.date + MAX_VALUE_DATE_LEAD,
             Transaction.external_id != txn_data.external_id,
         )
     )
@@ -3286,6 +3286,7 @@ async def _find_settled_eb_hold(
         for candidate in result.scalars()
         if candidate.external_id not in live_external_ids
         and isinstance(candidate.raw_data, dict)
+        and _eb_held_by(candidate, txn_data.date)
     ]
     holds = [candidate for candidate, held in gone if _eb_same_merchant(held, raw)]
     if holds:
@@ -3306,7 +3307,7 @@ async def _find_settled_eb_hold(
         blank_pairs = [
             (candidate, held)
             for candidate, held in blank_pairs
-            if _eb_entry_date(held) == purchase_date
+            if entry_date(held) == purchase_date
         ]
     else:
         # The entries of a fetch are matched one at a time, so an undated
@@ -3324,13 +3325,30 @@ async def _find_settled_eb_hold(
     return blank[0] if len(blank) == 1 else None
 
 
+def _eb_held_by(hold: Transaction, booked_on: date) -> bool:
+    """Whether `hold` was held on or before `booked_on`, within the window a
+    charge settles it in.
+
+    Its stored date decides, unless the row was stored before the provider's
+    date order changed and still carries a later date: then the date its
+    payload gives the entry now decides.
+    """
+    if hold.date <= booked_on:
+        return True
+    held_on = entry_date(hold.raw_data) if isinstance(hold.raw_data, dict) else None
+    return (
+        held_on is not None
+        and booked_on - timedelta(days=_EB_HOLD_SETTLE_DAYS) <= held_on <= booked_on
+    )
+
+
 def _eb_dated_charge_in_batch(
     held: dict, txn_data, incoming_batch: Sequence[TransactionData],
 ) -> bool:
     """Whether another entry of this fetch names `held`'s date in its
     reference, so it is the charge that settles this hold and not the
     undated one being matched now."""
-    held_date = _eb_entry_date(held)
+    held_date = entry_date(held)
     if held_date is None:
         return False
     for other in incoming_batch:
@@ -3378,6 +3396,27 @@ def _eb_purchase_date(raw: dict, booked_on: date) -> Optional[date]:
     return None
 
 
+def _eb_same_entry_day(stored: Transaction, txn_data) -> bool:
+    """Whether a stored Enable Banking row and an incoming entry fall on the
+    same day, though their dates differ.
+
+    A row stored before the provider read the value date keeps the later
+    booking date, while its payload gives the entry's date now. And one
+    payload of an entry can carry only the booking date while the other
+    also carries the earlier value date; both then name the same booking
+    date. That fallback holds only while one of them has no date of its own:
+    two purchases dated the 18th and the 19th can both book on the 20th.
+    """
+    stored_raw = stored.raw_data if isinstance(stored.raw_data, dict) else {}
+    if entry_date(stored_raw) == txn_data.date:
+        return True
+    incoming_raw = txn_data.raw_data if isinstance(txn_data.raw_data, dict) else {}
+    if not (dated_by_booking_only(stored_raw) or dated_by_booking_only(incoming_raw)):
+        return False
+    booked_on = booking_date(stored_raw)
+    return booked_on is not None and booked_on == booking_date(incoming_raw)
+
+
 async def _find_synced_duplicate(
     session: AsyncSession,
     account_id: uuid.UUID,
@@ -3385,6 +3424,8 @@ async def _find_synced_duplicate(
     incoming_external_ids: set[str],
     live_external_ids: Optional[set[str]] = None,
     incoming_batch: Sequence[TransactionData] = (),
+    *,
+    eb_payload_dates: bool = False,
 ) -> Optional[Transaction]:
     """Find an existing row that the incoming `txn_data` is a twin of.
 
@@ -3414,6 +3455,8 @@ async def _find_synced_duplicate(
     was cut short, as a partial set would make a hold the provider still
     lists look gone. ``incoming_batch`` is the fetch `txn_data` came from;
     it and ``live_external_ids`` let Path 4 match a reworded remittance text.
+    ``eb_payload_dates`` lets Path 2 read an Enable Banking row's date from
+    its payload; pass it only for an Enable Banking connection.
     """
     # Path 1: installment fingerprint. Highly specific, so we don't require a
     # description match on top.
@@ -3445,11 +3488,20 @@ async def _find_synced_duplicate(
     # day and amount. A light description-similarity check guards against
     # the residual false positive of two different merchants charging the
     # same amount the same day where one is pending and one is posted.
+    #
+    # On Enable Banking two payloads of one entry can be dated apart, by up to
+    # how far a value date may precede its booking date: see
+    # `_eb_same_entry_day`.
+    same_date = Transaction.date == txn_data.date
+    if eb_payload_dates:
+        same_date = Transaction.date.between(
+            txn_data.date - MAX_VALUE_DATE_LEAD, txn_data.date + MAX_VALUE_DATE_LEAD,
+        )
     result = await session.execute(
         select(Transaction).where(
             Transaction.account_id == account_id,
             Transaction.source == "sync",
-            Transaction.date == txn_data.date,
+            same_date,
             Transaction.amount == txn_data.amount,
             Transaction.type == txn_data.type,
             Transaction.status != txn_data.status,
@@ -3458,6 +3510,20 @@ async def _find_synced_duplicate(
     )
     for candidate in result.scalars():
         if candidate.external_id and candidate.external_id.startswith("bill_charge:"):
+            continue
+        # A pending row the provider still returns, cancelled ones included,
+        # is an entry of its own, so only one that left the feed is matched
+        # by its payload dates. A fetch cut short can't tell, so it is
+        # matched. A posted row stays posted, so a pending copy can still
+        # fold into it while the bank lists both.
+        if candidate.date != txn_data.date and not (
+            (
+                candidate.status != "pending"
+                or live_external_ids is None
+                or candidate.external_id not in live_external_ids
+            )
+            and _eb_same_entry_day(candidate, txn_data)
+        ):
             continue
         if token_overlap(
             candidate.original_description or candidate.description,
@@ -3565,7 +3631,11 @@ async def _find_synced_duplicate(
             Transaction.raw_data.is_not(None),
             Transaction.date
             >= txn_data.date - timedelta(days=3 + _EB_HOLD_SETTLE_DAYS),
-            Transaction.date <= txn_data.date + timedelta(days=3),
+            # A row stored before the provider read the value date keeps the
+            # booking date, up to `MAX_VALUE_DATE_LEAD` after the date its
+            # payload gives; that payload date is checked below.
+            Transaction.date
+            <= txn_data.date + timedelta(days=3) + MAX_VALUE_DATE_LEAD,
             Transaction.amount == txn_data.amount,
             Transaction.type == txn_data.type,
             Transaction.external_id != txn_data.external_id,
@@ -3584,7 +3654,7 @@ async def _find_synced_duplicate(
                 continue
             if not isinstance(candidate.raw_data, dict):
                 continue
-            stored_date = _eb_entry_date(candidate.raw_data)
+            stored_date = entry_date(candidate.raw_data)
             if abs((candidate.date - txn_data.date).days) > 3 and (
                 stored_date is None or abs((stored_date - txn_data.date).days) > 3
             ):
@@ -5257,6 +5327,7 @@ async def sync_connection(
                     incoming_txn_external_ids,
                     live_external_ids=hold_live_ids,
                     incoming_batch=transactions_data,
+                    eb_payload_dates=connection.provider == "enable_banking",
                 )
                 if synced_dup:
                     settles = synced_dup.status == "pending" and txn_data.status == "posted"

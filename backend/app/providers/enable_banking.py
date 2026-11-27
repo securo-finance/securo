@@ -268,6 +268,58 @@ def _parse_iso_date(value: Any) -> Optional[date]:
         return None
 
 
+# How far a value date may precede the booking date and still be taken as the
+# day of the entry. A card purchase books a few working days later; a value
+# date further back is a back-valued correction or a bad payload, and the
+# booking date stays.
+MAX_VALUE_DATE_LEAD = timedelta(days=7)
+
+
+def _plausible_date(value: Any) -> Optional[date]:
+    """A payload date, or None when it is missing or a placeholder: a date at
+    or before 1970 is no real entry's, the same floor `_merge_sync_metadata`
+    treats as a placeholder."""
+    parsed = _parse_iso_date(value)
+    return parsed if parsed is not None and parsed.year > 1970 else None
+
+
+def booking_date(raw: dict) -> Optional[date]:
+    """The booking date a payload carries, unless missing or a placeholder."""
+    return _plausible_date(raw.get("booking_date"))
+
+
+def dated_by_booking_only(raw: dict) -> bool:
+    """Whether a payload carries neither a transaction nor a value date, so
+    nothing tells its entry's day apart from the day it booked."""
+    return not (
+        _plausible_date(raw.get("transaction_date"))
+        or _plausible_date(raw.get("value_date"))
+    )
+
+
+def entry_date(raw: dict) -> Optional[date]:
+    """The day an entry happened, from the dates its payload carries.
+
+    The transaction date is the day of the operation itself, so it wins.
+    Without it, the earlier of the value and booking dates is the closest to
+    that day: a card purchase made on Saturday has Saturday's value date and
+    is booked on Monday, while a bank that sets a later value date (interest
+    on a card statement, a forward-dated credit) still keeps the booking date.
+    A value date more than `MAX_VALUE_DATE_LEAD` before the booking date
+    does not win either.
+    """
+    txn_date = _plausible_date(raw.get("transaction_date"))
+    if txn_date:
+        return txn_date
+    value = _plausible_date(raw.get("value_date"))
+    booking = booking_date(raw)
+    if value and booking:
+        if booking - MAX_VALUE_DATE_LEAD <= value < booking:
+            return value
+        return booking
+    return value or booking
+
+
 def _join_remittance(value: Any) -> str:
     if isinstance(value, list):
         return " ".join(str(v) for v in value if v).strip()
@@ -1643,16 +1695,9 @@ class EnableBankingProvider(BankProvider):
         txn_type = "debit" if indicator == "DBIT" else "credit"
         amount = amount.copy_abs()
         currency = amount_obj.get("currency") or "EUR"
-        # The date the operation happened wins over the dates the bank adds
-        # while processing it: a card purchase made on the 1st and booked on
-        # the 3rd belongs to the 1st. Booking then value date are the fallback
-        # for the institutions that fill only those. The identity below still
-        # hashes all three, so this choice does not move any row's id.
-        booking = _parse_iso_date(raw.get("booking_date"))
-        value = _parse_iso_date(raw.get("value_date"))
-        txn_date = (
-            _parse_iso_date(raw.get("transaction_date")) or booking or value
-        )
+        # The identity below hashes all three dates, so which one is chosen
+        # does not move any row's id.
+        txn_date = entry_date(raw)
         if not txn_date:
             return None
         additional_value = raw.get("additional_information")

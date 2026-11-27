@@ -3691,6 +3691,71 @@ async def test_sync_connection_enable_banking_adopts_a_row_stored_with_the_booki
 
 
 @pytest.mark.asyncio
+async def test_sync_connection_enable_banking_adopts_a_row_booked_days_after_its_value_date(
+    session: AsyncSession, test_user, test_workspace,
+):
+    """#664: a row stored while the booking date came first keeps that date,
+    while the entry is now dated by its value date, more than three days
+    earlier across a long weekend. The reference arrives on a later fetch, and
+    the held row is still found and takes the new id instead of a twin."""
+    conn, account = await _eb_account(session, test_user.id, test_workspace.id)
+    account_id = account.id
+    dates = {"booking_date": "2026-09-08", "value_date": "2026-09-03"}
+    first = _eb_txn({**_eb_late_ref_payload(None), **dates})
+    held = _eb_late_ref_row(test_user.id, test_workspace.id, account, first)
+    # The row was dated the way the provider read the payload before #664.
+    held.date = date(2026, 9, 8)
+    session.add(held)
+    await session.commit()
+    held_id = held.id
+
+    refetched = _eb_txn({**_eb_late_ref_payload("2026-09-08.1"), **dates})
+    assert refetched.date == date(2026, 9, 3)
+    assert refetched.external_id != first.external_id
+    await _sync_eb(session, conn, test_workspace.id, test_user.id, [refetched])
+
+    rows = await _account_rows(session, account_id)
+    assert [row.id for row in rows] == [held_id]
+    assert rows[0].external_id == refetched.external_id
+
+
+@pytest.mark.asyncio
+async def test_sync_connection_enable_banking_rekeys_a_row_booked_a_week_after_its_value_date(
+    session: AsyncSession, test_user, test_workspace,
+):
+    """Review on #1868: a row stored while the booking date came first sits
+    up to `MAX_VALUE_DATE_LEAD` after the date its payload gives, and a
+    refetch that moves the dates shifts the entry up to three days further.
+    Here the stored row is nine days after the refetched entry, so the query
+    has to reach that far for the payload check to see it."""
+    conn, account = await _eb_account(session, test_user.id, test_workspace.id)
+    account_id = account.id
+    entry_ref = "2026-09-10.1"
+    first = _eb_txn({
+        **_eb_late_ref_payload(entry_ref),
+        "booking_date": "2026-09-10", "value_date": "2026-09-03",
+    })
+    held = _eb_late_ref_row(test_user.id, test_workspace.id, account, first)
+    # The row was dated the way the provider read the payload before #664.
+    held.date = date(2026, 9, 10)
+    session.add(held)
+    await session.commit()
+    held_id = held.id
+
+    refetched = _eb_txn({
+        **_eb_late_ref_payload(entry_ref),
+        "booking_date": "2026-09-08", "value_date": "2026-09-01",
+    })
+    assert refetched.date == date(2026, 9, 1)
+    assert refetched.external_id != first.external_id
+    await _sync_eb(session, conn, test_workspace.id, test_user.id, [refetched])
+
+    rows = await _account_rows(session, account_id)
+    assert [row.id for row in rows] == [held_id]
+    assert rows[0].external_id == refetched.external_id
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "held_fields",
     [{"remittance": "COMPRA TARJ. FARMACIA SOL"}, {"currency": "USD"}],
@@ -4066,6 +4131,40 @@ async def test_sync_connection_enable_banking_reworded_remittance_yields_to_exac
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("beta_first", [False, True], ids=["alpha_first", "beta_first"])
+async def test_sync_connection_enable_banking_reworded_remittance_yields_to_twin_of_a_legacy_row(
+    session: AsyncSession, test_user, test_workspace, beta_first,
+):
+    """#664: the held ALPHA row keeps the booking date it was stored with,
+    while the fetch dates ALPHA and BETA by their earlier value date. ALPHA is
+    still recognised as the held row's exact twin, so BETA never takes it."""
+    conn, account = await _eb_account(session, test_user.id, test_workspace.id)
+    account_id = account.id
+    dates = {"transaction_date": None, "value_date": "2026-11-09"}
+    held_txn = _eb_txn({**_eb_reworded_payload(None, _ALPHA), **dates})
+    held = _eb_row(
+        test_user.id, test_workspace.id, account, held_txn.external_id,
+        held_txn.raw_data, "120.00", description=held_txn.description,
+        original_description=held_txn.description,
+        # The row was dated the way the provider read the payload before #664.
+        date=date(2026, 11, 11), currency=held_txn.currency,
+    )
+    session.add(held)
+    await session.commit()
+    held_id = held.id
+
+    alpha = _eb_txn({**_eb_reworded_payload("2026-11-11.1", _ALPHA), **dates})
+    beta = _eb_txn({**_eb_reworded_payload("2026-11-11.2", _BETA), **dates})
+    assert alpha.date == date(2026, 11, 9)
+    fetched = [beta, alpha] if beta_first else [alpha, beta]
+    await _sync_eb(session, conn, test_workspace.id, test_user.id, fetched)
+
+    rows = await _account_rows(session, account_id)
+    assert {row.external_id for row in rows} == {alpha.external_id, beta.external_id}
+    assert next(row for row in rows if row.id == held_id).external_id == alpha.external_id
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("cut_short", ["incomplete", "truncated"])
 async def test_sync_connection_enable_banking_reworded_remittance_needs_complete_fetch(
     session: AsyncSession, test_user, test_workspace, cut_short,
@@ -4397,6 +4496,365 @@ async def test_sync_connection_enable_banking_hold_claim_date_window(
         assert [(row.date, row.status) for row in rows] == [
             (date.fromisoformat(hold_date), "posted"),
         ]
+    else:
+        assert sorted(row.status for row in rows) == ["pending", "posted"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("value_date", ["2026-11-03", "2026-10-29"], ids=["2-days", "7-days"])
+async def test_sync_connection_enable_banking_settles_legacy_hold_on_its_value_date(
+    session: AsyncSession, test_user, test_workspace, monkeypatch, value_date,
+):
+    """Review probe on #1868: a pending charge stored under the booking-first
+    rule keeps 5 November, while its payload holds value date 3 November.
+    The posted entry dated 3 November settles that hold instead of landing
+    as a second row."""
+    monkeypatch.setattr(
+        "app.services.connection_service.app_today", lambda: date(2026, 11, 6),
+    )
+    conn, account = await _eb_account(session, test_user.id, test_workspace.id)
+    account_id = account.id
+    await session.commit()
+    dates = {"transaction_date": None, "booking_date": "2026-11-05", "value_date": value_date}
+    hold = {**_paypal_payload("1HD00000AA0000001", "2026-11-03", booked=False), **dates}
+    charge = {**_paypal_payload("7PY00000AA0000001", "2026-11-03", booked=True), **dates}
+    await _sync_paypal_holds(session, conn, test_workspace.id, test_user.id, [hold])
+    (held,) = await _account_rows(session, account_id)
+    held.date = date(2026, 11, 5)
+    await session.commit()
+    held_id = held.id
+
+    await _sync_eb(
+        session, conn, test_workspace.id, test_user.id, await _eb_fetch([charge], []),
+    )
+
+    rows = await _account_rows(session, account_id)
+    assert [(row.id, row.status) for row in rows] == [(held_id, "posted")]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("held_ref", ["1HD00000AA0000001", None], ids=["reference", "no-reference"])
+@pytest.mark.parametrize("complete_fetch", [True, False], ids=["complete", "incomplete"])
+@pytest.mark.parametrize(
+    "value_date", ["2026-11-07", "2026-11-03", "2026-11-02"], ids=["2-days", "6-days", "7-days"],
+)
+async def test_sync_connection_enable_banking_posted_entry_updates_legacy_pending_row(
+    session: AsyncSession, test_user, test_workspace, monkeypatch, held_ref, complete_fetch,
+    value_date,
+):
+    """Review on #1868: a pending charge stored under the booking-first rule
+    keeps 9 November, while its payload holds a value date up to seven days
+    earlier. The posted entry comes back dated by that value date under a new
+    reference, and the pending row becomes it (Path 2) instead of a second
+    row landing beside it, also when the fetch was cut short and no hold can
+    be claimed."""
+    monkeypatch.setattr(
+        "app.services.connection_service.app_today", lambda: date(2026, 11, 10),
+    )
+    conn, account = await _eb_account(session, test_user.id, test_workspace.id)
+    account_id = account.id
+    await session.commit()
+    dates = {"transaction_date": None, "booking_date": "2026-11-09", "value_date": value_date}
+    pending = {**_paypal_payload("p1", "2026-11-07", booked=False), **dates, "entry_reference": held_ref}
+    posted = {**_paypal_payload("b1", "2026-11-07", booked=True), **dates}
+    await _sync_paypal_holds(session, conn, test_workspace.id, test_user.id, [pending])
+    (held,) = await _account_rows(session, account_id)
+    held.date = date(2026, 11, 9)
+    await session.commit()
+    held_id = held.id
+
+    fetch = await _eb_fetch([posted], [])
+    await _sync_eb(
+        session, conn, test_workspace.id, test_user.id, fetch, incomplete=not complete_fetch,
+    )
+
+    rows = await _account_rows(session, account_id)
+    assert [(row.id, row.status) for row in rows] == [(held_id, "posted")]
+    assert rows[0].external_id == _eb_txn(posted).external_id
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("pending_value_date", "posted_value_date"),
+    [(None, "2026-11-18"), ("2026-11-18", None)],
+    ids=["pending-booking-only", "posted-booking-only"],
+)
+@pytest.mark.parametrize("complete_fetch", [True, False], ids=["complete", "incomplete"])
+async def test_sync_connection_enable_banking_posted_entry_matches_pending_by_booking_date(
+    session: AsyncSession, test_user, test_workspace, monkeypatch,
+    pending_value_date, posted_value_date, complete_fetch,
+):
+    """Review on #1868: one payload of the entry carries only its booking
+    date (20 November), the other also its value date (18 November), so the
+    two are dated apart. They name the same booking date, so the posted entry
+    takes over the pending row (Path 2), in either order."""
+    monkeypatch.setattr(
+        "app.services.connection_service.app_today", lambda: date(2026, 11, 21),
+    )
+    conn, account = await _eb_account(session, test_user.id, test_workspace.id)
+    account_id = account.id
+    await session.commit()
+    pending = {
+        **_paypal_payload("p1", "2026-11-18", booked=False),
+        "transaction_date": None,
+        "booking_date": "2026-11-20",
+        "value_date": pending_value_date,
+    }
+    posted = {
+        **_paypal_payload("b1", "2026-11-18", booked=True),
+        "transaction_date": None,
+        "booking_date": "2026-11-20",
+        "value_date": posted_value_date,
+    }
+    await _sync_paypal_holds(session, conn, test_workspace.id, test_user.id, [pending])
+    (held,) = await _account_rows(session, account_id)
+    held_id = held.id
+
+    await _sync_eb(
+        session, conn, test_workspace.id, test_user.id, await _eb_fetch([posted], []),
+        incomplete=not complete_fetch,
+    )
+
+    rows = await _account_rows(session, account_id)
+    assert [(row.id, row.status) for row in rows] == [(held_id, "posted")]
+    assert rows[0].external_id == _eb_txn(posted).external_id
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("posted_listed", [False, True], ids=["posted-left", "posted-listed"])
+async def test_sync_connection_enable_banking_late_pending_copy_matches_posted_by_booking_date(
+    session: AsyncSession, test_user, test_workspace, monkeypatch, posted_listed,
+):
+    """Review on #1868: the posted entry lands first, dated by its value
+    date (18 November), and a pending copy that carries only the booking
+    date (20 November) arrives later. It names the same booking date, so it
+    folds into the posted row, which keeps its status and id."""
+    monkeypatch.setattr(
+        "app.services.connection_service.app_today", lambda: date(2026, 11, 21),
+    )
+    conn, account = await _eb_account(session, test_user.id, test_workspace.id)
+    account_id = account.id
+    await session.commit()
+    posted = {
+        **_paypal_payload("b1", "2026-11-18", booked=True),
+        "transaction_date": None,
+        "booking_date": "2026-11-20",
+        "value_date": "2026-11-18",
+    }
+    pending = {
+        **_paypal_payload("p1", "2026-11-18", booked=False),
+        "transaction_date": None,
+        "booking_date": "2026-11-20",
+        "value_date": None,
+    }
+    await _sync_eb(
+        session, conn, test_workspace.id, test_user.id, await _eb_fetch([posted], []),
+    )
+    (stored,) = await _account_rows(session, account_id)
+    stored_id = stored.id
+
+    await _sync_eb(
+        session, conn, test_workspace.id, test_user.id,
+        await _eb_fetch([posted] if posted_listed else [], [pending]),
+    )
+
+    rows = await _account_rows(session, account_id)
+    assert [(row.id, row.status, row.date) for row in rows] == [
+        (stored_id, "posted", date(2026, 11, 18)),
+    ]
+    assert rows[0].external_id == _eb_txn(posted).external_id
+
+
+def _same_merchant_purchase(entry_ref: str, transaction_date: str, *, booked: bool) -> dict:
+    """One of two purchases from the same merchant for the same amount, made
+    on different days and booked on the same day, 20 November."""
+    return {
+        **_paypal_payload(entry_ref, transaction_date, booked=booked),
+        "booking_date": "2026-11-20",
+    }
+
+
+async def _hold_two_same_merchant_purchases(
+    session, conn, account_id, workspace_id, user_id, *, later_first: bool,
+):
+    """Sync the holds of the purchases made on 18 and 19 November, and note
+    each one, so a later sync that swaps them shows. The order they are
+    stored in decides which one a lookup meets first."""
+    holds = [
+        _same_merchant_purchase("p18", "2026-11-18", booked=False),
+        _same_merchant_purchase("p19", "2026-11-19", booked=False),
+    ]
+    if later_first:
+        holds.reverse()
+    await _sync_paypal_holds(session, conn, workspace_id, user_id, holds)
+    for row in await _account_rows(session, account_id):
+        row.notes = f"held {row.date.day}"
+    await session.commit()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("later_first", [False, True], ids=["18th-stored-first", "19th-stored-first"])
+@pytest.mark.parametrize("complete_fetch", [True, False], ids=["left-feed", "incomplete"])
+async def test_sync_connection_enable_banking_booking_date_does_not_merge_dated_purchases(
+    session: AsyncSession, test_user, test_workspace, monkeypatch, complete_fetch, later_first,
+):
+    """Review on #1868: two purchases that each carry their own transaction
+    date share a booking date, which says nothing about them being one
+    entry. The purchase of the 19th books first and takes the row of its own
+    hold, not that of the 18th, whether the hold of the 18th has left the
+    feed or the fetch was cut short."""
+    monkeypatch.setattr(
+        "app.services.connection_service.app_today", lambda: date(2026, 11, 21),
+    )
+    conn, account = await _eb_account(session, test_user.id, test_workspace.id)
+    account_id = account.id
+    await session.commit()
+    await _hold_two_same_merchant_purchases(
+        session, conn, account_id, test_workspace.id, test_user.id,
+        later_first=later_first,
+    )
+
+    booked = _same_merchant_purchase("b19", "2026-11-19", booked=True)
+    held_18 = _same_merchant_purchase("p18", "2026-11-18", booked=False)
+    pending = [] if complete_fetch else [held_18]
+    await _sync_eb(
+        session, conn, test_workspace.id, test_user.id, await _eb_fetch([booked], pending),
+        incomplete=not complete_fetch,
+    )
+
+    rows = await _account_rows(session, account_id)
+    assert sorted((row.notes, row.status, row.external_id) for row in rows) == [
+        ("held 18", "pending", _eb_txn(held_18, "pending").external_id),
+        ("held 19", "posted", _eb_txn(booked).external_id),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_sync_connection_enable_banking_booking_date_keeps_an_earlier_purchase_apart(
+    session: AsyncSession, test_user, test_workspace, monkeypatch,
+):
+    """Review on #1868: the pending purchase of the 19th leaves the feed and
+    a posted one of the 18th arrives, both booked on the 20th. The posted one
+    is another purchase and lands as a row of its own."""
+    monkeypatch.setattr(
+        "app.services.connection_service.app_today", lambda: date(2026, 11, 21),
+    )
+    conn, account = await _eb_account(session, test_user.id, test_workspace.id)
+    account_id = account.id
+    await session.commit()
+    held = _same_merchant_purchase("p19", "2026-11-19", booked=False)
+    await _sync_paypal_holds(session, conn, test_workspace.id, test_user.id, [held])
+
+    booked = _same_merchant_purchase("b18", "2026-11-18", booked=True)
+    await _sync_eb(
+        session, conn, test_workspace.id, test_user.id, await _eb_fetch([booked], []),
+    )
+
+    rows = await _account_rows(session, account_id)
+    assert sorted((row.date, row.status, row.external_id) for row in rows) == [
+        (date(2026, 11, 18), "posted", _eb_txn(booked).external_id),
+        (date(2026, 11, 19), "pending", _eb_txn(held, "pending").external_id),
+    ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("later_first", [False, True], ids=["18th-stored-first", "19th-stored-first"])
+async def test_sync_connection_enable_banking_dated_purchases_keep_their_notes(
+    session: AsyncSession, test_user, test_workspace, monkeypatch, later_first,
+):
+    """Review on #1868: when both purchases book in one fetch, the 18th
+    first, each takes the row of its own hold and keeps its notes."""
+    monkeypatch.setattr(
+        "app.services.connection_service.app_today", lambda: date(2026, 11, 21),
+    )
+    conn, account = await _eb_account(session, test_user.id, test_workspace.id)
+    account_id = account.id
+    await session.commit()
+    await _hold_two_same_merchant_purchases(
+        session, conn, account_id, test_workspace.id, test_user.id,
+        later_first=later_first,
+    )
+
+    booked = [
+        _same_merchant_purchase("b18", "2026-11-18", booked=True),
+        _same_merchant_purchase("b19", "2026-11-19", booked=True),
+    ]
+    await _sync_eb(
+        session, conn, test_workspace.id, test_user.id, await _eb_fetch(booked, []),
+    )
+
+    rows = await _account_rows(session, account_id)
+    assert sorted((row.notes, row.external_id) for row in rows) == [
+        ("held 18", _eb_txn(booked[0]).external_id),
+        ("held 19", _eb_txn(booked[1]).external_id),
+    ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("value_date", ["0001-01-01", "1970-01-01"])
+async def test_sync_connection_enable_banking_ignores_a_placeholder_value_date(
+    session: AsyncSession, test_user, test_workspace, value_date,
+):
+    """Review on #1868: an impossible value date neither wins over the booking
+    date nor stops the sync; the entry lands on its booking date."""
+    conn, account = await _eb_account(session, test_user.id, test_workspace.id)
+    account_id = account.id
+    await session.commit()
+    raw = {
+        **_paypal_payload("7PY00000AA0000001", "2026-11-09", booked=True),
+        "transaction_date": None,
+        "booking_date": "2026-11-09",
+        "value_date": value_date,
+    }
+    await _sync_eb(session, conn, test_workspace.id, test_user.id, [_eb_txn(raw)])
+
+    rows = await _account_rows(session, account_id)
+    assert [row.date for row in rows] == [date(2026, 11, 9)]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("hold_value_date", "claimed"),
+    [("2026-11-04", True), ("2026-11-06", False)],
+    ids=["held-before-charge", "held-after-charge"],
+)
+@pytest.mark.usefixtures("_paypal_week")
+async def test_sync_connection_enable_banking_charge_claims_hold_stored_with_booking_date(
+    session: AsyncSession, test_user, test_workspace, hold_value_date, claimed,
+):
+    """#664: a hold stored while the booking date came first keeps that date,
+    which can be later than the charge now dated by its value date. Its
+    payload date decides instead: a hold held on or before the charge is
+    claimed, one held after it is not."""
+    conn, account = await _eb_account(session, test_user.id, test_workspace.id)
+    account_id = account.id
+    await session.commit()
+    hold = {
+        **_paypal_payload("1HD00000AA0000001", "2026-11-04", booked=False),
+        "transaction_date": None,
+        "booking_date": "2026-11-06",
+        "value_date": hold_value_date,
+    }
+    charge = {
+        **_paypal_payload("7PY00000AA0000001", "2026-11-04", booked=True),
+        "transaction_date": None,
+        "booking_date": "2026-11-07",
+        "value_date": "2026-11-05",
+    }
+    await _sync_paypal_holds(session, conn, test_workspace.id, test_user.id, [hold])
+    (held,) = await _account_rows(session, account_id)
+    # The row was dated the way the provider read the payload before #664.
+    held.date = date(2026, 11, 6)
+    await session.commit()
+    held_id = held.id
+
+    await _sync_eb(
+        session, conn, test_workspace.id, test_user.id, await _eb_fetch([charge], []),
+    )
+
+    rows = await _account_rows(session, account_id)
+    if claimed:
+        assert [(row.id, row.status) for row in rows] == [(held_id, "posted")]
     else:
         assert sorted(row.status for row in rows) == ["pending", "posted"]
 
