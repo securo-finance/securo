@@ -42,8 +42,11 @@ def test_reference_data_needs_no_scope():
 
 
 def test_token_info_scope_is_read_only_for_any_token():
-    assert required_scope("GET", "/api/auth/token-info") == ""
-    assert required_scope("POST", "/api/auth/token-info") is None
+    for method in ("GET", "HEAD", "OPTIONS"):
+        assert required_scope(method, "/api/auth/token-info") == ""
+    for method in ("POST", "PUT", "PATCH", "DELETE"):
+        assert required_scope(method, "/api/auth/token-info") is None
+    assert required_scope("GET", "/api/auth/token-info-extra") is None
 
 
 def test_write_includes_read():
@@ -688,3 +691,51 @@ async def test_token_info_rejects_archived_workspace(
     await session.commit()
 
     assert (await client.get("/api/auth/token-info", headers=_bearer(token))).status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_token_info_allows_viewer_role_member(
+    client: AsyncClient, viewer_auth_headers: dict, test_workspace
+):
+    created = await _create(client, viewer_auth_headers, ["goals:read"])
+
+    resp = await client.get("/api/auth/token-info", headers=_bearer(created["token"]))
+    assert resp.status_code == 200, resp.text
+    assert resp.json() == {
+        "id": created["id"],
+        "name": created["name"],
+        "token_prefix": created["token_prefix"],
+        "workspace_id": str(test_workspace.id),
+        "workspace_name": test_workspace.name,
+        "scopes": ["goals:read"],
+        "expires_at": created["expires_at"],
+    }
+
+
+@pytest.mark.asyncio
+async def test_token_info_rejects_malformed_workspace_header(
+    client: AsyncClient, auth_headers: dict
+):
+    token = (await _create(client, auth_headers, ["goals:read"]))["token"]
+
+    resp = await client.get(
+        "/api/auth/token-info",
+        headers=_bearer(token, **{"X-Workspace-Id": "not-a-uuid"}),
+    )
+    assert resp.status_code == 400
+    assert resp.json()["detail"] == "Invalid X-Workspace-Id"
+
+
+@pytest.mark.asyncio
+async def test_token_info_rejects_non_get_method_and_prefix_sibling(
+    client: AsyncClient, auth_headers: dict
+):
+    token = (await _create(client, auth_headers, list(ALL_SCOPES)))["token"]
+
+    # Starlette handles method mismatch (405) and unknown path (404) before
+    # endpoint dependencies (`current_active_user`) execute.
+    post_resp = await client.post("/api/auth/token-info", headers=_bearer(token))
+    assert post_resp.status_code == 405
+
+    extra_resp = await client.get("/api/auth/token-info-extra", headers=_bearer(token))
+    assert extra_resp.status_code == 404
