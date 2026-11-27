@@ -44,6 +44,13 @@ class User(SQLAlchemyBaseUserTableUUID, Base):
         DateTime(timezone=True), nullable=True, default=None
     )
 
+    # The reference a managed instance's operator gave the account when it
+    # opened it (#1965). The code attaches no meaning to it; it is unique so a
+    # retried call finds the account instead of opening a second one.
+    external_reference: Mapped[Optional[str]] = mapped_column(
+        String(255), nullable=True, unique=True, index=True, default=None
+    )
+
     preferences: Mapped[Optional[dict]] = mapped_column(
         JSON,
         default=lambda: {
