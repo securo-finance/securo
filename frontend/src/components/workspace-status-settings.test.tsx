@@ -75,10 +75,27 @@ it('reactivates a suspended workspace and drops the badge', async () => {
   expect(screen.queryByText('Suspended')).not.toBeInTheDocument()
 })
 
-it('searches on the server and says when there are more', async () => {
-  vi.mocked(admin.listWorkspaces).mockResolvedValue({ items: [home], total: 60 })
+it('searches on the server and shows what the search returned', async () => {
+  const warehouse: AdminWorkspace = {
+    ...home,
+    id: 'w2',
+    name: 'Warehouse',
+    owners: ['ops@example.com'],
+  }
+  // The answer to the search is a different list, so the row on screen has to
+  // follow it: a request sent but not read would leave Home in place.
+  vi.mocked(admin.listWorkspaces).mockImplementation(async (params) =>
+    params?.search === 'x' ? { items: [warehouse], total: 1 } : { items: [home], total: 60 },
+  )
+
   const { user } = renderWithProviders(<WorkspaceStatusSettings />)
   expect(await screen.findByText(/Showing 1 of 60/)).toBeVisible()
+  expect(screen.getByText('Home')).toBeVisible()
+
   await user.type(screen.getByRole('searchbox'), 'x')
-  await waitFor(() => expect(admin.listWorkspaces).toHaveBeenLastCalledWith({ search: 'x' }))
+  expect(await screen.findByText('Warehouse')).toBeVisible()
+  expect(screen.queryByText('Home')).not.toBeInTheDocument()
+  // The whole result fits on screen now, so the "showing" hint is gone too.
+  expect(screen.queryByText(/Showing 1 of/)).not.toBeInTheDocument()
+  expect(admin.listWorkspaces).toHaveBeenLastCalledWith({ search: 'x' })
 })
