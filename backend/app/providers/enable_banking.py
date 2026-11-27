@@ -284,9 +284,14 @@ _ING_SEPA_PREFIX = re.compile(
 )
 
 
+def strip_sepa_prefix(text: str) -> str:
+    """`text` without ING's SEPA key prefix, for rows stored before it was dropped."""
+    return _ING_SEPA_PREFIX.sub("", text, count=1).strip()
+
+
 def _description_remittance(value: Any) -> str:
     """The remittance text as a description, ING's SEPA key prefix removed."""
-    return _ING_SEPA_PREFIX.sub("", _join_remittance(value), count=1).strip()
+    return strip_sepa_prefix(_join_remittance(value))
 
 
 def _counterparty_name(raw: dict, party: str) -> str:

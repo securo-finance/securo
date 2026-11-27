@@ -42,7 +42,11 @@ from app.models.user import User
 from app.plugins.contract import SYNCED_TEXT, column_amount
 from app.plugins.provider import is_plugin_provider
 from app.providers import get_provider
-from app.providers.enable_banking import SKIPPED_TRANSACTION_STATUSES, is_account_txn_id
+from app.providers.enable_banking import (
+    SKIPPED_TRANSACTION_STATUSES,
+    is_account_txn_id,
+    strip_sepa_prefix,
+)
 from app.providers.base import (
     AccountData,
     BankProvider,
@@ -3492,6 +3496,9 @@ async def _find_synced_duplicate(
     # day and amount. A light description-similarity check guards against
     # the residual false positive of two different merchants charging the
     # same amount the same day where one is pending and one is posted.
+    # A pending row stored before #1910 still carries ING's SEPA key prefix,
+    # which the booked entry no longer has; it is dropped for the comparison
+    # only, so the stored text stays as it is.
     result = await session.execute(
         select(Transaction).where(
             Transaction.account_id == account_id,
@@ -3507,7 +3514,7 @@ async def _find_synced_duplicate(
         if candidate.external_id and candidate.external_id.startswith("bill_charge:"):
             continue
         if token_overlap(
-            candidate.original_description or candidate.description,
+            strip_sepa_prefix(candidate.original_description or candidate.description or ""),
             txn_data.description,
         ) >= 0.7:
             return candidate
