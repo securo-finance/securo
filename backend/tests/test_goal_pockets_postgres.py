@@ -1225,3 +1225,41 @@ async def test_transaction_edit_waits_for_running_manual_account_delete(
         assert await fresh.get(Account, account.id) is None
         assert await fresh.get(Goal, goal.id) is None
 
+
+
+async def test_rule_runs_lock_transactions_only_when_a_workspace_has_assignments(
+    session, postgres_sessions, pocket_state
+):
+    from app.services.rule_service import _transactions_for_rule_update
+
+    user, workspace, _, goal, transaction = pocket_state
+    workspace_id, transaction_id = workspace.id, transaction.id
+
+    async with postgres_sessions() as editor, postgres_sessions() as runner:
+        await editor.execute(
+            select(Transaction).where(Transaction.id == transaction_id).with_for_update()
+        )
+        # No assignments: a row another writer holds does not stall the run.
+        async with asyncio.timeout(5):
+            rows = await _transactions_for_rule_update(runner, workspace_id)
+        assert [row.id for row in rows] == [transaction_id]
+        await runner.rollback()
+        await editor.rollback()
+
+    await replace_transaction_allocations(
+        session, workspace_id, user.id, transaction,
+        [GoalAllocationInput(goal_id=goal.id, amount=Decimal("50"))],
+    )
+    await session.commit()
+
+    async with postgres_sessions() as editor, postgres_sessions() as runner:
+        await editor.execute(
+            select(Transaction).where(Transaction.id == transaction_id).with_for_update()
+        )
+        runner_pid = await _backend_pid(runner)
+        async with asyncio.TaskGroup() as tasks:
+            run = tasks.create_task(_transactions_for_rule_update(runner, workspace_id))
+            await _wait_for_lock(editor, runner_pid)
+            await editor.rollback()
+        assert [row.id for row in run.result()] == [transaction_id]
+        await runner.rollback()

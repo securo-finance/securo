@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import load_only, selectinload
 
 from app.models.account import Account
+from app.models.goal import GoalAllocation
 from app.models.rule import Rule
 from app.models.category import Category
 from app.models.payee import Payee
@@ -1183,14 +1184,27 @@ async def _transactions_for_rule_update(
         .order_by(Account.id)
         .with_for_update(key_share=True)
     )
-    return list((await session.scalars(
+    query = (
         select(Transaction)
         .where(Transaction.workspace_id == workspace_id, Transaction.source != "opening_balance")
         .options(selectinload(Transaction.goal_allocations))
         .order_by(Transaction.id)
-        .with_for_update(of=Transaction)
         .execution_options(populate_existing=True)
-    )).all())
+    )
+    # Every pocket write takes an account lock first, so while these are held
+    # no assignment can appear. Without one now, no rule change can invalidate
+    # an assignment and the rows need no lock of their own.
+    has_assignments = await session.scalar(
+        select(GoalAllocation.id)
+        .where(
+            GoalAllocation.workspace_id == workspace_id,
+            GoalAllocation.transaction_id.is_not(None),
+        )
+        .limit(1)
+    )
+    if has_assignments is not None:
+        query = query.with_for_update(of=Transaction)
+    return list((await session.scalars(query)).all())
 
 
 async def _has_invalid_pocket_assignments(
