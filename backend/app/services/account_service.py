@@ -651,6 +651,14 @@ async def create_account(
 ) -> Account:
     await _validate_secured_asset(session, workspace_id, data.type, data.secured_asset_id)
     is_cc = data.type == "credit_card"
+    account_order = data.order
+    if account_order is None:
+        last_order = await session.scalar(
+            select(func.max(Account.order)).where(
+                Account.workspace_id == workspace_id,
+            )
+        )
+        account_order = (last_order if last_order is not None else -1) + 1
     account = Account(
         user_id=user_id,
         workspace_id=workspace_id,
@@ -658,6 +666,7 @@ async def create_account(
         type=data.type,
         balance=data.balance,
         currency=data.currency,
+        order=account_order,
         secured_asset_id=data.secured_asset_id,
         credit_limit=data.credit_limit if is_cc else None,
         statement_close_day=data.statement_close_day if is_cc else None,

@@ -27,7 +27,7 @@ class AccountCreate(BaseModel):
     balance: Decimal = Decimal("0.00")
     balance_date: Optional[date] = None
     currency: str = Field(default="USD", validate_default=True)
-    order: int = Field(default=0, ge=0, le=2_147_483_647)
+    order: Optional[int] = Field(default=None, ge=0, le=2_147_483_647)
     secured_asset_id: Optional[uuid.UUID] = None
     credit_limit: Optional[Decimal] = None
     statement_close_day: Optional[int] = None
@@ -73,6 +73,11 @@ class AccountUpdate(BaseModel):
     loan_term_months: Optional[int] = Field(default=None, ge=1, le=600)
     loan_first_payment_date: Optional[date] = None
     loan_amortization: Optional[LoanAmortization] = None
+
+
+class AccountOrdering(BaseModel):
+    account_id: uuid.UUID
+    order: int = Field(ge=0, le=2_147_483_647)
 
 
 class AccountReservedBalanceRead(BaseModel):

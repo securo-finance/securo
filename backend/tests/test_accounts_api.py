@@ -2,7 +2,6 @@ import uuid
 from decimal import Decimal
 
 import pytest
-import uuid
 from httpx import AsyncClient
 
 from app.models.account import Account
@@ -188,6 +187,19 @@ async def test_create_account_with_order(client: AsyncClient, auth_headers):
     )
     assert response.status_code == 201
     assert response.json()["order"] == 2
+
+
+@pytest.mark.asyncio
+async def test_create_account_without_order_appends_to_workspace(
+    client: AsyncClient, auth_headers, test_account: Account
+):
+    response = await client.post(
+        "/api/accounts",
+        headers=auth_headers,
+        json={"name": "Last", "type": "checking"},
+    )
+    assert response.status_code == 201
+    assert response.json()["order"] == test_account.order + 1
 
 
 @pytest.mark.asyncio
