@@ -7,7 +7,7 @@ from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from typing import NamedTuple, Optional
 
-from sqlalchemy import select, desc
+from sqlalchemy import select, desc, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
@@ -87,11 +87,12 @@ def _fetch_blocked(target: date) -> bool:
     return False
 
 
-def _remember_quota_exceeded(target: date) -> None:
+def remember_quota_exceeded(target: date) -> None:
     """Back off every on-demand fetch and warn once per cooldown (issue #624).
 
     A spent quota is not a bug in the request, so it is said in one line
-    without a traceback, not once per date tried.
+    without a traceback, not once per date tried. Both the on-demand path and
+    the manual refresh use it: a 429 is the same fact wherever it is seen.
     """
     global _quota_blocked_until, _quota_warning_at
     now = _now()
@@ -213,6 +214,42 @@ async def sync_rates(
     return count
 
 
+async def _lock_day(session: AsyncSession, target: date) -> None:
+    """One provider fetch per day at a time, until the transaction ends.
+
+    Two administrator refreshes of the same day would otherwise both count no
+    stored rate before either commits, and both spend a provider call: the app
+    id is the instance's, so that is twice the shared quota for one day
+    (issue #636). PostgreSQL only, in the same shape as the import lock in
+    `asset_import_service.py`: SQLite, which the tests use, serialises writers
+    itself.
+    """
+    if session.bind is None or session.bind.dialect.name != "postgresql":
+        return
+    await session.execute(
+        select(func.pg_advisory_xact_lock(func.hashtext(f"fx-refresh:{target}")))
+    )
+
+
+async def sync_rates_for_refresh(
+    session: AsyncSession, target: date
+) -> tuple[int, bool]:
+    """Fetch a day's rates unless the instance already stored that day.
+
+    The manual refresh spends one provider call per day at most (issue #636):
+    the app id is the instance's, so asking again for a day that is already
+    stored must not cost the shared quota. Returns the number of stored or
+    synced rates and whether the provider was skipped.
+    """
+    await _lock_day(session, target)
+    stored = await session.scalar(
+        select(func.count()).select_from(FxRate).where(FxRate.date == target)
+    ) or 0
+    if stored:
+        return stored, True
+    return await sync_rates(session, target), False
+
+
 async def _fetch(provider: OpenExchangeRatesProvider, target: date) -> dict[str, Decimal]:
     if target == app_today():
         return await provider.fetch_latest()
@@ -287,7 +324,7 @@ async def _resolve_rate(
             # traceback for every conversion (issue #267).
             logger.debug("FX provider not configured; using stored rates for %s", target)
         except FxProviderQuotaExceeded:
-            _remember_quota_exceeded(target)
+            remember_quota_exceeded(target)
         except Exception:
             _remember_failure(target)
             logger.warning("On-demand FX rate sync failed for %s", target, exc_info=True)

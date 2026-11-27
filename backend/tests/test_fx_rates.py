@@ -715,15 +715,15 @@ class TestFxRatesAPI:
 
     @pytest.mark.asyncio
     async def test_refresh_calls_sync(
-        self, client: AsyncClient, auth_headers
+        self, client: AsyncClient, admin_auth_headers
     ):
         from app.core.config import get_settings
 
         mock_sync = AsyncMock(return_value=150)
         with patch.object(get_settings(), "openexchangerates_app_id", "test-app-id"), \
-             patch("app.api.fx_rates.sync_rates", mock_sync):
+             patch("app.services.fx_rate_service.sync_rates", mock_sync):
             response = await client.post(
-                "/api/fx-rates/refresh", headers=auth_headers
+                "/api/fx-rates/refresh", headers=admin_auth_headers
             )
         assert response.status_code == 200
         data = response.json()

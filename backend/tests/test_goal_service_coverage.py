@@ -188,14 +188,49 @@ def test_on_track_total_days_zero_returns_on_track():
     assert _compute_on_track(Decimal("100"), Decimal("1000"), today, today) == "on_track"
 
 
-def test_on_track_total_needed_non_positive():
-    # initial_amount >= target -> total_needed <= 0 -> achieved
+def test_on_track_baseline_above_target_and_current_below_is_behind():
+    # A pay-off goal saved with the card debt as a positive baseline (10,795.25)
+    # and a target of 0, now read as -4,524.71: not achieved.
+    start = date.today() - timedelta(days=10)
+    future = date.today() + timedelta(days=10)
+    result = _compute_on_track(
+        Decimal("-4524.71"), Decimal("0"), future, start, initial_amount=Decimal("10795.25")
+    )
+    assert result == "behind"
+
+
+def test_on_track_baseline_equal_to_target_and_current_below_is_behind():
     start = date.today() - timedelta(days=10)
     future = date.today() + timedelta(days=10)
     result = _compute_on_track(
         Decimal("500"), Decimal("1000"), future, start, initial_amount=Decimal("1000")
     )
+    assert result == "behind"
+
+
+def test_on_track_baseline_above_target_and_current_at_target_is_achieved():
+    start = date.today() - timedelta(days=10)
+    future = date.today() + timedelta(days=10)
+    result = _compute_on_track(
+        Decimal("0"), Decimal("0"), future, start, initial_amount=Decimal("10795.25")
+    )
     assert result == "achieved"
+
+
+def test_on_track_savings_goal_with_baseline_below_target_is_unchanged():
+    # Normal savings goal: baseline below target keeps the time-based statuses.
+    start = date.today() - timedelta(days=50)
+    future = date.today() + timedelta(days=50)
+    initial = Decimal("200")
+    assert _compute_on_track(
+        Decimal("990"), Decimal("1000"), future, start, initial_amount=initial
+    ) == "ahead"
+    assert _compute_on_track(
+        Decimal("600"), Decimal("1000"), future, start, initial_amount=initial
+    ) == "on_track"
+    assert _compute_on_track(
+        Decimal("250"), Decimal("1000"), future, start, initial_amount=initial
+    ) == "behind"
 
 
 def test_on_track_ahead():
