@@ -1,5 +1,6 @@
 import logging
 import uuid
+from bisect import bisect_left, bisect_right
 from collections.abc import Generator
 from contextlib import contextmanager
 from contextvars import ContextVar
@@ -550,6 +551,132 @@ class RateBook:
         if from_currency == to_currency:
             return amount, Decimal("1")
         rate = await self.rate(from_currency, to_currency)
+        return (amount * rate).quantize(Decimal(1).scaleb(-decimals)), rate
+
+
+class DatedRateBook:
+    """Rates on many dates for one read, from one query per currency.
+
+    A chart over years of history converted each point with :func:`convert`,
+    which reads ``fx_rates`` two to six times per date: about 9,500 queries
+    for one portfolio trend. The book loads each currency's USD series once
+    and resolves a date in memory with the same chain as
+    :func:`_resolve_rate` (exact date, then closest before, then closest
+    after). A date that would trigger an on-demand provider fetch still goes
+    through :func:`get_rate`, so that path keeps its behavior and its guards.
+
+    For reads only, like :class:`RateBook`.
+    """
+
+    def __init__(self, session: AsyncSession, *, allow_fetch: bool = True) -> None:
+        self._session = session
+        self._allow_fetch = allow_fetch
+        self._series: dict[str, tuple[list[date], list[Decimal]]] = {}
+        self._rates: dict[tuple[str, str, date], Decimal] = {}
+        self._warned: set[tuple[str, str]] = set()
+
+    async def _load(self, currency: str) -> tuple[list[date], list[Decimal]]:
+        series = self._series.get(currency)
+        if series is None:
+            rows = (
+                await self._session.execute(
+                    select(FxRate.date, FxRate.rate)
+                    .where(FxRate.base_currency == "USD", FxRate.quote_currency == currency)
+                    .order_by(FxRate.date)
+                )
+            ).all()
+            series = ([row[0] for row in rows], [row[1] for row in rows])
+            self._series[currency] = series
+        return series
+
+    @staticmethod
+    def _exact(series: tuple[list[date], list[Decimal]], target: date) -> Optional[Decimal]:
+        dates, rates = series
+        i = bisect_left(dates, target)
+        return rates[i] if i < len(dates) and dates[i] == target else None
+
+    @staticmethod
+    def _closest(series: tuple[list[date], list[Decimal]], target: date) -> Optional[Decimal]:
+        dates, rates = series
+        i = bisect_right(dates, target)
+        if i > 0:
+            return rates[i - 1]
+        return rates[0] if rates else None
+
+    @staticmethod
+    def _month_has(series: tuple[list[date], list[Decimal]], target: date) -> bool:
+        dates, _ = series
+        first = target.replace(day=1)
+        next_first = (first + timedelta(days=32)).replace(day=1)
+        i = bisect_left(dates, first)
+        return i < len(dates) and dates[i] < next_first
+
+    def _may_fetch(self, target: date, legs: dict[str, tuple[list[date], list[Decimal]]]) -> bool:
+        if not self._allow_fetch or _stored_only.get() or _fetch_blocked(target):
+            return False
+        if _samples_monthly(target) and legs and all(
+            self._month_has(series, target) for series in legs.values()
+        ):
+            return False
+        return True
+
+    async def rate(self, from_currency: str, to_currency: str, target_date: date) -> Decimal:
+        source, quote = _code(from_currency), _code(to_currency)
+        if source == quote:
+            return Decimal("1")
+        target = min(target_date, app_today())
+        key = (source, quote, target)
+        cached = self._rates.get(key)
+        if cached is not None:
+            return cached
+
+        legs = {c: await self._load(c) for c in (source, quote) if c != "USD"}
+        exact = {c: self._exact(series, target) for c, series in legs.items()}
+        if any(value is None for value in exact.values()) and self._may_fetch(target, legs):
+            rate = await get_rate(
+                self._session, source, quote, target, allow_fetch=self._allow_fetch
+            )
+            # The fetch may have stored this date's rows: keep the series current.
+            for currency, series in legs.items():
+                if exact[currency] is None:
+                    stored = await _get_exact_date_rate(self._session, currency, target)
+                    if stored is not None:
+                        i = bisect_left(series[0], target)
+                        series[0].insert(i, target)
+                        series[1].insert(i, stored)
+            self._rates[key] = rate
+            return rate
+
+        usd = {
+            c: exact[c] if exact[c] is not None else self._closest(series, target)
+            for c, series in legs.items()
+        }
+        usd_to_source = usd.get(source, Decimal("1"))
+        usd_to_target = usd.get(quote, Decimal("1"))
+        if usd_to_source is None or usd_to_target is None or usd_to_source == 0:
+            if (source, quote) not in self._warned:
+                self._warned.add((source, quote))
+                logger.warning(
+                    "No FX rate found for %s -> %s on %s, returning 1", source, quote, target
+                )
+            rate = Decimal("1")
+        else:
+            rate = usd_to_target / usd_to_source
+        self._rates[key] = rate
+        return rate
+
+    async def convert(
+        self,
+        amount: Decimal,
+        from_currency: str,
+        to_currency: str,
+        target_date: date,
+        *,
+        decimals: int = 2,
+    ) -> tuple[Decimal, Decimal]:
+        if from_currency == to_currency:
+            return amount, Decimal("1")
+        rate = await self.rate(from_currency, to_currency, target_date)
         return (amount * rate).quantize(Decimal(1).scaleb(-decimals)), rate
 
 

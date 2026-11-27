@@ -37,7 +37,13 @@ from app.schemas.asset import (
     MarketSymbolMatch,
 )
 from app.services.asset_group_service import ensure_group_in_workspace
-from app.services.fx_rate_service import convert, convert_or_none, has_rate, stamp_primary_amount
+from app.services.fx_rate_service import (
+    DatedRateBook,
+    convert,
+    convert_or_none,
+    has_rate,
+    stamp_primary_amount,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -1519,6 +1525,8 @@ async def get_portfolio_trend(
     # Each native-currency amount is converted at the display date `d` so that
     # fill-forwarded values reflect current FX rates — consistent with
     # get_asset_values_at(as_of_date=d).
+    # One series read per currency instead of several lookups per point.
+    rates = DatedRateBook(session)
     trend = []
     last_known: dict[str, float] = {}  # native currency amounts
     for aid in [a["id"] for a in asset_meta]:
@@ -1544,8 +1552,8 @@ async def get_portfolio_trend(
             # Convert native amount to primary currency at this display date
             currency = asset_currency[aid]
             if native != 0.0 and currency != primary_currency:
-                converted, _ = await convert(
-                    session, Decimal(str(native)), currency, primary_currency, d,
+                converted, _ = await rates.convert(
+                    Decimal(str(native)), currency, primary_currency, d,
                     decimals=ASSET_PRICE_DECIMALS,
                 )
                 val = converted
