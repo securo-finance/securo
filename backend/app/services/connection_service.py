@@ -5517,6 +5517,12 @@ async def sync_connection(
                         # the bill expected.
                         expected_amount = placeholder.amount
                         placeholder.amount = txn_data.amount
+                        # A conversion typed for the placeholder's expected
+                        # charge no longer holds once the synced charge
+                        # replaces the amount, currency, or bank conversion
+                        # (ADR 0031, #1796).
+                        placeholder.amount_primary_typed = None
+                        placeholder.amount_primary_typed_currency = None
                         if currency_changed:
                             # The stamp on the row was made from the bill's
                             # currency. Keeping it through a rate lookup that
