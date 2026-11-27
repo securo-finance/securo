@@ -12,6 +12,7 @@ from decimal import Decimal
 import pytest
 from pydantic import ValidationError
 
+from app.schemas.recurring_transaction import RecurringTransactionCreate, RecurringTransactionUpdate
 from app.schemas.transaction import (
     InstallmentSeriesCreate,
     TransactionCreate,
@@ -342,3 +343,52 @@ class TestCurrencyNormalization:
         data = TransactionUpdate.model_validate({"description": "test"})
         assert data.currency is None
 
+
+
+class TestTypeNormalization:
+    """``expense``/``income`` are stored as ``debit``/``credit`` (#1243).
+
+    A row stored with the alias was left out of every balance and total.
+    """
+
+    BASE = {
+        "description": "Coffee",
+        "amount": "4.50",
+        "date": "2026-03-01",
+        "account_id": str(uuid.uuid4()),
+    }
+
+    @pytest.mark.parametrize(
+        ("given", "stored"),
+        [("expense", "debit"), ("income", "credit"), (" Expense ", "debit"), ("DEBIT", "debit")],
+    )
+    def test_create_translates_aliases(self, given, stored):
+        data = TransactionCreate.model_validate({**self.BASE, "type": given})
+        assert data.type == stored
+
+    def test_update_translates_aliases(self):
+        assert TransactionUpdate.model_validate({"type": "income"}).type == "credit"
+
+    def test_update_without_type_stays_none(self):
+        assert TransactionUpdate.model_validate({"description": "test"}).type is None
+
+
+class TestRecurringTypeNormalization:
+    BASE = {
+        "description": "Gym",
+        "amount": "99.90",
+        "frequency": "monthly",
+        "start_date": "2026-09-01",
+        "account_id": str(uuid.uuid4()),
+    }
+
+    def test_create_translates_aliases(self):
+        assert RecurringTransactionCreate.model_validate({**self.BASE, "type": "expense"}).type == "debit"
+        assert RecurringTransactionCreate.model_validate({**self.BASE, "type": "Income"}).type == "credit"
+
+    def test_create_refuses_another_word(self):
+        with pytest.raises(ValidationError):
+            RecurringTransactionCreate.model_validate({**self.BASE, "type": "refund"})
+
+    def test_update_translates_aliases(self):
+        assert RecurringTransactionUpdate.model_validate({"type": "expense"}).type == "debit"

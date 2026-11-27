@@ -3,9 +3,10 @@ from datetime import date as _Date
 from decimal import Decimal
 from typing import Annotated, Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, field_validator
 
 from app.core.money import bounded_money
+from app.schemas.transaction import normalize_transaction_type
 from app.schemas.transaction_category_line import (
     TransactionCategoryLineRead,
     TransactionCategoryLinesInput,
@@ -14,13 +15,15 @@ from app.schemas.transaction_category_line import (
 WeekendAdjustment = Literal["none", "previous_friday", "next_monday"]
 RecurringFrequency = Literal["weekly", "biweekly", "monthly", "quarterly", "semiannual", "yearly"]
 DayOfMonth = Annotated[int, Field(ge=1, le=31)]
+# "expense" and "income" are translated the way the transaction schemas do it.
+RecurringType = Annotated[Literal["debit", "credit"], BeforeValidator(normalize_transaction_type)]
 
 
 class RecurringTransactionCreate(BaseModel):
     description: str
     amount: Decimal
     currency: str = "USD"
-    type: str  # debit, credit
+    type: RecurringType
     frequency: str  # weekly, biweekly, monthly, quarterly, semiannual, yearly
     weekend_adjustment: WeekendAdjustment = "none"
     day_of_month: Optional[DayOfMonth] = None
@@ -47,7 +50,7 @@ class RecurringTransactionUpdate(BaseModel):
     description: Optional[str] = None
     amount: Optional[Decimal] = None
     currency: Optional[str] = None
-    type: Optional[str] = None
+    type: Optional[RecurringType] = None
     frequency: Optional[RecurringFrequency] = None
     weekend_adjustment: Optional[WeekendAdjustment] = None
     day_of_month: Optional[DayOfMonth] = None
