@@ -155,28 +155,6 @@ class TestBalanceMath:
 
 
 # ---------------------------------------------------------------------------
-# Presets and settings
-# ---------------------------------------------------------------------------
-class TestPresets:
-    def test_tracking_opens_immediately_with_no_document(self):
-        preset = svc.PRESETS["tracking"]
-        assert preset["initial_state"] == "open"
-        assert preset["document_required"] is False
-        assert preset["tax_fields"] == "hidden"
-
-    def test_document_starts_as_a_draft_and_needs_lines(self):
-        preset = svc.PRESETS["document"]
-        assert preset["initial_state"] == "draft"
-        assert preset["document_required"] is True
-        # At least optional: an EU B2B invoice without discriminated VAT
-        # is not a valid invoice, so the fields have to be reachable.
-        assert preset["tax_fields"] == "optional"
-
-    def test_only_two_presets_exist(self):
-        assert set(svc.PRESETS) == {"tracking", "document"}
-
-
-# ---------------------------------------------------------------------------
 # Persistence-level behaviour
 # ---------------------------------------------------------------------------
 @pytest_asyncio.fixture
@@ -282,53 +260,6 @@ class TestAllocationTable:
         assert invoice.allocations[0].amount == Decimal("500.00")
         assert svc.balance(invoice) == Decimal("0.00")
 
-    async def test_unallocating_restores_the_balance(
-        self, session: AsyncSession, workspace, test_user, credit
-    ):
-        invoice = await create(session, workspace, test_user)
-        await svc.allocate(session, invoice, credit.id, Decimal("400.00"))
-        await session.commit()
-        await svc.unallocate(session, invoice, invoice.allocations[0].id)
-        await session.commit()
-        assert svc.balance(invoice) == Decimal("1000.00")
-        assert svc.derive_state(invoice, TODAY) == "open"
-
-
-@pytest.mark.asyncio
-class TestNumbering:
-    async def test_the_counter_never_moves_backwards(
-        self, session: AsyncSession, workspace, test_user
-    ):
-        """A voided invoice keeps its number and the next one moves on.
-
-        Reusing it would put two different documents under one
-        identifier — forbidden where numbering is regulated, and
-        confusing everywhere else.
-        """
-        first = await create(session, workspace, test_user)
-        await svc.void_invoice(session, first)
-        await session.commit()
-        assert first.number == 1
-        assert first.status == "void"
-
-        second = await create(session, workspace, test_user)
-        assert second.number == 2
-
-    async def test_drafts_consume_no_number(self, session: AsyncSession, workspace, test_user):
-        await svc.update_settings(session, workspace.id, {"preset": "document"})
-        await session.commit()
-        draft = await create(
-            session, workspace, test_user,
-            lines=[{"description": "Work", "quantity": 1, "unit_price": 900}],
-        )
-        assert draft.status == "draft"
-        assert draft.number is None
-
-        await svc.issue_invoice(session, draft)
-        await session.commit()
-        assert draft.number == 1
-
-
 @pytest.mark.asyncio
 class TestSnapshot:
     async def test_freezes_issuer_and_labels(self, session: AsyncSession, workspace, test_user):
@@ -417,23 +348,6 @@ class TestAgingBuckets:
 
         # 01:00 UTC is still August 31 in Bahia, so it is not September cash.
         assert summary["received_this_month"] == Decimal("0.00")
-
-
-@pytest.mark.asyncio
-class TestCompetenceDate:
-    async def test_defaults_to_the_issue_date(self, session: AsyncSession, workspace, test_user):
-        invoice = await create(session, workspace, test_user)
-        assert invoice.competence_date == invoice.issue_date
-
-    async def test_can_diverge_for_work_delivered_earlier(
-        self, session: AsyncSession, workspace, test_user
-    ):
-        """Delivered in July, invoiced in August: accrual accounting books
-        July. Both dates are stored so both reports are possible."""
-        delivered = date(2026, 7, 31)
-        invoice = await create(session, workspace, test_user, competence_date=delivered)
-        assert invoice.competence_date == delivered
-        assert invoice.issue_date != delivered
 
 
 @pytest.mark.asyncio

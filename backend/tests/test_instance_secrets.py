@@ -17,7 +17,6 @@ import threading
 from pathlib import Path
 
 import pytest
-from pydantic import SecretStr
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
 from sqlalchemy.pool import NullPool
@@ -451,10 +450,6 @@ def test_bank_credentials_json_column_on_postgres(pg_url, monkeypatch):
     creds = json.loads(creds) if isinstance(creds, str) else creds
     assert crypto.fernet_for(key).decrypt(creds["access_url_enc"].encode()) == b"https://bridge.example/simplefin"
     assert creds["other"] == 1
-
-
-def test_settings_secret_key_is_a_secretstr(db_url, monkeypatch):
-    assert isinstance(settings_for(db_url, None, monkeypatch).secret_key, SecretStr)
 
 
 # --- Entry points ---------------------------------------------------------------

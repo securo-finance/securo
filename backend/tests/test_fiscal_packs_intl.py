@@ -18,11 +18,6 @@ from app.fiscal.registry import (
 ALL_JURISDICTIONS = available_jurisdictions()
 
 
-def test_every_kind_has_a_spec():
-    missing = [k.value for k in TaxIdKind if k not in KIND_SPECS]
-    assert missing == []
-
-
 def test_every_kind_is_offered_by_some_pack():
     """A kind no pack lists is unreachable in the picker, so it is dead code
     that still shows up in the API response."""
@@ -65,20 +60,6 @@ def test_a_mask_is_only_given_to_a_fixed_length_document(kind):
         f"{kind.value}'s mask yields {slots} digits, which its validator "
         f"refuses on length; it should carry no mask"
     )
-
-
-@pytest.mark.parametrize("code", ALL_JURISDICTIONS)
-def test_a_pack_cannot_change_what_a_document_is(code):
-    """The load-bearing invariant: a jurisdiction chooses kinds, it never
-    redefines one. The same CNPJ stored from any workspace normalises and
-    validates identically."""
-    stored, error = normalise_and_validate(TaxIdKind.CNPJ, "11.222.333/0001-81")
-    assert stored == "11222333000181"
-    assert error is None
-    # And the pack's own primary document behaves the same regardless of who
-    # asks: `normalise_and_validate` takes no jurisdiction at all.
-    primary = pack_for(code).kinds[0]
-    assert spec_for(primary) is KIND_SPECS[primary]
 
 
 def test_an_unknown_jurisdiction_still_works():

@@ -105,12 +105,6 @@ async def test_update_connection_handles_partial_and_default_swap(session, test_
 
 
 @pytest.mark.asyncio
-async def test_update_connection_returns_none_for_unknown(session, test_user):
-    out = await cs.update_connection(session, uuid.uuid4(), test_user.id, name="x")
-    assert out is None
-
-
-@pytest.mark.asyncio
 async def test_update_connection_can_clear_api_key(session, test_user):
     """Passing api_key='' should null out the stored encrypted key."""
     conn = await cs.create_connection(

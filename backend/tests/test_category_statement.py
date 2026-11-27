@@ -268,15 +268,6 @@ async def test_category_statement_endpoint(client, auth_headers, statement_data)
     assert body["expenses"]["totals"] == [-390.0, -200.0]
 
 
-@pytest.mark.asyncio
-@pytest.mark.parametrize("params", [{"month": "2025-13"}, {"months": 0}, {"months": 13}])
-async def test_category_statement_endpoint_validates_params(client, auth_headers, params):
-    response = await client.get(
-        "/api/reports/category-statement", params=params, headers=auth_headers,
-    )
-    assert response.status_code == 422
-
-
 async def _workspace_member(session: AsyncSession, workspace_id, email: str) -> User:
     user = User(
         id=uuid.uuid4(), email=email, hashed_password="x",

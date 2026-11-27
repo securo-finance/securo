@@ -90,21 +90,6 @@ async def _seed(session: AsyncSession, user: User) -> None:
 
 
 @pytest.mark.asyncio
-async def test_search_returns_all_entity_types(
-    client: AsyncClient, auth_headers: dict, session: AsyncSession, test_user: User
-) -> None:
-    await _seed(session, test_user)
-
-    resp = await client.get("/api/search?q=a", headers=auth_headers)
-    assert resp.status_code == 200
-    data = resp.json()
-    assert "results" in data
-    types = {hit["type"] for hit in data["results"]}
-    # The seeded fixtures should match multiple entity types on the letter "a"
-    assert "transaction" in types or "payee" in types or "account" in types
-
-
-@pytest.mark.asyncio
 async def test_search_matches_transaction_description(
     client: AsyncClient, auth_headers: dict, session: AsyncSession, test_user: User
 ) -> None:
@@ -213,18 +198,20 @@ async def test_search_respects_user_scope(
 async def test_search_escapes_like_wildcards(
     client: AsyncClient, auth_headers: dict, session: AsyncSession, test_user: User
 ) -> None:
-    # A literal % should not be treated as a wildcard.
-    payee = Payee(
-        id=uuid.uuid4(),
-        user_id=test_user.id,
-        name="Discount 50% Store",
-        type="merchant",
-        created_at=datetime.now(timezone.utc),
-    )
-    session.add(payee)
+    # A literal % should not be treated as a wildcard: "50%" must not match "500".
+    for name in ("Discount 50% Store", "Outlet 500 Store"):
+        session.add(
+            Payee(
+                id=uuid.uuid4(),
+                user_id=test_user.id,
+                name=name,
+                type="merchant",
+                created_at=datetime.now(timezone.utc),
+            )
+        )
     await session.commit()
 
     resp = await client.get("/api/search?q=50%25", headers=auth_headers)
     assert resp.status_code == 200
-    payee_hits = [h for h in resp.json()["results"] if h["type"] == "payee"]
-    assert any("50%" in h["label"] for h in payee_hits)
+    payee_labels = [h["label"] for h in resp.json()["results"] if h["type"] == "payee"]
+    assert payee_labels == ["Discount 50% Store"]

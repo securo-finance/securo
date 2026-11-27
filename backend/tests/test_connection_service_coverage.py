@@ -179,17 +179,28 @@ async def test_shared_workspace_sync_imports_as_connection_owner(
 
 @pytest.mark.asyncio
 async def test_get_oauth_url(session, test_user, test_workspace):
+    """The stored state carries what the callback needs to finish the flow,
+    and the provider gets the token that points at it."""
     mock_provider = AsyncMock()
     mock_provider.redirect_uri = "https://app/redirect"
     mock_provider.get_oauth_url = AsyncMock(return_value="https://bank/authorize?state=xyz")
     with patch("app.services.connection_service.get_provider", return_value=mock_provider), \
          patch("app.services.connection_service.oauth_state.store_state",
-               new_callable=AsyncMock, return_value="state-token"):
+               new_callable=AsyncMock, return_value="state-token") as store_state:
         url = await get_oauth_url(
             "pluggy", test_user.id, test_workspace.id, {"country": "BR"}, session=session
         )
     assert url == "https://bank/authorize?state=xyz"
-    mock_provider.get_oauth_url.assert_awaited_once()
+    store_state.assert_awaited_once_with({
+        "user_id": str(test_user.id),
+        "workspace_id": str(test_workspace.id),
+        "provider": "pluggy",
+        "flow_params": {"country": "BR"},
+        "reconnect_connection_id": None,
+    })
+    mock_provider.get_oauth_url.assert_awaited_once_with(
+        "https://app/redirect", "state-token", {"country": "BR"}
+    )
 
 
 @pytest.mark.asyncio
@@ -200,9 +211,17 @@ async def test_get_reauth_url(session: AsyncSession, test_user, test_workspace):
     mock_provider.reauth_url = AsyncMock(return_value="https://bank/reauth")
     with patch("app.services.connection_service.get_provider", return_value=mock_provider), \
          patch("app.services.connection_service.oauth_state.store_state",
-               new_callable=AsyncMock, return_value="state-token"):
+               new_callable=AsyncMock, return_value="state-token") as store_state:
         url = await get_reauth_url(session, conn.id, test_workspace.id, test_user.id)
     assert url == "https://bank/reauth"
+    # The callback updates this connection in place, with its saved flow params.
+    store_state.assert_awaited_once_with({
+        "user_id": str(test_user.id),
+        "workspace_id": str(test_workspace.id),
+        "provider": "test",
+        "flow_params": {"country": "DE"},
+        "reconnect_connection_id": str(conn.id),
+    })
 
 
 @pytest.mark.asyncio

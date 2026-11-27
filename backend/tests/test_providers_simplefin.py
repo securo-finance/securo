@@ -789,12 +789,6 @@ def test_build_transaction_non_iso_currency_is_none():
 # ----- misc -------------------------------------------------------------------
 
 
-def test_flow_type_is_token():
-    p = SimpleFinProvider()
-    assert p.flow_type == "token"
-    assert p.name == "simplefin"
-
-
 def test_get_oauth_url_raises_for_token_flow():
     with pytest.raises(NotImplementedError):
         SimpleFinProvider().get_oauth_url("https://x", "state")

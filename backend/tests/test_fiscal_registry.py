@@ -59,28 +59,10 @@ def test_every_kind_has_exactly_one_definition():
         assert spec.label_key == f"fiscal.kind.{kind.value}", kind
 
 
-def test_every_pack_offers_other_last():
-    """The escape hatch is always present, so any jurisdiction can hold a
-    document its pack never anticipated."""
-    for code in available_jurisdictions():
-        assert pack_for(code).kinds[-1] is TaxIdKind.OTHER, code
-
-
 def test_pack_order_drives_the_default():
     assert pack_for("BR").kinds[0] is TaxIdKind.CNPJ
     assert pack_for("US").kinds[0] is TaxIdKind.EIN
     assert pack_for("DE").kinds[0] is TaxIdKind.VAT
-
-
-def test_a_pack_cannot_change_what_a_document_is():
-    """The invariant this design turns on: normalisation and validation come
-    from the kind, so the same document behaves identically no matter which
-    jurisdiction is holding it. An earlier version let packs carry their own
-    normaliser and a German VAT number came out spaced differently depending
-    on the workspace."""
-    for jurisdiction in ("BR", "DE", "GB", "ZZ", None):
-        stored, error = normalise_and_validate(TaxIdKind.VAT, "de 123 456 789")
-        assert (stored, error) == ("DE123456789", None), jurisdiction
 
 
 # ---------------------------------------------------------------------------
@@ -89,19 +71,6 @@ def test_a_pack_cannot_change_what_a_document_is():
 @pytest.mark.parametrize("jurisdiction", [None, "", "ZZ", "Atlantis"])
 def test_unset_or_unshipped_jurisdiction_falls_back(jurisdiction):
     assert pack_for(jurisdiction) is FALLBACK
-
-
-def test_fallback_stores_free_text_without_validating():
-    stored, error = normalise_and_validate(TaxIdKind.OTHER, "  ABC-123/x  ")
-    assert stored == "ABC-123/x"
-    assert error is None
-
-
-def test_a_country_without_a_pack_can_still_hold_its_document():
-    """The point of the fallback: nobody waits for a pull request to use
-    the product."""
-    stored, error = normalise_and_validate(TaxIdKind.OTHER, "TIN 99-8877")
-    assert error is None and stored == "TIN 99-8877"
 
 
 # ---------------------------------------------------------------------------

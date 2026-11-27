@@ -5,36 +5,6 @@ from unittest.mock import patch
 import pytest
 
 from app.providers.local_storage import LocalStorageProvider
-from app.providers.storage import StoredFile
-
-
-# ---------------------------------------------------------------------------
-# StoredFile dataclass
-# ---------------------------------------------------------------------------
-
-
-def test_stored_file_creation():
-    sf = StoredFile(storage_key="user/file.pdf", size=1024, content_type="application/pdf")
-    assert sf.storage_key == "user/file.pdf"
-    assert sf.size == 1024
-    assert sf.content_type == "application/pdf"
-
-
-# ---------------------------------------------------------------------------
-# StorageProvider interface
-# ---------------------------------------------------------------------------
-
-
-def test_storage_provider_get_url_default():
-    """Base get_url returns None."""
-    # Can't instantiate ABC directly, use LocalStorageProvider
-    provider = LocalStorageProvider()
-    assert provider.get_url("any/key") is None
-
-
-def test_storage_provider_name():
-    provider = LocalStorageProvider()
-    assert provider.name == "local"
 
 
 # ---------------------------------------------------------------------------

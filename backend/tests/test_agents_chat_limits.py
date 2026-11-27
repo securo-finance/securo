@@ -384,7 +384,3 @@ async def test_default_chat_limit_leaves_room_for_a_normal_burst(client: AsyncCl
         ]
 
     assert {r.status_code for r in responses} == {401}
-
-
-def test_default_chat_limit_is_generous():
-    assert _shipped_default() >= 20

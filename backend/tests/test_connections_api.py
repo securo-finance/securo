@@ -49,13 +49,6 @@ async def test_list_connections(
 
 
 @pytest.mark.asyncio
-async def test_list_connections_empty(client: AsyncClient, auth_headers):
-    response = await client.get("/api/connections", headers=auth_headers)
-    assert response.status_code == 200
-    assert response.json() == []
-
-
-@pytest.mark.asyncio
 async def test_oauth_url_unknown_provider(client: AsyncClient, auth_headers):
     """Should fail for unregistered provider."""
     response = await client.post(
@@ -152,7 +145,7 @@ async def test_update_settings_not_found(client: AsyncClient, auth_headers):
 async def test_detect_transfers(client: AsyncClient, auth_headers):
     resp = await client.post("/api/connections/transfers/detect", headers=auth_headers)
     assert resp.status_code == 200
-    assert "pairs_created" in resp.json()
+    assert resp.json() == {"pairs_created": 0}
 
 
 @pytest.mark.asyncio
@@ -161,21 +154,6 @@ async def test_unlink_transfer_not_found(client: AsyncClient, auth_headers):
         f"/api/connections/transfers/{uuid.uuid4()}", headers=auth_headers,
     )
     assert resp.status_code == 404
-
-
-@pytest.mark.asyncio
-async def test_create_connect_token_success(client: AsyncClient, auth_headers):
-    mock_token = MagicMock()
-    mock_token.access_token = "test-token-123"
-    with patch("app.services.connection_service.get_provider") as mock_gp:
-        mock_gp.return_value.create_connect_token = AsyncMock(return_value=mock_token)
-        resp = await client.post(
-            "/api/connections/connect-token",
-            json={"provider": "pluggy"},
-            headers=auth_headers,
-        )
-        assert resp.status_code == 200
-        assert resp.json()["access_token"] == "test-token-123"
 
 
 @pytest.mark.asyncio
@@ -425,6 +403,9 @@ async def test_reconnect_token_with_item_id(
         )
         assert resp.status_code == 200
         assert resp.json()["access_token"] == "recon-token"
+        mock_gp.return_value.create_connect_token.assert_awaited_once_with(
+            str(test_user.id), item_id="item-abc-123"
+        )
 
 
 @pytest.mark.asyncio

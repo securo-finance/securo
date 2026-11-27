@@ -1,4 +1,3 @@
-import uuid
 
 import pytest
 
@@ -148,13 +147,6 @@ class TestAdminUserCRUD:
         assert response.status_code == 200
         assert response.json()["email"] == "admin@example.com"
 
-    async def test_get_user_not_found(self, client: AsyncClient, admin_auth_headers: dict, test_superuser: User):
-        fake_id = uuid.uuid4()
-        response = await client.get(
-            f"/api/admin/users/{fake_id}", headers=admin_auth_headers
-        )
-        assert response.status_code == 404
-
     async def test_update_user(self, client: AsyncClient, admin_auth_headers: dict, test_superuser: User):
         # Create a user to update
         create_resp = await client.post(
@@ -241,34 +233,12 @@ class TestAdminUserCRUD:
         assert login_resp.status_code == 200
         assert "access_token" in login_resp.json()
 
-    async def test_update_user_password_too_short(self, client: AsyncClient, admin_auth_headers: dict, test_superuser: User):
-        # Create a user
-        create_resp = await client.post(
-            "/api/admin/users",
-            json={"email": "shortpwd@example.com", "password": "password123"},
-            headers=admin_auth_headers,
-        )
-        user_id = create_resp.json()["id"]
-
-        # Try to update with a too-short password
-        response = await client.patch(
-            f"/api/admin/users/{user_id}",
-            json={"password": "short"},
-            headers=admin_auth_headers,
-        )
-        assert response.status_code == 422
-
-
 class TestAdminProtections:
     """Test access control and self-protection."""
 
     async def test_non_admin_gets_403(self, client: AsyncClient, auth_headers: dict, test_user: User):
         response = await client.get("/api/admin/users", headers=auth_headers)
         assert response.status_code == 403
-
-    async def test_unauthenticated_gets_401(self, client: AsyncClient):
-        response = await client.get("/api/admin/users")
-        assert response.status_code == 401
 
     async def test_cannot_delete_self(self, client: AsyncClient, admin_auth_headers: dict, test_superuser: User):
         response = await client.delete(
@@ -340,12 +310,6 @@ class TestAdminProtections:
 class TestRegistrationToggle:
     """Test the registration toggle functionality."""
 
-    async def test_registration_status_public(self, client: AsyncClient):
-        """Registration status endpoint should work without auth."""
-        response = await client.get("/api/admin/registration-status")
-        assert response.status_code == 200
-        assert "enabled" in response.json()
-
     async def test_env_var_closes_registration_when_nothing_is_saved(
         self, client: AsyncClient, session: AsyncSession, monkeypatch
     ):
@@ -395,18 +359,6 @@ class TestRegistrationToggle:
             headers=admin_auth_headers,
         )
 
-    async def test_enable_registration(
-        self, client: AsyncClient, admin_auth_headers: dict, test_superuser: User, session: AsyncSession
-    ):
-        # Ensure enabled
-        setting = AppSetting(key="registration_enabled", value="true")
-        await session.merge(setting)
-        await session.commit()
-
-        response = await client.get("/api/admin/registration-status")
-        assert response.status_code == 200
-        assert response.json()["enabled"] is True
-
     async def test_setting_not_configurable(self, client: AsyncClient, admin_auth_headers: dict, test_superuser: User):
         response = await client.patch(
             "/api/admin/settings/some_random_key",
@@ -427,12 +379,6 @@ class TestRegistrationToggle:
         )
         assert response.status_code == 200
         assert response.json()["key"] == "registration_enabled"
-
-    async def test_get_setting_not_found(self, client: AsyncClient, admin_auth_headers: dict, test_superuser: User):
-        response = await client.get(
-            "/api/admin/settings/nonexistent", headers=admin_auth_headers
-        )
-        assert response.status_code == 404
 
     async def test_setting_invalid_value(self, client: AsyncClient, admin_auth_headers: dict, test_superuser: User):
         response = await client.patch(

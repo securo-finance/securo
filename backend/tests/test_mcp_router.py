@@ -14,10 +14,6 @@ from mcp_server.main import app as standalone_app
 from mcp_server.main import router as mcp_router
 
 
-def _paths(router) -> set[str]:
-    return {route.path for route in router.routes}
-
-
 def _client(app) -> httpx.AsyncClient:
     """httpx over the ASGI app, like the suite's own client fixture.
 
@@ -25,10 +21,6 @@ def _client(app) -> httpx.AsyncClient:
     find it, which CI raises as a collection error.
     """
     return httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test")
-
-
-def test_router_exposes_the_absolute_paths():
-    assert _paths(mcp_router) == {"/health", "/mcp"}
 
 
 async def test_standalone_app_still_serves_health():

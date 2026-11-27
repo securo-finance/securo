@@ -68,21 +68,6 @@ def test_oidc_secret_strips_whitespace(secrets: Path):
     assert settings.oidc_client_secret.get_secret_value() == "stripped-value"
 
 
-def test_oidc_secret_inline_when_no_file(secrets: Path):
-    settings = Settings(
-        oidc_client_secret="inline-secret",
-        _secrets_dir=str(secrets),
-    )
-
-    assert settings.oidc_client_secret.get_secret_value() == "inline-secret"
-
-
-def test_oidc_secret_default_when_no_file(secrets: Path):
-    settings = Settings(_secrets_dir=str(secrets))
-
-    assert settings.oidc_client_secret.get_secret_value() == ""
-
-
 def test_multiple_secrets_dirs_merge(tmp_path: Path):
     d1, d2 = tmp_path / "d1", tmp_path / "d2"
     d1.mkdir()

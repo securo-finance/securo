@@ -89,7 +89,7 @@ async def test_create_with_skip_first(session: AsyncSession, test_user, test_wor
 async def test_get_recurring_transactions(
     session: AsyncSession, test_user, test_workspace, test_account_for_recurring
 ):
-    for desc, dt in [("Sub1", date(2025, 1, 1)), ("Sub2", date(2025, 2, 1))]:
+    for desc, dt in [("Feb", date(2025, 2, 1)), ("Jan", date(2025, 1, 1))]:
         await create_recurring_transaction(
             session,
             test_workspace.id, test_user.id,
@@ -104,11 +104,9 @@ async def test_get_recurring_transactions(
         )
 
     result = await get_recurring_transactions(session, test_workspace.id)
-    assert len(result) >= 2
 
-    # Ordered by next_occurrence
-    dates = [r.next_occurrence for r in result]
-    assert dates == sorted(dates)
+    # Ordered by next_occurrence, not by creation.
+    assert [r.description for r in result] == ["Jan", "Feb"]
 
 
 @pytest.mark.asyncio
@@ -604,7 +602,8 @@ def test_get_occurrences_in_range_weekly():
         range_start=date(2025, 1, 6),
         range_end=date(2025, 1, 27),
     )
-    assert len(occurrences) == 3  # Jan 6, 13, 20 (range_end is exclusive)
+    # range_end is exclusive
+    assert occurrences == [date(2025, 1, 6), date(2025, 1, 13), date(2025, 1, 20)]
 
 
 def test_get_occurrences_in_range_empty():

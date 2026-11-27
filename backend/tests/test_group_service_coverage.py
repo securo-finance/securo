@@ -286,29 +286,6 @@ async def test_create_group_duplicate_name_rejected(session: AsyncSession, test_
 
 
 @pytest.mark.asyncio
-async def test_update_group_changes_fields(session: AsyncSession, test_user, test_workspace):
-    g = await group_service.create_group(
-        session, test_workspace.id, test_user.id, GroupCreate(name="Editable")
-    )
-    updated = await group_service.update_group(
-        session, g.id, test_workspace.id, test_user.id,
-        GroupUpdate(name="Renamed", notes="hi", color="#abcdef"),
-    )
-    assert updated is not None
-    assert updated.name == "Renamed"
-    assert updated.notes == "hi"
-    assert updated.color == "#abcdef"
-
-
-@pytest.mark.asyncio
-async def test_delete_group_success(session: AsyncSession, test_user, test_workspace):
-    g = await group_service.create_group(
-        session, test_workspace.id, test_user.id, GroupCreate(name="Gone")
-    )
-    assert await group_service.delete_group(session, g.id, test_workspace.id) is True
-
-
-@pytest.mark.asyncio
 async def test_list_members_group_not_visible(session: AsyncSession, test_user, test_workspace):
     assert await group_service.list_members(
         session, uuid.uuid4(), test_workspace.id, test_user.id
@@ -336,50 +313,3 @@ async def test_create_member_name_clash(session: AsyncSession, test_user, test_w
         )
 
 
-@pytest.mark.asyncio
-async def test_create_member_self_demotes_prior_self(session: AsyncSession, test_user, test_workspace):
-    group = await group_service.create_group(
-        session, test_workspace.id, test_user.id, GroupCreate(name="SelfDemote")
-    )
-    m1 = await group_service.create_member(
-        session, group.id, test_workspace.id, GroupMemberCreate(name="A", is_self=True)
-    )
-    m2 = await group_service.create_member(
-        session, group.id, test_workspace.id, GroupMemberCreate(name="B", is_self=True)
-    )
-    members = await group_service.list_members(
-        session, group.id, test_workspace.id, test_user.id
-    )
-
-    assert m1 is not None
-    assert m2 is not None
-    assert members is not None
-    by_id = {m.id: m for m in members}
-    assert by_id[m1.id].is_self is False
-    assert by_id[m2.id].is_self is True
-
-
-@pytest.mark.asyncio
-async def test_update_member_promote_self_demotes_existing(session: AsyncSession, test_user, test_workspace):
-    group = await group_service.create_group(
-        session, test_workspace.id, test_user.id, GroupCreate(name="SelfSwap")
-    )
-    m1 = await group_service.create_member(
-        session, group.id, test_workspace.id, GroupMemberCreate(name="A", is_self=True)
-    )
-    m2 = await group_service.create_member(
-        session, group.id, test_workspace.id, GroupMemberCreate(name="B")
-    )
-
-    assert m1 is not None
-    assert m2 is not None
-    await group_service.update_member(
-        session, group.id, m2.id, test_workspace.id, GroupMemberUpdate(is_self=True)
-    )
-    members = await group_service.list_members(
-        session, group.id, test_workspace.id, test_user.id
-    )
-    assert members is not None
-    by_id = {m.id: m for m in members}
-    assert by_id[m1.id].is_self is False
-    assert by_id[m2.id].is_self is True

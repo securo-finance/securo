@@ -103,7 +103,6 @@ def test_summary_compares_the_contract_with_the_real_balance():
     assert summary.ahead_by == schedule[2].balance - Decimal("6000")
     assert summary.total_interest == sum(row.interest for row in schedule)
     assert summary.payoff_date == date(2026, 12, 10)
-    assert summary.projected_payoff_date is not None
     assert summary.projected_payoff_date == date(2026, 11, 10)
 
 

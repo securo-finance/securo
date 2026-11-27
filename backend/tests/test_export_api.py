@@ -40,7 +40,7 @@ async def test_backup_empty(client: AsyncClient, auth_headers):
 
         metadata = json.loads(zf.read("metadata.json"))
         assert metadata["format_version"] == "1.1"
-        assert "export_date" in metadata
+        assert metadata["content"] == "both"
         for count in metadata["entity_counts"].values():
             assert count == 0
 
@@ -127,24 +127,8 @@ async def test_backup_with_assets(
     with zipfile.ZipFile(buf) as zf:
         assets = json.loads(zf.read("assets.json"))
         asset_values = json.loads(zf.read("asset_values.json"))
-        assert len(assets) >= 1
-        assert len(asset_values) >= 1
-
-
-@pytest.mark.asyncio
-async def test_backup_metadata_structure(client: AsyncClient, auth_headers):
-    resp = await client.get("/api/export/backup", headers=auth_headers)
-    assert resp.status_code == 200
-    assert "application/zip" in resp.headers.get("content-type", "")
-    buf = io.BytesIO(resp.content)
-    with zipfile.ZipFile(buf) as zf:
-        names = zf.namelist()
-        assert "metadata.json" in names
-        meta = json.loads(zf.read("metadata.json"))
-        assert "export_date" in meta
-        assert meta["format_version"] == "1.1"
-        assert meta["content"] == "both"
-        assert "entity_counts" in meta
+        assert [a["name"] for a in assets] == ["Export Asset"]
+        assert [Decimal(v["amount"]) for v in asset_values] == [Decimal("1200")]
 
 
 @pytest.mark.asyncio

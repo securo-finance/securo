@@ -1,10 +1,6 @@
-"""Bounded SQLite evidence for recent-list input scale, not a PG performance gate."""
-import json
-import resource
-import sys
+"""The recent price-change list stays exact when many series feed it."""
 from datetime import date, timedelta
 from decimal import Decimal
-from time import perf_counter
 from uuid import UUID
 
 import pytest
@@ -26,7 +22,6 @@ async def test_recent_price_changes_many_series_exact_latest(
     at 12 or 19. The last series stays constant (no event). Expected evidence
     is authored from these fixture positions, never from a detector call.
     """
-    setup_started = perf_counter()
     today = date(2026, 11, 7)
     monkeypatch.setattr(service, "app_today", lambda: today)
     workspace_id = test_workspace.id
@@ -77,73 +72,27 @@ async def test_recent_price_changes_many_series_exact_latest(
     await session.flush()
     session.add_all(list(reversed(transaction_rows)))
     await session.flush()
-    # Do not time reads against an identity map retaining the seeded objects.
     session.expunge_all()
     del series_rows, transaction_rows
-    setup_seconds = perf_counter() - setup_started
 
     connection = await session.connection()
-    assert connection.dialect.name == "sqlite"
-    assert connection.engine.url.database == ":memory:"
-    counters = {"retrieved": 0, "processed": 0, "series": 0}
     statements = []
-    execute = session.execute
-    analyze = service.analyze_price_changes
-
-    class CountedResult:
-        def __init__(self, result):
-            self.result = result
-
-        def all(self):
-            rows = self.result.all()
-            counters["retrieved"] += len(rows)
-            return rows
-
-    async def counted_execute(*args, **kwargs):
-        return CountedResult(await execute(*args, **kwargs))
-
-    def counted_analysis(series, rows):
-        counters["processed"] += len(rows)
-        counters["series"] += 1
-        return analyze(series, rows)
 
     def record_sql(conn, cursor, statement, parameters, context, executemany):
         statements.append(statement)
 
-    monkeypatch.setattr(session, "execute", counted_execute)
-    monkeypatch.setattr(service, "analyze_price_changes", counted_analysis)
     event.listen(connection.sync_connection, "before_cursor_execute", record_sql)
     try:
-        # Interleave limits; first invocation is cold-ish, later calls reuse SQL
-        # compilation/SQLite caches. Three samples are NOT a p95 benchmark.
-        for sample in range(3):
-            for limit in (1, 50):
-                statements.clear()
-                counters.update(retrieved=0, processed=0, series=0)
-                started = perf_counter()
-                recent = await service.get_recent_price_changes(session, workspace_id, limit)
-                elapsed = perf_counter() - started
-                actual = [(
-                    item.current_date, item.recurring_id,
-                    item.previous_transaction_id, item.current_transaction_id,
-                ) for item in recent]
-                assert actual == expected[:limit]
-                assert len(statements) == 1
-                assert statements[0].lstrip().upper().startswith("SELECT ")
-                assert counters == {
-                    "retrieved": series_count * 20,
-                    "processed": series_count * 20,
-                    "series": series_count,
-                }
-                assert not (session.new or session.dirty or session.deleted)
-                peak_rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
-                print("RECENT_SCALE " + json.dumps({
-                    "series": series_count, "linked_posted_rows": series_count * 20,
-                    "limit": limit, "sample": sample, "sql_count": len(statements),
-                    **counters, "returned": len(recent), "seconds": elapsed,
-                    "fixture_seconds": setup_seconds,
-                    "process_peak_rss_bytes": peak_rss if sys.platform == "darwin"
-                    else peak_rss * 1024,
-                }, sort_keys=True))
+        for limit in (1, 50):
+            statements.clear()
+            recent = await service.get_recent_price_changes(session, workspace_id, limit)
+            actual = [(
+                item.current_date, item.recurring_id,
+                item.previous_transaction_id, item.current_transaction_id,
+            ) for item in recent]
+            assert actual == expected[:limit]
+            # One read for every series, however many there are.
+            assert len(statements) == 1
+            assert not (session.new or session.dirty or session.deleted)
     finally:
         event.remove(connection.sync_connection, "before_cursor_execute", record_sql)

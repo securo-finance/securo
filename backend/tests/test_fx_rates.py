@@ -1120,24 +1120,6 @@ class TestReportNetWorthMultiCurrency:
         assert dp.value >= 1500.0
         assert dp.breakdowns["accounts"] >= 1500.0
 
-    @pytest.mark.asyncio
-    async def test_net_worth_report_uses_user_primary_currency(
-        self,
-        session: AsyncSession,
-        test_user: User,
-        test_workspace,
-        test_account: Account,
-    ):
-        """get_net_worth_report reads the user's currency preference."""
-        from app.services.report_service import get_net_worth_report
-
-        report = await get_net_worth_report(session, test_workspace.id, test_user.id, months=1)
-
-        # test_user has currency_display=BRL
-        assert report is not None
-        assert len(report.trend) >= 1
-
-
 # ═══════════════════════════════════════════════════════════════════════════
 # 10. RECURRING TRANSACTION STAMPING
 # ═══════════════════════════════════════════════════════════════════════════

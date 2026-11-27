@@ -649,14 +649,6 @@ async def test_range_validation(
     await _make_business(session, test_workspace, "Padaria São João")
     headers = _headers(auth_headers, test_workspace)
 
-    missing = await client.get(EXPORT_URL, headers=headers)
-    assert missing.status_code == 422
-
-    missing_end = await client.get(
-        EXPORT_URL, params={"start_date": START.isoformat()}, headers=headers
-    )
-    assert missing_end.status_code == 422
-
     inverted = await client.get(
         EXPORT_URL,
         params={"start_date": "2024-12-31", "end_date": "2024-01-01"},

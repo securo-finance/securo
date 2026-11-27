@@ -429,16 +429,6 @@ async def test_ledger_limit_is_clamped_before_the_query(
     assert seen == [501, 2, 101]
 
 
-async def test_ledger_null_limit_falls_back_to_the_default(
-    session: AsyncSession, ctx: CallContext, test_workspace, holding: Asset
-):
-    await _buy(session, test_workspace, holding, "10", "20", date(2026, 1, 1))
-    r = await REGISTRY["list_asset_transactions"].handler(
-        session=session, ctx=ctx, limit=None
-    )
-    assert r["total"] == 1
-
-
 async def test_ledger_flags_a_truncated_page(
     session: AsyncSession, ctx: CallContext, test_workspace, holding: Asset
 ):

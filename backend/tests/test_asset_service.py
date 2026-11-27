@@ -491,8 +491,7 @@ async def test_value_series_apply_a_recorded_split(
 @pytest.mark.asyncio
 async def test_get_total_asset_value(session: AsyncSession, test_user: User, test_workspace, test_asset_with_values: Asset):
     totals, _ = await asset_service.get_asset_values_at(session, test_workspace.id, by_workspace=True)
-    assert "BRL" in totals
-    assert totals["BRL"] >= 550000.0  # latest value
+    assert totals == {"BRL": 550000.0}  # latest value
 
 
 @pytest.mark.asyncio
@@ -521,7 +520,7 @@ async def test_total_asset_value_excludes_sold(session: AsyncSession, test_user:
     await session.commit()
 
     totals, _ = await asset_service.get_asset_values_at(session, test_workspace.id, by_workspace=True)
-    assert isinstance(totals, dict)
+    assert totals == {}
 
 
 @pytest.mark.asyncio
@@ -937,7 +936,7 @@ def test_generate_growth_values_yearly():
         growth_type="percentage", growth_rate=5.0,
         growth_frequency="yearly", growth_start_date=None,
     )
-    assert len(result) >= 1
+    assert [float(v.amount) for v in result] == [10500.0]
 
 
 def test_generate_growth_values_unknown_type():

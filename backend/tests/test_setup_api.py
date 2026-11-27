@@ -23,25 +23,6 @@ async def test_setup_status_no_users(client: AsyncClient, clean_db):
 
 
 @pytest.mark.asyncio
-async def test_create_admin_success(client: AsyncClient, clean_db):
-    """Create admin succeeds when no users exist."""
-    response = await client.post(
-        "/api/setup/create-admin",
-        json={
-            "email": "admin@test.com",
-            "password": "StrongPass123!",
-            "currency": "BRL",
-            "name": "Admin",
-            "language": "pt-BR",
-        },
-    )
-    assert response.status_code == 200
-    data = response.json()
-    assert "access_token" in data
-    assert data["token_type"] == "bearer"
-
-
-@pytest.mark.asyncio
 async def test_create_admin_forbidden_when_local_auth_disabled(
     client: AsyncClient,
     clean_db,

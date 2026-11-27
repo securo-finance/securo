@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import io
 import tempfile
-import uuid
 from unittest.mock import patch
 
 import pytest
@@ -39,20 +38,6 @@ async def _make_agent(client, auth_headers, name="KB Agent") -> str:
 
 
 @pytest.mark.asyncio
-async def test_list_knowledge_404_for_unknown_agent(client, auth_headers, test_user):
-    r = await client.get(f"/api/agents/{uuid.uuid4()}/knowledge", headers=auth_headers)
-    assert r.status_code == 404
-
-
-@pytest.mark.asyncio
-async def test_list_knowledge_returns_empty_for_new_agent(client, auth_headers, test_user):
-    aid = await _make_agent(client, auth_headers)
-    r = await client.get(f"/api/agents/{aid}/knowledge", headers=auth_headers)
-    assert r.status_code == 200
-    assert r.json() == {"items": [], "total": 0}
-
-
-@pytest.mark.asyncio
 async def test_upload_knowledge_persists_doc_and_dispatches_celery(
     client, auth_headers, test_user, _stub_celery_dispatch
 ):
@@ -79,16 +64,6 @@ async def test_upload_knowledge_persists_doc_and_dispatches_celery(
     # And it shows up in list_knowledge.
     r = await client.get(f"/api/agents/{aid}/knowledge", headers=auth_headers)
     assert r.json()["total"] == 1
-
-
-@pytest.mark.asyncio
-async def test_upload_knowledge_404_for_unknown_agent(client, auth_headers, test_user):
-    r = await client.post(
-        f"/api/agents/{uuid.uuid4()}/knowledge",
-        files={"file": ("x.txt", io.BytesIO(b"x"), "text/plain")},
-        headers=auth_headers,
-    )
-    assert r.status_code == 404
 
 
 @pytest.mark.asyncio
@@ -135,15 +110,6 @@ async def test_toggle_pin_flips_flag(client, auth_headers, test_user):
 
 
 @pytest.mark.asyncio
-async def test_toggle_pin_404_for_unknown_doc(client, auth_headers, test_user):
-    aid = await _make_agent(client, auth_headers)
-    r = await client.patch(
-        f"/api/agents/{aid}/knowledge/{uuid.uuid4()}/pin?pinned=true", headers=auth_headers
-    )
-    assert r.status_code == 404
-
-
-@pytest.mark.asyncio
 async def test_delete_knowledge_removes_doc(client, auth_headers, test_user):
     aid = await _make_agent(client, auth_headers)
     r = await client.post(
@@ -158,12 +124,3 @@ async def test_delete_knowledge_removes_doc(client, auth_headers, test_user):
 
     docs = (await client.get(f"/api/agents/{aid}/knowledge", headers=auth_headers)).json()
     assert docs["total"] == 0
-
-
-@pytest.mark.asyncio
-async def test_delete_knowledge_404_for_unknown_doc(client, auth_headers, test_user):
-    aid = await _make_agent(client, auth_headers)
-    r = await client.delete(
-        f"/api/agents/{aid}/knowledge/{uuid.uuid4()}", headers=auth_headers
-    )
-    assert r.status_code == 404

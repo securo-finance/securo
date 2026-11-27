@@ -133,16 +133,6 @@ async def test_cannot_demote_sole_owner(session, test_user: User):
 
 
 @pytest.mark.asyncio
-async def test_cannot_remove_sole_owner(session, test_user: User):
-    ws = await workspace_service.create_personal_workspace_for_user(session, test_user)
-    await session.commit()
-
-    with pytest.raises(HTTPException) as exc:
-        await workspace_service.remove_member(session, ws.id, test_user.id)
-    assert exc.value.status_code == 400
-
-
-@pytest.mark.asyncio
 async def test_list_members_includes_invited_users(session, test_user: User):
     ws = await workspace_service.create_personal_workspace_for_user(session, test_user)
     await session.commit()

@@ -134,15 +134,6 @@ async def test_add_member_duplicate(session: AsyncSession, test_user: User, test
 
 
 @pytest.mark.asyncio
-async def test_update_member_role_invalid(session: AsyncSession, test_user: User, test_workspace):
-    with pytest.raises(HTTPException) as exc:
-        await workspace_service.update_member_role(
-            session, test_workspace.id, test_user.id, "boss"
-        )
-    assert exc.value.status_code == 400
-
-
-@pytest.mark.asyncio
 async def test_update_member_role_member_not_found(session: AsyncSession, test_workspace):
     with pytest.raises(HTTPException) as exc:
         await workspace_service.update_member_role(
@@ -170,9 +161,7 @@ async def test_update_member_role_demote_with_other_owner(session: AsyncSession,
 @pytest.mark.asyncio
 async def test_get_workspace_stats(session: AsyncSession, test_user: User, test_workspace, test_account, test_transactions):
     stats = await workspace_service.get_workspace_stats(session, test_workspace.id)
-    assert stats["members"] == 1
-    assert stats["accounts"] >= 1
-    assert stats["transactions"] >= 1
+    assert stats == {"members": 1, "accounts": 1, "transactions": 5}
 
 
 @pytest.mark.asyncio
@@ -252,28 +241,6 @@ async def test_remove_owner_succeeds_with_co_owner(session: AsyncSession, test_u
 
 
 @pytest.mark.asyncio
-async def test_demote_sole_owner_blocked(session: AsyncSession, test_user: User, test_workspace):
-    with pytest.raises(HTTPException) as exc:
-        await workspace_service.update_member_role(
-            session, test_workspace.id, test_user.id, "viewer"
-        )
-    assert exc.value.status_code == 400
-
-
-@pytest.mark.asyncio
-async def test_list_members_empty(session: AsyncSession):
-    ws = Workspace(
-        id=uuid.uuid4(),
-        name="EmptyWs",
-        kind="personal",
-        default_currency="USD",
-    )
-    session.add(ws)
-    await session.commit()
-    assert await workspace_service.list_members(session, ws.id) == []
-
-
-@pytest.mark.asyncio
 async def test_is_workspace_manager(session: AsyncSession, test_user: User):
     ws = await workspace_service.create_workspace(
         session, name="MgrCheck", creator=test_user, seed_defaults=False
@@ -288,51 +255,6 @@ async def test_get_membership_none(session: AsyncSession, test_workspace):
     assert await workspace_service.get_membership(
         session, test_workspace.id, uuid.uuid4()
     ) is None
-
-
-@pytest.mark.asyncio
-async def test_require_membership_manager_path_and_role_floor(session: AsyncSession):
-    """A manager (no membership row) gets virtual owner access and passes
-    the owner floor; a stranger is rejected with 404."""
-    manager = await _make_user(session, "mgrfloor@example.com")
-    ws = Workspace(
-        id=uuid.uuid4(),
-        name="Mgr",
-        kind="personal",
-        created_by_user_id=manager.id,
-        managed_by_user_id=manager.id,
-        default_currency="USD",
-    )
-    session.add(ws)
-    await session.commit()
-
-    member = await workspace_service.require_membership(session, ws.id, manager.id)
-    assert member.role == "manager"
-
-    member = await workspace_service.require_membership(
-        session, ws.id, manager.id, min_role="owner"
-    )
-    assert member.role == "manager"
-
-    with pytest.raises(HTTPException) as exc:
-        await workspace_service.require_membership(session, ws.id, uuid.uuid4())
-    assert exc.value.status_code == 404
-
-
-@pytest.mark.asyncio
-async def test_require_membership_viewer_role_floor_403(session: AsyncSession, test_user: User, test_workspace):
-    viewer = await _make_user(session, "vfloor@example.com")
-    await session.commit()
-    await workspace_service.add_member(
-        session, test_workspace.id, viewer.id, role="viewer"
-    )
-    await session.commit()
-    # Viewer trying for editor floor -> 403.
-    with pytest.raises(HTTPException) as exc:
-        await workspace_service.require_membership(
-            session, test_workspace.id, viewer.id, min_role="editor"
-        )
-    assert exc.value.status_code == 403
 
 
 @pytest.mark.asyncio

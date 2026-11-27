@@ -10,7 +10,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 
-from app.providers import pluggy as pluggy_module
 from app.providers.pluggy import PluggyProvider
 
 
@@ -224,9 +223,3 @@ async def test_default_trigger_refresh_returns_skipped():
 # --- guard: existing pluggy module wiring is what the tests assume ---
 
 
-def test_pluggy_terminal_statuses_cover_expected_values():
-    """Sanity-check the constant the implementation polls against."""
-    assert "UPDATED" in pluggy_module._PLUGGY_TERMINAL_STATUSES
-    assert "WAITING_USER_INPUT" in pluggy_module._PLUGGY_TERMINAL_STATUSES
-    assert "LOGIN_ERROR" in pluggy_module._PLUGGY_TERMINAL_STATUSES
-    assert "OUTDATED" in pluggy_module._PLUGGY_TERMINAL_STATUSES

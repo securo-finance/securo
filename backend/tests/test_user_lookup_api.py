@@ -46,6 +46,7 @@ async def test_lookup_case_insensitive(client, auth_headers, test_user):
         headers=auth_headers,
     )
     assert resp.status_code == 200
+    assert resp.json()["id"] == str(test_user.id)
 
 
 @pytest.mark.asyncio

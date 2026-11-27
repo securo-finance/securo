@@ -8,13 +8,6 @@ from app.services.category_service import create_default_categories
 
 
 @pytest.mark.asyncio
-async def test_list_groups(client: AsyncClient, auth_headers):
-    response = await client.get("/api/category-groups", headers=auth_headers)
-    assert response.status_code == 200
-    assert isinstance(response.json(), list)
-
-
-@pytest.mark.asyncio
 async def test_create_group(client: AsyncClient, auth_headers):
     response = await client.post(
         "/api/category-groups",
@@ -50,20 +43,6 @@ async def test_update_group_not_found(client: AsyncClient, auth_headers):
         headers=auth_headers,
     )
     assert response.status_code == 404
-
-
-@pytest.mark.asyncio
-async def test_delete_group(client: AsyncClient, auth_headers):
-    create_resp = await client.post(
-        "/api/category-groups",
-        json={"name": "Del Group", "icon": "x", "color": "#000"},
-        headers=auth_headers,
-    )
-    group_id = create_resp.json()["id"]
-    response = await client.delete(
-        f"/api/category-groups/{group_id}", headers=auth_headers,
-    )
-    assert response.status_code == 204
 
 
 @pytest.mark.asyncio

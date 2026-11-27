@@ -18,7 +18,7 @@ from decimal import Decimal
 from unittest.mock import AsyncMock, patch
 
 import pytest
-from sqlalchemy import UniqueConstraint, select
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -59,19 +59,6 @@ async def _second_workspace(session: AsyncSession, user_id: uuid.UUID) -> Worksp
 # ---------------------------------------------------------------------------
 # the constraint itself
 # ---------------------------------------------------------------------------
-def test_uniqueness_is_scoped_to_the_workspace():
-    """Asserted on the model because the test database is built from it:
-    a constraint that lives only in a migration is invisible here, which
-    is how the user-scoped one survived the move to workspaces unnoticed."""
-    scopes = {
-        tuple(col.name for col in constraint.columns)
-        for constraint in Payee.__table_args__
-        if isinstance(constraint, UniqueConstraint)
-    }
-    assert ("workspace_id", "name") in scopes
-    assert ("user_id", "name") not in scopes
-
-
 @pytest.mark.asyncio
 async def test_the_same_name_twice_in_one_workspace_is_rejected(
     session: AsyncSession, test_user, test_workspace

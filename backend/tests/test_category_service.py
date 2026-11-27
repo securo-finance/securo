@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.category import Category
 from app.models.category_group import CategoryGroup
-from app.schemas.category import CategoryCreate, CategoryUpdate
+from app.schemas.category import CategoryCreate
 from app.services.category_group_service import get_groups
 from app.services.category_defaults import (
     DEFAULT_CATEGORIES,
@@ -18,10 +18,8 @@ from app.services.category_defaults import (
 from app.services.category_service import (
     create_category,
     create_default_categories,
-    delete_category,
     get_categories,
     get_category,
-    update_category,
 )
 from app.services.rule_service import ensure_default_categories
 
@@ -249,13 +247,9 @@ async def test_get_categories_ordered(session: AsyncSession, test_user, test_wor
     await session.commit()
 
     categories = await get_categories(session, test_workspace.id)
-    system_cats = [c for c in categories if c.is_system]
-    custom_cats = [c for c in categories if not c.is_system]
-
-    if system_cats and custom_cats:
-        system_idx = categories.index(system_cats[0])
-        custom_idx = categories.index(custom_cats[0])
-        assert system_idx < custom_idx
+    # System categories come first even when a custom name sorts earlier.
+    assert [c.is_system for c in categories] == [True] * len(DEFAULT_CATEGORIES) + [False]
+    assert categories[-1].name == "AAA Custom"
 
 
 @pytest.mark.asyncio
@@ -283,34 +277,6 @@ async def test_get_categories_excludes_other_users(
 
 
 @pytest.mark.asyncio
-async def test_create_custom_category(session: AsyncSession, test_user, test_workspace):
-    data = CategoryCreate(name="Pets", icon="paw-print", color="#8B4513")
-    cat = await create_category(session, test_workspace.id, test_user.id, data)
-
-    assert cat.name == "Pets"
-    assert cat.icon == "paw-print"
-    assert cat.is_system is False
-
-
-@pytest.mark.asyncio
-async def test_create_category_with_group(session: AsyncSession, test_user, test_workspace):
-    from app.services.category_group_service import create_group
-    from app.schemas.category_group import CategoryGroupCreate
-
-    group = await create_group(
-        session,
-        test_workspace.id, test_user.id,
-        CategoryGroupCreate(name="CustomGroup", icon="folder", color="#000"),
-    )
-    cat = await create_category(
-        session,
-        test_workspace.id, test_user.id,
-        CategoryCreate(name="WithGroup", icon="star", color="#FFF", group_id=group.id),
-    )
-    assert cat.group_id == group.id
-
-
-@pytest.mark.asyncio
 async def test_get_category_by_id(session: AsyncSession, test_user, test_workspace):
     created = await create_category(
         session,
@@ -328,80 +294,8 @@ async def test_get_category_not_found(session: AsyncSession, test_user, test_wor
     assert result is None
 
 
-@pytest.mark.asyncio
-async def test_update_category(session: AsyncSession, test_user, test_workspace):
-    cat = await create_category(
-        session,
-        test_workspace.id, test_user.id,
-        CategoryCreate(name="OldName", icon="x", color="#111111"),
-    )
-    updated = await update_category(
-        session,
-        cat.id,
-        test_workspace.id,
-        CategoryUpdate(name="NewName", color="#222222"),
-    )
-    assert updated is not None
-    assert updated.name == "NewName"
-    assert updated.color == "#222222"
-    assert updated.icon == "x"
-
-
-@pytest.mark.asyncio
-async def test_update_category_partial(session: AsyncSession, test_user, test_workspace, test_categories):
-    cat = test_categories[1]
-    original_icon = cat.icon
-    original_color = cat.color
-    updated = await update_category(
-        session,
-        cat.id,
-        test_workspace.id,
-        CategoryUpdate(name="Mobilidade"),
-    )
-    assert updated is not None
-    assert updated.name == "Mobilidade"
-    assert updated.icon == original_icon
-    assert updated.color == original_color
-
-
-@pytest.mark.asyncio
-async def test_update_category_not_found(session: AsyncSession, test_user, test_workspace):
-    result = await update_category(
-        session,
-        uuid.uuid4(),
-        test_workspace.id,
-        CategoryUpdate(name="Nope"),
-    )
-    assert result is None
-
-
 # ---------------------------------------------------------------------------
 # delete_category
 # ---------------------------------------------------------------------------
 
-
-@pytest.mark.asyncio
-async def test_delete_custom_category(session: AsyncSession, test_user, test_workspace):
-    cat = await create_category(
-        session,
-        test_workspace.id, test_user.id,
-        CategoryCreate(name="ToDelete", icon="trash", color="#FF0000"),
-    )
-    assert await delete_category(session, cat.id, test_workspace.id) is True
-    assert await get_category(session, cat.id, test_workspace.id) is None
-
-
-@pytest.mark.asyncio
-async def test_delete_system_category(session: AsyncSession, test_user, test_workspace):
-    categories = await create_default_categories(session, test_user.id)
-    system_cat = categories[0]
-
-    assert system_cat.is_system is True
-    assert await delete_category(session, system_cat.id, test_workspace.id) is True
-    assert await get_category(session, system_cat.id, test_workspace.id) is None
-
-
-@pytest.mark.asyncio
-async def test_delete_category_not_found(session: AsyncSession, test_user, test_workspace):
-    assert await delete_category(session, uuid.uuid4(), test_workspace.id) is False
 

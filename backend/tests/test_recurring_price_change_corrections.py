@@ -1,6 +1,5 @@
 """Calendar-window regressions and an API-verified rendered-gap witness."""
 
-import asyncio
 import json
 import uuid
 from datetime import date, datetime, timedelta, timezone
@@ -13,7 +12,7 @@ from sqlalchemy import select
 from app.core import app_clock
 from app.models.recurring_transaction import RecurringTransaction
 from app.models.transaction import Transaction
-from app.services.recurring_price_change_service import detect_price_changes, get_recent_price_changes
+from app.services.recurring_price_change_service import detect_price_changes
 
 TODAY = date(2026, 11, 7)
 RECENT = "/api/recurring-transactions/price-changes/recent"
@@ -166,32 +165,6 @@ async def test_recent_uses_workspace_calendar_at_same_instant(
         [str(series.id)] if expected else [])
 
 
-async def test_recent_analysis_does_not_dispatch_to_thread(
-    session, test_user, test_workspace, test_account, monkeypatch,
-):
-    test_workspace.timezone = "UTC"
-    series, _ = await _seed(session, test_user, test_workspace, test_account,
-                            "Direct analysis", _observations(TODAY))
-    # A direct service call does not pass through the request dependency that
-    # applies the workspace calendar, so bind the same operation context here.
-    ambient_today = app_clock.app_today()
-    original = asyncio.to_thread
-    dispatches = []
-
-    async def observe_dispatch(func, *args, **kwargs):
-        dispatches.append(func.__name__)
-        return await original(func, *args, **kwargs)
-
-    monkeypatch.setattr(asyncio, "to_thread", observe_dispatch)
-    async with app_clock.use_timezone(session, test_workspace.id):
-        recent = await get_recent_price_changes(session, test_workspace.id)
-    assert app_clock.app_today() == ambient_today  # operation context reset
-    assert len(recent) == 1
-    assert recent[0].recurring_id == series.id
-    assert recent[0].current_amount == Decimal("12.00")
-    assert dispatches == []
-
-
 @pytest.mark.parametrize("previous,current,gap,frequency", [
     (date(2026, 10, 1), date(2026, 11, 1), 31, "monthly"),
     (date(2026, 10, 1), date(2026, 11, 1), 31, "yearly"),
@@ -200,7 +173,7 @@ async def test_recent_analysis_does_not_dispatch_to_thread(
 ], ids=["shared-31-day-witness", "not-schedule-frequency", "leap-month", "dst-month"])
 async def test_gap_detector_and_api_share_adjacent_observation_witness(
     client, auth_headers, session, test_user, test_workspace, test_account,
-    previous, current, gap, frequency, tmp_path,
+    previous, current, gap, frequency,
 ):
     test_workspace.timezone = "UTC"
     expected = json.loads(GAP_FIXTURE.read_text())
@@ -235,6 +208,3 @@ async def test_gap_detector_and_api_share_adjacent_observation_witness(
     if (previous, current, frequency) == (date(2026, 10, 1), date(2026, 11, 1), "monthly"):
         assert body["changes"] == [expected]
         assert recent.json() == [expected]
-        # Retain the actual HTTP response in this invocation's owned pytest scratch.
-        (tmp_path / "gap-history-response.json").write_text(json.dumps(body, indent=2) + "\n")
-        (tmp_path / "gap-recent-response.json").write_text(json.dumps(recent.json(), indent=2) + "\n")

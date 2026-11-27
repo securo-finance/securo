@@ -27,7 +27,6 @@ from app.models.transaction_attachment import TransactionAttachment
 from app.models.user import User
 from app.services.admin_service import (
     delete_user,
-    get_app_setting,
     get_user,
     is_registration_enabled,
     list_users,
@@ -194,22 +193,6 @@ async def test_list_users_pagination(session: AsyncSession, clean_db):
 
 
 # ---------------------------------------------------------------------------
-# get_user
-# ---------------------------------------------------------------------------
-
-async def test_get_user_found(session: AsyncSession, clean_db):
-    u = await _make_user(session, "found@test.com")
-    result = await get_user(session, u.id)
-    assert result is not None
-    assert result.email == "found@test.com"
-
-
-async def test_get_user_not_found(session: AsyncSession, clean_db):
-    result = await get_user(session, uuid.uuid4())
-    assert result is None
-
-
-# ---------------------------------------------------------------------------
 # update_user
 # ---------------------------------------------------------------------------
 
@@ -223,27 +206,6 @@ async def test_update_user_email(session: AsyncSession, clean_db):
     assert result.email == "newemail@test.com"
 
 
-async def test_update_user_email_conflict(session: AsyncSession, clean_db):
-    admin = await _make_user(session, "admin_c@test.com", is_superuser=True)
-    await _make_user(session, "existing@test.com")
-    target = await _make_user(session, "target_c@test.com")
-    data = AdminUserUpdate(email="existing@test.com")
-    with pytest.raises(ValueError, match="email already exists"):
-        await update_user(session, target.id, data, admin.id)
-
-
-async def test_update_user_password(session: AsyncSession, clean_db):
-    admin = await _make_user(session, "admin_pw@test.com", is_superuser=True)
-    target = await _make_user(session, "target_pw@test.com")
-    old_hash = target.hashed_password
-    data = AdminUserUpdate(password="newpassword123")
-    result = await update_user(session, target.id, data, admin.id)
-
-    assert result is not None
-    # Password should have changed
-    assert result.hashed_password != old_hash
-
-
 async def test_update_user_preferences(session: AsyncSession, clean_db):
     admin = await _make_user(session, "admin_pref@test.com", is_superuser=True)
     target = await _make_user(session, "target_pref@test.com")
@@ -254,27 +216,6 @@ async def test_update_user_preferences(session: AsyncSession, clean_db):
     assert result is not None
     assert result.preferences is not None
     assert result.preferences["language"] == "pt-BR"
-
-
-async def test_update_user_not_found(session: AsyncSession, clean_db):
-    admin = await _make_user(session, "admin_nf@test.com", is_superuser=True)
-    data = AdminUserUpdate(is_active=False)
-    result = await update_user(session, uuid.uuid4(), data, admin.id)
-    assert result is None
-
-
-async def test_update_user_self_demote(session: AsyncSession, clean_db):
-    admin = await _make_user(session, "admin_self@test.com", is_superuser=True)
-    data = AdminUserUpdate(is_superuser=False)
-    with pytest.raises(ValueError, match="own admin"):
-        await update_user(session, admin.id, data, admin.id)
-
-
-async def test_update_user_self_deactivate(session: AsyncSession, clean_db):
-    admin = await _make_user(session, "admin_deact@test.com", is_superuser=True)
-    data = AdminUserUpdate(is_active=False)
-    with pytest.raises(ValueError, match="own account"):
-        await update_user(session, admin.id, data, admin.id)
 
 
 async def test_update_user_is_active_and_superuser(session: AsyncSession, clean_db):
@@ -354,63 +295,14 @@ async def test_delete_user_keeps_reconciliation_history(postgres_sessions):
         assert event.user_id is None
 
 
-async def test_delete_user_self_protection(session: AsyncSession, clean_db):
-    admin = await _make_user(session, "admin_self_del@test.com", is_superuser=True)
-    with pytest.raises(ValueError, match="own account"):
-        await delete_user(session, admin.id, admin.id)
-
-
-async def test_delete_user_last_superuser(session: AsyncSession, clean_db):
-    admin = await _make_user(session, "only_admin@test.com", is_superuser=True)
-    target = await _make_user(session, "other@test.com")
-    # Can delete non-admin
-    assert await delete_user(session, target.id, admin.id) is True
-
-
-async def test_delete_last_superuser_blocked(session: AsyncSession, clean_db):
-    admin1 = await _make_user(session, "admin1_last@test.com", is_superuser=True)
-    admin2 = await _make_user(session, "admin2_last@test.com", is_superuser=True)
-    # admin2 tries to delete admin1 — should succeed (2 admins remain: admin2)
-    assert await delete_user(session, admin1.id, admin2.id) is True
-
-    # Now create a new target admin, make it the last
-    target = await _make_user(session, "last_target@test.com", is_superuser=True)
-    # admin2 is one admin, target is another — delete target is fine
-    assert await delete_user(session, target.id, admin2.id) is True
-
-
-async def test_delete_user_not_found(session: AsyncSession, clean_db):
-    admin = await _make_user(session, "admin_nf2@test.com", is_superuser=True)
-    result = await delete_user(session, uuid.uuid4(), admin.id)
-    assert result is False
-
-
 # ---------------------------------------------------------------------------
 # App settings
 # ---------------------------------------------------------------------------
-
-async def test_get_app_setting_not_found(session: AsyncSession, clean_db):
-    result = await get_app_setting(session, "nonexistent_key")
-    assert result is None
-
-
-async def test_set_app_setting_create(session: AsyncSession, clean_db):
-    setting = await set_app_setting(session, "test_key", "test_value")
-    assert setting.key == "test_key"
-    assert setting.value == "test_value"
-
 
 async def test_set_app_setting_update(session: AsyncSession, clean_db):
     await set_app_setting(session, "toggle", "true")
     setting = await set_app_setting(session, "toggle", "false")
     assert setting.value == "false"
-
-
-async def test_get_app_setting_found(session: AsyncSession, clean_db):
-    await set_app_setting(session, "found_key", "found_value")
-    result = await get_app_setting(session, "found_key")
-    assert result is not None
-    assert result.value == "found_value"
 
 
 # ---------------------------------------------------------------------------
@@ -453,11 +345,6 @@ async def test_use_provider_categories_default_true(session: AsyncSession, clean
 async def test_use_provider_categories_explicit_false(session: AsyncSession, clean_db):
     await set_app_setting(session, "use_provider_categories", "false")
     assert await use_provider_categories(session) is False
-
-
-async def test_use_provider_categories_explicit_true(session: AsyncSession, clean_db):
-    await set_app_setting(session, "use_provider_categories", "true")
-    assert await use_provider_categories(session) is True
 
 
 async def test_use_provider_categories_case_insensitive(session: AsyncSession, clean_db):

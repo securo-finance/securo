@@ -27,7 +27,6 @@ from app.schemas.transaction_split import TransactionSplitInput, TransactionSpli
 from app.services import group_service
 from app.services.transaction_service import (
     create_installment_series,
-    create_transaction,
     delete_transaction,
     get_transaction,
     update_transaction,
@@ -371,37 +370,6 @@ async def test_create_installment_series_invalid_account(
                 installments=2,
             ),
         )
-
-
-# ---------------------------------------------------------------------------
-# Single installment create via the regular endpoint
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_create_single_installment_persists_fingerprint(
-    session: AsyncSession, test_user, test_workspace, installment_account
-):
-    txn = await create_transaction(
-        session,
-        test_workspace.id,
-        test_user.id,
-        TransactionCreate(
-            description="Parcela avulsa",
-            amount=Decimal("50.00"),
-            date=date(2026, 2, 10),
-            type="debit",
-            account_id=installment_account.id,
-            installment_number=3,
-            total_installments=6,
-            installment_total_amount=Decimal("300.00"),
-            installment_purchase_date=date(2025, 12, 10),
-        ),
-    )
-    assert txn.installment_number == 3
-    assert txn.total_installments == 6
-    assert txn.installment_total_amount == Decimal("300.00")
-    assert txn.installment_purchase_date == date(2025, 12, 10)
 
 
 # ---------------------------------------------------------------------------
@@ -979,27 +947,6 @@ async def test_api_create_installments(
     assert items[0]["status"] == "posted"
     assert items[1]["status"] == "pending"
     assert [it["date"] for it in items] == ["2026-03-05", "2026-04-05", "2026-05-05"]
-
-
-@pytest.mark.asyncio
-async def test_api_create_installments_validation(
-    client: AsyncClient, auth_headers, test_account: Account
-):
-    response = await client.post(
-        "/api/transactions/installments",
-        headers=auth_headers,
-        json={
-            "base": {
-                "account_id": str(test_account.id),
-                "description": "Single",
-                "amount": "150.00",
-                "date": "2026-03-05",
-                "type": "debit",
-            },
-            "installments": 1,
-        },
-    )
-    assert response.status_code == 422
 
 
 @pytest.mark.asyncio

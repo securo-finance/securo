@@ -283,21 +283,16 @@ class TestPdf:
 
     def test_a_broken_accent_colour_degrades_instead_of_raising(self):
         """User input reaching a renderer must never cost the document."""
-        from app.services.invoice_pdf import _accent
+        from reportlab.lib import colors
 
-        assert _accent("not-a-colour") is not None
-        assert _accent(None) is not None
-        assert _accent("#4f46e5") is not None
+        from app.services.invoice_pdf import DEFAULT_ACCENT, _accent
 
-    async def test_a_broken_logo_does_not_cost_the_document(
-        self, client: AsyncClient, biz_headers
-    ):
-        invoice = await make_invoice(client, biz_headers)
-        settings = (await client.get("/api/invoices/settings", headers=biz_headers)).json()
-        doc_resp = await client.get(
-            f"/api/invoices/{invoice['id']}/document", headers=biz_headers
-        )
-        assert doc_resp.status_code == 200
+        fallback = colors.HexColor(DEFAULT_ACCENT).hexval()
+        assert _accent("not-a-colour").hexval() == fallback
+        assert _accent(None).hexval() == fallback
+        assert _accent("#4f46e5").hexval() == "0x4f46e5"
+
+    def test_a_broken_logo_does_not_cost_the_document(self):
         # Feed the renderer bytes that are not an image at all.
         from app.services.invoice_document import (
             DEFAULT_LABELS, DocumentParty, InvoiceDocument,
@@ -314,7 +309,6 @@ class TestPdf:
         )
         pdf = invoice_pdf.render_pdf(document, logo_bytes=b"not an image")
         assert pdf.startswith(b"%PDF-")
-        assert settings is not None
 
 
 # ---------------------------------------------------------------------------

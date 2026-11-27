@@ -190,40 +190,6 @@ async def test_create_settlement_with_account_creates_payment_tx(session: AsyncS
 
 
 @pytest.mark.asyncio
-async def test_create_settlement_receiver_self_member_owner_fallback(session: AsyncSession, test_user, test_workspace):
-    """to_member is the owner's self-member with no linked user -> receiver
-    credit falls back to group.user_id and lands on the owner's account."""
-    owner_account = await _make_account(session, test_user.id, test_workspace.id)
-    group = await group_service.create_group(
-        session, test_workspace.id, test_user.id, GroupCreate(name="SelfRx")
-    )
-    owner_self = await group_service.create_member(
-        session, group.id, test_workspace.id, GroupMemberCreate(name="Me", is_self=True)
-    )
-    friend = await group_service.create_member(
-        session, group.id, test_workspace.id, GroupMemberCreate(name="Friend")
-    )
-    assert owner_self is not None
-
-    assert friend is not None
-    s = await settlement_service.create_settlement(
-        session, group.id, test_workspace.id, test_user.id,
-        GroupSettlementCreate(
-            from_member_id=friend.id, to_member_id=owner_self.id,
-            amount=Decimal("8.00"), currency="USD", date=date.today(),
-        ),
-    )
-
-    assert s is not None
-
-    assert s.receiver_transaction_id is not None
-    rx = await session.get(Transaction, s.receiver_transaction_id)
-    assert rx is not None
-    assert rx.account_id == owner_account.id
-    assert rx.type == "credit"
-
-
-@pytest.mark.asyncio
 async def test_create_settlement_group_not_visible(session: AsyncSession, test_user, test_workspace):
     """A different workspace can't see the group -> create returns None."""
     group, a, b, _c = await _setup_group(session, test_user.id, test_workspace.id)

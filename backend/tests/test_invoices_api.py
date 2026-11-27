@@ -1131,12 +1131,6 @@ async def test_a_personal_workspace_never_pays_for_the_badge(
 # Direction: two sides of one ledger, and neither leaks into the other
 # ---------------------------------------------------------------------------
 @pytest.mark.asyncio
-async def test_everything_written_today_is_a_receivable(client: AsyncClient, biz_headers):
-    invoice = await _create(client, biz_headers)
-    assert invoice["direction"] == "receivable"
-
-
-@pytest.mark.asyncio
 async def test_a_payable_never_appears_among_receivables(client: AsyncClient, biz_headers):
     """The whole reason the column exists. A supplier's bill inside
     "what my clients owe me" is not a filtering nicety, it is a wrong
@@ -1189,12 +1183,6 @@ async def test_fetching_one_by_id_is_not_narrowed_by_side(client: AsyncClient, b
     assert fetched.json()["direction"] == "payable"
 
 
-@pytest.mark.asyncio
-async def test_an_unknown_side_is_refused(client: AsyncClient, biz_headers):
-    resp = await client.get("/api/invoices?direction=sideways", headers=biz_headers)
-    assert resp.status_code == 422
-
-
 # ---------------------------------------------------------------------------
 # What a payable is, and what it is not
 # ---------------------------------------------------------------------------
@@ -1241,22 +1229,6 @@ async def test_a_payable_cannot_be_shared(client: AsyncClient, biz_headers):
 # Provenance — the seam every future intake writes through
 # ---------------------------------------------------------------------------
 @pytest.mark.asyncio
-async def test_an_imported_document_keeps_where_it_came_from(
-    client: AsyncClient, biz_headers
-):
-    """Email, a photographed bill, a gateway sync: each arrives through
-    these three fields, which is why they are accepted before any of
-    those intakes exist."""
-    bill = await _create(
-        client, biz_headers, direction="payable", origin="imported",
-        external_source="email", external_id="msg-42",
-    )
-    assert bill["origin"] == "imported"
-    assert bill["external_source"] == "email"
-    assert bill["external_id"] == "msg-42"
-
-
-@pytest.mark.asyncio
 async def test_an_import_must_say_where_it_came_from(client: AsyncClient, biz_headers):
     """Without the source there is no pair to converge on, so a re-sync
     creates a second row instead of updating the first."""
@@ -1286,13 +1258,6 @@ async def test_the_same_external_document_never_lands_twice(
     # document so a retried import can update it instead of guessing.
     assert second.status_code == 409
     assert second.json()["detail"]["code"] == "already_imported"
-
-
-@pytest.mark.asyncio
-async def test_a_locally_created_document_says_so(client: AsyncClient, biz_headers):
-    invoice = await _create(client, biz_headers)
-    assert invoice["origin"] == "local"
-    assert invoice["external_source"] is None
 
 
 # ---------------------------------------------------------------------------

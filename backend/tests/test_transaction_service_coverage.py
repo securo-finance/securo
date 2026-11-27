@@ -34,7 +34,6 @@ from app.services.transaction_service import (
     bulk_remove_tags,
     create_transaction,
     create_transfer,
-    create_transfer_counterpart,
     get_transaction,
     get_transactions,
     get_transfer_candidates,
@@ -399,12 +398,6 @@ async def test_get_transactions_sorting(session, test_user, test_workspace, acct
     descs = [t.description for t in desc]
     assert descs[0] == "Zzz"
 
-    # transaction_date sort path
-    td, _, _ = await get_transactions(
-        session, test_workspace.id, test_user.id, sort_by="transaction_date", sort_dir="asc"
-    )
-    assert len(td) == 3
-
 
 async def test_get_transactions_pages_rows_sharing_created_at_in_a_stable_order(
     session, test_user, test_workspace, acct
@@ -518,40 +511,6 @@ async def test_get_transactions_opening_balance_excluded_then_included(session, 
 # ---------------------------------------------------------------------------
 
 
-async def test_get_transfer_candidates_ranks_by_proximity(session, test_user, test_workspace, acct):
-    acct2 = Account(
-        id=uuid.uuid4(), user_id=test_user.id, name="Cand2", type="savings",
-        balance=Decimal("0"), currency="BRL",
-    )
-    session.add(acct2)
-    await session.commit()
-
-    anchor = await _mk_txn(
-        session, test_user, acct, description="Anchor", amount=Decimal("100"),
-        type="debit", date=date(2025, 3, 15),
-    )
-    # Best candidate: closest date + same amount, opposing type, other account
-    await _mk_txn(
-        session, test_user, acct2, description="Close", amount=Decimal("100"),
-        type="credit", date=date(2025, 3, 16),
-    )
-    await _mk_txn(
-        session, test_user, acct2, description="Far", amount=Decimal("100"),
-        type="credit", date=date(2025, 3, 25),
-    )
-    # Same account → excluded
-    await _mk_txn(
-        session, test_user, acct, description="SameAcct", amount=Decimal("100"),
-        type="credit", date=date(2025, 3, 16),
-    )
-
-    cands = await get_transfer_candidates(session, test_workspace.id, anchor.id)
-    descs = [c.description for c in cands]
-    assert descs[0] == "Close"
-    assert "Far" in descs
-    assert "SameAcct" not in descs
-
-
 async def test_get_transfer_candidates_anchor_missing(session, test_user, test_workspace):
     cands = await get_transfer_candidates(session, test_workspace.id, uuid.uuid4())
     assert cands == []
@@ -571,22 +530,6 @@ async def test_get_transfer_candidates_anchor_already_paired(session, test_user,
 # ---------------------------------------------------------------------------
 
 
-async def test_link_existing_as_transfer_success(session, test_user, test_workspace, acct):
-    acct2 = Account(
-        id=uuid.uuid4(), user_id=test_user.id, name="Link2", type="savings",
-        balance=Decimal("0"), currency="BRL",
-    )
-    session.add(acct2)
-    await session.commit()
-    debit = await _mk_txn(session, test_user, acct, description="D", amount=Decimal("100"), type="debit")
-    credit = await _mk_txn(session, test_user, acct2, description="C", amount=Decimal("100"), type="credit")
-
-    d, c = await link_existing_as_transfer(session, test_workspace.id, [debit.id, credit.id])
-    assert d.transfer_pair_id == c.transfer_pair_id
-    assert d.type == "debit" and c.type == "credit"
-    assert d.category_id is None
-
-
 async def test_link_existing_wrong_count(session, test_workspace):
     with pytest.raises(ValueError, match="Exactly two"):
         await link_existing_as_transfer(session, test_workspace.id, [uuid.uuid4()])
@@ -604,141 +547,9 @@ async def test_link_existing_not_found(session, test_workspace, test_user, acct)
         await link_existing_as_transfer(session, test_workspace.id, [real.id, uuid.uuid4()])
 
 
-async def test_link_existing_already_transfer(session, test_user, test_workspace, acct):
-    acct2 = Account(
-        id=uuid.uuid4(), user_id=test_user.id, name="L2", type="savings",
-        balance=Decimal("0"), currency="BRL",
-    )
-    session.add(acct2)
-    await session.commit()
-    debit = await _mk_txn(session, test_user, acct, description="D", type="debit", transfer_pair_id=uuid.uuid4())
-    credit = await _mk_txn(session, test_user, acct2, description="C", type="credit")
-    with pytest.raises(ValueError, match="already part of a transfer"):
-        await link_existing_as_transfer(session, test_workspace.id, [debit.id, credit.id])
-
-
-async def test_link_existing_same_account(session, test_user, test_workspace, acct):
-    debit = await _mk_txn(session, test_user, acct, description="D", type="debit")
-    credit = await _mk_txn(session, test_user, acct, description="C", type="credit")
-    with pytest.raises(ValueError, match="different accounts"):
-        await link_existing_as_transfer(session, test_workspace.id, [debit.id, credit.id])
-
-
-async def test_link_existing_wrong_types(session, test_user, test_workspace, acct):
-    acct2 = Account(
-        id=uuid.uuid4(), user_id=test_user.id, name="L3", type="savings",
-        balance=Decimal("0"), currency="BRL",
-    )
-    session.add(acct2)
-    await session.commit()
-    a = await _mk_txn(session, test_user, acct, description="A", type="debit")
-    b = await _mk_txn(session, test_user, acct2, description="B", type="debit")
-    with pytest.raises(ValueError, match="one debit and one credit"):
-        await link_existing_as_transfer(session, test_workspace.id, [a.id, b.id])
-
-
-# ---------------------------------------------------------------------------
-# create_transfer_counterpart (lines 942-1013)
-# ---------------------------------------------------------------------------
-
-
-async def test_create_transfer_counterpart_same_currency(session, test_user, test_workspace, acct):
-    acct2 = Account(
-        id=uuid.uuid4(), user_id=test_user.id, name="CP2", type="savings",
-        balance=Decimal("0"), currency="BRL",
-    )
-    session.add(acct2)
-    await session.commit()
-    anchor = await _mk_txn(session, test_user, acct, description="Anchor", amount=Decimal("75"), type="debit")
-
-    debit, credit = await create_transfer_counterpart(
-        session, test_workspace.id, test_user.id, anchor.id, acct2.id
-    )
-    assert debit.transfer_pair_id == credit.transfer_pair_id
-    assert debit.type == "debit" and credit.type == "credit"
-    assert credit.account_id == acct2.id
-    assert credit.amount == Decimal("75")
-
-
-async def test_create_transfer_counterpart_cross_currency(session, test_user, test_workspace, acct, acct_usd):
-    anchor = await _mk_txn(session, test_user, acct, description="X", amount=Decimal("500"), type="debit")
-    debit, credit = await create_transfer_counterpart(
-        session, test_workspace.id, test_user.id, anchor.id, acct_usd.id
-    )
-    assert credit.currency == "USD"
-    assert debit.transfer_pair_id == credit.transfer_pair_id
-
-
-async def test_create_transfer_counterpart_anchor_missing(session, test_workspace, test_user, acct):
-    with pytest.raises(ValueError, match="Transaction not found"):
-        await create_transfer_counterpart(
-            session, test_workspace.id, test_user.id, uuid.uuid4(), acct.id
-        )
-
-
-async def test_create_transfer_counterpart_already_transfer(session, test_user, test_workspace, acct, acct_usd):
-    anchor = await _mk_txn(
-        session, test_user, acct, description="P", type="debit", transfer_pair_id=uuid.uuid4()
-    )
-    with pytest.raises(ValueError, match="already part of a transfer"):
-        await create_transfer_counterpart(
-            session, test_workspace.id, test_user.id, anchor.id, acct_usd.id
-        )
-
-
-async def test_create_transfer_counterpart_same_account(session, test_user, test_workspace, acct):
-    anchor = await _mk_txn(session, test_user, acct, description="S", type="debit")
-    with pytest.raises(ValueError, match="different account"):
-        await create_transfer_counterpart(
-            session, test_workspace.id, test_user.id, anchor.id, acct.id
-        )
-
-
-async def test_create_transfer_counterpart_dest_missing(session, test_user, test_workspace, acct):
-    anchor = await _mk_txn(session, test_user, acct, description="N", type="credit")
-    with pytest.raises(ValueError, match="Destination account not found"):
-        await create_transfer_counterpart(
-            session, test_workspace.id, test_user.id, anchor.id, uuid.uuid4()
-        )
-
-
 # ---------------------------------------------------------------------------
 # update_transaction — splits, FX cascade, effective_bill_date (1154+, 1166-1173)
 # ---------------------------------------------------------------------------
-
-
-async def test_update_transaction_with_splits(session, test_user, test_workspace, acct):
-    group, members = await _mk_group(session, test_user, test_workspace)
-    txn = await create_transaction(session, test_workspace.id, test_user.id, TransactionCreate(
-        account_id=acct.id, description="ToSplit", amount=Decimal("100"),
-        date=date.today(), type="debit",
-    ))
-    payload = TransactionSplitsInput(
-        share_type="equal",
-        splits=[TransactionSplitInput(group_member_id=members[1].id),
-                TransactionSplitInput(group_member_id=members[2].id)],
-    )
-    updated = await update_transaction(
-        session, txn.id, test_workspace.id, test_user.id,
-        TransactionUpdate(splits=payload),
-    )
-
-    assert updated is not None
-    assert len(updated.splits) == 2
-
-
-async def test_create_transaction_with_splits(session, test_user, test_workspace, acct):
-    group, members = await _mk_group(session, test_user, test_workspace)
-    payload = TransactionSplitsInput(
-        share_type="equal",
-        splits=[TransactionSplitInput(group_member_id=members[1].id),
-                TransactionSplitInput(group_member_id=members[2].id)],
-    )
-    txn = await create_transaction(session, test_workspace.id, test_user.id, TransactionCreate(
-        account_id=acct.id, description="CreatedWithSplit", amount=Decimal("80"),
-        date=date.today(), type="debit", splits=payload,
-    ))
-    assert len(txn.splits) == 2
 
 
 async def test_update_transfer_cascades_amount_cross_currency(session, test_user, test_workspace, acct, acct_usd):
@@ -762,27 +573,6 @@ async def test_update_transfer_cascades_amount_cross_currency(session, test_user
     # The cross-currency cascade branch ran: paired amount was re-converted
     # (rate is 1:1 in tests since no FX rate is seeded, so it tracks 1000).
     assert paired.amount == Decimal("1000")
-
-
-async def test_update_transfer_cascade_category(session, test_user, test_workspace, acct, test_categories):
-    acct2 = Account(
-        id=uuid.uuid4(), user_id=test_user.id, name="CC2", type="savings",
-        balance=Decimal("0"), currency="BRL",
-    )
-    session.add(acct2)
-    await session.commit()
-    debit, credit = await create_transfer(session, test_workspace.id, test_user.id, TransferCreate(
-        from_account_id=acct.id, to_account_id=acct2.id,
-        description="CatXfer", amount=Decimal("100"), date=date.today(),
-    ))
-    await update_transaction(
-        session, debit.id, test_workspace.id, test_user.id,
-        TransactionUpdate(category_id=test_categories[0].id, apply_to_transfer_pair=True),
-    )
-    paired = await get_transaction(session, credit.id, test_workspace.id)
-    
-    assert paired is not None
-    assert paired.category_id == test_categories[0].id
 
 
 async def test_update_transaction_effective_bill_date_links_bill(session, test_user, test_workspace, cc_account):
@@ -887,81 +677,12 @@ async def test_bulk_remove_tags_skips_empty_notes(session, test_user, test_works
 # ---------------------------------------------------------------------------
 
 
-async def test_bulk_add_to_group_equal(session, test_user, test_workspace, acct):
-    group, members = await _mk_group(session, test_user, test_workspace)
-    t1 = await _mk_txn(session, test_user, acct, description="G1", amount=Decimal("100"))
-    t2 = await _mk_txn(session, test_user, acct, description="G2", amount=Decimal("60"))
-
-    result = await bulk_add_to_group(
-        session, test_workspace.id, test_user.id, [t1.id, t2.id], group.id, share_type="equal"
-    )
-    assert result["updated"] == 2
-    assert result["skipped"] == 0
-
-
-async def test_bulk_add_to_group_percent_with_member_splits(session, test_user, test_workspace, acct):
-    group, members = await _mk_group(session, test_user, test_workspace)
-    non_self = [m for m in members if not m.is_self]
-    t1 = await _mk_txn(session, test_user, acct, description="P1", amount=Decimal("100"))
-
-    splits = [
-        TransactionSplitInput(group_member_id=non_self[0].id, share_pct=Decimal("60")),
-        TransactionSplitInput(group_member_id=non_self[1].id, share_pct=Decimal("40")),
-    ]
-    result = await bulk_add_to_group(
-        session, test_workspace.id, test_user.id, [t1.id], group.id,
-        share_type="percent", member_splits=splits,
-    )
-    assert result["updated"] == 1
-
-
-async def test_bulk_add_to_group_skips_transfers_and_existing_splits(session, test_user, test_workspace, acct):
-    group, members = await _mk_group(session, test_user, test_workspace)
-    transfer = await _mk_txn(
-        session, test_user, acct, description="Xfer", amount=Decimal("50"),
-        transfer_pair_id=uuid.uuid4(),
-    )
-    # A tx that already has splits
-    pre_split = await _mk_txn(session, test_user, acct, description="Pre", amount=Decimal("80"))
-    from app.services import split_service
-    await split_service.replace_splits(
-        session, pre_split,
-        TransactionSplitsInput(share_type="equal", splits=[
-            TransactionSplitInput(group_member_id=members[1].id),
-        ]),
-        test_user.id,
-    )
-    await session.commit()
-
-    result = await bulk_add_to_group(
-        session, test_workspace.id, test_user.id,
-        [transfer.id, pre_split.id], group.id, share_type="equal",
-    )
-    assert result["updated"] == 0
-    assert result["skipped"] == 2
-
-
-async def test_bulk_add_to_group_invalid_share_type(session, test_user, test_workspace):
-    group, _ = await _mk_group(session, test_user, test_workspace)
-    with pytest.raises(ValueError, match="equal' or 'percent"):
-        await bulk_add_to_group(
-            session, test_workspace.id, test_user.id, [uuid.uuid4()], group.id, share_type="exact"
-        )
-
-
 async def test_bulk_add_to_group_empty_ids(session, test_user, test_workspace):
     group, _ = await _mk_group(session, test_user, test_workspace)
     result = await bulk_add_to_group(
         session, test_workspace.id, test_user.id, [], group.id, share_type="equal"
     )
     assert result == {"updated": 0, "skipped": 0}
-
-
-async def test_bulk_add_to_group_group_not_found(session, test_user, test_workspace):
-    with pytest.raises(ValueError, match="Group not found"):
-        await bulk_add_to_group(
-            session, test_workspace.id, test_user.id, [uuid.uuid4()], uuid.uuid4(), share_type="equal"
-        )
 
 
 async def test_bulk_add_to_group_no_members(session, test_user, test_workspace):

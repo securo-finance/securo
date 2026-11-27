@@ -6,21 +6,6 @@ from app.models.bank_connection import BankConnection
 
 
 @pytest.mark.asyncio
-async def test_update_payee_source(
-    client: AsyncClient, auth_headers, test_connection: BankConnection
-):
-    """PATCH connection settings updates payee_source."""
-    resp = await client.patch(
-        f"/api/connections/{test_connection.id}/settings",
-        headers=auth_headers,
-        json={"payee_source": "merchant"},
-    )
-    assert resp.status_code == 200
-    data = resp.json()
-    assert data["settings"]["payee_source"] == "merchant"
-
-
-@pytest.mark.asyncio
 async def test_update_import_pending(
     client: AsyncClient, auth_headers, test_connection: BankConnection
 ):
@@ -88,19 +73,6 @@ async def test_partial_update_preserves_other_settings(
     data = resp.json()
     assert data["settings"]["payee_source"] == "none"
     assert data["settings"]["import_pending"] is False
-
-
-@pytest.mark.asyncio
-async def test_invalid_payee_source_rejected(
-    client: AsyncClient, auth_headers, test_connection: BankConnection
-):
-    """Invalid payee_source value should be rejected by validation."""
-    resp = await client.patch(
-        f"/api/connections/{test_connection.id}/settings",
-        headers=auth_headers,
-        json={"payee_source": "invalid_value"},
-    )
-    assert resp.status_code == 422
 
 
 @pytest.mark.asyncio

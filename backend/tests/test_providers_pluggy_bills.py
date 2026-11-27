@@ -203,14 +203,6 @@ async def test_bills_parser_total_amount_as_string():
 
 
 @pytest.mark.asyncio
-async def test_bills_parser_total_amount_as_int():
-    result = await _fetch([
-        {"id": "b", "dueDate": "2026-04-15", "totalAmount": 100}
-    ])
-    assert result[0].total_amount == Decimal("100")
-
-
-@pytest.mark.asyncio
 async def test_bills_parser_negative_total_preserves_sign():
     """Pluggy reports credit-balance bills as negative — keep as-is, not abs'd.
     A negative bill means the bank owes the user money; flipping the sign
@@ -230,14 +222,6 @@ async def test_bills_parser_zero_total_is_kept():
     ])
     assert len(result) == 1
     assert result[0].total_amount == Decimal("0")
-
-
-@pytest.mark.asyncio
-async def test_bills_parser_currency_defaults_to_brl():
-    result = await _fetch([
-        {"id": "b", "dueDate": "2026-04-15", "totalAmount": 10}
-    ])
-    assert result[0].currency == "BRL"
 
 
 @pytest.mark.asyncio

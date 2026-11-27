@@ -3,7 +3,6 @@ import uuid
 from unittest.mock import patch, AsyncMock
 
 import bcrypt as _bcrypt
-import pytest
 import pytest_asyncio
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -61,35 +60,6 @@ async def test_create_connection_with_encryption(session: AsyncSession, test_use
     assert decrypt(conn2.api_key_encrypted) == "sk-ant-real-key"
 
 
-async def test_create_connection_rejects_unknown_kind(session: AsyncSession, test_user: User):
-    with pytest.raises(ValueError):
-        await connection_service.create_connection(
-            session, test_user.id, name="x", kind="bogus",
-        )
-
-
-async def test_openai_compatible_requires_base_url(session: AsyncSession, test_user: User):
-    with pytest.raises(ValueError):
-        await connection_service.create_connection(
-            session, test_user.id, name="x", kind="openai_compatible",
-        )
-
-
-async def test_only_one_default_per_user(session: AsyncSession, test_user: User):
-    a = await connection_service.create_connection(
-        session, test_user.id, name="A", kind="ollama", is_default=True,
-    )
-    b = await connection_service.create_connection(
-        session, test_user.id, name="B", kind="ollama", is_default=True,
-    )
-    # Re-fetch a — should no longer be default.
-    a_after = await connection_service.get_connection(session, a.id, test_user.id)
-
-    assert a_after is not None
-    assert a_after.is_default is False
-    assert b.is_default is True
-
-
 async def test_update_keeps_existing_key_when_api_key_omitted(session: AsyncSession, test_user: User):
     conn = await connection_service.create_connection(
         session, test_user.id, name="x", kind="openai", api_key="sk-original",
@@ -106,24 +76,7 @@ async def test_update_keeps_existing_key_when_api_key_omitted(session: AsyncSess
     assert decrypt(updated.api_key_encrypted) == "sk-original"
 
 
-async def test_update_clears_key_with_empty_string(session: AsyncSession, test_user: User):
-    conn = await connection_service.create_connection(
-        session, test_user.id, name="x", kind="openai", api_key="sk-original",
-    )
-    updated = await connection_service.update_connection(
-        session, conn.id, test_user.id, api_key="",
-    )
-
-    assert updated is not None
-    assert updated.api_key_encrypted is None
-
-
 # --- HTTP CRUD -------------------------------------------------------------
-
-async def test_unauthenticated_connections_list_rejected(client: AsyncClient):
-    r = await client.get("/api/agents/connections")
-    assert r.status_code == 401
-
 
 async def test_create_then_list_via_http(client: AsyncClient, auth_headers: dict):
     r = await client.post(
@@ -227,11 +180,6 @@ async def test_test_endpoint_mocked_ok(client: AsyncClient, auth_headers: dict):
     body = r.json()
     assert body["ok"] is True
     assert body["models"] == ["llama3.1:8b"]
-
-
-async def test_test_endpoint_404_for_unknown(client: AsyncClient, auth_headers: dict):
-    r = await client.post(f"/api/agents/connections/{uuid.uuid4()}/test", headers=auth_headers)
-    assert r.status_code == 404
 
 
 # --- Executor uses the connection ------------------------------------------

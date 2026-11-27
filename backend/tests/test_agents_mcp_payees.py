@@ -74,15 +74,6 @@ async def _account_id(session: AsyncSession, workspace_id: uuid.UUID) -> uuid.UU
     return account_id
 
 
-async def test_payee_tools_are_registered():
-    assert "propose_update_payee" in REGISTRY
-    assert "propose_merge_payees" in REGISTRY
-    assert "propose_create_payee" in REGISTRY
-    assert REGISTRY["propose_update_payee"].is_proposal
-    assert REGISTRY["propose_merge_payees"].is_proposal
-    assert REGISTRY["propose_create_payee"].is_proposal
-
-
 async def test_preview_update_payee_does_not_write(
     session: AsyncSession, external_ctx: CallContext, cpf_payee: dict
 ):

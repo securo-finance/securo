@@ -82,7 +82,10 @@ async def test_get_budgets_all(session: AsyncSession, test_user, test_workspace,
     )
 
     budgets = await get_budgets(session, test_workspace.id)
-    assert len(budgets) >= 2
+    assert sorted((b.month, b.amount) for b in budgets) == [
+        (date(2025, 1, 1), Decimal("100")),
+        (date(2025, 2, 1), Decimal("200")),
+    ]
 
 
 @pytest.mark.asyncio

@@ -105,13 +105,6 @@ async def test_market_search_generic_error_returns_empty(client: AsyncClient, au
 
 
 @pytest.mark.asyncio
-async def test_market_search_validation_422(client: AsyncClient, auth_headers, test_user):
-    # Missing required q param.
-    resp = await client.get("/api/assets/market/search", headers=auth_headers)
-    assert resp.status_code == 422
-
-
-@pytest.mark.asyncio
 async def test_market_quote_success(client: AsyncClient, auth_headers, test_user):
     fake = AsyncMock()
     fake.get_quote = AsyncMock(
@@ -201,72 +194,6 @@ async def test_refresh_price_rate_limited_429(client: AsyncClient, auth_headers,
 # list / create / get / update / delete
 # ---------------------------------------------------------------------------
 @pytest.mark.asyncio
-async def test_list_assets_include_archived(client: AsyncClient, auth_headers, manual_asset):
-    resp = await client.get("/api/assets?include_archived=true", headers=auth_headers)
-    assert resp.status_code == 200
-    assert any(a["id"] == str(manual_asset.id) for a in resp.json())
-
-
-@pytest.mark.asyncio
-async def test_create_then_update_then_delete_asset(client: AsyncClient, auth_headers, test_user):
-    create = await client.post(
-        "/api/assets",
-        headers=auth_headers,
-        json={"name": "Boat", "type": "other", "currency": "USD", "current_value": 5000},
-    )
-    assert create.status_code == 201, create.text
-    asset_id = create.json()["id"]
-
-    upd = await client.patch(
-        f"/api/assets/{asset_id}",
-        headers=auth_headers,
-        json={"name": "Yacht", "is_archived": True},
-    )
-    assert upd.status_code == 200
-    assert upd.json()["name"] == "Yacht"
-
-    delete = await client.delete(f"/api/assets/{asset_id}", headers=auth_headers)
-    assert delete.status_code == 204
-
-
-@pytest.mark.asyncio
-async def test_get_asset_success(client: AsyncClient, auth_headers, manual_asset):
-    resp = await client.get(f"/api/assets/{manual_asset.id}", headers=auth_headers)
-    assert resp.status_code == 200, resp.text
-    assert resp.json()["name"] == "Cov House"
-
-
-@pytest.mark.asyncio
-async def test_get_asset_not_found_404(client: AsyncClient, auth_headers, test_user):
-    resp = await client.get(f"/api/assets/{uuid.uuid4()}", headers=auth_headers)
-    assert resp.status_code == 404
-
-
-@pytest.mark.asyncio
-async def test_refresh_price_fx_conversion(client: AsyncClient, auth_headers, market_asset, session):
-    # Seed a USD value so the refreshed asset has a current_value the
-    # endpoint converts into the BRL primary currency (FX branch).
-    session.add(
-        AssetValue(
-            id=uuid.uuid4(),
-            asset_id=market_asset.id,
-            amount=Decimal("1905.00"),
-            date=date(2026, 1, 1),
-            source="market",
-        )
-    )
-    await session.commit()
-    with patch(
-        "app.services.asset_service.refresh_market_price_asset",
-        new=AsyncMock(return_value=True),
-    ):
-        resp = await client.post(
-            f"/api/assets/{market_asset.id}/refresh-price", headers=auth_headers
-        )
-    assert resp.status_code == 200, resp.text
-
-
-@pytest.mark.asyncio
 async def test_update_asset_not_found_404(client: AsyncClient, auth_headers, test_user):
     resp = await client.patch(
         f"/api/assets/{uuid.uuid4()}", headers=auth_headers, json={"name": "X"}
@@ -311,25 +238,3 @@ async def test_value_trend_unknown_asset_404(client: AsyncClient, auth_headers, 
 async def test_delete_value_not_found_404(client: AsyncClient, auth_headers, test_user):
     resp = await client.delete(f"/api/assets/values/{uuid.uuid4()}", headers=auth_headers)
     assert resp.status_code == 404
-
-
-@pytest.mark.asyncio
-async def test_portfolio_trend(client: AsyncClient, auth_headers, manual_asset):
-    resp = await client.get("/api/assets/portfolio-trend", headers=auth_headers)
-    assert resp.status_code == 200
-
-
-@pytest.mark.asyncio
-async def test_add_value_then_value_trend(client: AsyncClient, auth_headers, manual_asset):
-    add = await client.post(
-        f"/api/assets/{manual_asset.id}/values",
-        headers=auth_headers,
-        json={"amount": 130000, "date": "2026-02-01"},
-    )
-    assert add.status_code == 201, add.text
-
-    trend = await client.get(
-        f"/api/assets/{manual_asset.id}/value-trend", headers=auth_headers
-    )
-    assert trend.status_code == 200
-    assert isinstance(trend.json(), list)

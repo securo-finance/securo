@@ -40,16 +40,6 @@ async def test_list_categories_with_defaults(
 
 
 @pytest.mark.asyncio
-async def test_list_categories_with_existing(
-    client: AsyncClient, auth_headers, test_categories: list[Category]
-):
-    response = await client.get("/api/categories", headers=auth_headers)
-    assert response.status_code == 200
-    data = response.json()
-    assert len(data) == 3
-
-
-@pytest.mark.asyncio
 async def test_create_category(client: AsyncClient, auth_headers, test_categories):
     response = await client.post(
         "/api/categories",

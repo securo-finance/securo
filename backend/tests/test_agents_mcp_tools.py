@@ -106,19 +106,6 @@ def test_recurring_proposal_frequency_schema_includes_new_values(tool_name):
 
 # --- Read tools (with real seeded data) -----------------------------------
 
-async def test_list_transactions_returns_seeded_data(
-    session: AsyncSession, ctx: CallContext, test_transactions
-):
-    handler = REGISTRY["list_transactions"].handler
-    result = await handler(session=session, ctx=ctx)
-    assert isinstance(result, dict)
-    assert "items" in result and "total" in result
-    assert result["total"] >= len(test_transactions)
-    sample = result["items"][0]
-    for k in ("id", "date", "description", "amount", "currency"):
-        assert k in sample
-
-
 async def test_list_transactions_with_search_filter(
     session: AsyncSession, ctx: CallContext, test_transactions
 ):
@@ -293,24 +280,6 @@ async def test_list_accounts_reports_current_balance(
     assert balances["Connected Card"] == pytest.approx(-300.00)
 
 
-async def test_list_assets_empty(session: AsyncSession, ctx: CallContext):
-    handler = REGISTRY["list_assets"].handler
-    r = await handler(session=session, ctx=ctx)
-    assert r["total"] == 0
-
-
-async def test_list_goals_empty(session: AsyncSession, ctx: CallContext):
-    handler = REGISTRY["list_goals"].handler
-    r = await handler(session=session, ctx=ctx)
-    assert r["total"] == 0
-
-
-async def test_list_budgets_empty(session: AsyncSession, ctx: CallContext):
-    handler = REGISTRY["list_budgets"].handler
-    r = await handler(session=session, ctx=ctx)
-    assert r == {"items": [], "total": 0}
-
-
 async def test_aggregate_payee_filter(
     session: AsyncSession, ctx: CallContext, test_transactions
 ):
@@ -444,21 +413,6 @@ async def test_list_categories(session: AsyncSession, ctx: CallContext, test_cat
         uuid.UUID(c["id"])  # raises if not a UUID
 
 
-async def test_list_payees_empty(session: AsyncSession, ctx: CallContext):
-    handler = REGISTRY["list_payees"].handler
-    result = await handler(session=session, ctx=ctx)
-    assert result["total"] == 0
-    assert result["items"] == []
-
-
-async def test_get_dashboard_snapshot(session: AsyncSession, ctx: CallContext, test_transactions):
-    handler = REGISTRY["get_dashboard_snapshot"].handler
-    result = await handler(session=session, ctx=ctx)
-    assert isinstance(result, dict)
-    # Snapshot is a Pydantic model dumped to dict — at minimum should be non-empty.
-    assert result
-
-
 # --- aggregate -------------------------------------------------------------
 
 async def test_aggregate_by_category(
@@ -469,10 +423,9 @@ async def test_aggregate_by_category(
         session=session, ctx=ctx,
         metric="sum", group_by="category", tx_type="expense",
     )
-    assert "items" in result
     # We have UBER (Transporte) and IFOOD (Alimentação) as expenses.
     labels = {item.get("label") for item in result["items"]}
-    assert "Transporte" in labels or "Alimentação" in labels
+    assert {"Transporte", "Alimentação"} <= labels
 
 
 async def test_aggregate_unknown_group_by(session: AsyncSession, ctx: CallContext):

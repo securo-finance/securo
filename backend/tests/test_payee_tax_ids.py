@@ -31,22 +31,6 @@ async def test_other_stores_free_text_untouched(client: AsyncClient, auth_header
 
 
 @pytest.mark.asyncio
-async def test_other_accepts_what_no_validator_understands(
-    client: AsyncClient, auth_headers, test_workspace
-):
-    resp = await client.post(
-        "/api/payees",
-        headers=auth_headers,
-        json={
-            "name": "Unknown Co",
-            "type": "company",
-            "tax_ids": [{"kind": "other", "value": "???-not-a-document-###"}],
-        },
-    )
-    assert resp.status_code == 201, resp.text
-
-
-@pytest.mark.asyncio
 async def test_duplicate_kind_is_refused_rather_than_silently_collapsed(
     client: AsyncClient, auth_headers, test_workspace
 ):

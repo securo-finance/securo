@@ -105,7 +105,7 @@ async def test_get_group_balances_returns_error_when_group_missing(session, test
     result = await groups_tool.get_group_balances(
         session=session, ctx=_ctx(test_user.id), group_id=str(uuid.uuid4())
     )
-    assert "error" in result
+    assert result == {"error": "group not found or not visible to this user"}
 
 
 @pytest.mark.asyncio
@@ -181,7 +181,7 @@ async def test_list_group_settlements_returns_error_when_group_missing(session, 
     result = await groups_tool.list_group_settlements(
         session=session, ctx=_ctx(test_user.id), group_id=str(uuid.uuid4())
     )
-    assert "error" in result
+    assert result == {"error": "group not found or not visible to this user"}
 
 
 @pytest.mark.asyncio

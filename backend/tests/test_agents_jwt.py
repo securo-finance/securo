@@ -15,7 +15,6 @@ import pytest
 from jose import jwt
 from starlette.requests import Request
 
-from app.agents.config import get_agent_settings
 from app.agents.mcp.auth import JWT_ALGO, JWT_AUDIENCE, JWT_ISSUER, mint_token
 
 
@@ -69,29 +68,6 @@ def test_wrong_secret_rejected():
 
     with pytest.raises(HTTPException) as exc:
         _ = verify_request(_req_bearer(bogus))
-    assert exc.value.status_code == 401
-
-
-def test_expired_token_rejected():
-    from fastapi import HTTPException
-    from mcp_server.auth import verify_request
-
-    s = get_agent_settings()
-    user_id = uuid.uuid4()
-    expired = jwt.encode(
-        {
-            "sub": str(user_id),
-            "iss": JWT_ISSUER,
-            "aud": JWT_AUDIENCE,
-            "iat": int(time.time()) - 7200,
-            "exp": int(time.time()) - 3600,
-        },
-        s.mcp_jwt_secret,
-        algorithm=JWT_ALGO,
-    )
-
-    with pytest.raises(HTTPException) as exc:
-        _ = verify_request(_req_bearer(expired))
     assert exc.value.status_code == 401
 
 

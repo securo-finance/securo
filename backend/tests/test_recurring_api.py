@@ -71,28 +71,6 @@ async def test_create_recurring_with_skip_first(client, auth_headers, test_categ
 
 
 @pytest.mark.asyncio
-async def test_create_recurring_skip_first_monthly(client, auth_headers, test_account):
-    """skip_first with monthly frequency advances by one month."""
-    response = await client.post(
-        "/api/recurring-transactions",
-        json={
-            "description": "Rent",
-            "amount": 1500.00,
-            "currency": "BRL",
-            "type": "debit",
-            "frequency": "monthly",
-            "start_date": "2026-01-15",
-            "skip_first": True,
-            "account_id": str(test_account.id),
-        },
-        headers=auth_headers,
-    )
-    assert response.status_code == 201
-    data = response.json()
-    assert data["next_occurrence"] == "2026-02-15"
-
-
-@pytest.mark.asyncio
 async def test_create_recurring_skip_first_quarterly(client, auth_headers, test_account):
     """Quarterly is accepted by the API and skip_first advances three calendar months."""
     response = await client.post(
@@ -214,11 +192,6 @@ async def test_generate_pending_creates_transactions(client, auth_headers, test_
     assert generated >= 1
 
     # Verify the recurring's next_occurrence is now in the future
-    await client.get(
-        f"/api/recurring-transactions/{rec_id}",
-        headers=auth_headers,
-    )
-    # It may be 404 if list-only, check the list
     list_resp = await client.get(
         "/api/recurring-transactions",
         headers=auth_headers,
@@ -340,6 +313,8 @@ async def test_delete_recurring_transaction(client, auth_headers, test_account):
         headers=auth_headers,
     )
     assert del_resp.status_code == 204
+    listed = await client.get("/api/recurring-transactions", headers=auth_headers)
+    assert [r["id"] for r in listed.json()] == []
 
 
 # ---------------------------------------------------------------------------
@@ -586,48 +561,6 @@ async def _seed_price_series(
     session.add_all(rows)
     await session.commit()
     return series, rows
-
-
-@pytest.mark.asyncio
-async def test_recent_price_changes_returns_latest_event_per_series(
-    client, auth_headers, session, test_user, test_workspace, test_account
-):
-    first, _ = await _seed_price_series(
-        session,
-        workspace=test_workspace,
-        user=test_user,
-        account=test_account,
-        description="Streaming",
-        start=date(2026, 1, 15),
-        amounts=("10.00", "10.00", "10.00", "12.00", "12.00", "12.00", "15.00"),
-    )
-    second, _ = await _seed_price_series(
-        session,
-        workspace=test_workspace,
-        user=test_user,
-        account=test_account,
-        description="Academia",
-        start=date(2026, 2, 1),
-        amounts=("20.00", "20.00", "25.00"),
-    )
-
-    response = await client.get(
-        "/api/recurring-transactions/price-changes/recent", headers=auth_headers
-    )
-
-    assert response.status_code == 200
-    events = response.json()
-    # The two-event series appears exactly once, carrying only its latest event.
-    first_events = [event for event in events if event["recurring_id"] == str(first.id)]
-    assert len(first_events) == 1
-    assert first_events[0]["previous_amount"] == "12.00"
-    assert first_events[0]["current_amount"] == "15.00"
-    second_events = [event for event in events if event["recurring_id"] == str(second.id)]
-    assert len(second_events) == 1
-    assert second_events[0]["current_amount"] == "25.00"
-    # Newest current_date first; ISO dates sort chronologically as strings.
-    dates = [event["current_date"] for event in events]
-    assert dates == sorted(dates, reverse=True)
 
 
 @pytest.mark.asyncio

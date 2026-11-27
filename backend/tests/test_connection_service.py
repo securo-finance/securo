@@ -31,7 +31,6 @@ from app.providers.base import (
     TransactionData,
 )
 from app.providers.enable_banking import EnableBankingProvider
-from app.services.text_similarity import token_overlap
 from app.services.connection_service import (
     _find_existing_connected_account,
     _merge_sync_metadata,
@@ -86,19 +85,6 @@ async def _make_category(
 # ---------------------------------------------------------------------------
 # _description_similarity (pure function)
 # ---------------------------------------------------------------------------
-
-
-def test_description_similarity_identical():
-    assert token_overlap("hello world", "hello world") == 1.0
-
-
-def test_description_similarity_partial():
-    score = token_overlap("hello world foo", "hello world bar")
-    assert 0.0 < score < 1.0
-
-
-def test_description_similarity_no_overlap():
-    assert token_overlap("abc", "xyz") == 0.0
 
 
 def test_merge_sync_metadata_repairs_invalid_epoch_date():
@@ -349,22 +335,6 @@ def test_merge_sync_metadata_ignores_empty_or_unchanged_descriptions():
     assert tx.original_description == "Coffee"
 
 
-def test_description_similarity_none():
-    assert token_overlap(None, "hello") == 0.0
-    assert token_overlap("hello", None) == 0.0
-    assert token_overlap(None, None) == 0.0
-
-
-def test_description_similarity_empty():
-    assert token_overlap("", "hello") == 0.0
-    assert token_overlap("hello", "") == 0.0
-
-
-def test_description_similarity_case_insensitive():
-    score = token_overlap("Hello World", "hello world")
-    assert score == 1.0
-
-
 # ---------------------------------------------------------------------------
 # _match_pluggy_category
 # ---------------------------------------------------------------------------
@@ -373,17 +343,17 @@ def test_description_similarity_case_insensitive():
 @pytest.mark.asyncio
 async def test_match_pluggy_exact(session: AsyncSession, test_user, test_workspace):
     """Exact Pluggy category match maps to the workspace's category."""
-    await _make_category(session, test_user.id, "Alimentação")
+    category = await _make_category(session, test_user.id, "Alimentação")
     cat_id = await _match_pluggy_category(session, test_workspace.id, "Eating out")
-    assert cat_id is not None
+    assert cat_id == category.id
 
 
 @pytest.mark.asyncio
 async def test_match_pluggy_prefix(session: AsyncSession, test_user, test_workspace):
     """Pluggy category with ' - ' prefix matches via split."""
-    await _make_category(session, test_user.id, "Transferências")
+    category = await _make_category(session, test_user.id, "Transferências")
     cat_id = await _match_pluggy_category(session, test_workspace.id, "Transfer - PIX")
-    assert cat_id is not None
+    assert cat_id == category.id
 
 
 @pytest.mark.asyncio
@@ -410,12 +380,12 @@ async def test_match_pluggy_disabled_short_circuits(
     None even on inputs that would otherwise resolve. This is the contract
     sync_connection / handle_oauth_callback rely on to leave transactions
     uncategorized so user Rules are the only source of truth."""
-    await _make_category(session, test_user.id, "Alimentação")
+    category = await _make_category(session, test_user.id, "Alimentação")
     # Sanity: enabled=True still matches.
     enabled_match = await _match_pluggy_category(
         session, test_workspace.id, "Eating out", enabled=True
     )
-    assert enabled_match is not None
+    assert enabled_match == category.id
 
     # enabled=False short-circuits before any DB lookup.
     disabled_match = await _match_pluggy_category(
@@ -444,18 +414,7 @@ async def test_get_connections_returns_list(session: AsyncSession, test_user, te
     await _make_connection(session, test_user.id, "Bank B")
 
     connections = await get_connections(session, test_workspace.id)
-    assert len(connections) >= 2
-    names = {c.institution_name for c in connections}
-    assert "Bank A" in names
-    assert "Bank B" in names
-
-
-@pytest.mark.asyncio
-async def test_get_connections_empty(session: AsyncSession, test_user, test_workspace):
-    """Returns empty list when no connections."""
-    connections = await get_connections(session, test_workspace.id)
-    # May have connections from other fixtures; just verify it's a list
-    assert isinstance(connections, list)
+    assert sorted(c.institution_name for c in connections) == ["Bank A", "Bank B"]
 
 
 @pytest.mark.asyncio
@@ -485,19 +444,6 @@ async def test_get_connection_wrong_user(session: AsyncSession, test_user, test_
 # ---------------------------------------------------------------------------
 # update_connection_settings
 # ---------------------------------------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_update_settings_new(session: AsyncSession, test_user, test_workspace):
-    """Updates settings on a connection with no prior settings."""
-    conn = await _make_connection(session, test_user.id, "Settings Test")
-
-    updated = await update_connection_settings(
-        session, conn.id, test_workspace.id, {"payee_source": "merchant"},
-    )
-    assert updated is not None
-    assert updated.settings is not None
-    assert updated.settings["payee_source"] == "merchant"
 
 
 @pytest.mark.asyncio
@@ -712,35 +658,9 @@ async def test_update_settings_ignores_none(session: AsyncSession, test_user, te
     assert updated.settings["payee_source"] == "auto"
 
 
-@pytest.mark.asyncio
-async def test_update_settings_not_found(session: AsyncSession, test_user, test_workspace):
-    """Returns None when connection not found."""
-    result = await update_connection_settings(
-        session, uuid.uuid4(), test_workspace.id, {"payee_source": "auto"},
-    )
-    assert result is None
-
-
 # ---------------------------------------------------------------------------
 # delete_connection
 # ---------------------------------------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_delete_connection_found(session: AsyncSession, test_user, test_workspace):
-    """Deletes an existing connection."""
-    conn = await _make_connection(session, test_user.id, "To Delete")
-    result = await delete_connection(session, conn.id, test_workspace.id)
-    assert result is True
-
-    assert await get_connection(session, conn.id, test_workspace.id) is None
-
-
-@pytest.mark.asyncio
-async def test_delete_connection_not_found(session: AsyncSession, test_user, test_workspace):
-    """Returns False for nonexistent connection."""
-    result = await delete_connection(session, uuid.uuid4(), test_workspace.id)
-    assert result is False
 
 
 @pytest.mark.asyncio

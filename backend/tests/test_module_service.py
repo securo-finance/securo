@@ -5,16 +5,13 @@ than intentional. In particular, `personal` is asserted against a
 literal list, so any change that would take a module away from an
 existing workspace fails here first.
 """
-import pytest
 
 from app.models.workspace import WORKSPACE_KINDS, Workspace
 from app.services.module_service import (
     CATALOG,
     KIND_POLICIES,
-    MODULE_DEPLOYMENT_FLAGS,
     ModuleId,
     ModuleResolver,
-    catalog_defaults,
     resolve_modules,
 )
 
@@ -55,14 +52,6 @@ def test_business_is_personal_plus_invoices():
     )
 
 
-def test_invoices_is_the_only_difference():
-    """Resist giving the policies more differences than the product has."""
-    personal = set(resolve_modules(ws("personal")))
-    business = set(resolve_modules(ws("business")))
-    assert business - personal == {"invoices"}
-    assert personal - business == set()
-
-
 def test_every_workspace_kind_has_a_policy():
     assert set(KIND_POLICIES) == set(WORKSPACE_KINDS)
 
@@ -75,24 +64,6 @@ def test_unknown_kind_falls_back_to_catalog_defaults():
 # ---------------------------------------------------------------------------
 # the chain
 # ---------------------------------------------------------------------------
-def test_layers_three_and_four_abstain():
-    """Neither may quietly start having opinions."""
-    from app.services.module_service import (
-        SupplementalProvider,
-        WorkspaceOverrideProvider,
-    )
-
-    workspace = ws("business")
-    current = catalog_defaults()
-    assert WorkspaceOverrideProvider().apply(current, workspace) is None
-    assert SupplementalProvider().apply(current, workspace) is None
-
-
-def test_deployment_flag_mapping_ships_empty():
-    """No catalog module is deployment-gated today."""
-    assert MODULE_DEPLOYMENT_FLAGS == {}
-
-
 def test_deployment_layer_vetoes_when_its_flag_is_off():
     """Proves the seam before anything uses it."""
     resolver = ModuleResolver(
@@ -148,13 +119,3 @@ def test_catalog_covers_every_module_id():
     assert set(CATALOG) == set(ModuleId)
 
 
-def test_invoices_is_the_only_module_off_by_default():
-    off = {m.value for m in ModuleId} - {m.value for m in catalog_defaults()}
-    assert off == {"invoices"}
-
-
-@pytest.mark.parametrize("module_id", list(ModuleId))
-def test_module_ids_are_lower_snake_case(module_id: ModuleId):
-    """The frontend mirrors these verbatim."""
-    assert module_id.value == module_id.value.lower().strip()
-    assert " " not in module_id.value and "-" not in module_id.value

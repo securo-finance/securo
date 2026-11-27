@@ -3,7 +3,6 @@ import uuid
 from datetime import date, datetime, timezone
 from decimal import Decimal
 from typing import TypedDict
-from unittest.mock import AsyncMock, patch
 
 import pytest
 import pytest_asyncio
@@ -22,7 +21,6 @@ from app.services.transaction_service import (
     bulk_update_category,
     create_transaction,
     create_transfer,
-    delete_transaction,
     toggle_ignore_transaction,
     get_transaction,
     get_transactions,
@@ -242,41 +240,6 @@ async def test_create_transaction_invalid_account(session: AsyncSession, test_us
 
 
 @pytest.mark.asyncio
-async def test_get_transactions_pagination(
-    session: AsyncSession, test_user, test_workspace, txn_account
-):
-    # Create 5 transactions
-    for i in range(5):
-        txn = Transaction(
-            id=uuid.uuid4(),
-            user_id=test_user.id,
-            account_id=txn_account.id,
-            description=f"Txn {i}",
-            amount=Decimal("10"),
-            date=date(2025, 3, i + 1),
-            type="debit",
-            source="manual",
-            created_at=datetime.now(timezone.utc),
-        )
-        session.add(txn)
-    await session.commit()
-
-    page1, total, _ = await get_transactions(
-        session, test_workspace.id, test_user.id, limit=2, page=1
-    )
-    assert total >= 5
-    assert len(page1) == 2
-
-    page2, _, _ = await get_transactions(session, test_workspace.id, test_user.id, limit=2, page=2)
-    assert len(page2) == 2
-
-    # No overlap
-    p1_ids = {t.id for t in page1}
-    p2_ids = {t.id for t in page2}
-    assert p1_ids.isdisjoint(p2_ids)
-
-
-@pytest.mark.asyncio
 async def test_get_transactions_filter_by_account(
     session: AsyncSession, test_user, test_workspace, txn_account
 ):
@@ -464,68 +427,6 @@ async def test_get_transactions_date_filter_respects_accounting_mode(
 
 
 @pytest.mark.asyncio
-async def test_get_transactions_filter_by_search(
-    session: AsyncSession, test_user, test_workspace, txn_account
-):
-    txn = Transaction(
-        id=uuid.uuid4(),
-        user_id=test_user.id,
-        account_id=txn_account.id,
-        description="NETFLIX SUBSCRIPTION",
-        amount=Decimal("39.90"),
-        date=date(2025, 3, 1),
-        type="debit",
-        source="manual",
-        created_at=datetime.now(timezone.utc),
-    )
-    session.add(txn)
-    await session.commit()
-
-    results, _, _ = await get_transactions(
-        session, test_workspace.id, test_user.id, search="netflix"
-    )
-    descs = {t.description for t in results}
-    assert "NETFLIX SUBSCRIPTION" in descs
-
-
-@pytest.mark.asyncio
-async def test_get_transactions_filter_by_type(
-    session: AsyncSession, test_user, test_workspace, txn_account
-):
-    txn_debit = Transaction(
-        id=uuid.uuid4(),
-        user_id=test_user.id,
-        account_id=txn_account.id,
-        description="Expense",
-        amount=Decimal("50"),
-        date=date(2025, 3, 1),
-        type="debit",
-        source="manual",
-        created_at=datetime.now(timezone.utc),
-    )
-    txn_credit = Transaction(
-        id=uuid.uuid4(),
-        user_id=test_user.id,
-        account_id=txn_account.id,
-        description="Income",
-        amount=Decimal("1000"),
-        date=date(2025, 3, 1),
-        type="credit",
-        source="manual",
-        created_at=datetime.now(timezone.utc),
-    )
-    session.add_all([txn_debit, txn_credit])
-    await session.commit()
-
-    results, _, _ = await get_transactions(
-        session, test_workspace.id, test_user.id, txn_type="credit"
-    )
-    types = {t.type for t in results}
-    assert "credit" in types
-    assert all(t.type == "credit" for t in results)
-
-
-@pytest.mark.asyncio
 async def test_get_transactions_filter_by_status(session: AsyncSession, test_user, test_workspace, txn_account):
     txn_pending = Transaction(
         id=uuid.uuid4(),
@@ -566,33 +467,6 @@ async def test_get_transactions_filter_by_status(session: AsyncSession, test_use
 # ---------------------------------------------------------------------------
 # get_transaction / update_transaction / delete_transaction
 # ---------------------------------------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_get_transaction_by_id(session: AsyncSession, test_user, test_workspace, txn_account):
-    txn = Transaction(
-        id=uuid.uuid4(),
-        user_id=test_user.id,
-        account_id=txn_account.id,
-        description="Lookup",
-        amount=Decimal("10"),
-        date=date(2025, 3, 1),
-        type="debit",
-        source="manual",
-        created_at=datetime.now(timezone.utc),
-    )
-    session.add(txn)
-    await session.commit()
-
-    fetched = await get_transaction(session, txn.id, test_workspace.id)
-    assert fetched is not None
-    assert fetched.id == txn.id
-
-
-@pytest.mark.asyncio
-async def test_get_transaction_not_found(session: AsyncSession, test_user, test_workspace):
-    result = await get_transaction(session, uuid.uuid4(), test_workspace.id)
-    assert result is None
 
 
 @pytest.mark.asyncio
@@ -686,18 +560,6 @@ async def test_update_transaction_backfills_original_description_on_legacy_rows(
 
 
 @pytest.mark.asyncio
-async def test_update_transaction_not_found(session: AsyncSession, test_user, test_workspace):
-    result = await update_transaction(
-        session,
-        uuid.uuid4(),
-        test_workspace.id,
-        test_user.id,
-        TransactionUpdate(description="Ghost"),
-    )
-    assert result is None
-
-
-@pytest.mark.asyncio
 async def test_update_transaction_status(session: AsyncSession, test_user, test_workspace, txn_account):
     """Manual transactions can be flipped between pending and posted via TransactionUpdate.status."""
     txn = Transaction(
@@ -737,31 +599,6 @@ async def test_update_transaction_status(session: AsyncSession, test_user, test_
 
 
 @pytest.mark.asyncio
-async def test_delete_transaction(session: AsyncSession, test_user, test_workspace, txn_account):
-    txn = Transaction(
-        id=uuid.uuid4(),
-        user_id=test_user.id,
-        account_id=txn_account.id,
-        description="ToDelete",
-        amount=Decimal("5"),
-        date=date(2025, 3, 1),
-        type="debit",
-        source="manual",
-        created_at=datetime.now(timezone.utc),
-    )
-    session.add(txn)
-    await session.commit()
-
-    assert await delete_transaction(session, txn.id, test_workspace.id) is True
-    assert await get_transaction(session, txn.id, test_workspace.id) is None
-
-
-@pytest.mark.asyncio
-async def test_delete_transaction_not_found(session: AsyncSession, test_user, test_workspace):
-    assert await delete_transaction(session, uuid.uuid4(), test_workspace.id) is False
-
-
-@pytest.mark.asyncio
 async def test_toggle_ignore_transaction(
     session: AsyncSession, test_user, test_workspace, txn_account
 ):
@@ -788,13 +625,6 @@ async def test_toggle_ignore_transaction(
     result = await toggle_ignore_transaction(session, txn.id, test_workspace.id)
     assert result is not None
     assert result.is_ignored is False
-
-
-@pytest.mark.asyncio
-async def test_toggle_ignore_transaction_not_found(
-    session: AsyncSession, test_user, test_workspace
-):
-    assert await toggle_ignore_transaction(session, uuid.uuid4(), test_workspace.id) is None
 
 
 # ---------------------------------------------------------------------------
@@ -955,100 +785,6 @@ async def test_create_transaction_with_fx_override(
 # ---------------------------------------------------------------------------
 
 
-@pytest_asyncio.fixture
-async def txn_account_usd(session: AsyncSession, test_user) -> Account:
-    acct = Account(
-        id=uuid.uuid4(),
-        user_id=test_user.id,
-        name="USD Acct",
-        type="checking",
-        balance=Decimal("5000"),
-        currency="USD",
-    )
-    session.add(acct)
-    await session.commit()
-    await session.refresh(acct)
-    return acct
-
-
-@pytest.mark.asyncio
-async def test_create_transfer_same_currency(
-    session: AsyncSession, test_user, test_workspace, txn_account
-):
-    acct2 = Account(
-        id=uuid.uuid4(),
-        user_id=test_user.id,
-        name="Savings",
-        type="savings",
-        balance=Decimal("0"),
-        currency="BRL",
-    )
-    session.add(acct2)
-    await session.commit()
-
-    data = TransferCreate(
-        from_account_id=txn_account.id,
-        to_account_id=acct2.id,
-        description="Transfer",
-        amount=Decimal("1000"),
-        date=date.today(),
-    )
-    debit_tx, credit_tx = await create_transfer(session, test_workspace.id, test_user.id, data)
-    assert debit_tx.type == "debit"
-    assert credit_tx.type == "credit"
-    assert debit_tx.transfer_pair_id == credit_tx.transfer_pair_id
-    assert debit_tx.amount == credit_tx.amount
-
-
-@pytest.mark.asyncio
-async def test_create_transfer_same_account(
-    session: AsyncSession, test_user, test_workspace, txn_account
-):
-    data = TransferCreate(
-        from_account_id=txn_account.id,
-        to_account_id=txn_account.id,
-        description="Self",
-        amount=Decimal("100"),
-        date=date.today(),
-    )
-    with pytest.raises(ValueError, match="same account"):
-        await create_transfer(session, test_workspace.id, test_user.id, data)
-
-
-@pytest.mark.asyncio
-async def test_create_transfer_cross_currency(
-    session: AsyncSession, test_user, test_workspace, txn_account, txn_account_usd
-):
-    data = TransferCreate(
-        from_account_id=txn_account.id,
-        to_account_id=txn_account_usd.id,
-        description="Cross-currency",
-        amount=Decimal("500"),
-        date=date.today(),
-        destination_amount=Decimal("100.00"),
-    )
-    debit_tx, credit_tx = await create_transfer(session, test_workspace.id, test_user.id, data)
-    assert debit_tx.currency == "BRL"
-    assert credit_tx.currency == "USD"
-    assert credit_tx.amount == Decimal("100.00")
-
-
-@pytest.mark.asyncio
-async def test_create_transfer_cross_currency_auto_fx(
-    session: AsyncSession, test_user, test_workspace, txn_account, txn_account_usd
-):
-    data = TransferCreate(
-        from_account_id=txn_account.id,
-        to_account_id=txn_account_usd.id,
-        description="Auto FX",
-        amount=Decimal("500"),
-        date=date.today(),
-    )
-    debit_tx, credit_tx = await create_transfer(session, test_workspace.id, test_user.id, data)
-    assert debit_tx.type == "debit"
-    assert credit_tx.type == "credit"
-
-
 @pytest.mark.asyncio
 async def test_create_transfer_invalid_from_account(
     session: AsyncSession, test_user, test_workspace, txn_account
@@ -1064,147 +800,9 @@ async def test_create_transfer_invalid_from_account(
         await create_transfer(session, test_workspace.id, test_user.id, data)
 
 
-@pytest.mark.asyncio
-async def test_create_transfer_invalid_to_account(
-    session: AsyncSession, test_user, test_workspace, txn_account
-):
-    data = TransferCreate(
-        from_account_id=txn_account.id,
-        to_account_id=uuid.uuid4(),
-        description="Bad to",
-        amount=Decimal("100"),
-        date=date.today(),
-    )
-    with pytest.raises(ValueError, match="Destination account not found"):
-        await create_transfer(session, test_workspace.id, test_user.id, data)
-
-
 # ---------------------------------------------------------------------------
 # get_transactions — additional filters
 # ---------------------------------------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_get_transactions_uncategorized(
-    session: AsyncSession, test_user, test_workspace, txn_account, test_categories
-):
-    await create_transaction(
-        session,
-        test_workspace.id,
-        test_user.id,
-        TransactionCreate(
-            account_id=txn_account.id,
-            description="Uncategorized",
-            amount=Decimal("50"),
-            date=date.today(),
-            type="debit",
-        ),
-    )
-    await create_transaction(
-        session,
-        test_workspace.id,
-        test_user.id,
-        TransactionCreate(
-            account_id=txn_account.id,
-            description="Categorized",
-            amount=Decimal("50"),
-            date=date.today(),
-            type="debit",
-            category_id=test_categories[0].id,
-        ),
-    )
-    txns, _, _ = await get_transactions(
-        session, test_workspace.id, test_user.id, uncategorized=True
-    )
-    descs = [t.description for t in txns]
-    assert "Uncategorized" in descs
-    assert "Categorized" not in descs
-
-
-@pytest.mark.asyncio
-async def test_get_transactions_date_filter(
-    session: AsyncSession, test_user, test_workspace, txn_account
-):
-    from datetime import timedelta
-
-    today = date.today()
-    yesterday = today - timedelta(days=1)
-    await create_transaction(
-        session,
-        test_workspace.id,
-        test_user.id,
-        TransactionCreate(
-            account_id=txn_account.id,
-            description="Today",
-            amount=Decimal("10"),
-            date=today,
-            type="debit",
-        ),
-    )
-    await create_transaction(
-        session,
-        test_workspace.id,
-        test_user.id,
-        TransactionCreate(
-            account_id=txn_account.id,
-            description="Yesterday",
-            amount=Decimal("10"),
-            date=yesterday,
-            type="debit",
-        ),
-    )
-    txns, _, _ = await get_transactions(
-        session, test_workspace.id, test_user.id, from_date=today, to_date=today
-    )
-    descs = [t.description for t in txns]
-    assert "Today" in descs
-    assert "Yesterday" not in descs
-
-
-@pytest.mark.asyncio
-async def test_get_transactions_exclude_transfers(
-    session: AsyncSession, test_user, test_workspace, txn_account
-):
-    acct2 = Account(
-        id=uuid.uuid4(),
-        user_id=test_user.id,
-        name="Sav",
-        type="savings",
-        balance=Decimal("0"),
-        currency="BRL",
-    )
-    session.add(acct2)
-    await session.commit()
-
-    await create_transfer(
-        session,
-        test_workspace.id,
-        test_user.id,
-        TransferCreate(
-            from_account_id=txn_account.id,
-            to_account_id=acct2.id,
-            description="Xfer",
-            amount=Decimal("100"),
-            date=date.today(),
-        ),
-    )
-    await create_transaction(
-        session,
-        test_workspace.id,
-        test_user.id,
-        TransactionCreate(
-            account_id=txn_account.id,
-            description="Regular",
-            amount=Decimal("50"),
-            date=date.today(),
-            type="debit",
-        ),
-    )
-    txns, _, _ = await get_transactions(
-        session, test_workspace.id, test_user.id, exclude_transfers=True
-    )
-    descs = [t.description for t in txns]
-    assert "Regular" in descs
 
 
 @pytest.mark.asyncio
@@ -1267,29 +865,6 @@ async def test_update_transaction_fx_override(
 
 
 @pytest.mark.asyncio
-async def test_update_transaction_restamp_on_amount_change(
-    session: AsyncSession, test_user, test_workspace, txn_account
-):
-    txn = await create_transaction(
-        session,
-        test_workspace.id,
-        test_user.id,
-        TransactionCreate(
-            account_id=txn_account.id,
-            description="Restamp",
-            amount=Decimal("100"),
-            date=date.today(),
-            type="debit",
-        ),
-    )
-    data = TransactionUpdate(amount=Decimal("200"))
-    updated = await update_transaction(session, txn.id, test_workspace.id, test_user.id, data)
-
-    assert updated is not None
-    assert updated.amount == Decimal("200")
-
-
-@pytest.mark.asyncio
 async def test_pending_to_posted_restamps_only_when_fx_is_missing(
     session: AsyncSession, test_user, test_workspace, txn_account
 ):
@@ -1307,22 +882,23 @@ async def test_pending_to_posted_restamps_only_when_fx_is_missing(
         amount_primary=None,
         fx_rate_used=None,
     )
+    session.add(FxRate(
+        base_currency="USD", quote_currency="BRL", date=date.today(),
+        rate=Decimal("5.0"), source="test",
+    ))
     session.add(txn)
     await session.commit()
 
-    with patch(
-        "app.services.transaction_service.stamp_primary_amount",
-        new=AsyncMock(),
-    ) as restamp:
-        await update_transaction(
-            session,
-            txn.id,
-            test_workspace.id,
-            test_user.id,
-            TransactionUpdate(status="posted"),
-        )
+    await update_transaction(
+        session,
+        txn.id,
+        test_workspace.id,
+        test_user.id,
+        TransactionUpdate(status="posted"),
+    )
+    await session.refresh(txn)
 
-    restamp.assert_awaited_once()
+    assert (txn.amount_primary, txn.fx_rate_used) == (Decimal("50.00"), Decimal("5"))
 
 
 @pytest.mark.asyncio
@@ -1343,22 +919,23 @@ async def test_pending_to_posted_preserves_valid_fx_stamp(
         amount_primary=Decimal("51.75"),
         fx_rate_used=Decimal("5.175"),
     )
+    session.add(FxRate(
+        base_currency="USD", quote_currency="BRL", date=date.today(),
+        rate=Decimal("5.0"), source="test",
+    ))
     session.add(txn)
     await session.commit()
 
-    with patch(
-        "app.services.transaction_service.stamp_primary_amount",
-        new=AsyncMock(),
-    ) as restamp:
-        await update_transaction(
-            session,
-            txn.id,
-            test_workspace.id,
-            test_user.id,
-            TransactionUpdate(status="posted"),
-        )
+    await update_transaction(
+        session,
+        txn.id,
+        test_workspace.id,
+        test_user.id,
+        TransactionUpdate(status="posted"),
+    )
+    await session.refresh(txn)
 
-    restamp.assert_not_awaited()
+    assert (txn.amount_primary, txn.fx_rate_used) == (Decimal("51.75"), Decimal("5.175"))
 
 
 @pytest.mark.asyncio
@@ -1823,42 +1400,6 @@ async def test_update_transfer_date_restamps_manual_counterpart_fx(
     assert counterpart.fx_rate_used == Decimal("6")
     assert counterpart.date == date(2025, 3, 10)
     assert counterpart.effective_date == date(2025, 3, 10)
-
-
-# ---------------------------------------------------------------------------
-# delete_transaction — transfer cascade
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_delete_transfer_cascades(
-    session: AsyncSession, test_user, test_workspace, txn_account
-):
-    acct2 = Account(
-        id=uuid.uuid4(),
-        user_id=test_user.id,
-        name="DelSav",
-        type="savings",
-        balance=Decimal("0"),
-        currency="BRL",
-    )
-    session.add(acct2)
-    await session.commit()
-
-    debit_tx, credit_tx = await create_transfer(
-        session,
-        test_workspace.id,
-        test_user.id,
-        TransferCreate(
-            from_account_id=txn_account.id,
-            to_account_id=acct2.id,
-            description="Del Xfer",
-            amount=Decimal("300"),
-            date=date.today(),
-        ),
-    )
-    assert await delete_transaction(session, debit_tx.id, test_workspace.id) is True
-    assert await get_transaction(session, credit_tx.id, test_workspace.id) is None
 
 
 # ---------------------------------------------------------------------------

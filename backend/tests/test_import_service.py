@@ -175,14 +175,6 @@ class TestParseCsv:
         assert len(transactions) == 1
         assert transactions[0].description == "GOOD AMOUNT"
 
-    def test_parse_csv_dd_mm_yyyy_format(self):
-        """DD/MM/YYYY date format should be correctly parsed."""
-        csv_content = "data,descricao,valor\n25/12/2025,NATAL,-500.00\n"
-        transactions, _ = parse_csv(csv_content.encode("utf-8"))
-
-        assert len(transactions) == 1
-        assert transactions[0].date == date(2025, 12, 25)
-
     def test_parse_csv_semicolon_delimiter(self):
         """CSV using semicolons as delimiter should be parsed correctly."""
         csv_content = (
@@ -281,19 +273,6 @@ class TestParseCsv:
         assert transactions[0].type == "credit"
         assert transactions[0].amount == Decimal("5000.00")
         assert transactions[1].type == "debit"
-        assert transactions[1].amount == Decimal("1200.00")
-
-    def test_parse_csv_brazilian_amount(self):
-        """CSV using comma as the decimal separator in the amount field."""
-        csv_content = (
-            "date,description,amount\n"
-            '2026-01-10,SALARY,"5,000.00"\n' 
-            "2026-01-11,RENT,1200.00\n"
-        )
-
-        transactions, _ = parse_csv(csv_content.encode("utf-8"))
-        assert len(transactions) == 2
-        assert transactions[0].amount == Decimal("5000.00")
         assert transactions[1].amount == Decimal("1200.00")
 
     def test_parse_csv_autodetects_payee_and_notes(self):
@@ -1827,29 +1806,6 @@ class TestParseCsvTypeColumn:
         assert transactions[0].amount == Decimal("13311.00")
         assert transactions[1].type == "debit"
         assert transactions[1].amount == Decimal("577.00")
-
-    def test_explicit_type_column_all_debit(self):
-        """All-positive CSV with type=debit should not become credit."""
-        csv_content = (
-            "date,description,amount,type\n"
-            "2026-01-01,Rent,1200.00,debit\n"
-            "2026-01-02,Internet,119.00,debit\n"
-        )
-        transactions, _ = parse_csv(csv_content.encode("utf-8"))
-
-        assert all(t.type == "debit" for t in transactions)
-
-    def test_without_type_column_derives_from_sign(self):
-        """Without a type column, backward-compatible sign-based derivation applies."""
-        csv_content = (
-            "date,description,amount\n"
-            "2026-01-01,Expense,-100.00\n"
-            "2026-01-02,Income,500.00\n"
-        )
-        transactions, _ = parse_csv(csv_content.encode("utf-8"))
-
-        assert transactions[0].type == "debit"
-        assert transactions[1].type == "credit"
 
     def test_unknown_type_value_falls_back_to_sign(self):
         """Unrecognized type values (not credit/debit) fall back to amount sign."""

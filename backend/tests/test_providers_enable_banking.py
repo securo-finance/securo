@@ -96,12 +96,6 @@ def test_jwt_token_has_expected_claims_and_kid(eb_keys):
     assert claims["exp"] - claims["iat"] <= 3600
 
 
-def test_jwt_token_cached_across_calls(eb_keys):
-    a = EnableBankingProvider._jwt_token()
-    b = EnableBankingProvider._jwt_token()
-    assert a == b
-
-
 # ----- pure helpers -----
 
 

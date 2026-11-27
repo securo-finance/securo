@@ -139,22 +139,12 @@ async def test_get_groups_loads_categories(session: AsyncSession, test_user, tes
 
     groups = await get_groups(session, test_workspace.id)
     food_group = [g for g in groups if g.name == "Alimentação"][0]
-    assert len(food_group.categories) >= 1
+    assert [c.name for c in food_group.categories] == ["TestCat"]
 
 
 # ---------------------------------------------------------------------------
 # get_group / create_group / update_group
 # ---------------------------------------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_create_custom_group(session: AsyncSession, test_user, test_workspace):
-    data = CategoryGroupCreate(name="Pets", icon="paw-print", color="#FF5733", position=10)
-    group = await create_group(session, test_workspace.id, test_user.id, data)
-
-    assert group.name == "Pets"
-    assert group.icon == "paw-print"
-    assert group.is_system is False
 
 
 @pytest.mark.asyncio
@@ -194,17 +184,6 @@ async def test_update_group(session: AsyncSession, test_user, test_workspace):
     assert updated.icon == "x"  # unchanged
 
 
-@pytest.mark.asyncio
-async def test_update_group_not_found(session: AsyncSession, test_user, test_workspace):
-    result = await update_group(
-        session,
-        uuid.uuid4(),
-        test_workspace.id,
-        CategoryGroupUpdate(name="Nope"),
-    )
-    assert result is None
-
-
 # ---------------------------------------------------------------------------
 # delete_group
 # ---------------------------------------------------------------------------
@@ -219,18 +198,6 @@ async def test_delete_custom_group(session: AsyncSession, test_user, test_worksp
     )
     assert await delete_group(session, group.id, test_workspace.id) is True
     assert await get_group(session, group.id, test_workspace.id) is None
-
-
-@pytest.mark.asyncio
-async def test_delete_system_group(session: AsyncSession, test_user, test_workspace):
-    groups = await create_default_groups(session, test_user.id)
-    await session.commit()
-
-    # Try deleting a system group
-    system_group = groups["housing"]
-    assert await delete_group(session, system_group.id, test_workspace.id) is True
-    assert await get_group(session, system_group.id, test_workspace.id) is None
-
 
 
 @pytest.mark.asyncio
@@ -261,6 +228,3 @@ async def test_delete_group_unlinks_categories(session: AsyncSession, test_user,
     assert orphan.group_id is None
 
 
-@pytest.mark.asyncio
-async def test_delete_group_not_found(session: AsyncSession, test_user, test_workspace):
-    assert await delete_group(session, uuid.uuid4(), test_workspace.id) is False

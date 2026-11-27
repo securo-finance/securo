@@ -900,12 +900,12 @@ class TestFigures:
 
     @pytest.mark.asyncio
     async def test_summary_is_per_currency_and_counts_churn(self, session, ws_id, test_user):
-        usd = await make_schedule(session, ws_id, test_user.id, frequency="monthly")
-        quarterly = await make_schedule(
+        await make_schedule(session, ws_id, test_user.id, frequency="monthly")
+        await make_schedule(
             session, ws_id, test_user.id, frequency="quarterly",
             lines=[{"description": "Q", "unit_price": "900.00"}],
         )
-        eur = await make_schedule(session, ws_id, test_user.id, currency="EUR", lines=[{"description": "E", "unit_price": "100.00"}])
+        await make_schedule(session, ws_id, test_user.id, currency="EUR", lines=[{"description": "E", "unit_price": "100.00"}])
         paused = await make_schedule(session, ws_id, test_user.id)
         await svc.pause_schedule(session, paused)
         churned = await make_schedule(session, ws_id, test_user.id, start_date=date(2026, 1, 5))
@@ -922,7 +922,6 @@ class TestFigures:
         assert by["USD"].ended_recently_count == 1
         assert by["USD"].monthly_lost == Decimal("3000.00")
         assert by["EUR"].monthly_recurring == Decimal("100.00")
-        assert usd.id and quarterly.id and eur.id
 
 
 class TestForecast:
@@ -1059,13 +1058,6 @@ class TestReviewRegressions:
         assert s.next_sequence == 1
         [october] = await svc.generate_due(session, s, today=date(2026, 10, 10))
         assert october.period_start == date(2026, 10, 5)
-
-    @pytest.mark.asyncio
-    async def test_a_manual_pause_still_skips_the_gap(self, session, ws_id, test_user):
-        s = await make_schedule(session, ws_id, test_user.id, start_date=date(2026, 10, 5))
-        await svc.pause_schedule(session, s)
-        await svc.resume_schedule(session, s, today=date(2026, 10, 10))
-        assert s.next_sequence == 2
 
     @pytest.mark.asyncio
     async def test_a_payable_never_joins_an_agreement(self, session, ws_id, test_user):

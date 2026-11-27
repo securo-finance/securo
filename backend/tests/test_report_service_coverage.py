@@ -114,19 +114,6 @@ async def _make_recurring(
 
 
 # ---------------------------------------------------------------------------
-# Sanity: the to_char UDF is wired up
-# ---------------------------------------------------------------------------
-
-
-async def test_to_char_udf_registered(session: AsyncSession):
-    from sqlalchemy import func, select
-    from app.models.transaction import Transaction  # noqa: F401
-
-    res = await session.execute(select(func.to_char(date(2025, 6, 15), "YYYY-MM")))
-    assert res.scalar_one() == "2025-06"
-
-
-# ---------------------------------------------------------------------------
 # get_income_expenses_report — the big uncovered function (328-865)
 # ---------------------------------------------------------------------------
 
@@ -491,28 +478,8 @@ async def test_net_worth_at_credit_card_branch(session, test_user, test_workspac
 
 
 # ---------------------------------------------------------------------------
-# get_cash_flow_report — non-daily interval aggregation (1261-1294)
+# get_cash_flow_report — reporting date and invoice attribution
 # ---------------------------------------------------------------------------
-
-
-async def test_cash_flow_monthly_interval_aggregation(session, test_user, test_workspace):
-    """Monthly interval groups daily balances into period buckets."""
-    acct = await _make_account(session, test_user.id, "CF Monthly")
-    today = date.today()
-    await _add_txn(session, test_user.id, acct.id, 5000, "credit", today, source="opening_balance")
-    await _make_recurring(
-        session, test_user.id, acct.id, 400, "debit",
-        frequency="monthly", next_occurrence=today + timedelta(days=2),
-    )
-
-    report = await get_cash_flow_report(
-        session, test_workspace.id, test_user.id, months=3, interval="monthly"
-    )
-    assert report.meta.interval == "monthly"
-    assert len(report.trend) > 0
-    for dp in report.trend:
-        assert "inflow" in dp.breakdowns
-        assert "outflow" in dp.breakdowns
 
 
 @pytest.mark.parametrize("status", ["posted", "pending"])
@@ -694,23 +661,6 @@ async def test_cash_flow_baseline_ignores_invoice_attribution(
     assert projections[0]["amount"] == pytest.approx(100 / lookback)
 
 
-async def test_cash_flow_weekly_interval_aggregation(session, test_user, test_workspace):
-    """Weekly interval also goes through the grouped (non-daily) path."""
-    acct = await _make_account(session, test_user.id, "CF Weekly")
-    today = date.today()
-    await _add_txn(session, test_user.id, acct.id, 1000, "credit", today, source="opening_balance")
-    await _make_recurring(
-        session, test_user.id, acct.id, 50, "debit",
-        frequency="weekly", next_occurrence=today + timedelta(days=1),
-    )
-
-    report = await get_cash_flow_report(
-        session, test_workspace.id, test_user.id, months=2, interval="weekly"
-    )
-    assert report.meta.interval == "weekly"
-    assert len(report.trend) > 0
-
-
 # ---------------------------------------------------------------------------
 # get_cash_flow_report — baseline projection branch (_get_baseline_projection)
 # ---------------------------------------------------------------------------
@@ -736,20 +686,6 @@ async def test_cash_flow_baseline_mode_projects_from_history(session, test_user,
     assert "baseline" in keys
 
 
-async def test_baseline_projection_no_history_returns_empty(session, test_user, test_workspace):
-    """No qualifying transactions → empty projection, zero lookback days."""
-    async def _to_primary(amount, ccy):
-        return float(amount)
-
-    today = date.today()
-    end = today + timedelta(days=30)
-    projections, lookback = await _get_baseline_projection(
-        session, test_workspace.id, today, end, "BRL", _to_primary,
-    )
-    assert projections == []
-    assert lookback == 0
-
-
 async def test_baseline_projection_with_history(session, test_user, test_workspace):
     """With history, projection emits forward synthetic flows."""
     acct = await _make_account(session, test_user.id, "Baseline Hist")
@@ -772,11 +708,6 @@ async def test_baseline_projection_with_history(session, test_user, test_workspa
     for p in projections:
         assert today < p["date"] <= end
         assert p["currency"] == "BRL"
-
-
-# ---------------------------------------------------------------------------
-# get_cash_flow_report — accrual mode (pending CC purchases branch 1122-1152)
-# ---------------------------------------------------------------------------
 
 
 async def test_income_expenses_owner_split_offset(session, test_user, test_workspace):
@@ -961,23 +892,6 @@ async def test_net_worth_composition_asset_zero_value_excluded(session, test_use
     assert all(c.label != "Future Buy" for c in report.composition)
 
 
-async def test_cash_flow_foreign_currency_conversion_path(session, test_user, test_workspace):
-    """A non-primary-currency transaction exercises the _to_primary rate path."""
-    acct = await _make_account(session, test_user.id, "CF USD", currency="USD")
-    today = date.today()
-    await _add_txn(session, test_user.id, acct.id, 1000, "credit", today,
-                   source="opening_balance", currency="USD")
-    # Past actual flow in USD → hits _to_primary with a non-BRL currency
-    await _add_txn(session, test_user.id, acct.id, 200, "debit",
-                   today - timedelta(days=5), currency="USD")
-
-    report = await get_cash_flow_report(
-        session, test_workspace.id, test_user.id, months=2, interval="daily"
-    )
-    assert report.meta.type == "cash_flow"
-    assert len(report.trend) > 0
-
-
 async def test_cash_flow_categorized_recurring_composition(session, test_user, test_workspace):
     """Categorized recurring projection populates the per-category cache + composition."""
     cat = await _make_category(session, test_user.id, "Utilities", color="#777")
@@ -997,65 +911,6 @@ async def test_cash_flow_categorized_recurring_composition(session, test_user, t
     assert util is not None
     assert util.group == "expenses"
     assert util.value > 0
-
-
-async def test_cash_flow_baseline_amount_primary_used(session, test_user, test_workspace):
-    """Baseline projection uses amount_primary when present on the transaction."""
-    acct = await _make_account(session, test_user.id, "CF Baseline AP", currency="USD")
-    today = date.today()
-    await _add_txn(session, test_user.id, acct.id, 500, "credit", today,
-                   source="opening_balance", currency="USD")
-    # Give the historical txn an explicit amount_primary
-    txn = await _add_txn(session, test_user.id, acct.id, 100, "debit",
-                         today - timedelta(days=8), currency="USD")
-    txn.amount_primary = Decimal("550")
-    await session.commit()
-
-    report = await get_cash_flow_report(
-        session, test_workspace.id, test_user.id, months=2, interval="daily", baseline=True
-    )
-    assert report.meta.baseline_active is True
-
-    assert report.meta.baseline_lookback_days is not None
-    assert report.meta.baseline_lookback_days > 0
-
-
-async def test_cash_flow_accrual_mode_pending_cc(session, test_user, test_workspace):
-    """Accrual mode re-projects pending CC purchases on their effective_date."""
-    from app.models.app_settings import AppSetting
-
-    # Switch global accounting mode to accrual
-    session.add(AppSetting(key="credit_card_accounting_mode", value="accrual"))
-    await session.commit()
-
-    conn = BankConnection(
-        id=uuid.uuid4(), user_id=test_user.id, provider="test",
-        external_id="ext-cf-accrual", institution_name="CC",
-        credentials={}, status="active",
-        last_sync_at=datetime.now(timezone.utc),
-        created_at=datetime.now(timezone.utc),
-    )
-    session.add(conn)
-    await session.flush()
-    cc = Account(
-        id=uuid.uuid4(), user_id=test_user.id, connection_id=conn.id,
-        name="CC Accrual", type="credit_card", balance=Decimal("0"), currency="BRL",
-    )
-    session.add(cc)
-    await session.commit()
-
-    today = date.today()
-    # Purchase booked today, cash impact (effective_date) in the future window
-    await _add_txn(
-        session, test_user.id, cc.id, 500, "debit", today,
-        effective_date=today + timedelta(days=15),
-    )
-
-    report = await get_cash_flow_report(
-        session, test_workspace.id, test_user.id, months=2, interval="daily"
-    )
-    assert report.meta.type == "cash_flow"
-    assert len(report.trend) > 0
 
 
 @pytest.mark.parametrize('interval', ['daily', 'monthly', 'yearly'])

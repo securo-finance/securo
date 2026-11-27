@@ -42,22 +42,15 @@ def _future_month_str(months_ahead: int) -> str:
 
 @pytest.mark.asyncio
 async def test_spending_by_category(client, auth_headers, test_transactions):
-    """Spending by category returns numeric totals (not strings) for chart rendering."""
+    """Spending by category sums this month's debits per category, uncategorized included."""
     response = await client.get("/api/dashboard/spending-by-category", headers=auth_headers)
     assert response.status_code == 200
-    data = response.json()
-    assert len(data) > 0
-
-    for item in data:
-        assert "category_name" in item
-        assert "total" in item
-        assert "percentage" in item
-        # total MUST be a number (float/int), not a string — Recharts requires this
-        assert isinstance(item["total"], (int, float)), (
-            f"total should be numeric, got {type(item['total']).__name__}: {item['total']}"
-        )
-        assert isinstance(item["percentage"], (int, float))
-        assert item["total"] > 0
+    totals = {item["category_name"]: item["total"] for item in response.json()}
+    assert totals == {
+        "Alimentação": pytest.approx(45.0),
+        "Transporte": pytest.approx(25.5),
+        "Sem categoria": pytest.approx(39.9),
+    }
 
 
 @pytest.mark.asyncio
@@ -82,21 +75,6 @@ async def test_spending_by_category_with_month(client, auth_headers, test_transa
     assert response.status_code == 200
     data = response.json()
     assert len(data) == 0
-
-
-@pytest.mark.asyncio
-async def test_summary_numeric_fields(client, auth_headers, test_transactions):
-    """Summary endpoint returns numeric values, not strings."""
-    response = await client.get("/api/dashboard/summary", headers=auth_headers)
-    assert response.status_code == 200
-    data = response.json()
-
-    assert isinstance(data["monthly_income"], (int, float))
-    assert isinstance(data["monthly_expenses"], (int, float))
-    for currency, balance in data["total_balance"].items():
-        assert isinstance(balance, (int, float)), (
-            f"total_balance[{currency}] should be numeric, got {type(balance).__name__}"
-        )
 
 
 @pytest.mark.asyncio
@@ -309,9 +287,7 @@ async def test_accounts_count_includes_manual_accounts(client, auth_headers):
     resp = await client.get("/api/dashboard/summary", headers=auth_headers)
     assert resp.status_code == 200
     data = resp.json()
-    assert data["accounts_count"] >= 2, (
-        f"Expected ≥2 accounts, got {data['accounts_count']}"
-    )
+    assert data["accounts_count"] == 2
 
 
 @pytest.mark.asyncio

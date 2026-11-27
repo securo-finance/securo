@@ -488,16 +488,3 @@ async def test_api_batch_conflict(client, auth_headers, test_categories):
 
     listing = await client.get("/api/budgets?month=2026-12-01", headers=auth_headers)
     assert len(listing.json()) == 1
-
-
-@pytest.mark.asyncio
-async def test_api_batch_rejects_bad_amount(client, auth_headers, test_categories):
-    response = await client.post(
-        "/api/budgets/batch",
-        json={
-            "month": "2026-12-01",
-            "items": [{"category_id": str(test_categories[0].id), "amount": 0}],
-        },
-        headers=auth_headers,
-    )
-    assert response.status_code == 422

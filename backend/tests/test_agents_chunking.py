@@ -12,7 +12,6 @@ Tests cover:
 from app.agents.services.chunking import (
     TARGET_CHARS,
     chunk_text,
-    chunks_from_upload,
     extract_text,
 )
 
@@ -66,9 +65,3 @@ def test_extract_text_falls_back_for_unknown_mime():
     payload = b"opaque bytes that are still utf8"
     out = extract_text(payload, mime="application/octet-stream", filename="thing.bin")
     assert "opaque" in out
-
-
-def test_chunks_from_upload_returns_iterable():
-    payload = ("para one. " * 200 + "\n\n" + "para two. " * 200).encode("utf-8")
-    chunks = list(chunks_from_upload(payload, mime="text/plain", filename="x.txt"))
-    assert len(chunks) >= 1

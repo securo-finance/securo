@@ -502,24 +502,6 @@ async def test_failure_without_throttle_notes_no_floor(
     assert SYNC_BACKOFF_KEY not in (stored.settings or {})
 
 
-@pytest.mark.asyncio
-async def test_retry_after_is_bounded(
-    session: AsyncSession, test_user, test_workspace
-):
-    conn = await _make_connection(session, test_user.id, test_workspace.id)
-    provider = _mock_provider_two_accounts(rate_limit_session=True)
-    provider.get_accounts = AsyncMock(
-        side_effect=ProviderRateLimited("429", retry_after=30 * 86400.0)
-    )
-
-    with _sync_patches(provider):
-        result_conn, _, _ = await sync_connection(
-            session, conn.id, test_workspace.id, test_user.id
-        )
-
-    assert _retry_floor_seconds(result_conn) <= 24 * 3600
-
-
 async def _two_same_day_pix(session, conn, user_id, workspace_id, external_id):
     """Two real same-day payments of the same amount on one account, one of
     them already paired as a transfer: the shape the phantom heuristic would

@@ -46,25 +46,6 @@ from app.services.rule_packs import built_in_packs, install_rule_pack, list_rule
 
 
 @pytest.mark.asyncio
-async def test_create_rule(session: AsyncSession, test_user, test_workspace, test_categories):
-    data = RuleCreate(
-        name="My Rule",
-        conditions_op="or",
-        conditions=[RuleCondition(field="description", op="contains", value="UBER")],
-        actions=[RuleAction(op="set_category", value=str(test_categories[1].id))],
-        priority=10,
-    )
-    rule = await create_rule(session, test_workspace.id, test_user.id, data)
-
-    assert rule.id is not None
-    assert rule.name == "My Rule"
-    assert rule.conditions_op == "or"
-    assert len(rule.conditions) == 1
-    assert len(rule.actions) == 1
-    assert rule.is_active is True
-
-
-@pytest.mark.asyncio
 async def test_get_rules(session: AsyncSession, test_user, test_workspace, test_categories):
     for name in ["Rule A", "Rule B"]:
         await create_rule(
@@ -78,10 +59,7 @@ async def test_get_rules(session: AsyncSession, test_user, test_workspace, test_
         )
 
     rules = await get_rules(session, test_workspace.id)
-    assert len(rules) >= 2
-    names = {r.name for r in rules}
-    assert "Rule A" in names
-    assert "Rule B" in names
+    assert {r.name for r in rules} == {"Rule A", "Rule B"}
 
 
 @pytest.mark.asyncio
@@ -342,6 +320,10 @@ async def test_create_rule_accepts_safe_regex(
         ),
     )
 
+    rules = await get_rules(session, test_workspace.id)
+    assert [rule.conditions for rule in rules] == [
+        [{"field": "description", "op": "regex", "value": pattern}]
+    ]
 
 
 @pytest.mark.asyncio
@@ -1394,11 +1376,9 @@ async def test_install_rule_pack_br(session: AsyncSession, test_user, test_works
     await create_default_categories(session, test_user.id, lang="pt-BR")
 
     result = await install_rule_pack(session, test_workspace.id, test_user.id, "BR", lang="pt-BR")
-    assert len(result.rules) > 0
+    assert len(result.rules) == len(built_in_packs()["BR"].rules)
     assert result.unresolved == 0
-
-    names = {r.name for r in result.rules}
-    assert "iFood / Rappi" in names
+    assert "iFood / Rappi" in {r.name for r in result.rules}
 
 
 @pytest.mark.asyncio

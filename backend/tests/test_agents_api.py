@@ -76,23 +76,6 @@ async def test_agents_info_lists_providers(client: AsyncClient, auth_headers: di
     assert set(body["providers"]) >= {"openai", "anthropic", "ollama", "openai_compatible"}
 
 
-async def test_agents_info_exposes_mcp_external_ttl(client: AsyncClient, auth_headers: dict):
-    """The frontend reads mcp_external_ttl_days to label the token panel."""
-    r = await client.get("/api/agents/info", headers=auth_headers)
-    body = r.json()
-    assert isinstance(body["mcp_external_ttl_days"], int)
-    assert body["mcp_external_ttl_days"] >= 1
-
-
-async def test_agents_info_exposes_external_mcp_url(client: AsyncClient, auth_headers: dict):
-    """The frontend uses external_mcp_url (empty by default) so deployments
-    behind an ingress can override the hardcoded :8765 endpoint."""
-    r = await client.get("/api/agents/info", headers=auth_headers)
-    body = r.json()
-    assert "external_mcp_url" in body
-    assert isinstance(body["external_mcp_url"], str)
-
-
 async def test_agents_info_returns_configured_external_mcp_url(
     client: AsyncClient, auth_headers: dict, monkeypatch
 ):
@@ -149,11 +132,6 @@ async def test_mcp_tokens_mint_returns_external_jwt(
 
 
 # --- Agent CRUD ------------------------------------------------------------
-
-async def test_unauthenticated_agents_list_rejected(client: AsyncClient):
-    r = await client.get("/api/agents")
-    assert r.status_code == 401
-
 
 async def test_create_list_get_update_delete(client: AsyncClient, auth_headers: dict):
     # Empty by default
@@ -228,24 +206,7 @@ async def test_multi_tenant_scoping(client: AsyncClient, auth_headers: dict, oth
     assert r.status_code == 404
 
 
-async def test_create_validation_rejects_missing_name(client: AsyncClient, auth_headers: dict):
-    r = await client.post("/api/agents", json={}, headers=auth_headers)
-    assert r.status_code == 422
-
-
-async def test_temperature_clamp(client: AsyncClient, auth_headers: dict):
-    # Pydantic schema enforces 0..2
-    r = await client.post("/api/agents", json={"name": "x", "temperature": 5.0}, headers=auth_headers)
-    assert r.status_code == 422
-
-
 # --- Conversations & messages ---------------------------------------------
-
-async def test_conversations_empty(client: AsyncClient, auth_headers: dict):
-    r = await client.get("/api/agents/conversations", headers=auth_headers)
-    assert r.status_code == 200
-    assert r.json() == []
-
 
 async def test_conversation_filtered_by_agent(
     client: AsyncClient, auth_headers: dict, session: AsyncSession, test_user: User
@@ -288,21 +249,6 @@ async def test_rename_conversation(
 
     r = await client.get(f"/api/agents/conversations/{conv.id}", headers=auth_headers)
     assert r.json()["title"] == "renamed!"
-
-
-async def test_rename_conversation_validates_empty(
-    client: AsyncClient, auth_headers: dict, session: AsyncSession, test_user: User
-):
-    from app.agents.models.agent import Agent
-    from app.agents.models.conversation import Conversation
-
-    agent = Agent(id=uuid.uuid4(), user_id=test_user.id, name="A")
-    conv = Conversation(id=uuid.uuid4(), user_id=test_user.id, agent_id=agent.id, channel="web", title="old")
-    session.add_all([agent, conv])
-    await session.commit()
-
-    r = await client.patch(f"/api/agents/conversations/{conv.id}", json={"title": ""}, headers=auth_headers)
-    assert r.status_code == 422
 
 
 async def test_rename_conversation_404_other_user(

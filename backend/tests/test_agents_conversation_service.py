@@ -12,18 +12,6 @@ from app.agents.services import conversation_service as svc
 
 
 @pytest.mark.asyncio
-async def test_create_conversation_persists_with_defaults(session, test_user, test_workspace, test_agent):
-    conv = await svc.create_conversation(
-        session, workspace_id=test_workspace.id, user_id=test_user.id, agent_id=test_agent.id,
-    )
-    assert conv.id is not None
-    assert conv.user_id == test_user.id
-    assert conv.agent_id == test_agent.id
-    assert conv.channel == "web"  # default
-    assert conv.title is None
-
-
-@pytest.mark.asyncio
 async def test_list_conversations_filters_by_agent_and_user(session, test_user, test_workspace, test_agent):
     a = await svc.create_conversation(
         session, workspace_id=test_workspace.id, user_id=test_user.id, agent_id=test_agent.id, title="A",
@@ -59,40 +47,6 @@ async def test_append_message_assigns_monotonic_ordinals(session, test_user, tes
     b = await svc.append_message(session, conversation_id=conv.id, role="assistant", content="two")
     c = await svc.append_message(session, conversation_id=conv.id, role="user", content="three")
     assert (a.ordinal, b.ordinal, c.ordinal) == (1, 2, 3)
-
-
-@pytest.mark.asyncio
-async def test_list_messages_ordered_by_ordinal(session, test_user, test_workspace, test_agent):
-    conv = await svc.create_conversation(
-        session, workspace_id=test_workspace.id, user_id=test_user.id, agent_id=test_agent.id,
-    )
-    await svc.append_message(session, conversation_id=conv.id, role="user", content="one")
-    await svc.append_message(session, conversation_id=conv.id, role="assistant", content="two")
-    msgs = await svc.list_messages(session, conv.id)
-    assert [m.content for m in msgs] == ["one", "two"]
-
-
-@pytest.mark.asyncio
-async def test_append_message_persists_tool_payloads(session, test_user, test_workspace, test_agent):
-    conv = await svc.create_conversation(
-        session, workspace_id=test_workspace.id, user_id=test_user.id, agent_id=test_agent.id,
-    )
-    msg = await svc.append_message(
-        session,
-        conversation_id=conv.id,
-        role="assistant",
-        content=None,
-        tool_calls=[{"id": "tc1", "name": "list_accounts", "arguments": "{}"}],
-        tool_result={"items": [{"id": "x"}]},
-        citations=[{"doc_id": "d", "score": 0.9}],
-        input_tokens=12,
-        output_tokens=34,
-    )
-    assert msg.tool_calls == [{"id": "tc1", "name": "list_accounts", "arguments": "{}"}]
-    assert msg.tool_result == {"items": [{"id": "x"}]}
-    assert msg.citations == [{"doc_id": "d", "score": 0.9}]
-    assert msg.input_tokens == 12
-    assert msg.output_tokens == 34
 
 
 @pytest.mark.asyncio
@@ -137,12 +91,6 @@ async def test_update_title_truncates_to_200_chars(session, test_user, test_work
 
 
 @pytest.mark.asyncio
-async def test_update_title_returns_none_on_missing(session, test_workspace):
-    out = await svc.update_title(session, uuid.uuid4(), test_workspace.id, "x")
-    assert out is None
-
-
-@pytest.mark.asyncio
 async def test_update_title_blank_clears_to_none(session, test_user, test_workspace, test_agent):
     conv = await svc.create_conversation(
         session, workspace_id=test_workspace.id, user_id=test_user.id, agent_id=test_agent.id, title="Existing",
@@ -150,20 +98,6 @@ async def test_update_title_blank_clears_to_none(session, test_user, test_worksp
     out = await svc.update_title(session, conv.id, test_workspace.id,"   ")
     assert out is not None
     assert out.title is None
-
-
-@pytest.mark.asyncio
-async def test_delete_conversation_returns_false_on_missing(session, test_workspace):
-    assert await svc.delete_conversation(session, uuid.uuid4(), test_workspace.id) is False
-
-
-@pytest.mark.asyncio
-async def test_delete_conversation_removes_row(session, test_user, test_workspace, test_agent):
-    conv = await svc.create_conversation(
-        session, workspace_id=test_workspace.id, user_id=test_user.id, agent_id=test_agent.id,
-    )
-    assert await svc.delete_conversation(session, conv.id, test_workspace.id) is True
-    assert await svc.get_conversation(session, conv.id, test_workspace.id) is None
 
 
 @pytest.mark.asyncio

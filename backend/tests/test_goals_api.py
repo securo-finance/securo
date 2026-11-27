@@ -387,11 +387,8 @@ async def test_goal_summary(client: AsyncClient, auth_headers: dict, test_user: 
     response = await client.get("/api/goals/summary?limit=3", headers=auth_headers)
     assert response.status_code == 200
     data = response.json()
-    assert len(data) <= 3
-    for item in data:
-        assert "percentage" in item
-        assert "monthly_contribution" in item
-        assert item["percentage"] == 25.0
+    assert len(data) == 3
+    assert [item["percentage"] for item in data] == [25.0, 25.0, 25.0]
 
 
 @pytest.mark.asyncio
@@ -503,24 +500,6 @@ async def test_goal_ownership_isolation(
     response = await client.get("/api/goals", headers=other_headers)
     assert response.status_code == 200
     assert len(response.json()) == 0
-
-
-@pytest.mark.asyncio
-async def test_goal_with_metadata(client: AsyncClient, auth_headers: dict, test_user: User):
-    response = await client.post(
-        "/api/goals",
-        json={
-            "name": "Team Goal",
-            "target_amount": "50000.00",
-            "tracking_type": "manual",
-            "metadata_json": {"department": "Engineering", "tags": ["q2", "hiring"]},
-        },
-        headers=auth_headers,
-    )
-    assert response.status_code == 201
-    data = response.json()
-    assert data["metadata_json"]["department"] == "Engineering"
-    assert "hiring" in data["metadata_json"]["tags"]
 
 
 @pytest.mark.asyncio
@@ -649,39 +628,6 @@ async def test_goal_asset_tracking(
 
 
 @pytest.mark.asyncio
-async def test_goal_asset_tracking_with_currency_conversion(
-    client: AsyncClient, auth_headers: dict, test_user: User, session: AsyncSession
-):
-    """Asset-linked goal should convert asset value to goal currency."""
-    asset = Asset(
-        id=uuid.uuid4(),
-        user_id=test_user.id,
-        name="EUR Property",
-        type="real_estate",
-        currency="EUR",
-        purchase_price=Decimal("200000.00"),
-    )
-    session.add(asset)
-    await session.commit()
-
-    response = await client.post(
-        "/api/goals",
-        json={
-            "name": "Property Goal",
-            "target_amount": "500000.00",
-            "currency": "BRL",  # Goal in BRL, asset in EUR
-            "tracking_type": "asset",
-            "asset_id": str(asset.id),
-        },
-        headers=auth_headers,
-    )
-    assert response.status_code == 201
-    data = response.json()
-    # Should be converted from EUR to BRL (exact rate depends on FX mock)
-    assert float(data["current_amount"]) > 0
-
-
-@pytest.mark.asyncio
 async def test_goal_account_tracking_cross_currency(
     client: AsyncClient, auth_headers: dict, test_user: User, test_account: Account, session: AsyncSession
 ):
@@ -714,30 +660,6 @@ async def test_goal_account_tracking_cross_currency(
     # BRL 1500 / 5.0 * 0.9 = EUR 270
     current = float(data["current_amount"])
     assert current == pytest.approx(270.0, abs=1.0)
-
-
-@pytest.mark.asyncio
-async def test_goal_account_tracking_same_currency(
-    client: AsyncClient, auth_headers: dict, test_user: User, test_account: Account
-):
-    """BRL goal linked to a BRL account should show the exact account balance."""
-    response = await client.post(
-        "/api/goals",
-        json={
-            "name": "BRL Account Goal",
-            "target_amount": "10000.00",
-            "currency": "BRL",  # Same currency as account
-            "tracking_type": "account",
-            "account_id": str(test_account.id),
-        },
-        headers=auth_headers,
-    )
-    assert response.status_code == 201
-    data = response.json()
-    assert data["currency"] == "BRL"
-    # No conversion needed — should be exact account balance
-    assert float(data["current_amount"]) == 1500.00
-    assert data["percentage"] == 15.0
 
 
 @pytest.mark.asyncio

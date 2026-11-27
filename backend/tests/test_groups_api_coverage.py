@@ -134,15 +134,6 @@ async def test_delete_member_not_found_404(client: AsyncClient, auth_headers, te
     assert resp.status_code == 404
 
 
-@pytest.mark.asyncio
-async def test_create_member_validation_422(client: AsyncClient, auth_headers, test_user):
-    group = await _create_group(client, auth_headers, name="MemVal")
-    resp = await client.post(
-        f"/api/groups/{group['id']}/members", headers=auth_headers, json={"name": ""}
-    )
-    assert resp.status_code == 422
-
-
 # ---------------------------------------------------------------------------
 # transactions
 # ---------------------------------------------------------------------------

@@ -56,16 +56,6 @@ async def _call_tool(user_id, monkeypatch, name, arguments=None, *, external=Fal
 
 
 @pytest.mark.asyncio
-async def test_health_endpoint_lists_registered_tool_count(test_user):
-    async with _client() as cli:
-        r = await cli.get("/health")
-    assert r.status_code == 200
-    body = r.json()
-    assert body["status"] == "ok"
-    assert body["tools"] > 0
-
-
-@pytest.mark.asyncio
 async def test_mcp_rejects_unauthenticated():
     async with _client() as cli:
         r = await cli.post("/mcp", json={"jsonrpc": "2.0", "id": 1, "method": "tools/list"})
@@ -158,26 +148,6 @@ async def test_mcp_tools_list(test_user):
 
 
 @pytest.mark.asyncio
-async def test_mcp_tools_list_advertises_advanced_rule_management(test_user):
-    async with _client() as cli:
-        response = await cli.post(
-            "/mcp",
-            json={"jsonrpc": "2.0", "id": 1, "method": "tools/list"},
-            headers=_auth_headers(test_user.id),
-        )
-
-    assert response.status_code == 200
-    tools = response.json()["result"]["tools"]
-    assert {
-        "list_rules",
-        "preview_rule",
-        "propose_create_rule",
-        "propose_update_rule",
-        "propose_delete_rule",
-    } <= {tool["name"] for tool in tools}
-
-
-@pytest.mark.asyncio
 async def test_mcp_tools_call_missing_name(test_user):
     async with _client() as cli:
         r = await cli.post(
@@ -249,11 +219,9 @@ async def test_mcp_tools_call_runs_real_tool(test_user, monkeypatch):
     body = r.json()
     result = body["result"]
     assert result["isError"] is False
-    # `structuredContent` mirrors the tool's dict return value.
-    assert "items" in result["structuredContent"]
-    # `content[0].text` is JSON-encoded for clients that prefer text.
-    parsed = json.loads(result["content"][0]["text"])
-    assert "items" in parsed
+    # `content[0].text` is the same payload JSON-encoded, for clients that prefer text.
+    assert result["structuredContent"]["items"] == []
+    assert json.loads(result["content"][0]["text"]) == result["structuredContent"]
 
 
 @pytest.mark.asyncio

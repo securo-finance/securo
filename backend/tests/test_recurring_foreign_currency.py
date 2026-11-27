@@ -278,4 +278,3 @@ async def test_import_clears_a_stamp_made_in_the_bills_currency(
     assert row.currency == "BRL"
     assert row.amount_primary is None
     assert row.fx_rate_used is None
-    stamp.assert_awaited()

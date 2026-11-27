@@ -2,8 +2,8 @@
 
 Targets the multi-currency conversion branches, recurring-projection
 balance adjustments, group-split (owner offset + viewer shared) paths,
-pending-shares-net aggregation, and the daily-deltas / balance-history
-projection branches that the existing suite doesn't reach.
+pending-shares-net aggregation, and the daily-deltas branches that the
+existing suite doesn't reach.
 """
 import uuid
 from datetime import date, datetime, timedelta, timezone
@@ -24,7 +24,6 @@ from app.services.dashboard_service import (
     _balance_at,
     _compute_pending_shares_net,
     _daily_deltas,
-    get_balance_history,
     get_monthly_trend,
     get_projected_transactions,
     get_spending_by_category,
@@ -124,44 +123,12 @@ async def test_summary_multi_currency_and_primary_amounts(session: AsyncSession,
                    currency="USD", amount_primary=500)
 
     summary = await get_summary(session, test_workspace.id, test_user.id, month=today.replace(day=1))
-    assert summary.total_balance.get("BRL") == pytest.approx(1000.0)
-    assert summary.total_balance.get("USD") is not None
-    assert summary.total_balance_primary > 0
+    assert summary.total_balance == {"BRL": pytest.approx(1000.0), "USD": pytest.approx(400.0)}
+    # 1000 BRL + 400 USD at 5.0 BRL/USD.
+    assert summary.total_balance_primary == pytest.approx(3000.0)
     # amount_primary based primary income/expenses
     assert summary.monthly_income_primary == pytest.approx(1500.0, abs=1.0)
     assert summary.monthly_expenses_primary == pytest.approx(500.0, abs=1.0)
-
-
-# ---------------------------------------------------------------------------
-# Balance projection for current month with recurring projections (123-124)
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_summary_balance_projection_with_recurring(session, test_user, test_workspace):
-    today = date.today()
-    month_start = today.replace(day=1)
-    acc = await _make_account(session, test_user.id, test_workspace.id, currency="BRL", balance="0")
-    await _add_txn(session, test_user.id, acc.id, test_workspace.id, 1000, "credit", month_start, source="opening_balance")
-
-    # Recurring that produces occurrences later this month (after today) so the
-    # projection adjusts total_balance (lines 117-124). Use daily frequency.
-    rec = RecurringTransaction(
-        id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
-        description="Daily", amount=Decimal("10"), type="debit",
-        frequency="daily", currency="BRL",
-        start_date=month_start, next_occurrence=month_start,
-    )
-    session.add(rec)
-    await session.commit()
-
-    # Use a balance_date in the past so month_end > cutoff -> projection path runs
-    summary = await get_summary(
-        session, test_workspace.id, test_user.id, month=month_start,
-        balance_date=month_start,
-    )
-    assert summary is not None
-    assert "BRL" in summary.total_balance
 
 
 # ---------------------------------------------------------------------------
@@ -368,7 +335,7 @@ async def test_projected_transactions_do_not_expose_fake_one_to_one(
 
 
 # ---------------------------------------------------------------------------
-# _daily_deltas multi-currency (914-925) + balance_history projection (979-985)
+# _daily_deltas multi-currency (914-925)
 # ---------------------------------------------------------------------------
 
 
@@ -389,55 +356,8 @@ async def test_daily_deltas_multi_currency(session, test_user, test_workspace):
         session, test_workspace.id, month_start, month_end,
         primary_currency_hint="BRL",
     )
-    # Day 1 should aggregate both currencies converted to BRL
-    assert deltas.get(1, 0) > 100.0
-
-
-@pytest.mark.asyncio
-async def test_balance_history_with_future_projections(
-    session, test_user, test_workspace, projection_today
-):
-    today = projection_today
-    month_start = today.replace(day=1)
-    acc = await _make_account(session, test_user.id, test_workspace.id, currency="BRL")
-    await _add_txn(session, test_user.id, acc.id, test_workspace.id, 1000, "credit", month_start, source="opening_balance")
-
-    # Daily recurring whose next occurrence is in the future -> future days
-    # get projection deltas even when the suite runs at a month boundary.
-    next_day = today + timedelta(days=1)
-    rec = RecurringTransaction(
-        id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
-        description="Daily", amount=Decimal("5"), type="credit",
-        frequency="daily", currency="BRL",
-        start_date=month_start, next_occurrence=next_day,
-    )
-    session.add(rec)
-    await session.commit()
-
-    history = await get_balance_history(session, test_workspace.id, test_user.id, month=month_start)
-    assert len(history.current) > 0
-    assert len(history.baseline) == len(history.current)
-
-
-def test_signed_expr_helpers_smoke():
-    """The signed-amount SQL expression helpers compile without a bound query.
-    Covers the shared account-currency expressions and _signed_primary_expr
-    (used elsewhere / kept for reuse)."""
-    from app.services._query_filters import (
-        amount_in_account_currency,
-        signed_amount_expr,
-    )
-    from app.services.dashboard_service import (
-        _signed_primary_expr,
-        _primary_amount_expr,
-    )
-
-    expr_amount = amount_in_account_currency("BRL")
-    expr_signed = signed_amount_expr("BRL")
-    expr_primary = _signed_primary_expr()
-    expr_amt = _primary_amount_expr()
-    # They should be SQLAlchemy ColumnElements that render to SQL strings
-    assert all(str(e) for e in (expr_amount, expr_signed, expr_primary, expr_amt))
+    # Day 1 aggregates both currencies in BRL: 100 + 20 USD (stamped 100).
+    assert deltas.get(1, 0) == pytest.approx(200.0)
 
 
 async def _register_sqlite_to_char(session):
@@ -465,11 +385,9 @@ async def test_monthly_trend(session, test_user, test_workspace):
     await _add_txn(session, test_user.id, acc.id, test_workspace.id, 500, "debit", month_start, amount_primary=500)
 
     trends = await get_monthly_trend(session, test_workspace.id, test_user.id, months=6)
-    assert len(trends) >= 1
-    current = next((t for t in trends if t.month == month_start.strftime("%Y-%m")), None)
-    assert current is not None
-    assert current.income >= 3000.0
-    assert current.expenses >= 500.0
+    current = next(t for t in trends if t.month == month_start.strftime("%Y-%m"))
+    assert current.income == pytest.approx(3000.0)
+    assert current.expenses == pytest.approx(500.0)
 
 
 @pytest.mark.asyncio
@@ -484,8 +402,8 @@ async def test_summary_current_month_projection_only_adjusts_projected_balance(
     await _add_txn(session, test_user.id, acc.id, test_workspace.id, 1000, "credit", month_start, source="opening_balance")
     rec = RecurringTransaction(
         id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
-        description="DailyProj", amount=Decimal("10"), type="credit",
-        frequency="daily", currency="BRL",
+        description="MonthlyProj", amount=Decimal("10"), type="credit",
+        frequency="monthly", currency="BRL",
         start_date=month_start, next_occurrence=today + timedelta(days=1),
     )
     session.add(rec)
@@ -493,7 +411,7 @@ async def test_summary_current_month_projection_only_adjusts_projected_balance(
 
     summary = await get_summary(session, test_workspace.id, test_user.id, month=month_start)
     assert summary.total_balance.get("BRL", 0) == 1000.0
-    assert summary.projected_balance.get("BRL", 0) > 1000.0
+    assert summary.projected_balance.get("BRL", 0) == pytest.approx(1010.0)
 
 
 @pytest.mark.asyncio

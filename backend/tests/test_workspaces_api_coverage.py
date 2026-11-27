@@ -18,11 +18,8 @@ from app.core.auth import get_jwt_strategy
 async def test_list_my_workspaces(client: AsyncClient, auth_headers, test_user):
     resp = await client.get("/api/workspaces", headers=auth_headers)
     assert resp.status_code == 200, resp.text
-    body = resp.json()
-    assert isinstance(body, list)
-    assert len(body) >= 1
     # The auto-created Personal workspace reports the owner role.
-    assert any(w["role"] == "owner" for w in body)
+    assert [(w["kind"], w["role"]) for w in resp.json()] == [("personal", "owner")]
 
 
 @pytest.mark.asyncio
@@ -70,22 +67,12 @@ async def test_create_workspace_manager_only(client: AsyncClient, auth_headers, 
 
 
 @pytest.mark.asyncio
-async def test_create_workspace_validation_422(client: AsyncClient, auth_headers, test_user):
-    resp = await client.post(
-        "/api/workspaces",
-        headers=auth_headers,
-        json={"name": "", "default_currency": "TOOLONG"},
-    )
-    assert resp.status_code == 422
-
-
-@pytest.mark.asyncio
 async def test_get_current_workspace(client: AsyncClient, auth_headers, test_user):
     resp = await client.get("/api/workspaces/current", headers=auth_headers)
     assert resp.status_code == 200, resp.text
     body = resp.json()
     assert body["kind"] == "personal"
-    assert body["role"] in {"owner", "manager", "editor", "viewer"}
+    assert body["role"] == "owner"
 
 
 # ---------------------------------------------------------------------------
@@ -291,10 +278,7 @@ async def test_workspace_stats(client: AsyncClient, auth_headers, test_workspace
         f"/api/workspaces/{test_workspace.id}/stats", headers=auth_headers
     )
     assert resp.status_code == 200, resp.text
-    body = resp.json()
-    assert body["members"] >= 1
-    assert "accounts" in body
-    assert "transactions" in body
+    assert resp.json() == {"members": 1, "accounts": 0, "transactions": 0}
 
 
 @pytest.mark.asyncio

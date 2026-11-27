@@ -262,9 +262,7 @@ async def test_delete_asset(client: AsyncClient, auth_headers: dict, session: As
 async def test_list_asset_values(client: AsyncClient, auth_headers: dict, test_asset_api: Asset):
     response = await client.get(f"/api/assets/{test_asset_api.id}/values", headers=auth_headers)
     assert response.status_code == 200
-    data = response.json()
-    assert isinstance(data, list)
-    assert len(data) >= 1
+    assert [(v["amount"], v["date"]) for v in response.json()] == [(350000.0, "2026-01-01")]
 
 
 @pytest.mark.asyncio
@@ -296,14 +294,6 @@ async def test_delete_asset_value(
 
     response = await client.delete(f"/api/assets/values/{v.id}", headers=auth_headers)
     assert response.status_code == 204
-
-
-@pytest.mark.asyncio
-async def test_get_value_trend(client: AsyncClient, auth_headers: dict, test_asset_api: Asset):
-    response = await client.get(f"/api/assets/{test_asset_api.id}/value-trend", headers=auth_headers)
-    assert response.status_code == 200
-    data = response.json()
-    assert isinstance(data, list)
 
 
 @pytest.mark.asyncio

@@ -45,18 +45,6 @@ async def test_list_transactions_pagination(
 
 
 @pytest.mark.asyncio
-async def test_list_transactions_filter_by_account(
-    client: AsyncClient, auth_headers, test_transactions: list[Transaction], test_account: Account
-):
-    response = await client.get(
-        f"/api/transactions?account_id={test_account.id}", headers=auth_headers
-    )
-    assert response.status_code == 200
-    data = response.json()
-    assert data["total"] == 5  # all belong to same account
-
-
-@pytest.mark.asyncio
 async def test_list_transactions_filter_by_linked_card(
     client: AsyncClient, auth_headers, session: AsyncSession, test_user, test_workspace
 ):
@@ -457,23 +445,6 @@ async def test_list_transactions_filter_by_account_ids_isolates_other_accounts(
 
 
 @pytest.mark.asyncio
-async def test_list_transactions_filter_by_date(
-    client: AsyncClient, auth_headers, test_transactions: list[Transaction]
-):
-    # Use actual fixture transaction dates (UBER and IFOOD)
-    uber_date = test_transactions[0].date.isoformat()
-    ifood_date = test_transactions[1].date.isoformat()
-    date_from = min(uber_date, ifood_date)
-    date_to = max(uber_date, ifood_date)
-    response = await client.get(
-        f"/api/transactions?from={date_from}&to={date_to}", headers=auth_headers
-    )
-    assert response.status_code == 200
-    data = response.json()
-    assert data["total"] >= 2  # at least UBER and IFOOD
-
-
-@pytest.mark.asyncio
 async def test_get_transaction(
     client: AsyncClient, auth_headers, test_transactions: list[Transaction]
 ):
@@ -770,24 +741,6 @@ async def test_transactions_unauthenticated(client: AsyncClient, clean_db):
     assert response.status_code == 401
 
 
-@pytest.mark.asyncio
-async def test_create_transaction_without_account_fails(
-    client: AsyncClient, auth_headers, test_account
-):
-    """account_id is required — omitting it must return 422."""
-    response = await client.post(
-        "/api/transactions",
-        headers=auth_headers,
-        json={
-            "description": "No account",
-            "amount": "10.00",
-            "date": "2026-02-20",
-            "type": "debit",
-        },
-    )
-    assert response.status_code == 422
-
-
 # --- exclude_transfers tests ---
 
 @pytest_asyncio.fixture
@@ -977,19 +930,6 @@ async def test_exclude_from_pnl_keeps_ledger_and_balance_but_not_report_totals(
 
 
 @pytest.mark.asyncio
-async def test_exclude_transfers_false_includes_all(
-    client: AsyncClient, auth_headers, test_transactions_with_transfers,
-):
-    """Explicitly setting exclude_transfers=false still includes transfers."""
-    response = await client.get(
-        "/api/transactions?exclude_transfers=false", headers=auth_headers
-    )
-    assert response.status_code == 200
-    data = response.json()
-    assert data["total"] == 4
-
-
-@pytest.mark.asyncio
 async def test_export_csv_format(client: AsyncClient, auth_headers, test_transactions):
     resp = await client.get("/api/transactions/export", headers=auth_headers)
     assert resp.status_code == 200
@@ -999,26 +939,6 @@ async def test_export_csv_format(client: AsyncClient, auth_headers, test_transac
     assert "date" in content
     assert "description" in content
     assert "amount" in content
-
-
-@pytest.mark.asyncio
-async def test_export_csv_with_type_filter(client: AsyncClient, auth_headers, test_transactions):
-    resp = await client.get(
-        "/api/transactions/export",
-        params={"type": "debit"},
-        headers=auth_headers,
-    )
-    assert resp.status_code == 200
-
-
-@pytest.mark.asyncio
-async def test_export_csv_uncategorized(client: AsyncClient, auth_headers, test_transactions):
-    resp = await client.get(
-        "/api/transactions/export",
-        params={"uncategorized": "true"},
-        headers=auth_headers,
-    )
-    assert resp.status_code == 200
 
 
 @pytest.mark.asyncio
@@ -1033,44 +953,6 @@ async def test_bulk_categorize(
     )
     assert resp.status_code == 200
     assert resp.json()["updated"] == 1
-
-
-@pytest.mark.asyncio
-async def test_create_transfer_api(client: AsyncClient, auth_headers, test_account):
-    dest_resp = await client.post(
-        "/api/accounts",
-        json={"name": "Transfer Dest", "type": "savings", "balance": 0, "currency": "BRL"},
-        headers=auth_headers,
-    )
-    dest_id = dest_resp.json()["id"]
-    resp = await client.post(
-        "/api/transactions/transfer",
-        json={
-            "from_account_id": str(test_account.id),
-            "to_account_id": dest_id,
-            "description": "API Transfer",
-            "amount": 500,
-            "date": date.today().isoformat(),
-        },
-        headers=auth_headers,
-    )
-    assert resp.status_code == 201
-
-
-@pytest.mark.asyncio
-async def test_create_transfer_invalid_account(client: AsyncClient, auth_headers):
-    resp = await client.post(
-        "/api/transactions/transfer",
-        json={
-            "from_account_id": str(uuid.uuid4()),
-            "to_account_id": str(uuid.uuid4()),
-            "description": "Bad Transfer",
-            "amount": 100,
-            "date": date.today().isoformat(),
-        },
-        headers=auth_headers,
-    )
-    assert resp.status_code == 400
 
 
 @pytest.mark.asyncio

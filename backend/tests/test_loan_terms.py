@@ -39,20 +39,6 @@ async def _loan(client: AsyncClient, headers: dict, **overrides) -> dict:
 
 
 @pytest.mark.asyncio
-async def test_a_loan_keeps_its_contract_terms(client: AsyncClient, auth_headers):
-    loan = await _loan(client, auth_headers)
-
-    fetched = (await client.get(f"/api/accounts/{loan['id']}", headers=auth_headers)).json()
-
-    assert fetched["loan_kind"] == "personal"
-    assert fetched["loan_original_amount"] == 10000
-    assert fetched["loan_interest_rate"] == 1
-    assert fetched["loan_rate_period"] == "monthly"
-    assert fetched["loan_term_months"] == 12
-    assert fetched["loan_amortization"] == "price"
-
-
-@pytest.mark.asyncio
 async def test_the_schedule_follows_the_contract(client: AsyncClient, auth_headers):
     loan = await _loan(client, auth_headers)
 

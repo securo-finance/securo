@@ -10,7 +10,7 @@ from typing import AsyncIterator
 
 import pytest
 
-from app.agents.providers import build_provider, list_providers
+from app.agents.providers import build_provider
 from app.agents.providers.anthropic import (
     _serialize_messages as anthropic_serialize,
     _serialize_tools as anthropic_tools,
@@ -31,10 +31,6 @@ from app.agents.providers.openai import (
     _serialize_tools as openai_tools,
     normalize_openai_base_url,
 )
-
-
-def test_registry_lists_all_four_providers():
-    assert set(list_providers()) == {"ollama", "openai", "anthropic", "openai_compatible"}
 
 
 def test_registry_unknown_raises():

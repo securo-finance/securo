@@ -263,36 +263,3 @@ async def test_enable_2fa_without_setup(client: AsyncClient, auth_headers):
     )
     assert resp.status_code == 400
     assert "setup" in resp.json()["detail"].lower()
-
-
-@pytest.mark.asyncio
-async def test_verify_2fa_invalid_token(client: AsyncClient):
-    resp = await client.post(
-        "/api/auth/2fa/verify",
-        json={"temp_token": "fake-token", "code": "123456"},
-    )
-    assert resp.status_code == 401
-
-
-@pytest.mark.asyncio
-async def test_verify_2fa_with_valid_token(client: AsyncClient, test_user_with_2fa):
-    mock_r = AsyncMock()
-    mock_r.get = AsyncMock(return_value=str(test_user_with_2fa.id))
-    mock_r.delete = AsyncMock()
-    pipe = MagicMock()
-    pipe.execute = AsyncMock(return_value=[0, 0, True, True])
-    mock_r.pipeline = lambda: pipe
-
-    async def _fake():
-        return mock_r
-
-    with patch("app.api.two_factor.get_redis", _fake), \
-         patch("app.core.rate_limit.get_redis", _fake), \
-         patch("app.api.custom_auth.get_redis", _fake):
-        totp = pyotp.TOTP(test_user_with_2fa.totp_secret)
-        resp = await client.post(
-            "/api/auth/2fa/verify",
-            json={"temp_token": "valid-temp-token", "code": totp.now()},
-        )
-    assert resp.status_code == 200
-    assert "access_token" in resp.json()

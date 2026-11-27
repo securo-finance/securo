@@ -11,8 +11,7 @@ from app.models.account import Account
 from app.models.transaction import Transaction
 from app.models.user import User
 from app.schemas.rule import RuleAction, RuleCondition, RuleCreate
-from app.services.category_service import create_default_categories
-from app.services.rule_service import create_default_rules, create_rule
+from app.services.rule_service import create_rule
 
 
 
@@ -22,25 +21,6 @@ async def test_list_rules_empty(client: AsyncClient, auth_headers, test_categori
     response = await client.get("/api/rules", headers=auth_headers)
     assert response.status_code == 200
     assert response.json() == []
-
-
-@pytest.mark.asyncio
-async def test_list_rules_with_defaults(
-    client: AsyncClient, auth_headers, session: AsyncSession, test_user: User
-):
-    """After creating default categories and rules (as registration does), listing returns them."""
-    await create_default_categories(session, test_user.id, "pt-BR")
-    await create_default_rules(session, test_user.id, "pt-BR")
-
-    response = await client.get("/api/rules", headers=auth_headers)
-    assert response.status_code == 200
-    data = response.json()
-    assert len(data) >= 3
-    # Each rule has the expected structure
-    rule = data[0]
-    assert "conditions" in rule
-    assert "actions" in rule
-    assert "conditions_op" in rule
 
 
 @pytest.mark.asyncio
@@ -576,15 +556,9 @@ async def test_delete_rule(client: AsyncClient, auth_headers, test_rules):
     rule_id = str(test_rules[0].id)
     response = await client.delete(f"/api/rules/{rule_id}", headers=auth_headers)
     assert response.status_code == 204
-
-
-@pytest.mark.asyncio
-async def test_apply_all_rules(client: AsyncClient, auth_headers, test_rules, test_transactions):
-    response = await client.post("/api/rules/apply-all", headers=auth_headers)
-    assert response.status_code == 200
-    data = response.json()
-    assert "applied" in data
-    assert data["applied"] >= 3  # 3 of 5 transactions match rules
+    listed = await client.get("/api/rules", headers=auth_headers)
+    assert rule_id not in {rule["id"] for rule in listed.json()}
+    assert len(listed.json()) == len(test_rules) - 1
 
 
 # --- Integration tests: category assignment, tags, priority, isolation ---

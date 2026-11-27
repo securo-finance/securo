@@ -174,15 +174,3 @@ async def test_market_search_falls_back_to_the_workspace_currency(
     assert resp.status_code == 200, resp.text
     assert [row["symbol"] for row in resp.json()] == ["CRO-BRL", "CRO-USD", "CRO-EUR"]
 
-
-@pytest.mark.asyncio
-async def test_market_search_keeps_every_result(client: AsyncClient, auth_headers):
-    fake = AsyncMock()
-    fake.search = AsyncMock(
-        return_value=[_equity("CRON", "Cronos Group Inc."), _crypto("CRO-USD", "Cronos")]
-    )
-    with patch("app.api.assets.get_market_price_provider", return_value=fake):
-        resp = await client.get("/api/assets/market/search?q=cronos", headers=auth_headers)
-
-    assert resp.status_code == 200, resp.text
-    assert [row["symbol"] for row in resp.json()] == ["CRO-USD", "CRON"]

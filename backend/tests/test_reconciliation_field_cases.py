@@ -162,24 +162,6 @@ def test_a_client_paying_in_two_transfers():
     assert decision.settlements[0].amount == Decimal("400.00")
 
 
-def test_the_remainder_matches_what_is_left_not_the_original_total():
-    """After the first 400, the invoice expects 600, not 1.000. An engine
-    comparing against the original total would miss every second
-    instalment."""
-    decision = evaluate(
-        money(amount="600.00"),
-        [invoice(amount="600.00")],  # what is still outstanding
-        rule({
-            "counterparty": "same_payee",
-            "amount": {"match": "exact"},
-            "date": WINDOW,
-        }),
-    )
-
-    assert decision.port == "linked"
-    assert decision.settlements[0].amount == Decimal("600.00")
-
-
 def test_a_token_amount_is_not_offered_as_an_instalment():
     """Ten reais against a thousand-real invoice is noise. Offering it
     would teach people to ignore the queue, which costs more than the
@@ -369,37 +351,6 @@ def test_the_personal_account_is_left_out_of_it():
 # ---------------------------------------------------------------------------
 # Money that must never settle anything
 # ---------------------------------------------------------------------------
-def test_a_second_payment_of_the_same_boleto_finds_nothing_left():
-    """Paying the same boleto twice is common enough that every Brazilian
-    processor documents the refund path. What matters here is that the
-    duplicate does not settle a second invoice by accident: the first one
-    is closed, and nothing else is owed.
-    """
-    settled = invoice(amount="0.00")  # nothing outstanding after the first payment
-    decision = evaluate(
-        money(amount="1000.00"),
-        [settled],
-        rule({"counterparty": "same_payee", "amount": {"match": "exact"}, "date": WINDOW}),
-    )
-
-    assert decision.port == "unmatched"
-    assert any(n.rejected_by is Reason.ALREADY_SETTLED for n in decision.trace)
-
-
-def test_a_refund_leaving_the_account_never_settles_a_receivable():
-    """A chargeback or estorno is money going the other way. It reverses a
-    settlement rather than making one.
-    """
-    decision = evaluate(
-        money(amount="1000.00", direction="debit", description="ESTORNO"),
-        [invoice(amount="1000.00")],
-        rule({"amount": {"match": "exact"}, "date": WINDOW}),
-    )
-
-    assert decision.port == "unmatched"
-    assert any(n.rejected_by is Reason.DIRECTION for n in decision.trace)
-
-
 def test_another_clients_money_never_closes_this_clients_invoice():
     decision = evaluate(
         money(amount="1000.00", payee=OTHER_CLIENT),

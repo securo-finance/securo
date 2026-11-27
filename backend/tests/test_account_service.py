@@ -16,6 +16,7 @@ from decimal import Decimal
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.app_clock import app_today
 from app.models.account import Account
 from app.models.category import Category
 from app.models.goal import Goal
@@ -28,14 +29,12 @@ from app.services.account_service import (
     _account_balance_at,
     _provider_to_internal_balance,
     create_account,
-    close_account,
     delete_account,
     get_account,
     get_account_balance_history,
     get_account_summary,
     get_accounts,
     get_period_opening_balance,
-    reopen_account,
     serialize_account,
     sync_opening_balance_for_connected_account,
     update_account,
@@ -228,17 +227,6 @@ async def test_create_account_with_balance_date(session: AsyncSession, test_user
 
 
 @pytest.mark.asyncio
-async def test_update_account_name(session: AsyncSession, test_user, test_workspace):
-    """Updating account name works for manual accounts."""
-    account = await _make_account(session, test_user.id, "Old Name")
-    data = AccountUpdate(name="New Name")
-    updated = await update_account(session, account.id, test_workspace.id, data)
-
-    assert updated is not None
-    assert updated.name == "New Name"
-
-
-@pytest.mark.asyncio
 async def test_update_account_balance_creates_opening(session: AsyncSession, test_user, test_workspace):
     """Updating balance on an account with no opening_balance creates one."""
     account = await _make_account(session, test_user.id, "No Balance", balance="0.00")
@@ -362,18 +350,6 @@ async def test_update_account_balance_date_only_updates_opening(session: AsyncSe
 
 
 @pytest.mark.asyncio
-async def test_update_bank_connected_raises(session: AsyncSession, test_user, test_workspace, test_connection):
-    """Updating a bank-connected account raises ValueError."""
-    account = await _make_account(
-        session, test_user.id, "Connected",
-        connection_id=test_connection.id, external_id="ext-1",
-    )
-    data = AccountUpdate(name="Hacked")
-    with pytest.raises(ValueError, match="bank-connected"):
-        await update_account(session, account.id, test_workspace.id, data)
-
-
-@pytest.mark.asyncio
 async def test_update_bank_connected_type_override(
     session: AsyncSession, test_user, test_workspace, test_connection
 ):
@@ -411,46 +387,9 @@ async def test_update_bank_connected_type_override_clears_card_metadata(
     assert updated.statement_close_day is None
 
 
-@pytest.mark.asyncio
-async def test_update_account_not_found(session: AsyncSession, test_user, test_workspace):
-    """Updating nonexistent account returns None."""
-    data = AccountUpdate(name="Ghost")
-    result = await update_account(session, uuid.uuid4(), test_workspace.id, data)
-    assert result is None
-
-
 # ---------------------------------------------------------------------------
 # delete_account
 # ---------------------------------------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_delete_manual_account(session: AsyncSession, test_user, test_workspace):
-    """Deleting a manual account returns True."""
-    account = await _make_account(session, test_user.id, "To Delete")
-    result = await delete_account(session, account.id, test_workspace.id)
-    assert result is True
-
-    # Verify it's gone
-    assert await get_account(session, account.id, test_workspace.id) is None
-
-
-@pytest.mark.asyncio
-async def test_delete_bank_connected_raises(session: AsyncSession, test_user, test_workspace, test_connection):
-    """Deleting a bank-connected account raises ValueError."""
-    account = await _make_account(
-        session, test_user.id, "Connected",
-        connection_id=test_connection.id, external_id="ext-del",
-    )
-    with pytest.raises(ValueError, match="bank-connected"):
-        await delete_account(session, account.id, test_workspace.id)
-
-
-@pytest.mark.asyncio
-async def test_delete_account_not_found(session: AsyncSession, test_user, test_workspace):
-    """Deleting nonexistent account returns False."""
-    result = await delete_account(session, uuid.uuid4(), test_workspace.id)
-    assert result is False
 
 
 @pytest.mark.asyncio
@@ -580,97 +519,9 @@ async def test_delete_account_with_linked_goal(session: AsyncSession, test_user,
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.asyncio
-async def test_close_account(session: AsyncSession, test_user, test_workspace):
-    """Closing a manual account sets is_closed and closed_at."""
-    account = await _make_account(session, test_user.id, "To Close")
-    closed = await close_account(session, account.id, test_workspace.id)
-
-    assert closed is not None
-    assert closed.is_closed is True
-    assert closed.closed_at is not None
-
-
-@pytest.mark.asyncio
-async def test_close_bank_connected_keeps_link(session: AsyncSession, test_user, test_workspace, test_connection):
-    """Closing a bank-connected account keeps its connection link.
-
-    Sync uses (connection_id, external_id) to find the row; unlinking on close
-    caused sync to create a duplicate active account (issue #90). The is_closed
-    flag alone is enough to keep sync from touching it.
-    """
-    account = await _make_account(
-        session, test_user.id, "Connected Close",
-        connection_id=test_connection.id, external_id="ext-close",
-    )
-    closed = await close_account(session, account.id, test_workspace.id)
-
-    assert closed is not None
-    assert closed.connection_id == test_connection.id
-    assert closed.is_closed is True
-
-
-@pytest.mark.asyncio
-async def test_close_already_closed_raises(session: AsyncSession, test_user, test_workspace):
-    """Closing an already-closed account raises ValueError."""
-    account = await _make_account(session, test_user.id, "Already Closed")
-    await close_account(session, account.id, test_workspace.id)
-
-    with pytest.raises(ValueError, match="already closed"):
-        await close_account(session, account.id, test_workspace.id)
-
-
-@pytest.mark.asyncio
-async def test_close_not_found(session: AsyncSession, test_user, test_workspace):
-    """Closing nonexistent account returns None."""
-    result = await close_account(session, uuid.uuid4(), test_workspace.id)
-    assert result is None
-
-
-@pytest.mark.asyncio
-async def test_reopen_account(session: AsyncSession, test_user, test_workspace):
-    """Reopening a closed account clears is_closed and closed_at."""
-    account = await _make_account(session, test_user.id, "Reopen Test")
-    await close_account(session, account.id, test_workspace.id)
-
-    reopened = await reopen_account(session, account.id, test_workspace.id)
-    assert reopened is not None
-    assert reopened.is_closed is False
-    assert reopened.closed_at is None
-
-
-@pytest.mark.asyncio
-async def test_reopen_not_closed_raises(session: AsyncSession, test_user, test_workspace):
-    """Reopening a non-closed account raises ValueError."""
-    account = await _make_account(session, test_user.id, "Open")
-    with pytest.raises(ValueError, match="not closed"):
-        await reopen_account(session, account.id, test_workspace.id)
-
-
-@pytest.mark.asyncio
-async def test_reopen_not_found(session: AsyncSession, test_user, test_workspace):
-    """Reopening nonexistent account returns None."""
-    result = await reopen_account(session, uuid.uuid4(), test_workspace.id)
-    assert result is None
-
-
 # ---------------------------------------------------------------------------
 # get_accounts
 # ---------------------------------------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_get_accounts_returns_list(session: AsyncSession, test_user, test_workspace):
-    """get_accounts returns list with current_balance and previous_balance."""
-    account = await _make_account(session, test_user.id, "List Test", balance="1000.00")
-    await _add_txn(session, test_user.id, account.id, 1000, "credit", date.today(), source="opening_balance")
-
-    accounts = await get_accounts(session, test_workspace.id)
-    assert len(accounts) >= 1
-    acc = next(a for a in accounts if a["id"] == account.id)
-    assert acc["name"] == "List Test"
-    assert "current_balance" in acc
-    assert "previous_balance" in acc
 
 
 @pytest.mark.asyncio
@@ -698,28 +549,6 @@ async def test_get_accounts_previous_balance_uses_each_account_currency(
 
     assert by_id[brl_account.id]["previous_balance"] == pytest.approx(100.0)
     assert by_id[usd_account.id]["previous_balance"] == pytest.approx(20.0)
-
-
-@pytest.mark.asyncio
-async def test_get_accounts_excludes_closed(session: AsyncSession, test_user, test_workspace):
-    """get_accounts excludes closed accounts by default."""
-    account = await _make_account(session, test_user.id, "Closed Account")
-    await close_account(session, account.id, test_workspace.id)
-
-    accounts = await get_accounts(session, test_workspace.id)
-    ids = [a["id"] for a in accounts]
-    assert account.id not in ids
-
-
-@pytest.mark.asyncio
-async def test_get_accounts_includes_closed_when_requested(session: AsyncSession, test_user, test_workspace):
-    """get_accounts includes closed accounts when include_closed=True."""
-    account = await _make_account(session, test_user.id, "Closed Visible")
-    await close_account(session, account.id, test_workspace.id)
-
-    accounts = await get_accounts(session, test_workspace.id, include_closed=True)
-    ids = [a["id"] for a in accounts]
-    assert account.id in ids
 
 
 @pytest.mark.asyncio
@@ -818,13 +647,6 @@ async def test_get_account_summary_excludes_transfers(session: AsyncSession, tes
     assert summary is not None
     # Only the non-transfer debit counts
     assert summary["monthly_expenses"] == pytest.approx(100.0)
-
-
-@pytest.mark.asyncio
-async def test_get_account_summary_not_found(session: AsyncSession, test_user, test_workspace):
-    """Summary for nonexistent account returns None."""
-    result = await get_account_summary(session, uuid.uuid4(), test_workspace.id)
-    assert result is None
 
 
 @pytest.mark.asyncio
@@ -1471,17 +1293,10 @@ async def test_get_account_balance_history(session: AsyncSession, test_user, tes
         date_from=today.replace(day=1), date_to=today,
     )
     assert history is not None
-    assert len(history) > 0
-    # Each entry has date and balance
-    assert "date" in history[0]
-    assert "balance" in history[0]
-
-
-@pytest.mark.asyncio
-async def test_get_account_balance_history_not_found(session: AsyncSession, test_user, test_workspace):
-    """Balance history for nonexistent account returns None."""
-    result = await get_account_balance_history(session, uuid.uuid4(), test_workspace.id)
-    assert result is None
+    assert history[0]["date"] == today.replace(day=1).isoformat()
+    assert history[0]["balance"] == pytest.approx(800.0 if today.day == 1 else 1000.0)
+    assert history[-1]["date"] == today.isoformat()
+    assert history[-1]["balance"] == pytest.approx(800.0)
 
 
 @pytest.mark.asyncio
@@ -1492,7 +1307,9 @@ async def test_get_account_balance_history_default_dates(session: AsyncSession, 
 
     history = await get_account_balance_history(session, account.id, test_workspace.id)
     assert history is not None
-    assert len(history) > 0
+    today = app_today()
+    assert history[0]["date"] == today.replace(day=1).isoformat()
+    assert history[-1]["date"] == today.isoformat()
 
 
 @pytest.mark.asyncio

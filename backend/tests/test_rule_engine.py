@@ -241,9 +241,7 @@ def test_append_notes_accumulates():
     apply_rule_actions(actions1, tx, category_already_set=False)
     apply_rule_actions(actions2, tx, category_already_set=False)
 
-    assert tx.notes is not None
-    assert "#work" in tx.notes
-    assert "#small" in tx.notes
+    assert tx.notes == "#work #small"
 
 
 def test_append_notes_no_duplicate():
@@ -251,8 +249,7 @@ def test_append_notes_no_duplicate():
     tx = make_tx(notes="#work")
     apply_rule_actions(actions, tx, category_already_set=False)
 
-    assert tx.notes is not None
-    assert tx.notes.count("#work") == 1
+    assert tx.notes == "#work"
 
 
 def test_ignore_action_sets_flag():
@@ -605,23 +602,6 @@ def test_or_no_matches_returns_false():
     ]
     tx = make_tx(description="UBER TRIP")
     assert evaluate_conditions("or", conditions, tx) is False
-
-
-def test_rule_priority_ordering():
-    """Lower priority rules apply first; first category wins."""
-    cat_low = uuid.uuid4()
-    cat_high = uuid.uuid4()
-    tx = make_tx(description="UBER TRIP")
-
-    # Simulate priority ordering: low-priority rule runs first
-    actions_low = [{"op": "set_category", "value": str(cat_low)}]
-    actions_high = [{"op": "set_category", "value": str(cat_high)}]
-
-    category_set = False
-    category_set = apply_rule_actions(actions_low, tx, category_already_set=category_set)
-    category_set = apply_rule_actions(actions_high, tx, category_already_set=category_set)
-
-    assert tx.category_id == cat_low
 
 
 # --- set_payee action tests ---

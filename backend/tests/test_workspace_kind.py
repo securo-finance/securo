@@ -1,7 +1,7 @@
 """Workspace.kind as a real, validated, write-once field.
 
 `kind` is chosen at creation and never edited afterwards, so the tests
-cover the create-side validation, the fact that update cannot touch it,
+cover the create-side default, the fact that update cannot touch it,
 and the bootstrap idempotency guard that identifies the first workspace
 by who made it rather than by its kind.
 """
@@ -10,42 +10,13 @@ from httpx import AsyncClient
 from sqlalchemy import select
 
 from app.models.user import User
-from app.models.workspace import WORKSPACE_KINDS, Workspace, WorkspaceMember
+from app.models.workspace import Workspace, WorkspaceMember
 from app.services import workspace_service
 
 
 # ---------------------------------------------------------------------------
 # create
 # ---------------------------------------------------------------------------
-def test_only_two_kinds_exist():
-    assert WORKSPACE_KINDS == ("personal", "business")
-
-
-@pytest.mark.asyncio
-async def test_create_rejects_unknown_kind(client: AsyncClient, auth_headers, test_user):
-    resp = await client.post(
-        "/api/workspaces",
-        headers=auth_headers,
-        json={"name": "Nonsense", "kind": "nonsense", "self_membership": True},
-    )
-    assert resp.status_code == 422, resp.text
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize("retired", ["freelancer", "small_business", "accountant_firm"])
-async def test_create_rejects_retired_kinds(
-    client: AsyncClient, auth_headers, test_user, retired: str
-):
-    """The work kinds collapsed into `business`; accountant_firm was an
-    edge between workspaces, which `managed_by_user_id` already covers."""
-    resp = await client.post(
-        "/api/workspaces",
-        headers=auth_headers,
-        json={"name": "Old kind", "kind": retired, "self_membership": True},
-    )
-    assert resp.status_code == 422, resp.text
-
-
 @pytest.mark.asyncio
 async def test_create_persists_selected_kind(client: AsyncClient, auth_headers, test_user):
     resp = await client.post(

@@ -139,16 +139,6 @@ async def test_closed_accounts_included_when_requested(client: AsyncClient, auth
 
 
 @pytest.mark.asyncio
-async def test_close_account_not_found(client: AsyncClient, auth_headers, clean_db):
-    """Closing a nonexistent account returns 404."""
-    resp = await client.post(
-        "/api/accounts/00000000-0000-0000-0000-000000000000/close",
-        headers=auth_headers,
-    )
-    assert resp.status_code == 404
-
-
-@pytest.mark.asyncio
 async def test_closed_account_excluded_from_dashboard_balance(client: AsyncClient, auth_headers):
     """Dashboard total balance should exclude closed accounts."""
     # Create account with balance

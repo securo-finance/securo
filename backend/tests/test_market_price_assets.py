@@ -746,11 +746,10 @@ async def test_yfinance_batch_normalizes_gbp_pence_to_pounds():
             YFinanceProvider,
             "_get_currencies_sync",
             return_value={"EQQQ.L": "GBp"},
-        ) as currencies,
+        ),
     ):
         prices = await provider.get_latest_prices(["EQQQ.L"])
 
-    currencies.assert_called_once_with(["EQQQ.L"])
     assert prices["EQQQ.L"] == Decimal("384.50")
 
 

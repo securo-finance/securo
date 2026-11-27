@@ -13,43 +13,6 @@ from app.services import group_service
 
 
 @pytest.mark.asyncio
-async def test_create_group_defaults(session: AsyncSession, test_user, test_workspace):
-    group = await group_service.create_group(
-        session, test_workspace.id, test_user.id, GroupCreate(name="Roommates")
-    )
-    assert group.name == "Roommates"
-    assert group.kind == "social"
-    assert group.default_currency == "USD"
-    assert group.is_archived is False
-    assert group.user_id == test_user.id
-
-
-@pytest.mark.asyncio
-async def test_create_group_b2b_kind(session: AsyncSession, test_user, test_workspace):
-    group = await group_service.create_group(
-        session,
-        test_workspace.id,
-        test_user.id,
-        GroupCreate(name="Marketing", kind="cost_center", default_currency="EUR"),
-    )
-    assert group.kind == "cost_center"
-    assert group.default_currency == "EUR"
-
-
-@pytest.mark.asyncio
-async def test_duplicate_group_name_rejected(
-    session: AsyncSession, test_user, test_workspace
-):
-    await group_service.create_group(
-        session, test_workspace.id, test_user.id, GroupCreate(name="Trip")
-    )
-    with pytest.raises(ValueError, match="already exists"):
-        await group_service.create_group(
-            session, test_workspace.id, test_user.id, GroupCreate(name="Trip")
-        )
-
-
-@pytest.mark.asyncio
 async def test_list_groups_excludes_archived_by_default(
     session: AsyncSession, test_user, test_workspace
 ):

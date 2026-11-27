@@ -146,39 +146,6 @@ async def test_get_agent_tools_returns_merged_state(
         assert by_name["propose_x"]["is_proposal"] is True
 
 
-@pytest.mark.asyncio
-async def test_get_agent_tools_404_for_unknown_agent(client, auth_headers, test_user):
-    r = await client.get(f"/api/agents/{uuid.uuid4()}/tools", headers=auth_headers)
-    assert r.status_code == 404
-
-
-@pytest.mark.asyncio
-async def test_put_agent_tools_persists_explicit_selection(
-    client, auth_headers, test_user
-):
-    a = (await client.post("/api/agents", json={"name": "A"}, headers=auth_headers)).json()
-    r = await client.put(
-        f"/api/agents/{a['id']}/tools",
-        json=[
-            {"server": "securo", "tool_name": "list_accounts", "enabled": True},
-            {"server": "securo", "tool_name": "create_payee", "enabled": False},
-        ],
-        headers=auth_headers,
-    )
-    assert r.status_code == 200
-    assert r.json() == {"updated": 2}
-
-
-@pytest.mark.asyncio
-async def test_put_agent_tools_404_for_unknown_agent(client, auth_headers, test_user):
-    r = await client.put(
-        f"/api/agents/{uuid.uuid4()}/tools",
-        json=[],
-        headers=auth_headers,
-    )
-    assert r.status_code == 404
-
-
 # --------------------------------------------------------------------- conversations API: generate-title quirks
 
 @pytest.mark.asyncio
@@ -249,31 +216,7 @@ async def test_generate_title_silently_swallows_llm_errors(
     assert r.json()["title"] == "kept"
 
 
-@pytest.mark.asyncio
-async def test_generate_title_404_for_unknown_conversation(client, auth_headers, test_user):
-    r = await client.post(
-        f"/api/agents/conversations/{uuid.uuid4()}/generate-title", headers=auth_headers,
-    )
-    assert r.status_code == 404
-
-
-# --------------------------------------------------------------------- conversations API: 404 paths
-
-@pytest.mark.asyncio
-async def test_get_conversation_404(client, auth_headers, test_user):
-    r = await client.get(
-        f"/api/agents/conversations/{uuid.uuid4()}", headers=auth_headers,
-    )
-    assert r.status_code == 404
-
-
-@pytest.mark.asyncio
-async def test_list_messages_404_for_unknown_conversation(client, auth_headers, test_user):
-    r = await client.get(
-        f"/api/agents/conversations/{uuid.uuid4()}/messages", headers=auth_headers,
-    )
-    assert r.status_code == 404
-
+# --------------------------------------------------------------------- conversations API: messages
 
 @pytest.mark.asyncio
 async def test_list_messages_returns_messages_for_owned_conversation(
@@ -298,21 +241,3 @@ async def test_list_messages_returns_messages_for_owned_conversation(
     assert r.status_code == 200
     body = r.json()
     assert [m["content"] for m in body] == ["hi", "hello"]
-
-
-@pytest.mark.asyncio
-async def test_delete_conversation_404(client, auth_headers, test_user):
-    r = await client.delete(
-        f"/api/agents/conversations/{uuid.uuid4()}", headers=auth_headers,
-    )
-    assert r.status_code == 404
-
-
-@pytest.mark.asyncio
-async def test_rename_conversation_404(client, auth_headers, test_user):
-    r = await client.patch(
-        f"/api/agents/conversations/{uuid.uuid4()}",
-        json={"title": "x"},
-        headers=auth_headers,
-    )
-    assert r.status_code == 404

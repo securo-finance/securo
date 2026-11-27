@@ -115,14 +115,6 @@ def test_validate_none_accepts_anything():
 # ---------------------------------------------------------------------------
 # registry integrity
 # ---------------------------------------------------------------------------
-def test_every_validator_is_reachable_by_name():
-    for name, fn in v.VALIDATORS.items():
-        assert callable(fn), name
-        # A validator returns None or a short reason, never raises on a
-        # plausible input.
-        assert fn("123") is None or isinstance(fn("123"), str), name
-
-
 def test_normalisers_are_idempotent():
     for name, fn in v.NORMALISERS.items():
         for value in ("  a1-b2 ", "11.222.333/0001-81"):

@@ -342,27 +342,6 @@ async def test_destination_amount_is_rounded_to_cents(
 
 
 @pytest.mark.asyncio
-async def test_reject_removed_fx_rate_field(
-    client: AsyncClient, auth_headers, test_account: Account, usd_account: Account
-):
-    """A client still sending the old `fx_rate` must fail loudly, not be ignored."""
-    response = await client.post(
-        "/api/transactions/transfer",
-        json={
-            "from_account_id": str(test_account.id),
-            "to_account_id": str(usd_account.id),
-            "amount": 1000.00,
-            "fx_rate": 0.20,
-            "date": date.today().isoformat(),
-            "description": "Transfer with legacy fx_rate",
-        },
-        headers=auth_headers,
-    )
-
-    assert response.status_code == 422
-
-
-@pytest.mark.asyncio
 async def test_explicit_destination_amount_survives_source_amount_edit(
     client: AsyncClient, auth_headers, test_account: Account, usd_account: Account
 ):

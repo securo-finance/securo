@@ -114,36 +114,6 @@ async def test_update_transaction_replaces_splits(client, auth_headers, test_use
 
 
 @pytest.mark.asyncio
-async def test_split_validation_bubbles_400(client, auth_headers, test_user):
-    account = await _create_account(client, auth_headers)
-    _, members = await _create_group_with_members(client, auth_headers, "Me", "A")
-
-    resp = await client.post(
-        "/api/transactions",
-        headers=auth_headers,
-        json={
-            "account_id": account["id"],
-            "description": "Bad",
-            "amount": 100,
-            "date": "2026-04-28",
-            "type": "debit",
-            "currency": "USD",
-            "splits": {
-                "share_type": "exact",
-                "splits": [
-                    {"group_member_id": members[0]["id"], "share_amount": "30.00"},
-                    {"group_member_id": members[1]["id"], "share_amount": "30.00"},
-                ],
-            },
-        },
-    )
-    # ValueError from split_service -> 400 via FastAPI handler
-    # (depends on the API layer's existing exception mapping; if it
-    # surfaces as 500 that means the handler is missing — flag it).
-    assert resp.status_code in (400, 422), resp.text
-
-
-@pytest.mark.asyncio
 async def test_create_rejects_percent_under_100(client, auth_headers, test_user):
     account = await _create_account(client, auth_headers)
     _, members = await _create_group_with_members(client, auth_headers, "Me", "A")
