@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { pocketAvailable, roundToCents, sumPocketAmounts } from './pocket-allocation-utils'
+import { pocketAvailable, roundToCents, sumPocketAmounts, withdrawalCap } from './pocket-allocation-utils'
 
 describe('pocket amounts in whole cents', () => {
   it('sends an available balance the API accepts', () => {
@@ -20,5 +20,21 @@ describe('pocket amounts in whole cents', () => {
   it('rounds a typed amount to cents', () => {
     expect(roundToCents(12.345)).toBe(12.35)
     expect(roundToCents(0)).toBe(0)
+  })
+})
+
+describe('withdrawalCap', () => {
+  it('adds back what the withdrawal already takes from the pocket', () => {
+    expect(withdrawalCap(0, -100, 100)).toBe(100)
+    expect(withdrawalCap(40, -60, 100)).toBe(100)
+  })
+
+  it('never exceeds the transaction amount', () => {
+    expect(withdrawalCap(500, -60, 100)).toBe(100)
+  })
+
+  it('does not count a saved deposit as money the withdrawal can take', () => {
+    expect(withdrawalCap(40, 50, 100)).toBe(0)
+    expect(withdrawalCap(40, 0, 100)).toBe(40)
   })
 })

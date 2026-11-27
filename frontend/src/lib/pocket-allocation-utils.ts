@@ -29,3 +29,14 @@ export function pocketAvailable(balance: number, reserved: number): number {
 export function roundToCents(amount: number): number {
   return fromCents(toCents(amount))
 }
+
+/**
+ * The most a withdrawal may take from a pocket: what the pocket holds plus
+ * what this transaction already takes from it, never more than the
+ * transaction itself. `persisted` is the saved, signed assignment (negative
+ * for a withdrawal), which the pocket's current amount already includes.
+ */
+export function withdrawalCap(current: number, persisted: number, transactionAmount: number): number {
+  const available = toCents(current) - toCents(persisted)
+  return fromCents(Math.max(0, Math.min(available, toCents(Math.abs(transactionAmount)))))
+}

@@ -5,9 +5,11 @@ import { Search } from 'lucide-react'
 import { differenceInCalendarDays, parseISO } from 'date-fns'
 import { goals as goalsApi } from '@/lib/api'
 import { formatCurrency } from '@/lib/format'
+import { withdrawalCap } from '@/lib/pocket-allocation-utils'
 import { todayInTimezone } from '@/lib/date-utils'
 import { useDisplayLocale } from '@/hooks/use-display-locale'
 import { useEffectiveTimezone } from '@/hooks/use-timezone'
+import { usePrivacyMode } from '@/hooks/use-privacy-mode'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
@@ -48,6 +50,7 @@ function GoalTiming({ goal }: { goal: Goal }) {
   const { t } = useTranslation()
   const locale = useDisplayLocale()
   const timeZone = useEffectiveTimezone()
+  const { mask } = usePrivacyMode()
   const days = goal.target_date
     ? differenceInCalendarDays(parseISO(goal.target_date), parseISO(todayInTimezone(timeZone)))
     : null
@@ -56,7 +59,7 @@ function GoalTiming({ goal }: { goal: Goal }) {
     <span className="inline-flex flex-wrap justify-end gap-x-2">
       {goal.monthly_contribution != null && goal.monthly_contribution > 0 && (
         <span>
-          {formatCurrency(goal.monthly_contribution, goal.currency, locale)}{t('goals.perMonth')}
+          {mask(formatCurrency(goal.monthly_contribution, goal.currency, locale))}{t('goals.perMonth')}
         </span>
       )}
       {days !== null ? (
@@ -92,6 +95,7 @@ export function PocketAllocator({
   onChange: (value: GoalAllocationInput[]) => void
 }) {
   const { t } = useTranslation()
+  const { mask } = usePrivacyMode()
   const locale = useDisplayLocale()
   const originalAmounts = useMemo(
     () => new Map(originalAllocations.map(item => [item.goal_id, Number(item.amount)])),
@@ -134,7 +138,7 @@ export function PocketAllocator({
   const maxAllocationForGoal = (goal: Goal) => disabled
     ? 0
     : transactionType === 'debit'
-      ? Math.max(0, Math.round((goal.current_amount - (originalAmounts.get(goal.id) ?? 0)) * 100) / 100)
+      ? withdrawalCap(goal.current_amount, originalAmounts.get(goal.id) ?? 0, transactionAmount)
       : Math.abs(transactionAmount)
   const draftExceedsPocket = transactionType === 'debit' && draft.some(item => {
     const goal = pockets.find(candidate => candidate.id === item.goal_id)
@@ -287,9 +291,9 @@ export function PocketAllocator({
                         </div>
                         <div className="mt-1 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-xs text-muted-foreground">
                           <span className="tabular-nums">
-                            {formatCurrency(goal.current_amount, goal.currency, locale)}
+                            {mask(formatCurrency(goal.current_amount, goal.currency, locale))}
                             {' / '}
-                            {formatCurrency(goal.target_amount, goal.currency, locale)}
+                            {mask(formatCurrency(goal.target_amount, goal.currency, locale))}
                           </span>
                           <GoalTiming goal={goal} />
                         </div>

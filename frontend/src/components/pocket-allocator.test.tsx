@@ -144,6 +144,30 @@ it.each([
   }
 })
 
+it.each([
+  { name: 'fully assigned', current: 0, assigned: 100, typed: '100', maximum: 100 },
+  { name: 'partly assigned', current: 40, assigned: 60, typed: '90', maximum: 100 },
+])('caps a $name withdrawal at the pocket plus what it already carries', async ({ current, assigned, typed, maximum }) => {
+  const queryClient = createTestQueryClient()
+  queryClient.setQueryData(['goals', 'pocket-allocator'], [{ ...pocket, current_amount: current }])
+  const { user } = renderWithProviders(
+    <PocketAllocator
+      accountId="account" transactionType="debit" transactionAmount={100}
+      transactionStatus="posted" value={[{ goal_id: 'monitor', amount: assigned }]}
+      originalAllocations={[{ goal_id: 'monitor', amount: -assigned }]}
+      onChange={vi.fn()}
+    />,
+    { queryClient },
+  )
+
+  await user.click(screen.getByRole('button', { name: 'Edit pockets' }))
+  expect(screen.getByLabelText('Allocation for Monitor')).toHaveAttribute('max', String(maximum))
+  expect(screen.getByRole('button', { name: 'Apply' })).toBeEnabled()
+  fireEvent.change(screen.getByLabelText('Allocation for Monitor'), { target: { value: typed } })
+  expect(screen.queryByText('An allocation exceeds the amount available in that pocket.')).not.toBeInTheDocument()
+  expect(screen.getByRole('button', { name: 'Apply' })).toBeEnabled()
+})
+
 it('keeps a fully spent pocket available after clearing an edit draft', async () => {
   const queryClient = createTestQueryClient()
   queryClient.setQueryData(['goals', 'pocket-allocator'], [{ ...pocket, current_amount: 0 }])
