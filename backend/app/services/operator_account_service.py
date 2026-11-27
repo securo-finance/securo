@@ -1,10 +1,15 @@
-"""The operator opens an account on a managed instance (#1965).
+"""The operator opens an account on a managed instance (#1965) and looks it up (#1966).
 
 One call writes the person, their workspaces and their limits in one
 transaction, so no account ever exists without its limits. The account is born
 with no password anyone knows: it cannot be signed in to until the person sets
 one (#1967). The operator's reference is unique, and a retry with the same
 reference and address answers the account it already opened.
+
+The lookup carries who the account is, the workspaces it created and its
+limits next to the current counts, and nothing from inside a workspace. The
+counts come from `quota_service.check_fit`, the same functions the limits are
+enforced with, so the lookup and a refusal can never disagree.
 """
 from __future__ import annotations
 
@@ -225,4 +230,63 @@ async def open_account(
         await session.rollback()
         raise
     return OpenedAccount(user=user, workspaces=opened, created=True)
+
+
+# --- Looking an account up (#1966) ---------------------------------------------
+
+
+@dataclass(frozen=True)
+class OwnedWorkspace:
+    id: uuid.UUID
+    name: str
+    kind: str
+    is_archived: bool
+    members: int
+
+
+@dataclass(frozen=True)
+class CounterUsage:
+    counter: str
+    current: int
+    maximum: Optional[int]
+
+
+@dataclass(frozen=True)
+class AccountView:
+    user: User
+    workspaces: list[OwnedWorkspace]
+    usage: list[CounterUsage]
+
+
+async def find_account(
+    session: AsyncSession,
+    *,
+    user_id: Optional[uuid.UUID] = None,
+    email: Optional[str] = None,
+    external_reference: Optional[str] = None,
+) -> Optional[User]:
+    if user_id is not None:
+        return await session.get(User, user_id)
+    if email is not None:
+        return await account_lookup_service.find_account_by_email(session, email)
+    if external_reference is not None:
+        return await _by_reference(session, external_reference)
+    return None
+
+
+def password_is_set(user: User) -> bool:
+    """Whether the person picked a password; an account the operator opened has none until then."""
+    return user.password_set_at is not None
+
+
+async def describe(session: AsyncSession, user: User) -> AccountView:
+    workspaces = [
+        OwnedWorkspace(w.id, w.name, w.kind, w.is_archived, await quota_service.count_members(session, w.id))
+        for w in await _owned_workspaces(session, user.id)
+    ]
+    quota = await quota_service.get_quota(session, user.id)
+    limits = {c: getattr(quota, c) if quota else None for c in quota_service.COUNTERS}
+    fit = await quota_service.check_fit(session, user.id, limits)
+    usage = [CounterUsage(f.counter, f.current, f.target) for f in fit.counters]
+    return AccountView(user=user, workspaces=workspaces, usage=usage)
 
