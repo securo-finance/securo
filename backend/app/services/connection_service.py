@@ -1789,7 +1789,7 @@ async def _store_todays_snapshot(
         price=_snapshot_unit_price(holding),
     )
     if not stored:
-        return
+        _drop_provider_value_date(asset)
 
 
 def _snapshot_unit_price(holding: HoldingData) -> Optional[Decimal]:
