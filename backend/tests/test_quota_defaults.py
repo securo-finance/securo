@@ -180,7 +180,10 @@ async def test_the_operator_reads_say_where_the_limits_come_from(
     }
     assert (await client.get(url, headers=operator)).json()["source"] == "none"
 
-    body = {"max_personal_workspaces": 1, "max_business_workspaces": 0, "max_bank_connections": 2, "max_members_per_workspace": 3}
+    body = {
+        "max_personal_workspaces": 1, "max_business_workspaces": 0, "max_bank_connections": 2,
+        "max_members_per_workspace": 3, "max_assistant_messages_per_month": 100,
+    }
     assert (await client.put(DEFAULTS_URL, json=body, headers=operator)).json() == {"is_set": True, **body}
     assert (await client.get(DEFAULTS_URL, headers=operator)).json() == {"is_set": True, **body}
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { fullCounter, quotaMessageKey, readQuotaRefusal, safeInfoUrl } from './quota'
+import { fullCounter, quotaMessageKey, readQuotaRefusal, readQuotaRefusalBody, safeInfoUrl } from './quota'
 import type { MyQuotas } from '@/types'
 
 const refusal = (detail: unknown) => ({ isAxiosError: true, response: { status: 403, data: { detail } } })
@@ -8,6 +8,15 @@ describe('readQuotaRefusal', () => {
   it('reads the counter, count and maximum of a quota_exceeded', () => {
     const error = refusal({ code: 'quota_exceeded', counter: 'max_bank_connections', current: 2, maximum: 2 })
     expect(readQuotaRefusal(error)).toEqual({ counter: 'max_bank_connections', current: 2, maximum: 2 })
+  })
+
+  it('reads a refusal the chat stream got as a raw response body', () => {
+    const body = JSON.stringify({
+      detail: { code: 'quota_exceeded', counter: 'max_assistant_messages_per_month', current: 50, maximum: 50 },
+    })
+    expect(readQuotaRefusalBody(body)).toEqual({ counter: 'max_assistant_messages_per_month', current: 50, maximum: 50 })
+    expect(readQuotaRefusalBody('{"detail":"agent not found"}')).toBeNull()
+    expect(readQuotaRefusalBody('Bad Gateway')).toBeNull()
   })
 
   it('ignores any other refusal', () => {
@@ -30,6 +39,11 @@ describe('quotaMessageKey', () => {
 
   it('keeps workspace counters on the account itself, which is always the creator', () => {
     expect(quotaMessageKey('max_business_workspaces', true)).toBe('quota.reached.max_business_workspaces')
+  })
+
+  it('has one sentence for the monthly assistant limit, true for the owner and for a member', () => {
+    expect(quotaMessageKey('max_assistant_messages_per_month', false)).toBe('quota.reached.max_assistant_messages_per_month')
+    expect(quotaMessageKey('max_assistant_messages_per_month', true)).toBe('quota.reached.max_assistant_messages_per_month')
   })
 
   it('falls back to a generic sentence for a counter it does not know', () => {

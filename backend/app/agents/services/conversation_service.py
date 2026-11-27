@@ -96,6 +96,7 @@ async def append_message(
     citations: Optional[list[Any]] = None,
     input_tokens: Optional[int] = None,
     output_tokens: Optional[int] = None,
+    instance_llm: bool = False,
 ) -> Message:
     next_ord = (await session.execute(
         select(func.coalesce(func.max(Message.ordinal), 0) + 1).where(
@@ -112,6 +113,7 @@ async def append_message(
         citations=citations,
         input_tokens=input_tokens,
         output_tokens=output_tokens,
+        instance_llm=instance_llm,
     )
     session.add(msg)
     await session.commit()

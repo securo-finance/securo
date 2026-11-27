@@ -4470,13 +4470,15 @@
       "max_personal_workspaces": "Personal workspaces",
       "max_business_workspaces": "Business workspaces",
       "max_bank_connections": "Bank connections",
-      "max_members_per_workspace": "Members per workspace"
+      "max_members_per_workspace": "Members per workspace",
+      "max_assistant_messages_per_month": "Assistant messages this month"
     },
     "reached": {
       "max_personal_workspaces": "This account has reached its limit of {{maximum}} personal workspaces. Archive one to create another.",
       "max_business_workspaces": "This account has reached its limit of {{maximum}} business workspaces. Archive one to create another.",
       "max_bank_connections": "This account has reached its limit of {{maximum}} bank connections across the workspaces it created. Remove a connection to add another.",
-      "max_members_per_workspace": "This workspace has reached its limit of {{maximum}} members. Remove a member to add another."
+      "max_members_per_workspace": "This workspace has reached its limit of {{maximum}} members. Remove a member to add another.",
+      "max_assistant_messages_per_month": "This month's limit of {{maximum}} assistant messages has been reached. It starts again on the first day of next month."
     },
     "ownerReached": {
       "max_bank_connections": "This workspace's owner has reached their limit of {{maximum}} bank connections. Only the owner can free a place, by removing a connection.",

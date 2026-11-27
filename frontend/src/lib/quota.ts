@@ -13,13 +13,30 @@ export const QUOTA_COUNTERS = [
   'max_business_workspaces',
   'max_bank_connections',
   'max_members_per_workspace',
+  'max_assistant_messages_per_month',
 ] as const
 
-/** Counters whose number belongs to whoever created the workspace. */
+/**
+ * Counters whose number belongs to whoever created the workspace. The monthly
+ * assistant messages are the owner's too (ADR 0053), but its one sentence
+ * already reads true for a member, so it keeps a single key.
+ */
 const OWNER_COUNTERS = new Set(['max_bank_connections', 'max_members_per_workspace'])
 
 export function readQuotaRefusal(error: unknown): QuotaUsage | null {
-  const detail = (error as { response?: { data?: { detail?: unknown } } } | null)?.response?.data?.detail
+  return quotaFromDetail((error as { response?: { data?: { detail?: unknown } } } | null)?.response?.data?.detail)
+}
+
+/** The same refusal read from a raw response body, as the chat stream's fetch gets it. */
+export function readQuotaRefusalBody(body: string): QuotaUsage | null {
+  try {
+    return quotaFromDetail((JSON.parse(body) as { detail?: unknown } | null)?.detail)
+  } catch {
+    return null
+  }
+}
+
+function quotaFromDetail(detail: unknown): QuotaUsage | null {
   if (!detail || typeof detail !== 'object') return null
   const { code, counter, current, maximum } = detail as Record<string, unknown>
   if (code !== 'quota_exceeded' || typeof counter !== 'string') return null

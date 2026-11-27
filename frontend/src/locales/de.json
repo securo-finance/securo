@@ -4471,13 +4471,15 @@
       "max_personal_workspaces": "Private Arbeitsbereiche",
       "max_business_workspaces": "Geschäftliche Arbeitsbereiche",
       "max_bank_connections": "Bankverbindungen",
-      "max_members_per_workspace": "Mitglieder pro Arbeitsbereich"
+      "max_members_per_workspace": "Mitglieder pro Arbeitsbereich",
+      "max_assistant_messages_per_month": "Nachrichten an den Assistenten in diesem Monat"
     },
     "reached": {
       "max_personal_workspaces": "Dieses Konto hat sein Limit von {{maximum}} privaten Arbeitsbereichen erreicht. Archiviere einen, um einen neuen anzulegen.",
       "max_business_workspaces": "Dieses Konto hat sein Limit von {{maximum}} geschäftlichen Arbeitsbereichen erreicht. Archiviere einen, um einen neuen anzulegen.",
       "max_bank_connections": "Dieses Konto hat sein Limit von {{maximum}} Bankverbindungen in den von ihm erstellten Arbeitsbereichen erreicht. Entferne eine Verbindung, um eine neue hinzuzufügen.",
-      "max_members_per_workspace": "Dieser Arbeitsbereich hat sein Limit von {{maximum}} Mitgliedern erreicht. Entferne ein Mitglied, um ein neues hinzuzufügen."
+      "max_members_per_workspace": "Dieser Arbeitsbereich hat sein Limit von {{maximum}} Mitgliedern erreicht. Entferne ein Mitglied, um ein neues hinzuzufügen.",
+      "max_assistant_messages_per_month": "Das Limit von {{maximum}} Nachrichten an den Assistenten für diesen Monat ist erreicht. Es beginnt am ersten Tag des nächsten Monats neu."
     },
     "ownerReached": {
       "max_bank_connections": "Der Inhaber dieses Arbeitsbereichs hat sein Limit von {{maximum}} Bankverbindungen erreicht. Nur der Inhaber kann einen Platz freigeben, indem er eine Verbindung entfernt.",

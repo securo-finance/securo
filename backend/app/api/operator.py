@@ -43,6 +43,7 @@ class QuotaValues(BaseModel):
     max_business_workspaces: Limit = Field(default=None, ge=0, le=_INT32_MAX)
     max_bank_connections: Limit = Field(default=None, ge=0, le=_INT32_MAX)
     max_members_per_workspace: Limit = Field(default=None, ge=0, le=_INT32_MAX)
+    max_assistant_messages_per_month: Limit = Field(default=None, ge=0, le=_INT32_MAX)
 
 
 LimitsSource = quota_service.Source
@@ -56,7 +57,7 @@ class QuotaRead(QuotaValues):
 
 
 class QuotaDefaultsRead(QuotaValues):
-    """Null on all four with `is_set` false: no default, accounts without a row are unbounded."""
+    """Null on every counter with `is_set` false: no default, accounts without a row are unbounded."""
 
     is_set: bool
 

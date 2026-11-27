@@ -6,13 +6,16 @@
  * response stream by hand.
  */
 import { WORKSPACE_STORAGE_KEY } from '@/lib/api'
+import { readQuotaRefusalBody } from '@/lib/quota'
+import type { QuotaUsage } from '@/types'
 
 export type AgentStreamEvent =
   | { kind: 'conversation'; conversation_id: string }
   | { kind: 'text_delta'; text: string }
   | { kind: 'tool_call'; tool_name: string; tool_args: Record<string, unknown> }
   | { kind: 'tool_result'; tool_name: string; tool_result: { ok?: boolean; data?: unknown; text?: string | null } }
-  | { kind: 'error'; error_code?: string; error_message?: string }
+  // `quota`: the chat was refused because a usage limit filled (ADR 0053).
+  | { kind: 'error'; error_code?: string; error_message?: string; quota?: QuotaUsage }
   | { kind: 'done'; finish_reason?: string }
 
 export interface SendMessageOptions {
@@ -58,7 +61,10 @@ export async function streamChat(opts: SendMessageOptions): Promise<void> {
     } catch {
       detail = ''
     }
-    opts.onEvent({ kind: 'error', error_code: String(res.status), error_message: detail || res.statusText })
+    const quota = readQuotaRefusalBody(detail)
+    opts.onEvent(quota
+      ? { kind: 'error', error_code: 'quota_exceeded', error_message: detail, quota }
+      : { kind: 'error', error_code: String(res.status), error_message: detail || res.statusText })
     return
   }
 

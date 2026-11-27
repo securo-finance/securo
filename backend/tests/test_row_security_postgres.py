@@ -258,6 +258,28 @@ async def test_the_quota_counts_connections_across_workspaces_and_reads_nothing_
         assert public is False
 
 
+async def test_the_quota_counts_assistant_messages_across_workspaces_and_reads_nothing_else(stack):
+    """ADR 0050: the monthly assistant count crosses workspaces the same way."""
+    from app.services import quota_service
+
+    await _seed(stack)
+    user = uuid.uuid4()
+    messages = TABLES["agent_messages"]
+    async with _unchecked(stack) as session:
+        await session.execute(TABLES["workspaces"].update().values(created_by_user_id=user))
+        await session.execute(messages.update().values(role="user", instance_llm=True))
+    async with stack.bound(A)() as session:
+        assert await session.scalar(select(func.count()).select_from(messages)) == 1
+        assert await quota_service.count_assistant_messages(session, user) == 2
+        assert await quota_service.count_assistant_messages(session, uuid.uuid4()) == 0
+    async with stack.owner() as session:
+        public = await session.scalar(text(
+            "SELECT has_function_privilege('public', "
+            "'securo_owned_assistant_messages(uuid, timestamptz, timestamptz)', 'EXECUTE')"
+        ))
+        assert public is False
+
+
 async def test_jobs_run_one_workspace_at_a_time(stack):
     await _seed(stack)
     seen = []

@@ -16,12 +16,13 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.responses import StreamingResponse
 
-from app.agents.runtime.executor import AgentExecutor, ExecutorEvent
+from app.agents.runtime.executor import AgentExecutor, ExecutorEvent, uses_instance_connection
 from app.agents.schemas.conversation import SendMessageRequest
 from app.agents.services import agent_service, conversation_service
 from app.core.database import get_async_session
 from app.core.rate_limit import agents_chat_rate_limit
 from app.core.workspace_context import WorkspaceContext, current_writable_workspace
+from app.services import quota_service
 
 router = APIRouter(prefix="/api/agents", tags=["agents"])
 
@@ -55,6 +56,11 @@ async def chat(
     if agent is None:
         raise HTTPException(status_code=404, detail="agent not found")
 
+    # Before anything is written and before the stream opens, so a refusal
+    # leaves no empty conversation and can still answer 403 (ADR 0053).
+    instance_llm = await uses_instance_connection(session, agent)
+    await quota_service.check_assistant_message(session, ctx.workspace.id, instance_llm=instance_llm)
+
     conv = None
     if body.conversation_id:
         conv = await conversation_service.get_conversation(session, body.conversation_id, ctx.workspace.id)
@@ -84,6 +90,7 @@ async def chat(
                 user_message=body.content,
                 channel=body.channel,
                 page_context=body.page_context,
+                instance_llm=instance_llm,
             ):
                 yield _format_event(ev)
         except Exception as exc:  # noqa: BLE001

@@ -4470,13 +4470,15 @@
       "max_personal_workspaces": "व्यक्तिगत वर्कस्पेस",
       "max_business_workspaces": "व्यावसायिक वर्कस्पेस",
       "max_bank_connections": "बैंक कनेक्शन",
-      "max_members_per_workspace": "प्रति वर्कस्पेस सदस्य"
+      "max_members_per_workspace": "प्रति वर्कस्पेस सदस्य",
+      "max_assistant_messages_per_month": "इस महीने सहायक को संदेश"
     },
     "reached": {
       "max_personal_workspaces": "यह खाता {{maximum}} व्यक्तिगत वर्कस्पेस की अपनी सीमा तक पहुँच गया है। नया बनाने के लिए एक को आर्काइव करें।",
       "max_business_workspaces": "यह खाता {{maximum}} व्यावसायिक वर्कस्पेस की अपनी सीमा तक पहुँच गया है। नया बनाने के लिए एक को आर्काइव करें।",
       "max_bank_connections": "यह खाता अपने बनाए वर्कस्पेस में {{maximum}} बैंक कनेक्शन की सीमा तक पहुँच गया है। नया जोड़ने के लिए एक कनेक्शन हटाएँ।",
-      "max_members_per_workspace": "यह वर्कस्पेस {{maximum}} सदस्यों की अपनी सीमा तक पहुँच गया है। नया जोड़ने के लिए एक सदस्य हटाएँ।"
+      "max_members_per_workspace": "यह वर्कस्पेस {{maximum}} सदस्यों की अपनी सीमा तक पहुँच गया है। नया जोड़ने के लिए एक सदस्य हटाएँ।",
+      "max_assistant_messages_per_month": "इस महीने सहायक को {{maximum}} संदेशों की सीमा पूरी हो गई है। यह अगले महीने के पहले दिन फिर से शुरू होगी।"
     },
     "ownerReached": {
       "max_bank_connections": "इस वर्कस्पेस के मालिक {{maximum}} बैंक कनेक्शन की सीमा तक पहुँच गए हैं। केवल मालिक ही एक कनेक्शन हटाकर जगह खाली कर सकते हैं।",

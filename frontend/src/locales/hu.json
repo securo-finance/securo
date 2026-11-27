@@ -4470,13 +4470,15 @@
       "max_personal_workspaces": "Személyes munkaterületek",
       "max_business_workspaces": "Üzleti munkaterületek",
       "max_bank_connections": "Banki kapcsolatok",
-      "max_members_per_workspace": "Tagok munkaterületenként"
+      "max_members_per_workspace": "Tagok munkaterületenként",
+      "max_assistant_messages_per_month": "Üzenetek az asszisztensnek ebben a hónapban"
     },
     "reached": {
       "max_personal_workspaces": "Ez a fiók elérte a személyes munkaterületek korlátját ({{maximum}}). Archiváljon egyet, hogy újat hozhasson létre.",
       "max_business_workspaces": "Ez a fiók elérte az üzleti munkaterületek korlátját ({{maximum}}). Archiváljon egyet, hogy újat hozhasson létre.",
       "max_bank_connections": "Ez a fiók elérte a banki kapcsolatok korlátját ({{maximum}}) az általa létrehozott munkaterületeken. Távolítson el egy kapcsolatot, hogy újat adhasson hozzá.",
-      "max_members_per_workspace": "Ez a munkaterület elérte a tagok korlátját ({{maximum}}). Távolítson el egy tagot, hogy újat adhasson hozzá."
+      "max_members_per_workspace": "Ez a munkaterület elérte a tagok korlátját ({{maximum}}). Távolítson el egy tagot, hogy újat adhasson hozzá.",
+      "max_assistant_messages_per_month": "Elérte az e havi {{maximum}} asszisztensüzenetes korlátot. A következő hónap első napján újraindul."
     },
     "ownerReached": {
       "max_bank_connections": "A munkaterület tulajdonosa elérte a banki kapcsolatok korlátját ({{maximum}}). Csak a tulajdonos szabadíthat fel helyet egy kapcsolat eltávolításával.",

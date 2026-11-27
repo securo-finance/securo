@@ -1,6 +1,6 @@
-"""Per-account usage limits on a managed instance (ADR 0049).
+"""Per-account usage limits on a managed instance (ADR 0049, ADR 0053).
 
-Neutral on purpose: four numbers per user, written by the operator, and the
+Neutral on purpose: five numbers per user, written by the operator, and the
 code attaches nothing else to them. Everything is counted from the rows the
 user owns (the workspaces they created and what those hold), never from
 stored counters, so deleting a connection or archiving a workspace gives the
@@ -12,8 +12,9 @@ from __future__ import annotations
 import json
 import uuid
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import date, datetime, time, timezone
 from typing import Literal, Mapping, Optional
+from zoneinfo import ZoneInfo
 
 from fastapi import HTTPException, status
 from sqlalchemy import func, select, text
@@ -22,6 +23,7 @@ from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import row_security
+from app.core.app_clock import get_timezone, today_in
 from app.core.config import get_settings
 from app.models.app_settings import AppSetting
 from app.models.bank_connection import BankConnection
@@ -32,7 +34,14 @@ PERSONAL_WORKSPACES = "max_personal_workspaces"
 BUSINESS_WORKSPACES = "max_business_workspaces"
 BANK_CONNECTIONS = "max_bank_connections"
 MEMBERS_PER_WORKSPACE = "max_members_per_workspace"
-COUNTERS = (PERSONAL_WORKSPACES, BUSINESS_WORKSPACES, BANK_CONNECTIONS, MEMBERS_PER_WORKSPACE)
+ASSISTANT_MESSAGES = "max_assistant_messages_per_month"
+COUNTERS = (
+    PERSONAL_WORKSPACES,
+    BUSINESS_WORKSPACES,
+    BANK_CONNECTIONS,
+    MEMBERS_PER_WORKSPACE,
+    ASSISTANT_MESSAGES,
+)
 
 _WORKSPACE_COUNTER = {"personal": PERSONAL_WORKSPACES, "business": BUSINESS_WORKSPACES}
 
@@ -96,7 +105,7 @@ async def set_defaults(session: AsyncSession, values: Optional[Mapping[str, Opti
 async def effective_limits(session: AsyncSession, user_id: uuid.UUID) -> tuple[Limits, Source]:
     """The limits that hold for the account, and where they come from.
 
-    Its own row always wins, even with all four null; without one, the
+    Its own row always wins, even with every counter null; without one, the
     defaults when set; otherwise unbounded. Read at check time, so every
     path that creates a user follows without writing anything, and changing
     the defaults moves every account without a row at once.
@@ -161,6 +170,52 @@ async def count_members(session: AsyncSession, workspace_id: uuid.UUID) -> int:
 async def _members_by_workspace(session: AsyncSession, user_id: uuid.UUID) -> list[int]:
     rows = await session.execute(_seats().where(_owned_by(user_id)))
     return [int(r.seats) for r in rows]
+
+
+def _month(zone: ZoneInfo, today: date) -> tuple[datetime, datetime]:
+    """The calendar month holding `today` in `zone`, as a UTC range [from, to)."""
+    first = today.replace(day=1)
+    following = date(first.year + first.month // 12, first.month % 12 + 1, 1)
+
+    def start_of(day: date) -> datetime:
+        return datetime.combine(day, time.min, tzinfo=zone).astimezone(timezone.utc)
+
+    return start_of(first), start_of(following)
+
+
+async def count_assistant_messages(
+    session: AsyncSession, user_id: uuid.UUID, *, today: Optional[date] = None
+) -> int:
+    """Messages people sent this month in the workspaces the user created (#1968).
+
+    Only the ones the instance's own LLM connection answered, whoever in the
+    workspace sent them. The month is the instance's calendar month, not a
+    workspace's own timezone, so every workspace of one owner shares it.
+    Archived workspaces still count: a message spent stays spent.
+    `agent_messages` sits behind row security through its conversation, so
+    with it on the count comes from a definer function, as for connections.
+    """
+    zone = await get_timezone(session)
+    start, end = _month(zone, today or today_in(zone))
+    if row_security.enabled() and session.get_bind().dialect.name == "postgresql":
+        query = text("SELECT securo_owned_assistant_messages(:user, :start, :end)")
+        return int(await session.scalar(query, {"user": user_id, "start": start, "end": end}) or 0)
+    from app.agents.models.conversation import Conversation, Message
+
+    query = (
+        select(func.count())
+        .select_from(Message)
+        .join(Conversation, Conversation.id == Message.conversation_id)
+        .join(Workspace, Workspace.id == Conversation.workspace_id)
+        .where(
+            Workspace.created_by_user_id == user_id,
+            Message.role == "user",
+            Message.instance_llm.is_(True),
+            Message.created_at >= start,
+            Message.created_at < end,
+        )
+    )
+    return int(await session.scalar(query) or 0)
 
 
 def _refuse(counter: str, current: int, maximum: int) -> HTTPException:
@@ -264,6 +319,33 @@ async def check_new_member(
     )
 
 
+async def check_assistant_message(
+    session: AsyncSession, workspace_id: uuid.UUID, *, instance_llm: bool
+) -> None:
+    """A message to the assistant fills the number of whoever created the workspace.
+
+    Only when the instance's own LLM connection would answer it and the agents
+    module is on. No lock: the message is written later, by the stream, in a
+    transaction of its own, so requests sent at the same instant can each pass
+    the last place. The limit can be passed by as many sends as arrive at once,
+    which is accepted for a monthly number (ADR 0053).
+    """
+    from app.agents.config import get_agent_settings
+
+    if not enforced() or not instance_llm or not get_agent_settings().enabled:
+        return
+    owner = await _workspace_owner(session, workspace_id)
+    if owner is None:
+        return
+    limits, _ = await effective_limits(session, owner)
+    maximum = limits[ASSISTANT_MESSAGES]
+    if maximum is None:
+        return
+    current = await count_assistant_messages(session, owner)
+    if current >= maximum:
+        raise _refuse(ASSISTANT_MESSAGES, current, maximum)
+
+
 @dataclass(frozen=True)
 class CounterFit:
     counter: str
@@ -293,6 +375,7 @@ async def _current_counts(session: AsyncSession, user_id: uuid.UUID) -> tuple[di
         BUSINESS_WORKSPACES: await count_workspaces(session, user_id, "business"),
         BANK_CONNECTIONS: await count_bank_connections(session, user_id),
         MEMBERS_PER_WORKSPACE: max(members, default=0),
+        ASSISTANT_MESSAGES: await count_assistant_messages(session, user_id),
     }
     return current, members
 
@@ -348,7 +431,7 @@ async def check_fit(
 
 
 async def set_quota(session: AsyncSession, user_id: uuid.UUID, values: Mapping[str, Optional[int]]) -> UserQuota:
-    """Write the account's four numbers in one upsert.
+    """Write the account's numbers in one upsert.
 
     Reading the row and creating it when missing let two first writes at once
     both read nothing and both insert, and the second failed on the primary

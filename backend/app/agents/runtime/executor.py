@@ -95,6 +95,27 @@ def _model_for(agent: Agent) -> str:
     return os.getenv("AGENTS_DEFAULT_MODEL", "")
 
 
+async def _connection_for(session, agent: Agent):
+    """The user-managed connection the agent runs on, or None for the instance's own."""
+    from app.agents.services import connection_service  # local import: cycle safety
+
+    conn = None
+    if agent.connection_id:
+        conn = await connection_service.get_connection(session, agent.connection_id, agent.user_id)
+    if conn is None:
+        conn = await connection_service.get_default_connection(session, agent.user_id)
+    return conn
+
+
+async def uses_instance_connection(session, agent: Agent) -> bool:
+    """Whether the instance's own LLM settings would answer this agent.
+
+    The same resolution as `_provider_and_model_for`: an agent whose creator
+    set a connection, or has a default one, runs on that account's own key.
+    """
+    return await _connection_for(session, agent) is None
+
+
 async def _provider_and_model_for(session, agent: Agent):
     """Resolve (provider, model) using this priority:
         1. agent.connection_id        — explicit user-managed connection
@@ -105,12 +126,7 @@ async def _provider_and_model_for(session, agent: Agent):
     """
     from app.agents.services import connection_service  # local import: cycle safety
 
-    conn = None
-    if agent.connection_id:
-        conn = await connection_service.get_connection(session, agent.connection_id, agent.user_id)
-    if conn is None:
-        conn = await connection_service.get_default_connection(session, agent.user_id)
-
+    conn = await _connection_for(session, agent)
     if conn is not None:
         provider = connection_service.build_provider_for_connection(conn)
         model = agent.model or conn.default_model or os.getenv("AGENTS_DEFAULT_MODEL", "")
@@ -338,10 +354,14 @@ class AgentExecutor:
         user_message: str,
         channel: str = "web",
         page_context: Optional[dict[str, Any]] = None,
+        instance_llm: bool = False,
     ) -> AsyncIterator[ExecutorEvent]:
-        # 1. Persist the user message first so it survives crashes.
+        # 1. Persist the user message first so it survives crashes. Whether the
+        #    instance's own connection answers it is what the monthly
+        #    assistant limit counts (ADR 0053).
         await conversation_service.append_message(
-            session, conversation_id=conversation_id, role="user", content=user_message
+            session, conversation_id=conversation_id, role="user", content=user_message,
+            instance_llm=instance_llm,
         )
         await conversation_service.update_title_if_empty(session, conversation_id, user_message)
 

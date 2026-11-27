@@ -4510,13 +4510,15 @@
       "max_personal_workspaces": "סביבות עבודה אישיות",
       "max_business_workspaces": "סביבות עבודה עסקיות",
       "max_bank_connections": "חיבורי בנק",
-      "max_members_per_workspace": "חברים לכל סביבת עבודה"
+      "max_members_per_workspace": "חברים לכל סביבת עבודה",
+      "max_assistant_messages_per_month": "הודעות לעוזר החודש"
     },
     "reached": {
       "max_personal_workspaces": "החשבון הזה הגיע למגבלה של {{maximum}} סביבות עבודה אישיות. יש להעביר אחת לארכיון כדי ליצור אחרת.",
       "max_business_workspaces": "החשבון הזה הגיע למגבלה של {{maximum}} סביבות עבודה עסקיות. יש להעביר אחת לארכיון כדי ליצור אחרת.",
       "max_bank_connections": "החשבון הזה הגיע למגבלה של {{maximum}} חיבורי בנק בסביבות העבודה שיצר. יש להסיר חיבור כדי להוסיף אחר.",
-      "max_members_per_workspace": "סביבת העבודה הזו הגיעה למגבלה של {{maximum}} חברים. יש להסיר חבר כדי להוסיף אחר."
+      "max_members_per_workspace": "סביבת העבודה הזו הגיעה למגבלה של {{maximum}} חברים. יש להסיר חבר כדי להוסיף אחר.",
+      "max_assistant_messages_per_month": "הגעת למגבלה של {{maximum}} הודעות לעוזר החודש. היא מתחילה מחדש ביום הראשון של החודש הבא."
     },
     "ownerReached": {
       "max_bank_connections": "הבעלים של סביבת העבודה הזו הגיעו למגבלה של {{maximum}} חיבורי בנק. רק הבעלים יכולים לפנות מקום, על ידי הסרת חיבור.",

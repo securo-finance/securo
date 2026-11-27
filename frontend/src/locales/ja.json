@@ -4470,13 +4470,15 @@
       "max_personal_workspaces": "個人ワークスペース",
       "max_business_workspaces": "ビジネスワークスペース",
       "max_bank_connections": "銀行連携",
-      "max_members_per_workspace": "ワークスペースあたりのメンバー"
+      "max_members_per_workspace": "ワークスペースあたりのメンバー",
+      "max_assistant_messages_per_month": "今月のアシスタントへのメッセージ"
     },
     "reached": {
       "max_personal_workspaces": "このアカウントは個人ワークスペースの上限({{maximum}})に達しました。新しく作成するには、いずれかをアーカイブしてください。",
       "max_business_workspaces": "このアカウントはビジネスワークスペースの上限({{maximum}})に達しました。新しく作成するには、いずれかをアーカイブしてください。",
       "max_bank_connections": "このアカウントは、作成したワークスペース全体で銀行連携の上限({{maximum}})に達しました。追加するには連携を一つ削除してください。",
-      "max_members_per_workspace": "このワークスペースはメンバーの上限({{maximum}})に達しました。追加するにはメンバーを一人削除してください。"
+      "max_members_per_workspace": "このワークスペースはメンバーの上限({{maximum}})に達しました。追加するにはメンバーを一人削除してください。",
+      "max_assistant_messages_per_month": "今月のアシスタントへのメッセージ上限 {{maximum}} 件に達しました。翌月の初日に再びリセットされます。"
     },
     "ownerReached": {
       "max_bank_connections": "このワークスペースの所有者は銀行連携の上限({{maximum}})に達しました。枠を空けられるのは所有者だけで、連携を一つ削除する必要があります。",

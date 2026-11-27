@@ -10,11 +10,11 @@ from app.core.database import Base
 
 
 class UserQuota(Base):
-    """The four numbers an account may hold on a managed instance (ADR 0049).
+    """The numbers an account may hold on a managed instance (ADR 0049, 0053).
 
     Neutral on purpose: the operator writes the numbers and the code attaches
     nothing else to them. A null counter is unbounded, and a user with no row
-    is unbounded on all four.
+    follows the operator's defaults, or is unbounded without them.
     """
 
     __tablename__ = "user_quotas"
@@ -26,6 +26,7 @@ class UserQuota(Base):
     max_business_workspaces: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     max_bank_connections: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     max_members_per_workspace: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    max_assistant_messages_per_month: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),

@@ -4472,13 +4472,15 @@
       "max_personal_workspaces": "Persoonlijke werkruimtes",
       "max_business_workspaces": "Zakelijke werkruimtes",
       "max_bank_connections": "Bankkoppelingen",
-      "max_members_per_workspace": "Leden per werkruimte"
+      "max_members_per_workspace": "Leden per werkruimte",
+      "max_assistant_messages_per_month": "Berichten aan de assistent deze maand"
     },
     "reached": {
       "max_personal_workspaces": "Dit account heeft zijn limiet van {{maximum}} persoonlijke werkruimtes bereikt. Archiveer er een om een nieuwe aan te maken.",
       "max_business_workspaces": "Dit account heeft zijn limiet van {{maximum}} zakelijke werkruimtes bereikt. Archiveer er een om een nieuwe aan te maken.",
       "max_bank_connections": "Dit account heeft zijn limiet van {{maximum}} bankkoppelingen in de werkruimtes die het heeft aangemaakt bereikt. Verwijder een koppeling om een nieuwe toe te voegen.",
-      "max_members_per_workspace": "Deze werkruimte heeft zijn limiet van {{maximum}} leden bereikt. Verwijder een lid om een nieuw lid toe te voegen."
+      "max_members_per_workspace": "Deze werkruimte heeft zijn limiet van {{maximum}} leden bereikt. Verwijder een lid om een nieuw lid toe te voegen.",
+      "max_assistant_messages_per_month": "De limiet van {{maximum}} berichten aan de assistent voor deze maand is bereikt. Die begint opnieuw op de eerste dag van volgende maand."
     },
     "ownerReached": {
       "max_bank_connections": "De eigenaar van deze werkruimte heeft de limiet van {{maximum}} bankkoppelingen bereikt. Alleen de eigenaar kan een plek vrijmaken, door een koppeling te verwijderen.",

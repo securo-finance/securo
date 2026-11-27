@@ -4632,13 +4632,15 @@
       "max_personal_workspaces": "Osobiste przestrzenie robocze",
       "max_business_workspaces": "Firmowe przestrzenie robocze",
       "max_bank_connections": "Połączenia bankowe",
-      "max_members_per_workspace": "Członkowie na przestrzeń roboczą"
+      "max_members_per_workspace": "Członkowie na przestrzeń roboczą",
+      "max_assistant_messages_per_month": "Wiadomości do asystenta w tym miesiącu"
     },
     "reached": {
       "max_personal_workspaces": "To konto osiągnęło limit osobistych przestrzeni roboczych ({{maximum}}). Zarchiwizuj jedną, aby utworzyć kolejną.",
       "max_business_workspaces": "To konto osiągnęło limit firmowych przestrzeni roboczych ({{maximum}}). Zarchiwizuj jedną, aby utworzyć kolejną.",
       "max_bank_connections": "To konto osiągnęło limit połączeń bankowych ({{maximum}}) w utworzonych przez siebie przestrzeniach roboczych. Usuń połączenie, aby dodać kolejne.",
-      "max_members_per_workspace": "Ta przestrzeń robocza osiągnęła limit członków ({{maximum}}). Usuń członka, aby dodać kolejnego."
+      "max_members_per_workspace": "Ta przestrzeń robocza osiągnęła limit członków ({{maximum}}). Usuń członka, aby dodać kolejnego.",
+      "max_assistant_messages_per_month": "Osiągnięto limit {{maximum}} wiadomości do asystenta w tym miesiącu. Zaczyna się od nowa pierwszego dnia następnego miesiąca."
     },
     "ownerReached": {
       "max_bank_connections": "Właściciel tej przestrzeni roboczej osiągnął limit połączeń bankowych ({{maximum}}). Tylko właściciel może zwolnić miejsce, usuwając połączenie.",

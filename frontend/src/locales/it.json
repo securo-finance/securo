@@ -4485,13 +4485,15 @@
       "max_personal_workspaces": "Spazi di lavoro personali",
       "max_business_workspaces": "Spazi di lavoro aziendali",
       "max_bank_connections": "Connessioni bancarie",
-      "max_members_per_workspace": "Membri per spazio di lavoro"
+      "max_members_per_workspace": "Membri per spazio di lavoro",
+      "max_assistant_messages_per_month": "Messaggi all'assistente questo mese"
     },
     "reached": {
       "max_personal_workspaces": "Questo account ha raggiunto il limite di {{maximum}} spazi di lavoro personali. Archiviane uno per crearne un altro.",
       "max_business_workspaces": "Questo account ha raggiunto il limite di {{maximum}} spazi di lavoro aziendali. Archiviane uno per crearne un altro.",
       "max_bank_connections": "Questo account ha raggiunto il limite di {{maximum}} connessioni bancarie negli spazi di lavoro che ha creato. Rimuovi una connessione per aggiungerne un'altra.",
-      "max_members_per_workspace": "Questo spazio di lavoro ha raggiunto il limite di {{maximum}} membri. Rimuovi un membro per aggiungerne un altro."
+      "max_members_per_workspace": "Questo spazio di lavoro ha raggiunto il limite di {{maximum}} membri. Rimuovi un membro per aggiungerne un altro.",
+      "max_assistant_messages_per_month": "È stato raggiunto il limite di {{maximum}} messaggi all'assistente per questo mese. Riparte il primo giorno del mese prossimo."
     },
     "ownerReached": {
       "max_bank_connections": "Il proprietario di questo spazio di lavoro ha raggiunto il limite di {{maximum}} connessioni bancarie. Solo il proprietario può liberare un posto, rimuovendo una connessione.",
