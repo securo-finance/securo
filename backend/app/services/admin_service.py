@@ -300,6 +300,38 @@ async def _record_admin_access(
     return entry
 
 
+async def _record_instance_access(
+    session: AsyncSession,
+    actor_id: uuid.UUID,
+    action: str,
+    reason: str,
+    ip: Optional[str],
+    *,
+    changes: Optional[dict] = None,
+) -> AdminAccessLog:
+    """Add the record of an action on the instance, not on one account (#605).
+
+    ``target_email`` stays empty and nobody is named as a viewer: the change
+    reads the same for every account, so naming all of them would write one
+    row per person per change and tell each of them nothing of their own. It
+    is read in the administrator log (ADR 0042).
+    """
+    actor = await get_user(session, actor_id)
+    entry = AdminAccessLog(
+        id=uuid.uuid4(),
+        actor_id=actor_id,
+        actor_email=actor.email if actor else "unknown",
+        target_user_id=None,
+        target_email="",
+        action=action,
+        changes=changes,
+        reason=reason,
+        ip=ip,
+    )
+    session.add(entry)
+    return entry
+
+
 async def _audience_for(session: AsyncSession, target: User) -> set[uuid.UUID]:
     """Who may read a record about `target`: the target, its owners and managers.
 
@@ -405,29 +437,55 @@ async def get_app_setting(session: AsyncSession, key: str) -> Optional[AppSettin
     return result.scalar_one_or_none()
 
 
-async def delete_app_setting(session: AsyncSession, key: str) -> bool:
-    """Remove a saved setting. Returns False when nothing was saved."""
+async def delete_app_setting(
+    session: AsyncSession, key: str, *, commit: bool = True
+) -> bool:
+    """Remove a saved setting. Returns False when nothing was saved.
+
+    ``commit=False`` leaves the change in the caller's transaction, for a
+    setting whose save and audit record have to land together (#605).
+    """
     setting = await get_app_setting(session, key)
     if setting is None:
         return False
     await session.delete(setting)
-    await session.commit()
+    if commit:
+        await session.commit()
     return True
 
 
-async def set_app_setting(session: AsyncSession, key: str, value: str) -> AppSetting:
+async def set_app_setting(
+    session: AsyncSession, key: str, value: str, *, commit: bool = True
+) -> AppSetting:
+    """Save a setting, or leave it in the caller's transaction.
+
+    With ``commit=False`` the row is only added to the session: the caller
+    decides when it lands, so a write that also records what it did commits
+    both or neither (#605).
+    """
     setting = await get_app_setting(session, key)
     if setting:
         setting.value = value
     else:
         setting = AppSetting(key=key, value=value)
     session.add(setting)
-    await session.commit()
-    await session.refresh(setting)
+    if commit:
+        await session.commit()
+        await session.refresh(setting)
     return setting
 
 
 EMAIL_TEMPLATES_KEY = "email_templates"
+
+#: The action an administrator's save of the recovery templates leaves in the
+#: access log (#605). The target is the instance, not an account.
+EMAIL_TEMPLATES_ACTION = "settings.email_templates"
+
+#: What the record says the action was for. This route carries no reason field
+#: like the account ones (#556): it changes how the instance sends its own
+#: message, not anything about one person, and what the record has to answer
+#: is who changed the text and what it said before and after.
+EMAIL_TEMPLATES_REASON = "Recovery email templates updated"
 
 
 async def get_email_templates(session: AsyncSession) -> dict[str, dict[str, str]]:
@@ -446,18 +504,54 @@ async def get_email_templates(session: AsyncSession) -> dict[str, dict[str, str]
         return {}
 
 
-async def save_email_templates(
-    session: AsyncSession, templates: dict[str, dict[str, str]]
+async def update_email_templates(
+    session: AsyncSession,
+    templates: dict[str, dict[str, str]],
+    current_user_id: uuid.UUID,
+    *,
+    ip: Optional[str] = None,
 ) -> None:
-    """Store the templates, or clear them back to the built-in text."""
+    """Save the recovery templates and record who changed what (#605).
+
+    The save and its record are one commit, the way every account action is
+    (ADR 0042): either the new text is what goes out and the log says who put
+    it there, or neither happened. The record keeps only what the endpoint
+    itself validated, a subject and a body per language, so no other field of
+    the request can reach it; the provider's key lives in the environment and
+    is never read here.
+    """
+    previous = await get_email_templates(session)
+    # Stored, or cleared back to the built-in text; the session is not
+    # committed here, so the record below lands with it.
     if templates:
         await set_app_setting(
             session,
             EMAIL_TEMPLATES_KEY,
             json.dumps(templates, ensure_ascii=False, sort_keys=True),
+            commit=False,
         )
     else:
-        await delete_app_setting(session, EMAIL_TEMPLATES_KEY)
+        await delete_app_setting(session, EMAIL_TEMPLATES_KEY, commit=False)
+
+    # Only the languages whose text moved are named, and `None` is the built-in
+    # text: the record reads as what the message was and what it became.
+    changed: dict[str, dict] = {}
+    for language in sorted(set(previous) | set(templates)):
+        if previous.get(language) != templates.get(language):
+            changed[language] = {
+                "from": previous.get(language),
+                "to": templates.get(language),
+            }
+
+    await _record_instance_access(
+        session,
+        current_user_id,
+        EMAIL_TEMPLATES_ACTION,
+        EMAIL_TEMPLATES_REASON,
+        ip,
+        changes={"templates": changed} if changed else None,
+    )
+    await session.commit()
 
 
 async def is_registration_enabled(session: AsyncSession) -> bool:

@@ -12,8 +12,10 @@ import httpx
 import pytest
 from httpx import AsyncClient
 from pydantic import SecretStr, ValidationError
+from sqlalchemy import select
 
 from app.core.config import Settings, get_settings
+from app.models.admin_access_log import AdminAccessLog
 from app.models.user import User
 from app.services import admin_service, email_service
 
@@ -746,3 +748,143 @@ async def test_a_language_without_a_saved_template_keeps_the_built_in_text(
 
     assert sent[0].subject == "Redefinir sua senha do Securo"
     assert sent[0].text.startswith("Olá")
+
+
+# What the save leaves behind (#605)
+
+
+async def _log_entries(session) -> list[AdminAccessLog]:
+    result = await session.execute(
+        select(AdminAccessLog).order_by(AdminAccessLog.created_at)
+    )
+    return list(result.scalars().all())
+
+
+@pytest.mark.asyncio
+async def test_saving_the_templates_leaves_a_record_of_who_and_what(
+    client: AsyncClient, admin_auth_headers, session, email_on
+):
+    """The route that decides where the recovery link goes now leaves a trail.
+
+    Before #605 this was the one administrative mutation with no record: a
+    superuser could rewrite the message, and with it the only way back into an
+    account, and nothing said who did it or what the text had been.
+    """
+    saved = await client.put(
+        "/api/admin/email",
+        json={"templates": {"en": {"subject": "New password", "body": VALID_BODY}}},
+        headers=admin_auth_headers,
+    )
+    assert saved.status_code == 200, saved.text
+
+    entries = await _log_entries(session)
+    assert len(entries) == 1
+    entry = entries[0]
+    assert entry.action == "settings.email_templates"
+    assert entry.actor_email == "admin@example.com"
+    assert entry.target_user_id is None
+    assert entry.target_email == ""
+    assert entry.ip
+    assert entry.created_at is not None
+    assert entry.changes == {
+        "templates": {
+            "en": {
+                "from": None,  # nothing saved before: the built-in text
+                "to": {"subject": "New password", "body": VALID_BODY},
+            }
+        }
+    }
+
+    # The provider's key is configuration, never part of what is recorded.
+    assert email_on.resend_api_key.get_secret_value() not in json.dumps(entry.changes)
+    assert email_on.resend_api_key.get_secret_value() not in entry.reason
+
+
+@pytest.mark.asyncio
+async def test_clearing_the_templates_is_recorded_with_what_it_replaced(
+    client: AsyncClient, admin_auth_headers, session, email_on
+):
+    saved = {"subject": "New password", "body": VALID_BODY}
+    await client.put(
+        "/api/admin/email", json={"templates": {"en": saved}}, headers=admin_auth_headers
+    )
+    cleared = await client.put(
+        "/api/admin/email", json={"templates": {}}, headers=admin_auth_headers
+    )
+    assert cleared.status_code == 200, cleared.text
+    assert cleared.json()["templates"] == email_service.DEFAULT_TEMPLATES
+
+    entries = await _log_entries(session)
+    assert len(entries) == 2
+    assert entries[1].changes == {"templates": {"en": {"from": saved, "to": None}}}
+
+
+@pytest.mark.asyncio
+async def test_an_unchanged_save_says_so_instead_of_inventing_a_change(
+    client: AsyncClient, admin_auth_headers, session, email_on
+):
+    body = {"templates": {"en": {"subject": "New password", "body": VALID_BODY}}}
+    await client.put("/api/admin/email", json=body, headers=admin_auth_headers)
+    again = await client.put("/api/admin/email", json=body, headers=admin_auth_headers)
+    assert again.status_code == 200, again.text
+
+    entries = await _log_entries(session)
+    assert len(entries) == 2
+    assert entries[1].changes is None
+
+
+@pytest.mark.asyncio
+async def test_a_refused_template_saves_nothing_and_leaves_no_record(
+    client: AsyncClient, admin_auth_headers, session, email_on
+):
+    response = await client.put(
+        "/api/admin/email",
+        json={"templates": {"en": {"subject": "Reset", "body": "Open {link} with {secret}."}}},
+        headers=admin_auth_headers,
+    )
+
+    assert response.status_code == 400
+    assert await _log_entries(session) == []
+
+
+@pytest.mark.asyncio
+async def test_a_field_the_templates_do_not_take_never_reaches_the_record(
+    client: AsyncClient, admin_auth_headers, session, email_on
+):
+    """Only the subject and the body are stored, so nothing else a caller sends
+    can end up in a record an administrator later reads."""
+    response = await client.put(
+        "/api/admin/email",
+        json={
+            "templates": {
+                "en": {"subject": "Reset", "body": VALID_BODY, "api_key": "re_live_secret"}
+            }
+        },
+        headers=admin_auth_headers,
+    )
+
+    assert response.status_code == 400
+    assert await _log_entries(session) == []
+    state = await client.get("/api/admin/email", headers=admin_auth_headers)
+    assert state.json()["templates"] == email_service.DEFAULT_TEMPLATES
+
+
+@pytest.mark.asyncio
+async def test_the_save_and_its_record_commit_together(
+    client: AsyncClient, admin_auth_headers, session, email_on, monkeypatch
+):
+    """A record that cannot be written takes the save with it: one commit."""
+
+    async def _fail(*args, **kwargs):
+        raise RuntimeError("the access log is unavailable")
+
+    monkeypatch.setattr(admin_service, "_record_instance_access", _fail)
+
+    with pytest.raises(RuntimeError):
+        await client.put(
+            "/api/admin/email",
+            json={"templates": {"en": {"subject": "New password", "body": VALID_BODY}}},
+            headers=admin_auth_headers,
+        )
+
+    assert await admin_service.get_email_templates(session) == {}

@@ -324,13 +324,14 @@ async def email_state(
 async def update_email_state(
     request: Request,
     session: AsyncSession = Depends(get_async_session),
-    _user: User = Depends(current_superuser),
+    current_user: User = Depends(current_superuser),
 ):
     """Replace the recovery templates, or clear them back to the built-in text.
 
     The body is read here instead of through a model so a broken template
     answers 400 with what is wrong, rather than a schema error nobody can act
-    on. Nothing is saved unless every template sent validates.
+    on. Nothing is saved unless every template sent validates, and what is
+    saved is recorded with who saved it and what the text was before (#605).
     """
     # The message goes out from the operator's sender to every user of the
     # instance, so on a hosted instance its text is the operator's (ADR 0045).
@@ -356,7 +357,9 @@ async def update_email_state(
         templates = email_service.validate_templates(body["templates"])
     except email_service.TemplateError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
-    await admin_service.save_email_templates(session, templates)
+    await admin_service.update_email_templates(
+        session, templates, current_user.id, ip=client_ip(request)
+    )
     return await _email_state(session)
 
 
