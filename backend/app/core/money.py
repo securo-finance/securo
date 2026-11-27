@@ -8,6 +8,7 @@ error, both through the API and through the MCP tools (issue #270). Every
 caller validates with these helpers so the two paths keep one rule.
 """
 from decimal import ROUND_HALF_UP, Decimal
+from functools import cache
 
 # `Numeric(15, 2)`: 13 digits and two decimals on each side.
 CENTS = Decimal("0.01")
@@ -55,21 +56,43 @@ def bounded_conversion(value: Decimal, field: str = "amount_primary") -> Decimal
     return value
 
 
+@cache
+def max_asset_value() -> Decimal:
+    """The largest value `asset_values.amount` holds, read from its column.
+
+    The asset columns keep 6 decimals and have their own width — today
+    `Numeric(15, 6)`, 9 integer digits, while the money columns keep 13. The
+    bound is taken from the model instead of written down here so a migration
+    that widens the column (the one in #1951 takes it to `Numeric(19, 6)`)
+    moves it along, without an ordering between the two changes.
+    """
+    from sqlalchemy import Numeric
+
+    from app.models.asset_value import AssetValue
+
+    column = AssetValue.__table__.c.amount.type
+    if not isinstance(column, Numeric) or column.precision is None or column.scale is None:
+        raise TypeError("asset_values.amount must be Numeric with a fixed precision and scale")
+    integer_digits = column.precision - column.scale
+    return Decimal(10) ** integer_digits - Decimal(1).scaleb(-column.scale)
+
+
 def bounded_asset_value(value: Decimal, field: str = "amount") -> Decimal:
     """A value worked out for `asset_values.amount`, or a readable refusal.
 
-    The column keeps the same 13 integer digits as the money columns, and the
-    value is usually not the client's: a growth rule compounded for years, a
-    provider balance in a weak currency, units × price. Any of them can go
+    The value is usually not the client's: a growth rule compounded for years,
+    a provider balance in a weak currency, units × price. Any of them can go
     past the column while every input fits, and then the write fails at flush
     with a raw `NumericValueOutOfRangeError` — a 500 instead of an answer
-    (issue #642). `NaN` and `Infinity` are refused here too: the column can
-    hold neither, and `NaN` cannot even be compared.
+    (issue #642). The ceiling is the column's own (`max_asset_value`), and
+    `NaN` and `Infinity` are refused here too: the column can hold neither,
+    and `NaN` cannot even be compared.
     """
     if not value.is_finite():
         raise MoneyOutOfRange(f"{field} must be a finite number")
-    if abs(value) > MAX_MONEY_AMOUNT:
-        raise MoneyOutOfRange(f"{field} must be at most {MAX_MONEY_AMOUNT}")
+    ceiling = max_asset_value()
+    if abs(value) > ceiling:
+        raise MoneyOutOfRange(f"{field} must be at most {ceiling}")
     return value
 
 

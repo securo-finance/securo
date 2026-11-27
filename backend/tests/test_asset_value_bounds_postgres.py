@@ -1,9 +1,10 @@
-"""A growth rule past the column is refused, not half-written (PostgreSQL).
+"""Asset values past the column are refused, not half-written (PostgreSQL).
 
 SQLite keeps numbers as the driver gives them, so only PostgreSQL shows what
-the bound protects: the value reached the column as
-`NumericValueOutOfRangeError ... less than 10^13`, a 500 on a request that
-passed validation (issue #642).
+the bound protects: the value reached the column as a
+`NumericValueOutOfRangeError` — a 500 on a request that passed validation
+(issue #642). The values here are taken from the column itself, so the test
+holds whatever width `asset_values.amount` has.
 """
 from datetime import date, timedelta
 from decimal import Decimal
@@ -12,13 +13,16 @@ import pytest
 import pytest_asyncio
 from sqlalchemy import func, select
 
-from app.core.money import MoneyOutOfRange
+from app.core.money import MoneyOutOfRange, max_asset_value
 from app.models.asset import Asset
 from app.models.asset_value import AssetValue
 from app.schemas.asset import AssetCreate
 from app.services import asset_service
 
 pytestmark = pytest.mark.asyncio
+
+# A base the column holds, which the rule then compounds past it.
+GROWTH_BASE = (max_asset_value() / 1000).quantize(Decimal("0.000001"))
 
 
 @pytest_asyncio.fixture
@@ -36,16 +40,16 @@ def clean_db(postgres_sessions):
 async def test_an_exploding_growth_rule_refuses_and_writes_nothing(
     session, postgres_sessions, test_user, test_workspace
 ):
-    start = date.today() - timedelta(days=200)
+    start = date.today() - timedelta(days=400)
     data = AssetCreate(
         name="Growth Overflow",
         type="investment",
         currency="BRL",
         valuation_method="growth_rule",
-        purchase_price=Decimal("1000000000000.00"),  # 1e12, inside the column
+        purchase_price=GROWTH_BASE,  # inside the column
         purchase_date=start,
         growth_type="percentage",
-        growth_rate=Decimal("100.0"),  # doubles every month: 3.2e13 by today
+        growth_rate=Decimal("100.0"),  # doubles every month: past it within a year
         growth_frequency="monthly",
         growth_start_date=start,
     )

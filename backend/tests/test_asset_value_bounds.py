@@ -1,9 +1,11 @@
 """Asset values the backend works out stay inside what the column holds.
 
-`asset_values.amount` keeps 13 integer digits. A growth rule compounded for
-years, a provider balance in a weak currency or units × price can go past it
-while every input fits; unbounded, the write failed at flush with a raw
-`NumericValueOutOfRangeError` — a 500 instead of an answer (issue #642).
+`asset_values.amount` keeps 6 decimals and its own width — `Numeric(15, 6)`
+today, 9 integer digits, fewer than the money columns. A growth rule
+compounded for years, a provider balance in a weak currency or units × price
+can go past that while every input fits; unbounded, the write failed at flush
+with a raw `NumericValueOutOfRangeError` — a 500 instead of an answer (issue
+#642).
 """
 import uuid
 from datetime import date, timedelta
@@ -15,7 +17,7 @@ from pydantic import ValidationError
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.money import MAX_MONEY_AMOUNT, MoneyOutOfRange, bounded_asset_value
+from app.core.money import MoneyOutOfRange, bounded_asset_value, max_asset_value
 from app.models.asset import Asset
 from app.models.asset_value import AssetValue
 from app.models.user import User
@@ -27,31 +29,49 @@ from app.services.connection_service import (
     _upsert_asset_value_for_today,
 )
 
-TOO_BIG = MAX_MONEY_AMOUNT + Decimal("1")
+# One unit above what the column holds, whatever width it has today.
+TOO_BIG = max_asset_value() + Decimal("0.000001")
+# A value that fits the column, which the growth rule then compounds past it.
+GROWTH_BASE = (max_asset_value() / 1000).quantize(Decimal("0.000001"))
+
+
+def test_the_ceiling_is_the_asset_column_not_a_constant_of_its_own():
+    """The bound follows `asset_values.amount`: a migration that widens the
+    column (the one in #1951) has to move the bound with it, and a hardcoded
+    ceiling would keep refusing what the column already holds."""
+    column = AssetValue.__table__.c.amount.type
+    integer_digits = column.precision - column.scale
+    assert max_asset_value() == Decimal(10) ** integer_digits - Decimal(1).scaleb(-column.scale)
+    assert len(str(int(max_asset_value()))) == integer_digits
 
 
 def test_bounded_asset_value_keeps_the_column_ceiling():
-    assert bounded_asset_value(MAX_MONEY_AMOUNT) == MAX_MONEY_AMOUNT
-    assert bounded_asset_value(Decimal("-9999999999999.99")) == Decimal("-9999999999999.99")
+    assert bounded_asset_value(max_asset_value()) == max_asset_value()
+    assert bounded_asset_value(-max_asset_value()) == -max_asset_value()
     for value in (TOO_BIG, Decimal("1E+15"), Decimal("Infinity"), Decimal("-Infinity"), Decimal("NaN")):
         with pytest.raises(MoneyOutOfRange):
             bounded_asset_value(value)
 
 
+def test_the_refusal_names_the_value_the_column_holds():
+    with pytest.raises(MoneyOutOfRange, match=f"at most {max_asset_value()}"):
+        bounded_asset_value(TOO_BIG, "purchase_price")
+
+
 def test_a_manual_value_past_the_column_is_refused_before_the_database():
-    assert AssetValueCreate(amount=MAX_MONEY_AMOUNT, date=date.today()).amount == MAX_MONEY_AMOUNT
+    assert AssetValueCreate(amount=max_asset_value(), date=date.today()).amount == max_asset_value()
     with pytest.raises(ValidationError):
-        AssetValueCreate(amount=MAX_MONEY_AMOUNT + Decimal("0.01"), date=date.today())
+        AssetValueCreate(amount=TOO_BIG, date=date.today())
 
 
 def test_growth_backfill_refuses_a_series_past_the_column():
-    """The helper behind create and update: it raises instead of returning a row
-    the column cannot hold."""
+    """The helper behind create and update: a base the column holds, compounded
+    into values it does not, raises instead of returning a row for the flush."""
     start = date.today() - timedelta(days=400)
     with pytest.raises(MoneyOutOfRange):
         _generate_growth_values(
             asset_id=uuid.uuid4(),
-            base_amount=float(Decimal("1000000000000")),
+            base_amount=float(GROWTH_BASE),
             base_date=start,
             growth_type="percentage",
             growth_rate=100.0,
@@ -64,15 +84,15 @@ def test_growth_backfill_refuses_a_series_past_the_column():
 async def test_create_asset_with_a_growth_rule_past_the_column_is_refused(
     session: AsyncSession, test_user: User, test_workspace
 ):
-    """A 1e12 asset doubling every month passes 1e13 within months: refused,
+    """A base that fits, doubling every month for more than a year: refused,
     and no half-created asset is left behind."""
-    start = date.today() - timedelta(days=200)
+    start = date.today() - timedelta(days=400)
     data = AssetCreate(
         name="Growth Overflow",
         type="investment",
         currency="BRL",
         valuation_method="growth_rule",
-        purchase_price=Decimal("1000000000000.00"),
+        purchase_price=GROWTH_BASE,
         purchase_date=start,
         growth_type="percentage",
         growth_rate=Decimal("100.0"),
@@ -93,7 +113,7 @@ async def test_create_asset_with_a_growth_rule_past_the_column_is_refused(
 async def test_the_route_answers_422_instead_of_500(
     client: AsyncClient, auth_headers: dict, session: AsyncSession
 ):
-    start = date.today() - timedelta(days=200)
+    start = date.today() - timedelta(days=400)
     response = await client.post(
         "/api/assets",
         headers=auth_headers,
@@ -102,7 +122,7 @@ async def test_the_route_answers_422_instead_of_500(
             "type": "investment",
             "currency": "BRL",
             "valuation_method": "growth_rule",
-            "purchase_price": "1000000000000.00",
+            "purchase_price": str(GROWTH_BASE),
             "purchase_date": start.isoformat(),
             "growth_type": "percentage",
             "growth_rate": "100",
@@ -111,7 +131,7 @@ async def test_the_route_answers_422_instead_of_500(
         },
     )
     assert response.status_code == 422
-    assert str(MAX_MONEY_AMOUNT) in response.json()["detail"]
+    assert str(max_asset_value()) in response.json()["detail"]
 
     listed = await client.get("/api/assets", headers=auth_headers)
     assert all(a["name"] != "Growth Overflow API" for a in listed.json())
@@ -184,6 +204,9 @@ async def test_a_synced_purchase_price_past_the_column_is_not_seeded(
 async def test_todays_market_value_is_not_written_when_units_times_price_overflows(
     session: AsyncSession, test_user: User, test_workspace
 ):
+    """A price the column holds and a quantity it holds, whose product it does
+    not: each of them fits its own column, so only the product can be checked."""
+    price = (max_asset_value() / 10).quantize(Decimal("0.000001"))
     asset = Asset(
         id=uuid.uuid4(),
         user_id=test_user.id,
@@ -192,12 +215,12 @@ async def test_todays_market_value_is_not_written_when_units_times_price_overflo
         type="investment",
         currency="BRL",
         valuation_method="market_price",
-        units=Decimal("1000000"),
+        units=Decimal("20"),
     )
     session.add(asset)
     await session.flush()
 
-    await asset_service.upsert_today_value(session, asset, Decimal("100000000"))
+    await asset_service.upsert_today_value(session, asset, price)
     await session.flush()
 
     stored = await session.scalar(
