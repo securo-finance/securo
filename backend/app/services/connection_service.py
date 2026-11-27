@@ -21,8 +21,8 @@ from app.core.money import (
     MAX_MONEY_AMOUNT,
     MoneyOutOfRange,
     bounded_asset_value,
-    bounded_conversion,
     bounded_fx_rate,
+    quantize_bounded_conversion,
 )
 from app.models.asset import PROVIDER_VALUE_DATE_METADATA_KEY, Asset
 from app.models.asset_group import AssetGroup
@@ -1865,8 +1865,21 @@ def _same_cents(left: Optional[Decimal], right: Optional[Decimal]) -> bool:
     """Whether two optional money values agree to the cent."""
     if left is None or right is None:
         return left is right
-    cent = Decimal("0.01")
-    return Decimal(str(left)).quantize(cent) == Decimal(str(right)).quantize(cent)
+    try:
+        left_dec = Decimal(str(left))
+        right_dec = Decimal(str(right))
+        if (
+            not left_dec.is_finite()
+            or not right_dec.is_finite()
+            or abs(left_dec) > MAX_MONEY_AMOUNT + Decimal("1")
+            or abs(right_dec) > MAX_MONEY_AMOUNT + Decimal("1")
+        ):
+            return False
+        return left_dec.quantize(CENTS, rounding=ROUND_HALF_UP) == right_dec.quantize(
+            CENTS, rounding=ROUND_HALF_UP
+        )
+    except InvalidOperation:
+        return False
 
 
 async def _stamp_synced_primary_amount(
@@ -1898,12 +1911,7 @@ async def _stamp_synced_primary_amount(
     try:
         if converted is not None:
             raw_converted = Decimal(str(converted))
-            if not raw_converted.is_finite() or abs(raw_converted) > MAX_MONEY_AMOUNT + Decimal("1"):
-                primary = bounded_conversion(raw_converted)
-            else:
-                primary = bounded_conversion(
-                    raw_converted.quantize(CENTS, rounding=ROUND_HALF_UP)
-                )
+            primary = quantize_bounded_conversion(raw_converted)
             if transaction.amount:
                 try:
                     rate = bounded_fx_rate(

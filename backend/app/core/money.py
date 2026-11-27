@@ -58,6 +58,23 @@ def bounded_conversion(value: Decimal, field: str = "amount_primary") -> Decimal
     return value
 
 
+def quantize_bounded_conversion(
+    value: Decimal,
+    field: str = "amount_primary",
+    *,
+    rounding: str = ROUND_HALF_UP,
+) -> Decimal:
+    """Round a computed conversion to cents, then enforce `bounded_conversion`.
+
+    Checking finiteness and the column ceiling (+1 for half-cent rounding)
+    before calling ``quantize`` avoids ``decimal.InvalidOperation`` on huge
+    or non-finite intermediate values (issue #1795).
+    """
+    if not value.is_finite() or abs(value) > MAX_MONEY_AMOUNT + Decimal("1"):
+        return bounded_conversion(value, field)
+    return bounded_conversion(value.quantize(CENTS, rounding=rounding), field)
+
+
 @cache
 def max_asset_value() -> Decimal:
     """The largest value `asset_values.amount` holds, read from its column.

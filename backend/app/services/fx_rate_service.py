@@ -15,7 +15,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from app.core.app_clock import app_today
 from app.core.config import get_settings
 from app.core.currency import same_currency
-from app.core.money import MAX_MONEY_AMOUNT, MoneyOutOfRange, bounded_conversion
+from app.core.money import MoneyOutOfRange, quantize_bounded_conversion
 from app.models.account import Account
 from app.models.fx_rate import FxRate
 from app.models.transaction import Transaction
@@ -790,11 +790,8 @@ async def stamp_account_amount(
         transaction.amount_account_source = None
         return
     if bank_amount is not None:
-        raw_bank = Decimal(str(bank_amount))
-        if not raw_bank.is_finite() or abs(raw_bank) > MAX_MONEY_AMOUNT + Decimal("1"):
-            bounded_conversion(raw_bank, "amount_account")
-        transaction.amount_account = bounded_conversion(
-            raw_bank.quantize(Decimal("0.01")),
+        transaction.amount_account = quantize_bounded_conversion(
+            Decimal(str(bank_amount)),
             "amount_account",
         )
         transaction.amount_account_source = ACCOUNT_AMOUNT_FROM_BANK
@@ -821,8 +818,8 @@ async def stamp_account_amount(
         allow_fetch=allow_fetch,
     )
     if rate is not None:
-        transaction.amount_account = bounded_conversion(
-            (Decimal(str(transaction.amount)) * rate).quantize(Decimal("0.01")),
+        transaction.amount_account = quantize_bounded_conversion(
+            Decimal(str(transaction.amount)) * rate,
             "amount_account",
         )
         transaction.amount_account_source = None
@@ -887,7 +884,7 @@ async def resolve_primary_stamp(
             exact = False
             break
     return PrimaryStamp(
-        bounded_conversion((amount_dec * rate).quantize(Decimal("0.01"))), rate, exact
+        quantize_bounded_conversion(amount_dec * rate), rate, exact
     )
 
 

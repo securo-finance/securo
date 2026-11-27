@@ -11,8 +11,10 @@ Covers:
 """
 
 import uuid
-from datetime import date
+from datetime import date, datetime, timezone
 from decimal import Decimal
+from typing import Optional
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from sqlalchemy import select
@@ -20,13 +22,29 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 import mcp_server.tools  # noqa: F401
 from app.core.app_clock import app_today
-from app.core.money import MAX_MONEY_AMOUNT, MoneyOutOfRange, bounded_conversion
+from app.core.money import (
+    MAX_MONEY_AMOUNT,
+    MoneyOutOfRange,
+    bounded_conversion,
+    quantize_bounded_conversion,
+)
 from app.models.account import Account
+from app.models.bank_connection import BankConnection
 from app.models.fx_rate import FxRate
 from app.models.transaction import Transaction
 from app.models.user import User
-from app.services.connection_service import _stamp_synced_primary_amount
-from app.services.fx_rate_service import ACCOUNT_AMOUNT_FROM_BANK, stamp_account_amount
+from app.models.workspace import Workspace
+from app.providers.base import AccountData, BankProvider, ConnectionData, TransactionData
+from app.services.connection_service import (
+    _same_cents,
+    _stamp_synced_primary_amount,
+    sync_connection,
+)
+from app.services.fx_rate_service import (
+    ACCOUNT_AMOUNT_FROM_BANK,
+    resolve_primary_stamp,
+    stamp_account_amount,
+)
 from mcp_server.auth import CallContext
 from mcp_server.registry import REGISTRY
 
@@ -470,3 +488,303 @@ async def test_mcp_edit_preview_names_limit_when_conversion_overflows(
     assert fresh.amount == Decimal("60.00")
     assert fresh.amount_primary == Decimal("300.00")
     assert fresh.fx_rate_used == Decimal("5.0")
+
+
+# --- 4. Pre-quantize guards, ROUND_HALF_UP, and e2e sync_connection bounds ---
+
+
+def test_quantize_bounded_conversion_rounds_half_up_and_guards_extremes():
+    assert quantize_bounded_conversion(Decimal("545.105"), "amount_account") == Decimal("545.11")
+    assert quantize_bounded_conversion(Decimal("-545.105"), "amount_account") == Decimal("-545.11")
+
+    with pytest.raises(MoneyOutOfRange, match="amount_primary must be at most"):
+        quantize_bounded_conversion(Decimal("1e13") * Decimal("1e20"))
+
+    with pytest.raises(MoneyOutOfRange, match="amount_account must be a finite number"):
+        quantize_bounded_conversion(Decimal("NaN"), "amount_account")
+
+
+@pytest.mark.asyncio
+async def test_stamp_account_amount_rounds_half_up_and_guards_extreme_cross_rate(
+    session: AsyncSession,
+    test_user: User,
+    test_account: Account,
+):
+    today = app_today()
+    session.add_all(
+        [
+            FxRate(
+                base_currency="USD",
+                quote_currency="XXX",
+                date=today,
+                rate=Decimal("1e-10"),
+                source="test",
+            ),
+            FxRate(
+                base_currency="USD",
+                quote_currency="YYY",
+                date=today,
+                rate=Decimal("1e9"),
+                source="test",
+            ),
+        ]
+    )
+    yyy_account = Account(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_account.workspace_id,
+        name="Extreme cross-rate",
+        type="checking",
+        balance=Decimal("0"),
+        currency="YYY",
+    )
+    session.add(yyy_account)
+    await session.flush()
+
+    tx = Transaction(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_account.workspace_id,
+        account_id=yyy_account.id,
+        description="Half-cent bank amount",
+        amount=Decimal("100.00"),
+        currency="XXX",
+        date=today,
+        type="debit",
+        source="sync",
+    )
+    session.add(tx)
+    await session.flush()
+
+    await stamp_account_amount(session, tx, bank_amount=Decimal("545.105"))
+    assert tx.amount_account == Decimal("545.11")
+    assert tx.amount_account_source == ACCOUNT_AMOUNT_FROM_BANK
+
+    # Product is 1e12 * 1e19 = 1e31 (> 28-digit Decimal context), which must
+    # raise MoneyOutOfRange rather than decimal.InvalidOperation.
+    tx.amount = Decimal("1000000000000.00")
+    with pytest.raises(MoneyOutOfRange, match="amount_account must be at most"):
+        await stamp_account_amount(session, tx, allow_fetch=False)
+
+    with pytest.raises(MoneyOutOfRange, match="amount_primary must be at most"):
+        await resolve_primary_stamp(
+            session, "YYY", Decimal("1000000000000.00"), "XXX", today, allow_fetch=False
+        )
+
+
+def test_same_cents_handles_non_finite_and_out_of_range_decimals():
+    assert _same_cents(Decimal("545.10"), Decimal("545.104")) is True
+    assert _same_cents(Decimal("545.105"), Decimal("545.11")) is True
+    assert _same_cents(Decimal("545.10"), Decimal("1e30")) is False
+    assert _same_cents(Decimal("545.10"), Decimal("NaN")) is False
+    assert _same_cents(Decimal("545.10"), Decimal("Infinity")) is False
+    assert _same_cents(Decimal("1e30"), Decimal("1e30")) is False
+
+
+class _MockBankProvider(BankProvider):
+    """Minimal BankProvider for end-to-end `sync_connection` tests."""
+
+    def __init__(self, accounts: list[AccountData], transactions: list[TransactionData]):
+        super().__init__()
+        self._accounts = accounts
+        self._transactions = transactions
+
+    @property
+    def name(self) -> str:
+        return "test"
+
+    async def get_oauth_url(
+        self, redirect_uri: str, state: str, flow_params: Optional[dict] = None
+    ) -> str:
+        return "https://example.invalid/oauth"
+
+    async def handle_oauth_callback(self, code: str) -> ConnectionData:
+        raise NotImplementedError
+
+    async def get_accounts(self, credentials: dict) -> list[AccountData]:
+        return self._accounts
+
+    async def get_transactions(
+        self,
+        credentials: dict,
+        account_external_id: str,
+        since: Optional[date] = None,
+        payee_source: str = "auto",
+    ) -> list[TransactionData]:
+        return list(self._transactions)
+
+    async def refresh_credentials(self, credentials: dict) -> dict:
+        return credentials
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "bad_amount",
+    [OVERFLOW_AMOUNT, Decimal("1e30"), Decimal("NaN")],
+)
+async def test_sync_connection_initial_sync_overflow_leaves_fx_fields_clean(
+    session: AsyncSession,
+    test_user: User,
+    test_workspace: Workspace,
+    bad_amount: Decimal,
+):
+    assert test_user.primary_currency == "BRL"
+    conn = BankConnection(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        provider="test",
+        external_id=f"ext-{uuid.uuid4().hex[:8]}",
+        institution_name="Test Bank",
+        credentials={"token": "fake"},
+        status="active",
+        last_sync_at=datetime.now(timezone.utc),
+        created_at=datetime.now(timezone.utc),
+    )
+    session.add(conn)
+    await session.commit()
+
+    ext_tx_id = f"sync-overflow-{uuid.uuid4().hex[:8]}"
+    provider = _MockBankProvider(
+        accounts=[
+            AccountData(
+                external_id="brl-card-1",
+                name="Card",
+                type="credit_card",
+                balance=Decimal("0"),
+                currency="BRL",
+            )
+        ],
+        transactions=[
+            TransactionData(
+                external_id=ext_tx_id,
+                description="Foreign charge",
+                amount=Decimal("100.00"),
+                date=app_today(),
+                type="debit",
+                currency="USD",
+                amount_in_account_currency=bad_amount,
+            )
+        ],
+    )
+
+    with (
+        patch("app.services.connection_service.get_provider", return_value=provider),
+        patch("app.services.connection_service.detect_transfer_pairs", new_callable=AsyncMock),
+        patch("app.services.connection_service.apply_rules_to_transaction", new_callable=AsyncMock),
+    ):
+        result_conn, _merged, _outcome = await sync_connection(
+            session, conn.id, test_workspace.id, test_user.id
+        )
+
+    assert result_conn.status == "active"
+    tx = await session.scalar(
+        select(Transaction)
+        .where(Transaction.external_id == ext_tx_id)
+        .execution_options(populate_existing=True)
+    )
+    assert tx is not None
+    assert tx.amount == Decimal("100.00")
+    assert tx.amount_primary is None
+    assert tx.fx_rate_used is None
+    assert tx.amount_account is None
+    assert tx.amount_account_source is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "bad_amount",
+    [OVERFLOW_AMOUNT, Decimal("1e30"), Decimal("NaN"), Decimal("Infinity")],
+)
+async def test_sync_connection_resync_overflow_preserves_all_stamped_fx_fields(
+    session: AsyncSession,
+    test_user: User,
+    test_workspace: Workspace,
+    bad_amount: Decimal,
+):
+    assert test_user.primary_currency == "BRL"
+    conn = BankConnection(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        provider="test",
+        external_id=f"ext-{uuid.uuid4().hex[:8]}",
+        institution_name="Test Bank",
+        credentials={"token": "fake"},
+        status="active",
+        last_sync_at=datetime.now(timezone.utc),
+        created_at=datetime.now(timezone.utc),
+    )
+    session.add(conn)
+    await session.commit()
+
+    ext_tx_id = f"sync-resync-{uuid.uuid4().hex[:8]}"
+    accounts = [
+        AccountData(
+            external_id="brl-card-resync",
+            name="Card",
+            type="credit_card",
+            balance=Decimal("0"),
+            currency="BRL",
+        )
+    ]
+    provider = _MockBankProvider(
+        accounts=accounts,
+        transactions=[
+            TransactionData(
+                external_id=ext_tx_id,
+                description="Foreign charge",
+                amount=Decimal("100.00"),
+                date=app_today(),
+                type="debit",
+                currency="USD",
+                amount_in_account_currency=Decimal("545.10"),
+            )
+        ],
+    )
+
+    with (
+        patch("app.services.connection_service.get_provider", return_value=provider),
+        patch("app.services.connection_service.detect_transfer_pairs", new_callable=AsyncMock),
+        patch("app.services.connection_service.apply_rules_to_transaction", new_callable=AsyncMock),
+    ):
+        await sync_connection(session, conn.id, test_workspace.id, test_user.id)
+
+        tx = await session.scalar(
+            select(Transaction)
+            .where(Transaction.external_id == ext_tx_id)
+            .execution_options(populate_existing=True)
+        )
+        assert tx is not None
+        assert tx.amount_primary == Decimal("545.10")
+        assert tx.fx_rate_used == Decimal("5.4510000000")
+        assert tx.amount_account == Decimal("545.10")
+        assert tx.amount_account_source == ACCOUNT_AMOUNT_FROM_BANK
+
+        # Re-sync with a corrupted/overflowing account-currency amount:
+        # `_refresh_account_charge` -> `_same_cents` must not crash and must
+        # preserve all 4 prior stamped fields.
+        provider._transactions = [
+            TransactionData(
+                external_id=ext_tx_id,
+                description="Foreign charge",
+                amount=Decimal("100.00"),
+                date=app_today(),
+                type="debit",
+                currency="USD",
+                amount_in_account_currency=bad_amount,
+            )
+        ]
+        result_conn, _merged, _outcome = await sync_connection(
+            session, conn.id, test_workspace.id, test_user.id
+        )
+
+    assert result_conn.status == "active"
+    refreshed = await session.scalar(
+        select(Transaction)
+        .where(Transaction.external_id == ext_tx_id)
+        .execution_options(populate_existing=True)
+    )
+    assert refreshed is not None
+    assert refreshed.amount_primary == Decimal("545.10")
+    assert refreshed.fx_rate_used == Decimal("5.4510000000")
+    assert refreshed.amount_account == Decimal("545.10")
+    assert refreshed.amount_account_source == ACCOUNT_AMOUNT_FROM_BANK
