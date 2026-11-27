@@ -419,6 +419,17 @@ describe('AccountsPage disconnect dialog', () => {
     expect(api.deleteConnection).toHaveBeenCalledExactlyOnceWith('conn-d', { keepAccounts: false })
   })
 
+  it('reads the usage limits again once a connection is gone, so a freed place opens the bank picker', async () => {
+    api.connectionsList.mockResolvedValue([makeConnection({ id: 'conn-d', status: 'active' })])
+    const { user } = renderWithProviders(<AccountsPage />, { route: '/accounts' })
+
+    await user.click(await screen.findByTitle(t('accounts.disconnect')))
+    await waitFor(() => expect(quota.mine).toHaveBeenCalledTimes(1))
+    await user.click(screen.getByRole('button', { name: t('accounts.disconnect') }))
+
+    await waitFor(() => expect(quota.mine).toHaveBeenCalledTimes(2))
+  })
+
   it('offers reconnect and removal for a disconnected connection', async () => {
     api.connectionsList.mockResolvedValue([makeConnection({ id: 'conn-d', status: 'disconnected' })])
     const { user } = renderWithProviders(<AccountsPage />, { route: '/accounts' })

@@ -46,12 +46,23 @@ function quotaFromDetail(detail: unknown): QuotaUsage | null {
 /**
  * The translation key for a filled counter. `ownedByOther`: the workspace was
  * created by someone else, so its connections and seats fill their number.
+ * A `maximum` of 0 gets a sentence of its own: removing something can't free a
+ * place, so the usual advice would be wrong. That sentence takes `label`, the
+ * counter's name (`quotaMessageValues` fills it).
  */
-export function quotaMessageKey(counter: string, ownedByOther: boolean): string {
+export function quotaMessageKey(counter: string, ownedByOther: boolean, maximum?: number): string {
   if (!(QUOTA_COUNTERS as readonly string[]).includes(counter)) return 'quota.reachedGeneric'
-  return ownedByOther && OWNER_COUNTERS.has(counter)
-    ? `quota.ownerReached.${counter}`
-    : `quota.reached.${counter}`
+  const owners = ownedByOther && OWNER_COUNTERS.has(counter)
+  if (maximum === 0) return owners ? 'quota.ownerNone' : 'quota.none'
+  return owners ? `quota.ownerReached.${counter}` : `quota.reached.${counter}`
+}
+
+/** The values every quota sentence reads, the counter's translated name included. */
+export function quotaMessageValues(
+  t: (key: string) => string,
+  usage: QuotaUsage,
+): { current: number; maximum: number; label: string } {
+  return { current: usage.current, maximum: usage.maximum, label: t(`quota.counters.${usage.counter}`) }
 }
 
 /**

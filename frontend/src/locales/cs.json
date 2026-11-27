@@ -4693,9 +4693,11 @@
       "max_assistant_messages_per_month": "Byl dosažen limit {{maximum}} zpráv asistentovi pro tento měsíc. Začíná znovu prvním dnem příštího měsíce."
     },
     "ownerReached": {
-      "max_bank_connections": "Vlastník tohoto pracovního prostoru dosáhl limitu bankovních připojení ({{maximum}}). Uvolnit místo může jen vlastník, odebráním připojení.",
+      "max_bank_connections": "Vlastník tohoto pracovního prostoru dosáhl limitu bankovních připojení ({{maximum}}). Kdokoli, kdo může tento pracovní prostor upravovat, může uvolnit místo odebráním jednoho z jeho připojení.",
       "max_members_per_workspace": "Tento pracovní prostor dosáhl limitu členů svého vlastníka ({{maximum}}). Pro přidání dalšího je třeba odebrat člena."
     },
+    "none": "{{label}}: limit tohoto účtu na této instanci je 0, takže nelze nic přidat.",
+    "ownerNone": "{{label}}: vlastník tohoto pracovního prostoru má na této instanci limit 0, takže nelze nic přidat.",
     "reachedGeneric": "Tento účet dosáhl jednoho ze svých limitů využití."
   }
 }

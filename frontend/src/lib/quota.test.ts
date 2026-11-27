@@ -41,9 +41,18 @@ describe('quotaMessageKey', () => {
     expect(quotaMessageKey('max_business_workspaces', true)).toBe('quota.reached.max_business_workspaces')
   })
 
+  it('never suggests removing something when the limit is 0, since nothing frees a place', () => {
+    expect(quotaMessageKey('max_bank_connections', false, 0)).toBe('quota.none')
+    expect(quotaMessageKey('max_personal_workspaces', false, 0)).toBe('quota.none')
+    expect(quotaMessageKey('max_members_per_workspace', true, 0)).toBe('quota.ownerNone')
+    expect(quotaMessageKey('max_business_workspaces', true, 0)).toBe('quota.none')
+    expect(quotaMessageKey('max_bank_connections', false, 2)).toBe('quota.reached.max_bank_connections')
+  })
+
   it('has one sentence for the monthly assistant limit, true for the owner and for a member', () => {
     expect(quotaMessageKey('max_assistant_messages_per_month', false)).toBe('quota.reached.max_assistant_messages_per_month')
     expect(quotaMessageKey('max_assistant_messages_per_month', true)).toBe('quota.reached.max_assistant_messages_per_month')
+    expect(quotaMessageKey('max_assistant_messages_per_month', true, 0)).toBe('quota.none')
   })
 
   it('falls back to a generic sentence for a counter it does not know', () => {

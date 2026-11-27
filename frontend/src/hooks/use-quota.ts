@@ -5,7 +5,7 @@ import { toast } from 'sonner'
 import { quotas as quotasApi } from '@/lib/api'
 import { useAuth } from '@/contexts/auth-context'
 import { useWorkspace } from '@/contexts/workspace-context'
-import { quotaMessageKey, readQuotaRefusal, safeInfoUrl } from '@/lib/quota'
+import { quotaMessageKey, quotaMessageValues, readQuotaRefusal, safeInfoUrl } from '@/lib/quota'
 import type { QuotaUsage, Workspace } from '@/types'
 
 export const MY_QUOTAS_KEY = ['quotas', 'mine'] as const
@@ -49,10 +49,7 @@ export function useQuotaNotice() {
     (usage: QuotaUsage, workspace: WorkspaceOwner = currentWorkspace) => {
       const creator = workspace?.created_by_user_id
       const ownedByOther = !!creator && !!userId && creator !== userId
-      return t(quotaMessageKey(usage.counter, ownedByOther), {
-        current: usage.current,
-        maximum: usage.maximum,
-      })
+      return t(quotaMessageKey(usage.counter, ownedByOther, usage.maximum), quotaMessageValues(t, usage))
     },
     [t, userId, currentWorkspace],
   )

@@ -4496,9 +4496,11 @@
       "max_assistant_messages_per_month": "La limite de {{maximum}} messages à l'assistant pour ce mois est atteinte. Elle repart le premier jour du mois prochain."
     },
     "ownerReached": {
-      "max_bank_connections": "Le propriétaire de cet espace de travail a atteint sa limite de {{maximum}} connexions bancaires. Seul le propriétaire peut libérer une place, en supprimant une connexion.",
+      "max_bank_connections": "Le propriétaire de cet espace de travail a atteint sa limite de {{maximum}} connexions bancaires. Toute personne pouvant modifier cet espace de travail peut libérer une place en supprimant l'une de ses connexions.",
       "max_members_per_workspace": "Cet espace de travail a atteint la limite de {{maximum}} membres de son propriétaire. Il faut retirer un membre pour en ajouter un autre."
     },
+    "none": "{{label}} : la limite de ce compte sur cette instance est de 0, aucun ajout n'est donc possible.",
+    "ownerNone": "{{label}} : le propriétaire de cet espace de travail a une limite de 0 sur cette instance, aucun ajout n'est donc possible.",
     "reachedGeneric": "Ce compte a atteint l'une de ses limites d'utilisation."
   }
 }

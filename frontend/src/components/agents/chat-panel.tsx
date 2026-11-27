@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button'
 import { agents } from '@/lib/api'
 import type { Agent, AgentMessage } from '@/lib/api'
 import { streamChat, type AgentStreamEvent } from '@/lib/agents-stream'
-import { quotaMessageKey } from '@/lib/quota'
+import { quotaMessageKey, quotaMessageValues } from '@/lib/quota'
 import { Markdown } from '@/components/agents/markdown'
 import { ToolDebugChip } from '@/components/agents/tool-debug-chip'
 import { ProposalCard } from '@/components/agents/proposal-card'
@@ -180,7 +180,7 @@ export function ChatPanel({ agent, conversationId, onConversationCreated, focusS
             })
           } else if (ev.kind === 'error') {
             errorThisTurn = ev.quota
-              ? t(quotaMessageKey(ev.quota.counter, false), { maximum: ev.quota.maximum })
+              ? t(quotaMessageKey(ev.quota.counter, false, ev.quota.maximum), quotaMessageValues(t, ev.quota))
               : `${ev.error_code || 'error'}: ${ev.error_message || ''}`
             setDraft((d) => (d ? { ...d, error: errorThisTurn || undefined } : d))
           } else if (ev.kind === 'done') {

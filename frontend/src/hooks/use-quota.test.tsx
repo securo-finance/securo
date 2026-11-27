@@ -65,6 +65,17 @@ it('tells an invited member the limit belongs to the workspace owner', async () 
   )
 })
 
+it('names the counter and offers no removal when the limit is 0', async () => {
+  await mount(null)
+
+  notice.handle(refusal('max_bank_connections', 0))
+
+  expect(mocks.toastError).toHaveBeenCalledWith(
+    "Bank connections: this account's limit is 0 on this instance, so none can be added.",
+    undefined,
+  )
+})
+
 it('links to the operator page only when the instance sets one', async () => {
   const open = vi.spyOn(window, 'open').mockImplementation(() => null)
   await mount('/help/limits')

@@ -4482,9 +4482,11 @@
       "max_assistant_messages_per_month": "Das Limit von {{maximum}} Nachrichten an den Assistenten für diesen Monat ist erreicht. Es beginnt am ersten Tag des nächsten Monats neu."
     },
     "ownerReached": {
-      "max_bank_connections": "Der Inhaber dieses Arbeitsbereichs hat sein Limit von {{maximum}} Bankverbindungen erreicht. Nur der Inhaber kann einen Platz freigeben, indem er eine Verbindung entfernt.",
+      "max_bank_connections": "Der Inhaber dieses Arbeitsbereichs hat sein Limit von {{maximum}} Bankverbindungen erreicht. Wer diesen Arbeitsbereich bearbeiten kann, kann einen Platz freigeben, indem er eine seiner Verbindungen entfernt.",
       "max_members_per_workspace": "Dieser Arbeitsbereich hat das Limit seines Inhabers von {{maximum}} Mitgliedern erreicht. Ein Mitglied muss entfernt werden, um ein neues hinzuzufügen."
     },
+    "none": "{{label}}: Das Limit dieses Kontos auf dieser Instanz ist 0, daher kann nichts hinzugefügt werden.",
+    "ownerNone": "{{label}}: Der Inhaber dieses Arbeitsbereichs hat auf dieser Instanz ein Limit von 0, daher kann nichts hinzugefügt werden.",
     "reachedGeneric": "Dieses Konto hat eines seiner Nutzungslimits erreicht."
   }
 }

@@ -4643,9 +4643,11 @@
       "max_assistant_messages_per_month": "Osiągnięto limit {{maximum}} wiadomości do asystenta w tym miesiącu. Zaczyna się od nowa pierwszego dnia następnego miesiąca."
     },
     "ownerReached": {
-      "max_bank_connections": "Właściciel tej przestrzeni roboczej osiągnął limit połączeń bankowych ({{maximum}}). Tylko właściciel może zwolnić miejsce, usuwając połączenie.",
+      "max_bank_connections": "Właściciel tej przestrzeni roboczej osiągnął limit połączeń bankowych ({{maximum}}). Każdy, kto może edytować tę przestrzeń roboczą, może zwolnić miejsce, usuwając jedno z jej połączeń.",
       "max_members_per_workspace": "Ta przestrzeń robocza osiągnęła limit członków jej właściciela ({{maximum}}). Trzeba usunąć członka, aby dodać kolejnego."
     },
+    "none": "{{label}}: limit tego konta w tej instancji wynosi 0, więc nie można nic dodać.",
+    "ownerNone": "{{label}}: właściciel tej przestrzeni roboczej ma w tej instancji limit 0, więc nie można nic dodać.",
     "reachedGeneric": "To konto osiągnęło jeden ze swoich limitów użycia."
   }
 }
