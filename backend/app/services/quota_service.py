@@ -229,7 +229,10 @@ async def check_new_bank_connection(session: AsyncSession, workspace_id: uuid.UU
     )
 
 
-async def check_new_member(session: AsyncSession, workspace_id: uuid.UUID, user_id: uuid.UUID) -> None:
+async def check_new_member(
+    session: AsyncSession, workspace_id: uuid.UUID, user_id: Optional[uuid.UUID]
+) -> None:
+    """`user_id` None: a person with no account yet, so never the creator."""
     if not enforced():
         return
     owner = await _workspace_owner(session, workspace_id)
