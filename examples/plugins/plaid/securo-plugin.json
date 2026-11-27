@@ -1,0 +1,129 @@
+{
+  "id": "your-name/plaid",
+  "name": "Plaid",
+  "description": {
+    "en": "Sync US, Canadian, and UK bank accounts, credit cards, student loans, mortgages, and investment holdings through the Plaid API using Hosted Link.",
+    "pt-BR": "Sincronize contas bancárias, cartões de crédito, financiamentos e investimentos via API do Plaid usando Hosted Link."
+  },
+  "version": "1.0.0",
+  "repository": "https://github.com/your-name/securo-plaid",
+  "license": "AGPL-3.0-only",
+  "min_securo_version": "0.23.0",
+  "runtime": {
+    "entrypoint": "plaid_plugin:plugin"
+  },
+  "network": [
+    {
+      "host": "production.plaid.com",
+      "purpose": {
+        "en": "Creates Hosted Link sessions, exchanges tokens, and reads accounts, transactions, liabilities, and investments from the Plaid Production API.",
+        "pt-BR": "Cria sessões Hosted Link, troca tokens e lê contas, transações, passivos e investimentos na API de Produção do Plaid."
+      }
+    },
+    {
+      "host": "sandbox.plaid.com",
+      "purpose": {
+        "en": "Connects to the Plaid Sandbox API for testing with mock institutions.",
+        "pt-BR": "Conecta-se à API Sandbox do Plaid para testes com instituições simuladas."
+      }
+    }
+  ],
+  "contributes": {
+    "integrations": [
+      {
+        "key": "plaid",
+        "name": "Plaid",
+        "description": {
+          "en": "Connect an institution through Plaid Hosted Link. Use your Plaid client_id and secret (Sandbox or Production). For loan-only servicers (e.g. Nelnet) set Products to liabilities; for brokerages (e.g. M1 Finance) set Products to investments.",
+          "pt-BR": "Conecte uma instituição via Plaid Hosted Link. Informe seu client_id e secret do Plaid (Sandbox ou Produção)."
+        },
+        "auth": "oauth",
+        "fields": [
+          {
+            "key": "client_id",
+            "label": {
+              "en": "Plaid Client ID",
+              "pt-BR": "Client ID do Plaid"
+            },
+            "required": true,
+            "secret": false
+          },
+          {
+            "key": "secret",
+            "label": {
+              "en": "Plaid Secret",
+              "pt-BR": "Secret do Plaid"
+            },
+            "required": true,
+            "secret": true
+          },
+          {
+            "key": "environment",
+            "label": {
+              "en": "Environment (production or sandbox, default: production)",
+              "pt-BR": "Ambiente (production ou sandbox, padrão: production)"
+            },
+            "required": false,
+            "secret": false
+          },
+          {
+            "key": "country_codes",
+            "label": {
+              "en": "Country codes (comma-separated, default: US)",
+              "pt-BR": "Códigos de país (separados por vírgula, padrão: US)"
+            },
+            "required": false,
+            "secret": false
+          },
+          {
+            "key": "products",
+            "label": {
+              "en": "Primary Link products (default: transactions; use liabilities or investments for loan/brokerage-only institutions)",
+              "pt-BR": "Produtos principais do Link (padrão: transactions; use liabilities ou investments para instituições exclusivas)"
+            },
+            "required": false,
+            "secret": false
+          },
+          {
+            "key": "enable_investments",
+            "label": {
+              "en": "Sync investment holdings & trades (true/false, default: true)",
+              "pt-BR": "Sincronizar investimentos e operações (true/false, padrão: true)"
+            },
+            "required": false,
+            "secret": false
+          },
+          {
+            "key": "enable_liabilities",
+            "label": {
+              "en": "Sync credit & loan liabilities (true/false, default: true)",
+              "pt-BR": "Sincronizar faturas e empréstimos (true/false, padrão: true)"
+            },
+            "required": false,
+            "secret": false
+          },
+          {
+            "key": "days_requested",
+            "label": {
+              "en": "Initial transaction history in days (1-730, default: 730)",
+              "pt-BR": "Histórico inicial de transações em dias (1-730, padrão: 730)"
+            },
+            "required": false,
+            "secret": false
+          },
+          {
+            "key": "client_name",
+            "label": {
+              "en": "App name shown in Plaid Link (default: Securo)",
+              "pt-BR": "Nome do app exibido no Plaid Link (padrão: Securo)"
+            },
+            "required": false,
+            "secret": false
+          }
+        ],
+        "sync_minutes": 360,
+        "provides": ["accounts", "transactions", "bills", "holdings", "trades"]
+      }
+    ]
+  }
+}

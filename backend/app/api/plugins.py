@@ -207,8 +207,8 @@ async def create_connection(
     session: AsyncSession = Depends(get_async_session),
 ):
     """Set up a connection. Sign-in integrations come back with the link to open."""
-    connection, link = await _connection_guarded(
-        connections.create(
+    connection, link, state = await _connection_guarded(
+        connections.create_with_oauth(
             session,
             workspace_id=ctx.workspace.id,
             user_id=ctx.user_id,
@@ -222,7 +222,7 @@ async def create_connection(
     )
     if link is None:
         await _start(session, connection)
-    return PluginConnectionCreated(connection=await _read(session, connection), authorize_url=link)
+    return PluginConnectionCreated(connection=await _read(session, connection), authorize_url=link, oauth_state=state)
 
 
 @router.put("/connections/{connection_id}/values", response_model=PluginConnectionRead)
@@ -252,8 +252,8 @@ async def authorize_connection(
 ):
     """A fresh sign-in link, to finish or redo the sign-in."""
     connection = await _connection_guarded(connections.get_connection(session, ctx.workspace.id, connection_id))
-    link = await _connection_guarded(connections.authorize_url(session, connection, user_id=ctx.user_id))
-    return PluginAuthorizeRead(authorize_url=link, redirect_uri=connections.redirect_uri())
+    link, state = await _connection_guarded(connections.start_oauth(session, connection, user_id=ctx.user_id))
+    return PluginAuthorizeRead(authorize_url=link, redirect_uri=connections.redirect_uri(), oauth_state=state)
 
 
 @router.post("/oauth/callback", response_model=PluginConnectionRead)
@@ -264,7 +264,14 @@ async def oauth_callback(
 ):
     """The service sent the browser back: the plugin trades the code for a token."""
     connection = await _connection_guarded(
-        connections.finish_oauth(session, workspace_id=ctx.workspace.id, user_id=ctx.user_id, code=body.code, state=body.state)
+        connections.finish_oauth(
+            session,
+            workspace_id=ctx.workspace.id,
+            user_id=ctx.user_id,
+            code=body.code,
+            state=body.state,
+            params=body.params,
+        )
     )
     await _start(session, connection)
     return await _read(session, connection)

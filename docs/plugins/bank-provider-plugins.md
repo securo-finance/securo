@@ -11,12 +11,15 @@ This guide has three parts:
 2. [The contract a plugin answers](#2-the-contract-a-plugin-answers)
 3. [What the sync does with the payload](#3-what-the-sync-does-with-the-payload)
 
-The working reference is the Demo Bank plugin in
-[`examples/plugins/demo-bank/`](../../examples/plugins/demo-bank/): a manifest,
-the code and a README. `backend/tests/test_example_provider_plugin.py` installs
-it on the plugin runner and syncs it through the real pipeline, so it fails
-when the example no longer fits the contract. Copy that folder to start, and
-read it alongside this guide rather than relying on the snippets here.
+The working references are the Demo Bank plugin in
+[`examples/plugins/demo-bank/`](../../examples/plugins/demo-bank/) and the
+Plaid reference plugin in
+[`examples/plugins/plaid/`](../../examples/plugins/plaid/): manifests, code,
+and READMEs. `backend/tests/test_example_provider_plugin.py` and
+`backend/tests/test_plaid_provider_plugin.py` install them on the plugin
+runner and sync them through the real pipeline, so they fail when the examples
+no longer fit the contract. Copy either folder to start, and read it alongside
+this guide rather than relying on the snippets here.
 
 General plugin docs (publishing to the catalog, the manifest's common fields,
 OAuth sign-in, local testing) are on the docs site:
@@ -185,11 +188,33 @@ unknown fields are refused. The rules that catch people out:
 - `null` (or a missing list) means not fetched this run: what Securo has is
   left alone. `[]` means fetched and empty. `"data": null` means nothing was
   fetched yet.
-- At most 500 accounts, 20,000 transactions, 2,000 bills, 2,000 reserved
-  balances, 5,000 holdings and 20,000 trades per reply. Each limit counts the
-  whole reply, summed across accounts, and a reply over any of them is
-  refused whole. Reserved balances can't be split across syncs: a reported
-  list is the account's whole set, and reserves missing from it are deleted.
+- At most 500 accounts, 20,000 transactions, 20,000 removed transaction IDs,
+  2,000 bills, 2,000 reserved balances, 5,000 holdings and 20,000 trades per
+  reply. Each limit counts the whole reply, summed across accounts, and a reply
+  over any of them is refused whole. Reserved balances can't be split across
+  syncs: a reported list is the account's whole set, and reserves missing from
+  it are deleted.
+- **Cursor-based incremental feeds** ([ADR 0051](../adr/0051-plugin-hosted-signin-and-incremental-sync.md)):
+  set `incremental: true` on an account whose `transactions` list is a delta
+  from a cursor (such as Plaid `/transactions/sync`) rather than a full
+  date-window snapshot. Securo advances `last_sync_at` normally while skipping
+  window-based hold expiry and phantom-duplicate cleanup. Send explicit
+  deletions in `removed_transaction_ids` (unique, disjoint from `transactions`;
+  Securo deletes only untouched synced rows) and link a newly posted entry to
+  the pending entry it settles via `replaces_external_id` so the pending row
+  upgrades in place even when the settled amount or date changed.
+- **Loan contract terms**: `loan` accounts may optionally include `loan_kind`,
+  `loan_original_amount`, `loan_interest_rate`, `loan_rate_period`,
+  `loan_term_months`, `loan_first_payment_date`, `loan_amortization`,
+  `payment_due_day`, and `minimum_payment`. Omitted fields keep existing values.
+- **Hosted sign-in & PKCE (`auth: "oauth"`)**: `oauth_url` receives
+  `redirect_uri`, `state`, and `connection_state`, and may return `secrets`
+  and/or `state` alongside its `https://` `url` to persist handshake values
+  (such as a link token or PKCE verifier) for `oauth_exchange`. Returning
+  `None` for a key in `secrets` removes it from the sealed store. Services that
+  redirect back to `/plugins/oauth/callback` without `?code=` or `?state=` are
+  supported: Securo restores its single-use `state` from browser
+  `sessionStorage` and passes all other query parameters in `params["params"]`.
 - `masked_number` is the last four characters only.
 - An account's logo is either `institution_logo` (a key of the manifest's
   `logos`) or `institution_logo_url` (https, on a host declared in

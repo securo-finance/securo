@@ -6,6 +6,7 @@ plugin's `sync` returns `data` and Securo writes it as a connected bank.
 from __future__ import annotations
 
 import copy
+from datetime import date
 from typing import Any
 
 import pytest
@@ -1200,3 +1201,208 @@ async def test_a_stale_pending_entry_does_not_duplicate_its_posted_row(session: 
     (account,) = await _rows(session, Account, connection_id=bank_connection.id)
     rows = await _rows(session, Transaction, account_id=account.id)
     assert [(row.external_id, row.status) for row in rows] == [("p2", "posted")]
+
+
+@pytest.mark.asyncio
+async def test_replaces_external_id_settles_pending_even_when_amount_and_date_change(
+    session: AsyncSession, bank_connection, test_user
+):
+    """A posted entry naming `replaces_external_id` upgrades that exact pending
+    row in place even when tip/hold amount and posting date shifted, preserving
+    user-assigned category and notes (ADR 0051)."""
+    from app.models.category import Category
+
+    cat = Category(
+        user_id=test_user.id,
+        workspace_id=bank_connection.workspace_id,
+        name="Dining",
+        icon="utensils",
+        color="#FF5500",
+    )
+    session.add(cat)
+    await session.flush()
+    cat_id = cat.id
+
+    pending = {
+        "external_id": "p-hold-1",
+        "description": "Corner Bistro",
+        "payee": "Corner Bistro",
+        "amount": "20.00",
+        "date": "2026-11-14",
+        "type": "debit",
+        "status": "pending",
+    }
+    await _pipeline(session, bank_connection, payload_data(transactions=[pending], holdings=None), test_user)
+    (account,) = await _rows(session, Account, connection_id=bank_connection.id)
+    account_id = account.id
+    (stored,) = await _rows(session, Transaction, account_id=account_id)
+    stored_id = stored.id
+    stored.category_id = cat_id
+    stored.notes = "Dinner with team"
+    await session.commit()
+
+    settled = {
+        "external_id": "p-posted-1",
+        "replaces_external_id": "p-hold-1",
+        "description": "Corner Bistro",
+        "payee": "Corner Bistro",
+        "amount": "24.00",
+        "date": "2026-11-16",
+        "type": "debit",
+        "status": "posted",
+    }
+    # Plaid also includes the old pending ID in `removed_transaction_ids` on the same delta.
+    delta = payload_data(transactions=[settled], holdings=None)
+    delta["accounts"][0]["incremental"] = True
+    delta["accounts"][0]["removed_transaction_ids"] = ["p-hold-1"]
+    await _pipeline(session, bank_connection, delta, test_user)
+
+    rows = await _rows(session, Transaction, account_id=account_id)
+    assert len(rows) == 1
+    row = rows[0]
+    assert row.id == stored_id
+    assert row.external_id == "p-posted-1"
+    assert row.status == "posted"
+    assert row.amount == Decimal("24.00")
+    assert row.date == date(2026, 11, 16)
+    assert row.category_id == cat_id
+    assert row.notes == "Dinner with team"
+
+
+@pytest.mark.asyncio
+async def test_removed_transaction_ids_deletes_untouched_and_preserves_user_work(
+    session: AsyncSession, bank_connection, test_user
+):
+    """Explicit removals delete untouched synced entries (cancelled holds and
+    reversed entries) while preserving rows the user edited, flagged, or linked."""
+    txns = [
+        {"external_id": "hold-cancel", "description": "Gas Hold", "amount": "50.00", "date": "2026-11-14", "type": "debit", "status": "pending"},
+        {"external_id": "hold-edited", "description": "Hotel Hold", "amount": "200.00", "date": "2026-11-14", "type": "debit", "status": "pending"},
+        {"external_id": "posted-reversed", "description": "Duplicate Fee", "payee": "Bank", "amount": "5.00", "date": "2026-11-14", "type": "debit", "status": "posted"},
+        {"external_id": "posted-flagged", "description": "Flagged Fee", "amount": "9.00", "date": "2026-11-14", "type": "debit", "status": "posted"},
+    ]
+    await _pipeline(session, bank_connection, payload_data(transactions=txns, holdings=None), test_user)
+    (account,) = await _rows(session, Account, connection_id=bank_connection.id)
+    account_id = account.id
+    by_ext = {row.external_id: row for row in await _rows(session, Transaction, account_id=account_id)}
+    by_ext["hold-edited"].notes = "User kept this note"
+    by_ext["posted-flagged"].is_flagged = True
+    await session.commit()
+
+    delta = payload_data(transactions=[], holdings=None)
+    delta["accounts"][0]["incremental"] = True
+    delta["accounts"][0]["removed_transaction_ids"] = [
+        "hold-cancel",
+        "hold-edited",
+        "posted-reversed",
+        "posted-flagged",
+    ]
+    await _pipeline(session, bank_connection, delta, test_user)
+
+    remaining = {row.external_id for row in await _rows(session, Transaction, account_id=account_id)}
+    assert remaining == {"hold-edited", "posted-flagged"}
+
+
+@pytest.mark.asyncio
+async def test_incremental_delta_advances_last_sync_and_preserves_same_day_repeat_next_to_transfer(
+    session: AsyncSession, bank_connection, test_user
+):
+    """An incremental cursor-based delta advances `last_sync_at` without letting
+    phantom duplicate cleanup delete a legitimate repeat transaction whose paired
+    sibling simply wasn't part of today's delta (ADR 0051)."""
+    first = payload_data(
+        transactions=[
+            {"external_id": "xfer-1", "description": "Transfer Out", "amount": "100.00", "date": "2026-11-15", "type": "debit", "status": "posted"},
+        ],
+        holdings=None,
+    )
+    first["accounts"][0]["incremental"] = True
+    await _pipeline(session, bank_connection, first, test_user)
+    await session.refresh(bank_connection)
+    assert bank_connection.last_sync_at is not None
+
+    (account,) = await _rows(session, Account, connection_id=bank_connection.id)
+    account_id = account.id
+    (first_tx,) = await _rows(session, Transaction, account_id=account_id)
+    first_tx.transfer_pair_id = uuid.uuid4()
+    await session.commit()
+
+    second = payload_data(
+        transactions=[
+            {"external_id": "xfer-2", "description": "Transfer Out", "amount": "100.00", "date": "2026-11-15", "type": "debit", "status": "posted"},
+        ],
+        holdings=None,
+    )
+    second["accounts"][0]["incremental"] = True
+    await _pipeline(session, bank_connection, second, test_user)
+
+    ext_ids = {row.external_id for row in await _rows(session, Transaction, account_id=account_id)}
+    assert ext_ids == {"xfer-1", "xfer-2"}
+
+
+@pytest.mark.asyncio
+async def test_synced_loan_account_persists_terms_and_preserves_them_when_omitted(
+    session: AsyncSession, bank_connection, test_user
+):
+    """Loan contract terms flow from the provider contract onto `Account` and
+    survive a later sync that omits them (ADR 0051)."""
+    first = {
+        "contract": 1,
+        "accounts": [
+            {
+                "external_id": "nelnet-1",
+                "name": "Nelnet Group AA",
+                "type": "loan",
+                "balance": "14200.50",
+                "currency": "USD",
+                "payment_due_day": 21,
+                "minimum_payment": "185.00",
+                "loan_kind": "student",
+                "loan_original_amount": "20000.00",
+                "loan_interest_rate": "4.99",
+                "loan_rate_period": "yearly_nominal",
+                "loan_term_months": 120,
+                "loan_first_payment_date": "2021-06-01",
+                "loan_amortization": "price",
+                "incremental": True,
+                "transactions": [],
+            }
+        ],
+    }
+    await _pipeline(session, bank_connection, first, test_user)
+    (loan,) = await _rows(session, Account, connection_id=bank_connection.id)
+    assert loan.type == "loan"
+    assert loan.balance == Decimal("14200.50")
+    assert loan.loan_kind == "student"
+    assert loan.loan_original_amount == Decimal("20000.00")
+    assert loan.loan_interest_rate == Decimal("4.99")
+    assert loan.loan_rate_period == "yearly_nominal"
+    assert loan.loan_term_months == 120
+    assert loan.loan_first_payment_date == date(2021, 6, 1)
+    assert loan.loan_amortization == "price"
+    assert loan.payment_due_day == 21
+    assert loan.minimum_payment == Decimal("185.00")
+
+    # Follow-up sync omits optional terms: stored values are preserved.
+    followup = {
+        "contract": 1,
+        "accounts": [
+            {
+                "external_id": "nelnet-1",
+                "name": "Nelnet Group AA",
+                "type": "loan",
+                "balance": "14015.50",
+                "currency": "USD",
+                "incremental": True,
+                "transactions": [],
+            }
+        ],
+    }
+    await _pipeline(session, bank_connection, followup, test_user)
+    await session.refresh(loan)
+    assert loan.balance == Decimal("14015.50")
+    assert loan.loan_kind == "student"
+    assert loan.loan_original_amount == Decimal("20000.00")
+    assert loan.loan_interest_rate == Decimal("4.99")
+    assert loan.payment_due_day == 21
+    assert loan.minimum_payment == Decimal("185.00")

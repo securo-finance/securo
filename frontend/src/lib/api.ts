@@ -2532,7 +2532,7 @@ export const plugins = {
     integration: string
     name: string
     values: Record<string, string | PluginFileValue>
-  }): Promise<{ connection: PluginConnection; authorize_url: string | null }> => {
+  }): Promise<{ connection: PluginConnection; authorize_url: string | null; oauth_state?: string | null }> => {
     const { data } = await api.post('/plugins/connections', body)
     return data
   },
@@ -2544,7 +2544,7 @@ export const plugins = {
     const { data } = await api.put(`/plugins/connections/${connectionId}/values`, body)
     return data
   },
-  authorize: async (connectionId: string): Promise<{ authorize_url: string; redirect_uri: string }> => {
+  authorize: async (connectionId: string): Promise<{ authorize_url: string; redirect_uri: string; oauth_state?: string | null }> => {
     const { data } = await api.post(`/plugins/connections/${connectionId}/authorize`)
     return data
   },
@@ -2560,8 +2560,16 @@ export const plugins = {
   disconnect: async (connectionId: string): Promise<void> => {
     await api.delete(`/plugins/connections/${connectionId}`)
   },
-  oauthCallback: async (code: string, state: string): Promise<PluginConnection> => {
-    const { data } = await api.post('/plugins/oauth/callback', { code, state })
+  oauthCallback: async (
+    code: string | null,
+    state: string,
+    params?: Record<string, string>,
+  ): Promise<PluginConnection> => {
+    const { data } = await api.post('/plugins/oauth/callback', {
+      code: code || null,
+      state,
+      ...(params && Object.keys(params).length > 0 ? { params } : {}),
+    })
     return data
   },
 }
