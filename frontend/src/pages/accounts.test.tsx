@@ -421,7 +421,16 @@ describe('AccountsPage joint accounts & pending links', () => {
     expect(screen.queryByText(t('accounts.noAccountsFound'))).not.toBeInTheDocument()
   })
 
-  it('renders pending link candidates and calls resolveAccountLink on confirm or reject', async () => {
+  it('confirms a pending link candidate with account masks, hides the banner, and shows the joint badge', async () => {
+    const primaryLink = {
+      id: 'link-primary',
+      account_id: 'acc-1',
+      connection_id: 'conn-1',
+      external_id: 'ext-1',
+      is_primary_feed: true,
+      status: 'active' as const,
+      created_at: '2026-10-01T00:00:00Z',
+    }
     const pendingLink = {
       id: 'link-pending',
       account_id: 'acc-1',
@@ -431,24 +440,108 @@ describe('AccountsPage joint accounts & pending links', () => {
       status: 'pending' as const,
       created_at: '2026-10-02T00:00:00Z',
     }
-    api.accountsList.mockImplementation((includeClosed: boolean) =>
-      Promise.resolve(includeClosed ? [] : [makeAccount('conn-1')]),
+    const fallbackPendingLink = {
+      id: 'link-fallback',
+      account_id: 'acc-missing',
+      connection_id: 'conn-2',
+      external_id: 'ext-missing',
+      account_name: 'Unloaded Savings',
+      account_masked_number: '8877',
+      institution_name: 'Primary Bank',
+      is_primary_feed: false,
+      status: 'pending' as const,
+      created_at: '2026-10-02T00:00:00Z',
+    }
+    const confirmedLink = { ...pendingLink, status: 'active' as const }
+    let confirmed = false
+
+    api.accountsList.mockImplementation((includeClosed: boolean) => {
+      if (includeClosed) return Promise.resolve([])
+      const acc = {
+        ...makeAccount('conn-1'),
+        masked_number: '4321',
+        connection_links: confirmed ? [primaryLink, confirmedLink] : [primaryLink],
+      }
+      return Promise.resolve([acc])
+    })
+    api.connectionsList.mockImplementation(() =>
+      Promise.resolve([
+        makeConnection({ id: 'conn-1', institution_name: 'Primary Bank', account_links: [primaryLink] }),
+        makeConnection({
+          id: 'conn-2',
+          institution_name: 'Partner Bank',
+          account_links: confirmed ? [confirmedLink] : [pendingLink, fallbackPendingLink],
+        }),
+      ]),
     )
-    api.connectionsList.mockResolvedValue([
-      makeConnection({ id: 'conn-1', institution_name: 'Primary Bank' }),
-      makeConnection({ id: 'conn-2', institution_name: 'Partner Bank', account_links: [pendingLink] }),
-    ])
+    api.resolveAccountLink.mockImplementation(async () => {
+      confirmed = true
+      return confirmedLink
+    })
+
     const { user } = renderWithProviders(<AccountsPage />, { route: '/accounts' })
 
     const banner = await screen.findByTestId('pending-account-links')
-    expect(banner).toHaveTextContent('Healthy Checking')
+    expect(banner).toHaveTextContent('Healthy Checking •••• 4321')
+    expect(banner).toHaveTextContent('Unloaded Savings •••• 8877')
     expect(banner).toHaveTextContent('Primary Bank')
 
-    await user.click(within(banner).getByRole('button', { name: t('accounts.confirmJointAccount') }))
+    const confirmButtons = within(banner).getAllByRole('button', {
+      name: t('accounts.confirmJointAccount'),
+    })
+    await user.click(confirmButtons[0])
+
     expect(api.resolveAccountLink).toHaveBeenCalledWith('conn-2', 'link-pending', 'confirm')
+    await waitFor(() => {
+      expect(screen.queryByTestId('pending-account-links')).not.toBeInTheDocument()
+    })
+    expect(await screen.findByText(t('accounts.jointAccount'))).toBeInTheDocument()
+    expect(screen.getByText(t('accounts.jointSecondaryFeed'))).toBeInTheDocument()
+  })
+
+  it('rejects a pending link candidate and removes the pending banner', async () => {
+    const pendingLink = {
+      id: 'link-pending',
+      account_id: 'acc-1',
+      connection_id: 'conn-2',
+      external_id: 'ext-2',
+      is_primary_feed: false,
+      status: 'pending' as const,
+      created_at: '2026-10-02T00:00:00Z',
+    }
+    const rejectedLink = { ...pendingLink, status: 'rejected' as const }
+    let rejected = false
+
+    api.accountsList.mockImplementation((includeClosed: boolean) =>
+      Promise.resolve(includeClosed ? [] : [{ ...makeAccount('conn-1'), masked_number: '4321' }]),
+    )
+    api.connectionsList.mockImplementation(() =>
+      Promise.resolve([
+        makeConnection({ id: 'conn-1', institution_name: 'Primary Bank' }),
+        makeConnection({
+          id: 'conn-2',
+          institution_name: 'Partner Bank',
+          account_links: [rejected ? rejectedLink : pendingLink],
+        }),
+      ]),
+    )
+    api.resolveAccountLink.mockImplementation(async () => {
+      rejected = true
+      return rejectedLink
+    })
+
+    const { user } = renderWithProviders(<AccountsPage />, { route: '/accounts' })
+
+    const banner = await screen.findByTestId('pending-account-links')
+    expect(banner).toHaveTextContent('Healthy Checking •••• 4321')
 
     await user.click(within(banner).getByRole('button', { name: t('accounts.keepSeparateAccount') }))
+
     expect(api.resolveAccountLink).toHaveBeenCalledWith('conn-2', 'link-pending', 'reject')
+    await waitFor(() => {
+      expect(screen.queryByTestId('pending-account-links')).not.toBeInTheDocument()
+    })
+    expect(screen.queryByText(t('accounts.jointAccount'))).not.toBeInTheDocument()
   })
 })
 

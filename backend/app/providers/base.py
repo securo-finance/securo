@@ -1,6 +1,7 @@
 import hashlib
 import hmac
 from abc import ABC, abstractmethod
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import date
 from decimal import Decimal
@@ -57,6 +58,111 @@ def mask_last4(value: Optional[str]) -> Optional[str]:
     return cleaned[-4:]
 
 
+def _fingerprint_key_tag(secret: str) -> str:
+    """Short 8-hex identifier for the SECRET_KEY that keyed a v2 fingerprint."""
+    return hmac.new(
+        secret.encode("utf-8"),
+        b"account-fingerprint-kid:v2",
+        hashlib.sha256,
+    ).hexdigest()[:8]
+
+
+def _compute_account_fingerprint(
+    secret: str, provider_clean: str, inst_clean: str, cleaned: str
+) -> str:
+    msg = (
+        f"account-fingerprint:v2:{provider_clean}:{inst_clean}:{cleaned}"
+    ).encode("utf-8")
+    digest = hmac.new(secret.encode("utf-8"), msg, hashlib.sha256).hexdigest()
+    return f"{_fingerprint_key_tag(secret)}{digest[:56]}"
+
+
+def fingerprint_uses_current_key(fingerprint: Optional[str]) -> bool:
+    """True when ``fingerprint`` carries the current SECRET_KEY's 8-hex key tag."""
+    if not fingerprint or len(fingerprint) != 64:
+        return False
+    from app.core.config import get_settings
+
+    secret = get_settings().secret_key.get_secret_value()
+    if not secret:
+        return False
+    return hmac.compare_digest(fingerprint[:8], _fingerprint_key_tag(secret))
+
+
+def fingerprints_conflict(
+    stored_fp: Optional[str],
+    incoming_fp: Optional[str],
+    *,
+    fallback_fps: Sequence[str] = (),
+) -> bool:
+    """True when two fingerprints prove distinct underlying accounts.
+
+    Returns False when either side is absent, when ``stored_fp`` matches
+    ``incoming_fp`` (or any fallback-key digest), or when ``incoming_fp``
+    carries the current SECRET_KEY's key tag while ``stored_fp`` carries a
+    different key tag (meaning SECRET_KEY rotated since ``stored_fp`` was
+    persisted, rather than two different bank accounts under the same key).
+    """
+    if not stored_fp or not incoming_fp:
+        return False
+    if stored_fp == incoming_fp or stored_fp in fallback_fps:
+        return False
+    if fingerprint_uses_current_key(incoming_fp) and not fingerprint_uses_current_key(
+        stored_fp
+    ):
+        return False
+    return True
+
+
+def hash_account_identifier_with_fallbacks(
+    provider: str,
+    raw_id: Optional[str],
+    *,
+    institution: Optional[str] = None,
+    min_length: int = 6,
+) -> tuple[Optional[str], tuple[str, ...]]:
+    """Compute the current keyed HMAC-SHA256 fingerprint plus fallback-key digests.
+
+    Used to match the same underlying account across re-authorizations,
+    ``SECRET_KEY`` rotations, or two co-owners' separate bank connections (joint
+    accounts) without persisting raw IBANs or account numbers.
+
+    ``institution`` (Pluggy connector / COMPE code, Enable Banking ASPSP +
+    country) is required and bound into the HMAC so non-globally-unique
+    branch/account numbers or BBANs at different banks can never collide.
+    Returns ``(None, ())`` for missing institution or missing, masked (including
+    grouped masks like ``XX XX 1234``), trivial, or too-short inputs so
+    unrelated accounts or credit cards sharing a 4-digit tail are never merged.
+    """
+    if not raw_id or not isinstance(raw_id, str):
+        return None, ()
+    if not institution or not isinstance(institution, str):
+        return None, ()
+    inst_clean = " ".join(institution.strip().lower().split())
+    if not inst_clean:
+        return None, ()
+    stripped = raw_id.strip()
+    if "*" in stripped or "•" in stripped:
+        return None, ()
+    cleaned = "".join(ch for ch in stripped if ch.isalnum()).upper()
+    if "XXXX" in cleaned or len(cleaned) < min_length or len(set(cleaned)) <= 1:
+        return None, ()
+    from app.core.config import get_settings
+
+    settings = get_settings()
+    secret = settings.secret_key.get_secret_value()
+    if not secret:
+        return None, ()
+    provider_clean = provider.strip().lower()
+    primary = _compute_account_fingerprint(secret, provider_clean, inst_clean, cleaned)
+    fallbacks = tuple(
+        _compute_account_fingerprint(fb, provider_clean, inst_clean, cleaned)
+        for fb in dict.fromkeys(settings.secret_key_fallbacks)
+        if fb and fb != secret
+    )
+    return primary, fallbacks
+
+
 def hash_account_identifier(
     provider: str,
     raw_id: Optional[str],
@@ -64,41 +170,11 @@ def hash_account_identifier(
     institution: Optional[str] = None,
     min_length: int = 6,
 ) -> Optional[str]:
-    """Keyed HMAC-SHA256 fingerprint of a bank-assigned account identifier.
-
-    Used to match the same underlying account across re-authorizations or two
-    co-owners' separate bank connections (joint accounts) without persisting
-    raw IBANs or account numbers.
-
-    ``institution`` (Pluggy connector / COMPE code, Enable Banking ASPSP +
-    country) is required and bound into the HMAC so non-globally-unique
-    branch/account numbers or BBANs at different banks can never collide.
-    Returns None for missing institution or missing, masked, trivial, or
-    too-short inputs so unrelated accounts or credit cards sharing a 4-digit
-    tail are never merged.
-    """
-    if not raw_id or not isinstance(raw_id, str):
-        return None
-    if not institution or not isinstance(institution, str):
-        return None
-    inst_clean = " ".join(institution.strip().lower().split())
-    if not inst_clean:
-        return None
-    stripped = raw_id.strip()
-    if "*" in stripped or "XXXX" in stripped.upper():
-        return None
-    cleaned = "".join(ch for ch in stripped if ch.isalnum()).upper()
-    if len(cleaned) < min_length or len(set(cleaned)) <= 1:
-        return None
-    from app.core.config import get_settings
-
-    secret = get_settings().secret_key.get_secret_value()
-    if not secret:
-        return None
-    msg = (
-        f"account-fingerprint:v2:{provider.strip().lower()}:{inst_clean}:{cleaned}"
-    ).encode("utf-8")
-    return hmac.new(secret.encode("utf-8"), msg, hashlib.sha256).hexdigest()
+    """Keyed HMAC-SHA256 fingerprint of a bank-assigned account identifier."""
+    primary, _ = hash_account_identifier_with_fallbacks(
+        provider, raw_id, institution=institution, min_length=min_length
+    )
+    return primary
 
 
 def hash_plugin_account_fingerprint(
@@ -175,6 +251,10 @@ class AccountData:
     # account number) computed by `hash_account_identifier`. Enables safe cross-
     # connection joint-account matching without storing raw account numbers.
     account_fingerprint: Optional[str] = None
+    # Fingerprints for the same identifier keyed under `secret_key_fallbacks`,
+    # allowing Tier 1 matching to survive SECRET_KEY rotations and upgrade the
+    # persisted fingerprint to the current key.
+    fallback_account_fingerprints: tuple[str, ...] = ()
     # Per-account institution override (SimpleFIN — issue #345). None = same
     # as connection. The external id is the provider's stable org id
     # (SimpleFIN conn_id) so a renamed bank updates its row instead of

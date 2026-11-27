@@ -39,7 +39,9 @@ from app.providers.base import (
     SessionExpiredError,
     TransactionData,
     default_oauth_redirect_uri,
+    fingerprint_uses_current_key,
     hash_account_identifier,
+    hash_account_identifier_with_fallbacks,
     mask_last4,
 )
 from app.providers.psu import current_psu_context
@@ -1142,6 +1144,9 @@ class EnableBankingProvider(BankProvider):
         )
         ident = _account_identifier(raw)
         inst_scope = institution if institution is not None else self._institution_key
+        account_fingerprint, fallback_fingerprints = hash_account_identifier_with_fallbacks(
+            "enable_banking", ident, institution=inst_scope
+        )
         return AccountData(
             external_id=uid,
             name=name,
@@ -1154,9 +1159,8 @@ class EnableBankingProvider(BankProvider):
             # From the session payload: `uid` is scoped to one session, this
             # hash is what lets a later session find the same account again.
             stable_external_id=stable_external_id,
-            account_fingerprint=hash_account_identifier(
-                "enable_banking", ident, institution=inst_scope
-            ),
+            account_fingerprint=account_fingerprint,
+            fallback_account_fingerprints=fallback_fingerprints,
         )
 
     async def _build_cached_account(
@@ -1193,6 +1197,7 @@ class EnableBankingProvider(BankProvider):
             isinstance(fp, str)
             and inst_scope is not None
             and cached.get("account_fingerprint_scope") == inst_scope
+            and fingerprint_uses_current_key(fp)
         ):
             account.account_fingerprint = fp
         else:

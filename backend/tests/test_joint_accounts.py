@@ -374,6 +374,7 @@ async def test_find_synced_duplicate_path_4b_booked_rotated_uid(
         acc.id,
         rotated,
         {"new-fp-1"},
+        live_external_ids={"new-fp-1"},
         incoming_batch=[rotated],
         provider="enable_banking",
     )
@@ -408,6 +409,7 @@ async def test_find_synced_duplicate_path_4b_booked_rotated_uid(
         acc.id,
         rotated,
         {"new-fp-1", "new-fp-2"},
+        live_external_ids={"new-fp-1", "new-fp-2"},
         incoming_batch=[rotated, twin],
         provider="enable_banking",
     )
@@ -914,15 +916,34 @@ async def test_path_4b_matches_eb_settled_hold_beyond_1d_and_pluggy_failover_ded
             "creditor": {"name": "Hotel Berlin"},
         },
     )
+    # Complete Enable Banking feed (`live_external_ids` set) matches the settled hold.
     dup = await connection_service._find_synced_duplicate(
         session,
         acc.id,
         rotated,
         {"new-eb-booked-1"},
+        live_external_ids={"new-eb-booked-1"},
         incoming_batch=[rotated],
         provider="enable_banking",
     )
     assert dup is not None and dup.id == settled_hold.id
+
+    # Truncated Enable Banking feed (`live_external_ids=None`) must NOT match
+    # Path 4b even when `allow_booked_dedup=True`, because absence from a partial
+    # batch cannot prove the stored row left the feed.
+    assert (
+        await connection_service._find_synced_duplicate(
+            session,
+            acc.id,
+            rotated,
+            {"new-eb-booked-1"},
+            live_external_ids=None,
+            incoming_batch=[rotated],
+            provider="enable_banking",
+            allow_booked_dedup=True,
+        )
+        is None
+    )
 
     twin = TransactionData(
         external_id="new-eb-booked-2",
@@ -940,6 +961,7 @@ async def test_path_4b_matches_eb_settled_hold_beyond_1d_and_pluggy_failover_ded
             acc.id,
             rotated,
             {"new-eb-booked-1", "new-eb-booked-2"},
+            live_external_ids={"new-eb-booked-1", "new-eb-booked-2"},
             incoming_batch=[rotated, twin],
             provider="enable_banking",
         )
@@ -1869,3 +1891,618 @@ async def test_tier1_fingerprint_match_requires_same_account_type(
     ).scalars().all()
     assert len(accs) == 2
     assert {a.type for a in accs} == {"checking", "savings"}
+
+
+def test_grouped_masked_identifiers_rejected_and_pluggy_transfer_number_scope_stable():
+    """Grouped masks like 'XX XX 1234' must not produce fingerprints, and optional
+    Pluggy transferNumber metadata must not change single-institution scope."""
+    from app.providers.pluggy import PluggyProvider, _annotate_institutions, _build_account_data
+
+    assert hash_account_identifier("pluggy", "XX XX 1234", institution="connector:201") is None
+    assert hash_account_identifier("pluggy", "XX-XX-1234", institution="connector:201") is None
+    assert hash_account_identifier("pluggy", "x.x.x.x 1234", institution="connector:201") is None
+    assert hash_account_identifier("pluggy", "•••• 123456", institution="connector:201") is None
+    assert hash_account_identifier("pluggy", "1234-56789", institution="connector:201") is not None
+
+    with_transfer = _build_account_data(
+        {
+            "id": "p-1",
+            "name": "Conta Corrente",
+            "type": "BANK",
+            "subtype": "CHECKING_ACCOUNT",
+            "currencyCode": "BRL",
+            "balance": 100.00,
+            "number": "1234-56789",
+            "bankData": {"transferNumber": "260/1234/56789"},
+        },
+        PluggyProvider._map_account_type,
+        connector_id=201,
+        connector_name="Itaú",
+    )
+    without_transfer = _build_account_data(
+        {
+            "id": "p-2",
+            "name": "Conta Corrente",
+            "type": "BANK",
+            "subtype": "CHECKING_ACCOUNT",
+            "currencyCode": "BRL",
+            "balance": 100.00,
+            "number": "1234-56789",
+        },
+        PluggyProvider._map_account_type,
+        connector_id=201,
+        connector_name="Itaú",
+    )
+    assert with_transfer.account_fingerprint is not None
+    assert with_transfer.account_fingerprint == without_transfer.account_fingerprint
+
+    # Multi-institution connector (e.g. XP Bank + XP Brokerage under one connector)
+    # still separates ambiguous same-type accounts by COMPE inside _annotate_institutions.
+    import asyncio
+
+    raw_multi = [
+        {
+            "id": "xp-bank",
+            "name": "Conta",
+            "type": "BANK",
+            "subtype": "CHECKING_ACCOUNT",
+            "currencyCode": "BRL",
+            "balance": 100.0,
+            "number": "0001-99999",
+            "bankData": {"transferNumber": "348/0001/99999"},
+        },
+        {
+            "id": "xp-broker",
+            "name": "Conta",
+            "type": "BANK",
+            "subtype": "CHECKING_ACCOUNT",
+            "currencyCode": "BRL",
+            "balance": 50.0,
+            "number": "0001-99999",
+            "bankData": {"transferNumber": "102/0001/99999"},
+        },
+    ]
+    built_multi = [
+        _build_account_data(
+            r, PluggyProvider._map_account_type, connector_id=601, connector_name="XP"
+        )
+        for r in raw_multi
+    ]
+    asyncio.run(
+        _annotate_institutions(
+            raw_multi, built_multi, connector_id=601, connector_name="XP"
+        )
+    )
+    assert built_multi[0].account_fingerprint is not None
+    assert built_multi[1].account_fingerprint is not None
+    assert built_multi[0].account_fingerprint != built_multi[1].account_fingerprint
+
+
+@pytest.mark.asyncio
+async def test_secret_key_rotation_preserves_pluggy_joint_matching_with_and_without_fallbacks(
+    session: AsyncSession, test_user: User, test_workspace, monkeypatch
+):
+    """After SECRET_KEY rotation:
+    - If the old key is in secret_key_fallbacks, Tier 1 matches and upgrades the stored fingerprint.
+    - If the old env key is NOT in secret_key_fallbacks, Tier 3 does not falsely reject the
+      rotated-key stored fingerprint as a conflict (surfacing a pending candidate instead of a
+      duplicate), while same-key differing fingerprints are still rejected."""
+    from app.core.config import get_settings
+    from app.providers.base import hash_account_identifier_with_fallbacks
+
+    monkeypatch.setenv("SECRET_KEY", "old-env-secret-key-aaa")
+    get_settings.cache_clear()
+    try:
+        old_fp = hash_account_identifier(
+            "pluggy", "1234-56789", institution="connector:201"
+        )
+        assert old_fp is not None
+
+        conn_a = BankConnection(
+            id=uuid.uuid4(),
+            user_id=test_user.id,
+            workspace_id=test_workspace.id,
+            provider="pluggy",
+            external_id="item-rot-a",
+            institution_name="Itaú",
+            credentials={"item_id": "item-rot-a", "connector_id": "201"},
+            status="active",
+            created_at=datetime.now(timezone.utc),
+        )
+        conn_b = BankConnection(
+            id=uuid.uuid4(),
+            user_id=test_user.id,
+            workspace_id=test_workspace.id,
+            provider="pluggy",
+            external_id="item-rot-b",
+            institution_name="Itaú",
+            credentials={"item_id": "item-rot-b", "connector_id": "201"},
+            status="active",
+            created_at=datetime.now(timezone.utc),
+        )
+        session.add_all([conn_a, conn_b])
+        await session.flush()
+
+        acc = Account(
+            id=uuid.uuid4(),
+            user_id=test_user.id,
+            workspace_id=test_workspace.id,
+            connection_id=conn_a.id,
+            external_id="p-rot-a",
+            account_fingerprint=old_fp,
+            masked_number="6789",
+            name="Conta Corrente",
+            type="checking",
+            balance=Decimal("400.00"),
+            currency="BRL",
+        )
+        session.add(acc)
+        await session.flush()
+        session.add(
+            AccountConnectionLink(
+                workspace_id=test_workspace.id,
+                account_id=acc.id,
+                connection_id=conn_a.id,
+                external_id="p-rot-a",
+                account_fingerprint=old_fp,
+                is_primary_feed=True,
+                status="active",
+            )
+        )
+        await session.commit()
+
+        # Rotate SECRET_KEY without retaining old env key in secret_key_fallbacks.
+        monkeypatch.setenv("SECRET_KEY", "new-env-secret-key-bbb")
+        get_settings.cache_clear()
+        new_fp, new_fallbacks = hash_account_identifier_with_fallbacks(
+            "pluggy", "1234-56789", institution="connector:201"
+        )
+        assert new_fp is not None and new_fp != old_fp
+        assert old_fp not in new_fallbacks
+
+        rotated_no_fb = await connection_service._find_cross_connection_match(
+            session,
+            conn_b,
+            AccountData(
+                external_id="p-rot-b",
+                account_fingerprint=new_fp,
+                fallback_account_fingerprints=new_fallbacks,
+                masked_number="6789",
+                name="Conta Corrente",
+                type="checking",
+                balance=Decimal("400.00"),
+                currency="BRL",
+            ),
+            set(),
+            set(),
+        )
+        assert rotated_no_fb is not None
+        assert rotated_no_fb[0].id == acc.id
+        assert rotated_no_fb[1] == "pending"
+
+        # With old key present in fallbacks, Tier 1 auto-matches immediately.
+        settings = get_settings()
+        settings._secret_key_fallbacks = ("old-env-secret-key-aaa", *settings._secret_key_fallbacks)
+        new_fp2, with_fb = hash_account_identifier_with_fallbacks(
+            "pluggy", "1234-56789", institution="connector:201"
+        )
+        assert old_fp in with_fb
+        tier1_fb = await connection_service._find_cross_connection_match(
+            session,
+            conn_b,
+            AccountData(
+                external_id="p-rot-b",
+                account_fingerprint=new_fp2,
+                fallback_account_fingerprints=with_fb,
+                masked_number="6789",
+                name="Conta Corrente",
+                type="checking",
+                balance=Decimal("400.00"),
+                currency="BRL",
+            ),
+            set(),
+            set(),
+        )
+        assert tier1_fb is not None
+        assert tier1_fb[0].id == acc.id
+        assert tier1_fb[1] == "active"
+
+        # Once stored fingerprint is under the current key, a different account number
+        # sharing the same last-4 mask is still rejected as a same-key conflict in Tier 3.
+        acc.account_fingerprint = new_fp2
+        await session.flush()
+        other_fp = hash_account_identifier(
+            "pluggy", "9999-56789", institution="connector:201"
+        )
+        assert other_fp is not None and other_fp != new_fp2
+        conflict = await connection_service._find_cross_connection_match(
+            session,
+            conn_b,
+            AccountData(
+                external_id="p-other-b",
+                account_fingerprint=other_fp,
+                masked_number="6789",
+                name="Conta Corrente",
+                type="checking",
+                balance=Decimal("100.00"),
+                currency="BRL",
+            ),
+            set(),
+            set(),
+        )
+        assert conflict is None
+    finally:
+        monkeypatch.delenv("SECRET_KEY", raising=False)
+        get_settings.cache_clear()
+
+
+@pytest.mark.asyncio
+async def test_simplefin_fallback_links_preserves_institution_guard(
+    session: AsyncSession, test_user: User, test_workspace
+):
+    """fallback_links must not rebind a primary SimpleFIN link from Institution A
+    to a same-named account from Institution B while Institution A is still in the payload."""
+    conn = BankConnection(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        provider="simplefin",
+        external_id="sf-guard",
+        institution_name="SimpleFIN",
+        credentials={"access_url": "https://example.invalid"},
+        status="active",
+        created_at=datetime.now(timezone.utc),
+    )
+    session.add(conn)
+    await session.flush()
+
+    inst_a = Institution(
+        id=uuid.uuid4(),
+        connection_id=conn.id,
+        external_id="org-a",
+        name="Alpha Bank",
+    )
+    inst_b = Institution(
+        id=uuid.uuid4(),
+        connection_id=conn.id,
+        external_id="org-b",
+        name="Beta Bank",
+    )
+    session.add_all([inst_a, inst_b])
+    await session.flush()
+
+    acc_a = Account(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        connection_id=conn.id,
+        external_id="sf-a-checking",
+        institution_id=inst_a.id,
+        name="Checking",
+        type="checking",
+        balance=Decimal("500.00"),
+        currency="USD",
+    )
+    session.add(acc_a)
+    await session.flush()
+    session.add(
+        AccountConnectionLink(
+            workspace_id=test_workspace.id,
+            account_id=acc_a.id,
+            connection_id=conn.id,
+            external_id="sf-a-checking",
+            is_primary_feed=True,
+            status="active",
+        )
+    )
+    await session.commit()
+
+    # Institution A is still in the payload (e.g. only its savings arrived), while
+    # Institution B arrives with a new account also named "Checking".
+    resolved_acc, resolved_link, status = await connection_service._resolve_sync_account(
+        session,
+        conn,
+        AccountData(
+            external_id="sf-b-checking",
+            name="Checking",
+            type="checking",
+            balance=Decimal("75.00"),
+            currency="USD",
+            institution_external_id="org-b",
+            institution_name="Beta Bank",
+        ),
+        inst_b,
+        incoming_external_ids={"sf-a-savings", "sf-b-checking"},
+        incoming_institution_external_ids=frozenset({"org-a", "org-b"}),
+        claimed_account_ids=set(),
+    )
+    assert status == "new"
+    assert resolved_acc is None and resolved_link is None
+
+
+@pytest.mark.asyncio
+async def test_first_import_truncated_keeps_checkpoint_and_failover_ids(
+    session: AsyncSession, test_user: User, test_workspace
+):
+    """When _run_first_import encounters a truncated or incomplete feed during OAuth
+    takeover, last_sync_at stays unset and failover dedup markers are retained."""
+    fp = hash_account_identifier("pluggy", "88776655", institution="connector:201")
+    assert fp is not None
+
+    conn_expired = BankConnection(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        provider="pluggy",
+        external_id="item-exp-1",
+        institution_name="Itaú",
+        credentials={"item_id": "item-exp-1", "connector_id": "201"},
+        status="expired",
+        created_at=datetime.now(timezone.utc),
+    )
+    session.add(conn_expired)
+    await session.flush()
+
+    joint_acc = Account(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        connection_id=conn_expired.id,
+        external_id="p-old-1",
+        account_fingerprint=fp,
+        masked_number="6655",
+        name="Joint Checking",
+        type="checking",
+        balance=Decimal("100.00"),
+        currency="BRL",
+    )
+    session.add(joint_acc)
+    await session.flush()
+    session.add(
+        AccountConnectionLink(
+            workspace_id=test_workspace.id,
+            account_id=joint_acc.id,
+            connection_id=conn_expired.id,
+            external_id="p-old-1",
+            account_fingerprint=fp,
+            is_primary_feed=True,
+            status="active",
+        )
+    )
+    await session.commit()
+
+    mock_provider = AsyncMock()
+    mock_provider.truncated_account_ids = {"p-new-1"}
+    mock_provider.incomplete_account_ids = set()
+    mock_provider.handle_oauth_callback = AsyncMock(
+        return_value=ConnectionData(
+            external_id="item-new-1",
+            institution_name="Itaú",
+            credentials={"item_id": "item-new-1", "connector_id": "201"},
+            accounts=[
+                AccountData(
+                    external_id="p-new-1",
+                    account_fingerprint=fp,
+                    masked_number="6655",
+                    name="Joint Checking",
+                    type="checking",
+                    balance=Decimal("100.00"),
+                    currency="BRL",
+                )
+            ],
+        )
+    )
+    mock_provider.get_transactions = AsyncMock(return_value=[])
+    mock_provider.get_bills = AsyncMock(return_value=[])
+
+    p1, p2, p3 = _patch_sync_helpers()
+    with patch("app.services.connection_service.get_provider", return_value=mock_provider), p1, p2, p3:
+        conn_new = await connection_service.handle_oauth_callback(
+            session,
+            test_workspace.id,
+            test_user.id,
+            "code-trunc",
+            provider_name="pluggy",
+        )
+
+    assert conn_new.last_sync_at is None
+    assert str(joint_acc.id) in connection_service._failover_dedup_account_ids(
+        conn_new.settings
+    )
+    new_link = (
+        await session.execute(
+            select(AccountConnectionLink).where(
+                AccountConnectionLink.connection_id == conn_new.id,
+                AccountConnectionLink.account_id == joint_acc.id,
+            )
+        )
+    ).scalar_one()
+    assert new_link.last_synced_at is None
+
+
+@pytest.mark.asyncio
+async def test_promoted_secondary_feed_requests_full_history_after_balance_refreshes(
+    session: AsyncSession, test_user: User, test_workspace
+):
+    """A secondary link that refreshed balances on day 29 must still request full
+    history (since=None) on its first transaction import when promoted on day 30,
+    and then switch to the incremental window once that import completes."""
+    fp = hash_account_identifier("pluggy", "44332211", institution="connector:201")
+    assert fp is not None
+
+    conn_a = BankConnection(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        provider="pluggy",
+        external_id="item-hist-a",
+        institution_name="Itaú",
+        credentials={"item_id": "item-hist-a", "connector_id": "201"},
+        status="active",
+        last_sync_at=datetime(2026, 10, 1, tzinfo=timezone.utc),
+        created_at=datetime.now(timezone.utc),
+    )
+    conn_b = BankConnection(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        provider="pluggy",
+        external_id="item-hist-b",
+        institution_name="Itaú",
+        credentials={"item_id": "item-hist-b", "connector_id": "201"},
+        status="active",
+        last_sync_at=datetime(2026, 10, 29, tzinfo=timezone.utc),
+        created_at=datetime.now(timezone.utc),
+    )
+    session.add_all([conn_a, conn_b])
+    await session.flush()
+
+    joint = Account(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        connection_id=conn_a.id,
+        external_id="p-hist-a",
+        account_fingerprint=fp,
+        masked_number="2211",
+        name="Joint Checking",
+        type="checking",
+        balance=Decimal("500.00"),
+        currency="BRL",
+    )
+    session.add(joint)
+    await session.flush()
+    link_a = AccountConnectionLink(
+        workspace_id=test_workspace.id,
+        account_id=joint.id,
+        connection_id=conn_a.id,
+        external_id="p-hist-a",
+        account_fingerprint=fp,
+        is_primary_feed=True,
+        status="active",
+        last_synced_at=datetime(2026, 10, 1, tzinfo=timezone.utc),
+    )
+    link_b = AccountConnectionLink(
+        workspace_id=test_workspace.id,
+        account_id=joint.id,
+        connection_id=conn_b.id,
+        external_id="p-hist-b",
+        account_fingerprint=fp,
+        is_primary_feed=False,
+        status="active",
+        last_synced_at=None,
+    )
+    session.add_all([link_a, link_b])
+    await session.commit()
+
+    acc_b_data = AccountData(
+        external_id="p-hist-b",
+        account_fingerprint=fp,
+        masked_number="2211",
+        name="Joint Checking",
+        type="checking",
+        balance=Decimal("470.00"),
+        currency="BRL",
+    )
+    mock_provider = AsyncMock()
+    mock_provider.refresh_credentials = AsyncMock(return_value=conn_b.credentials)
+    mock_provider.get_institution_logo = AsyncMock(return_value=None)
+    mock_provider.get_accounts = AsyncMock(return_value=[acc_b_data])
+    mock_provider.get_transactions = AsyncMock(return_value=[])
+    mock_provider.get_bills = AsyncMock(return_value=[])
+
+    # Day 29: secondary refreshes balance only — must NOT stamp link_b.last_synced_at.
+    p1, p2, p3 = _patch_sync_helpers()
+    with patch("app.services.connection_service.get_provider", return_value=mock_provider), p1, p2, p3:
+        await connection_service.sync_connection(
+            session, conn_b.id, test_workspace.id, test_user.id
+        )
+    await session.refresh(link_b)
+    assert link_b.last_synced_at is None
+    assert mock_provider.get_transactions.call_count == 0
+
+    # Day 30: primary expires; secondary promotes and MUST request since=None (full history).
+    conn_a.status = "expired"
+    await session.commit()
+
+    seen_sinces: list[date | None] = []
+
+    async def capture_since(_creds, _ext_id, since=None, payee_source="auto"):
+        seen_sinces.append(since)
+        return []
+
+    mock_provider.get_transactions = AsyncMock(side_effect=capture_since)
+    p1, p2, p3 = _patch_sync_helpers()
+    with patch("app.services.connection_service.get_provider", return_value=mock_provider), p1, p2, p3:
+        await connection_service.sync_connection(
+            session, conn_b.id, test_workspace.id, test_user.id
+        )
+
+    assert seen_sinces == [None]
+    await session.refresh(link_b)
+    assert link_b.last_synced_at is not None
+
+    # Subsequent sync uses the incremental 14-day window.
+    p1, p2, p3 = _patch_sync_helpers()
+    with patch("app.services.connection_service.get_provider", return_value=mock_provider), p1, p2, p3:
+        await connection_service.sync_connection(
+            session, conn_b.id, test_workspace.id, test_user.id
+        )
+    assert len(seen_sinces) == 2
+    assert seen_sinces[1] is not None
+
+    # Rejected pending link: even though conn_b already has last_sync_at set,
+    # its first independent import after rejection must request full history (since=None).
+    other_primary = Account(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        connection_id=conn_a.id,
+        external_id="p-hist-other-a",
+        masked_number="9988",
+        name="Household Savings",
+        type="savings",
+        balance=Decimal("1000.00"),
+        currency="BRL",
+    )
+    session.add(other_primary)
+    await session.flush()
+    rejected_pending = AccountConnectionLink(
+        workspace_id=test_workspace.id,
+        account_id=other_primary.id,
+        connection_id=conn_b.id,
+        external_id="p-hist-other-b",
+        is_primary_feed=False,
+        status="rejected",
+        last_synced_at=None,
+    )
+    session.add(rejected_pending)
+    await session.commit()
+
+    seen_by_ext: dict[str, list[date | None]] = {}
+
+    async def capture_by_ext(_creds, ext_id, since=None, payee_source="auto"):
+        seen_by_ext.setdefault(ext_id, []).append(since)
+        return []
+
+    mock_provider.get_accounts = AsyncMock(
+        return_value=[
+            acc_b_data,
+            AccountData(
+                external_id="p-hist-other-b",
+                masked_number="9988",
+                name="Household Savings",
+                type="savings",
+                balance=Decimal("250.00"),
+                currency="BRL",
+            ),
+        ]
+    )
+    mock_provider.get_transactions = AsyncMock(side_effect=capture_by_ext)
+    p1, p2, p3 = _patch_sync_helpers()
+    with patch("app.services.connection_service.get_provider", return_value=mock_provider), p1, p2, p3:
+        await connection_service.sync_connection(
+            session, conn_b.id, test_workspace.id, test_user.id
+        )
+    assert seen_by_ext["p-hist-b"] != [None]
+    assert seen_by_ext["p-hist-other-b"] == [None]

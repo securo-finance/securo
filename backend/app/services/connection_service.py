@@ -40,6 +40,7 @@ from app.models.transaction_attachment import TransactionAttachment
 from app.models.transaction_split import TransactionSplit
 from app.models.transaction_category_line import TransactionCategoryLine
 from app.models.user import User
+from app.models.workspace import Workspace
 from app.plugins.contract import SYNCED_TEXT, column_amount
 from app.plugins.provider import is_plugin_provider
 from app.providers import get_provider
@@ -58,6 +59,8 @@ from app.providers.base import (
     ProviderUserActionRequired,
     SessionExpiredError,
     TransactionData,
+    fingerprint_uses_current_key,
+    fingerprints_conflict,
 )
 from app.services.provider_settings import resolve_settings
 from app.services import oauth_state
@@ -2301,6 +2304,10 @@ async def _find_cross_connection_match(
 
     # Tier 1: High-confidence keyed HMAC account_fingerprint + same provider + same currency + same type.
     if acc_data.account_fingerprint:
+        candidate_fps = {
+            acc_data.account_fingerprint,
+            *acc_data.fallback_account_fingerprints,
+        }
         fp_matches = [
             acc
             for acc, cand_conn in candidates
@@ -2308,10 +2315,10 @@ async def _find_cross_connection_match(
             and acc.currency == acc_data.currency
             and acc.type == acc_data.type
             and (
-                acc.account_fingerprint == acc_data.account_fingerprint
+                acc.account_fingerprint in candidate_fps
                 or any(
                     link.status == "active"
-                    and link.account_fingerprint == acc_data.account_fingerprint
+                    and link.account_fingerprint in candidate_fps
                     for link in acc.connection_links
                 )
             )
@@ -2357,10 +2364,10 @@ async def _find_cross_connection_match(
                 or acc.type != acc_data.type
             ):
                 continue
-            if (
-                acc_data.account_fingerprint
-                and acc.account_fingerprint
-                and acc.account_fingerprint != acc_data.account_fingerprint
+            if fingerprints_conflict(
+                acc.account_fingerprint,
+                acc_data.account_fingerprint,
+                fallback_fps=acc_data.fallback_account_fingerprints,
             ):
                 continue
             cand_inst = _normalized_account_name(cand_conn.institution_name)
@@ -2495,6 +2502,11 @@ async def handle_oauth_callback(
 
     if existing_reconnect:
         _reactivate_connection(existing_reconnect, connection_data)
+        await session.execute(
+            update(AccountConnectionLink)
+            .where(AccountConnectionLink.connection_id == existing_reconnect.id)
+            .values(last_synced_at=None)
+        )
         await session.commit()
         return await get_connection(session, existing_reconnect.id, workspace_id) or existing_reconnect
 
@@ -2540,6 +2552,16 @@ async def handle_oauth_callback(
         session, connection, holdings, connection_data.accounts
     )
 
+    # Serialize concurrent first OAuth callbacks within the same workspace so
+    # two simultaneous logins for a joint account cannot both miss the
+    # cross-connection lookup and create duplicate accounts. Held only through
+    # the commit below, before the bank transaction import begins.
+    await session.execute(
+        select(Workspace.id)
+        .where(Workspace.id == workspace_id)
+        .with_for_update()
+    )
+
     institution_cache: dict[str, Institution] = {}
     synced_accounts: list[tuple[Account, AccountData]] = []
     claimed_account_ids: set[uuid.UUID] = set()
@@ -2575,6 +2597,12 @@ async def handle_oauth_callback(
                 session, matched_account.id, connection.id
             )
             if matched_account.is_closed or has_primary:
+                if (
+                    acc_data.account_fingerprint is not None
+                    and matched_account.account_fingerprint
+                    in acc_data.fallback_account_fingerprints
+                ):
+                    matched_account.account_fingerprint = acc_data.account_fingerprint
                 await _ensure_account_link(
                     session,
                     workspace_id,
@@ -2590,7 +2618,10 @@ async def handle_oauth_callback(
             )
             await session.execute(
                 update(AccountConnectionLink)
-                .where(AccountConnectionLink.account_id == matched_account.id)
+                .where(
+                    AccountConnectionLink.account_id == matched_account.id,
+                    AccountConnectionLink.is_primary_feed.is_(True),
+                )
                 .values(is_primary_feed=False)
             )
             await session.flush()
@@ -2704,7 +2735,7 @@ async def handle_oauth_callback(
                         else account.credit_limit
                     ),
                 )
-        await _run_first_import(
+        complete_account_ids = await _run_first_import(
             session,
             connection=connection,
             accounts=synced_accounts,
@@ -2717,20 +2748,26 @@ async def handle_oauth_callback(
             holdings=holdings,
             failover_account_ids=failover_account_ids,
         )
+        expected_account_ids = {account.id for account, _ in synced_accounts}
+        all_complete = expected_account_ids.issubset(complete_account_ids)
         now = datetime.now(timezone.utc)
-        connection.last_sync_at = now
-        if failover_account_ids:
-            connection.settings = _without_failover_dedup_accounts(
-                connection.settings, {str(aid) for aid in failover_account_ids}
+        if all_complete:
+            connection.last_sync_at = now
+            if failover_account_ids:
+                connection.settings = _without_failover_dedup_accounts(
+                    connection.settings, {str(aid) for aid in failover_account_ids}
+                )
+        if complete_account_ids:
+            await session.execute(
+                update(AccountConnectionLink)
+                .where(
+                    AccountConnectionLink.connection_id == connection_id,
+                    AccountConnectionLink.account_id.in_(complete_account_ids),
+                    AccountConnectionLink.status == "active",
+                    AccountConnectionLink.is_primary_feed.is_(True),
+                )
+                .values(last_synced_at=now)
             )
-        await session.execute(
-            update(AccountConnectionLink)
-            .where(
-                AccountConnectionLink.connection_id == connection_id,
-                AccountConnectionLink.status == "active",
-            )
-            .values(last_synced_at=now)
-        )
         await session.commit()
     except Exception as exc:
         # The first import is one unit: undo whatever it half-imported, keep
@@ -2812,7 +2849,7 @@ async def _run_first_import(
     use_provider_cats: bool,
     holdings: Optional[list[HoldingData]],
     failover_account_ids: Optional[set[uuid.UUID]] = None,
-) -> None:
+) -> set[uuid.UUID]:
     """Read the first history of a newly authorized connection.
 
     Runs inside the OAuth callback's request on purpose: the provider treats
@@ -2820,6 +2857,9 @@ async def _run_first_import(
     allowance depend on (issue #1400). The caller has already persisted the
     connection and its accounts, so a failure here costs the import, never
     the authorization.
+
+    Returns the set of account IDs whose initial transaction feed completed
+    without being marked incomplete or truncated by the provider.
     """
     payee_source = (connection.settings or {}).get("payee_source", "auto")
     new_tx_ids: list[uuid.UUID] = []
@@ -3077,15 +3117,16 @@ async def _run_first_import(
         await _drop_finance_charges_with_twins(session, account)
         await sync_opening_balance_for_connected_account(session, account)
 
+    complete_account_ids = {
+        account.id
+        for account, acc_data in accounts
+        if _feed_came_whole(provider, acc_data.external_id)
+    }
     await _set_aside_card_mirrors(
         session,
         connection,
         new_tx_ids,
-        {
-            account.id
-            for account, acc_data in accounts
-            if _feed_came_whole(provider, acc_data.external_id)
-        },
+        complete_account_ids,
     )
 
     # Detect transfer pairs among newly synced transactions
@@ -3112,6 +3153,7 @@ async def _run_first_import(
         await _sync_holdings(
             session, user_id, connection, credentials, holdings
         )
+    return complete_account_ids
 
 
 def _normalized_account_name(name: str | None) -> str:
@@ -3326,10 +3368,14 @@ async def _resolve_sync_account(
         and link.account_id not in claimed_account_ids
     ]
     if acc_data.account_fingerprint:
+        candidate_fps = {
+            acc_data.account_fingerprint,
+            *acc_data.fallback_account_fingerprints,
+        }
         fp_links = [
             link
             for link in unclaimed_links
-            if link.account_fingerprint == acc_data.account_fingerprint
+            if link.account_fingerprint in candidate_fps
         ]
         picked_acc = _disambiguate_account_candidates(
             [link.account for link in fp_links if link.account is not None], acc_data
@@ -3337,8 +3383,12 @@ async def _resolve_sync_account(
         if picked_acc is not None:
             matched_link = next(link for link in fp_links if link.account_id == picked_acc.id)
             matched_link.external_id = acc_data.external_id
+            matched_link.account_fingerprint = acc_data.account_fingerprint
             if matched_link.is_primary_feed:
                 picked_acc.external_id = acc_data.external_id
+                picked_acc.account_fingerprint = acc_data.account_fingerprint
+            elif picked_acc.account_fingerprint in acc_data.fallback_account_fingerprints:
+                picked_acc.account_fingerprint = acc_data.account_fingerprint
             if matched_link.status == "pending":
                 return picked_acc, matched_link, "pending"
             return (
@@ -3387,6 +3437,7 @@ async def _resolve_sync_account(
             acc_data,
             is_primary_feed=True,
             status="active",
+            last_synced_at=connection.last_sync_at,
         )
         return existing, link, "primary"
 
@@ -3395,6 +3446,13 @@ async def _resolve_sync_account(
     )
     if cross_match is not None:
         matched_account, link_status = cross_match
+        if (
+            link_status == "active"
+            and acc_data.account_fingerprint is not None
+            and matched_account.account_fingerprint
+            in acc_data.fallback_account_fingerprints
+        ):
+            matched_account.account_fingerprint = acc_data.account_fingerprint
         link = await _ensure_account_link(
             session,
             connection.workspace_id,
@@ -3414,7 +3472,7 @@ async def _resolve_sync_account(
     # account_fingerprint and stable_external_id (e.g. migration-134 backfill or
     # SimpleFIN secondary links) so a rotated external_id re-binds instead of
     # creating a duplicate account.
-    fallback_links = [
+    fallback_candidates = [
         link
         for link in unclaimed_links
         if link.account is not None
@@ -3422,10 +3480,10 @@ async def _resolve_sync_account(
         and link.stable_external_id is None
         and link.account.currency == acc_data.currency
         and link.account.type == acc_data.type
-        and not (
-            acc_data.account_fingerprint
-            and link.account.account_fingerprint
-            and link.account.account_fingerprint != acc_data.account_fingerprint
+        and not fingerprints_conflict(
+            link.account.account_fingerprint,
+            acc_data.account_fingerprint,
+            fallback_fps=acc_data.fallback_account_fingerprints,
         )
         and not (
             acc_data.stable_external_id
@@ -3433,6 +3491,55 @@ async def _resolve_sync_account(
             and link.account.stable_external_id != acc_data.stable_external_id
         )
     ]
+    # Apply the same multi-institution guard as `_find_existing_connected_account`
+    # to primary links so a same-named account from another institution cannot
+    # rebind an account whose original institution is still in the payload.
+    primary_fallbacks = [link for link in fallback_candidates if link.is_primary_feed]
+    secondary_fallbacks = [link for link in fallback_candidates if not link.is_primary_feed]
+    if primary_fallbacks:
+        if institution is not None:
+            matched_inst_primary = [
+                link
+                for link in primary_fallbacks
+                if link.account is not None and link.account.institution_id == institution.id
+            ]
+            if not matched_inst_primary:
+                same_name_ids = set(
+                    (
+                        await session.execute(
+                            select(Institution.id).where(
+                                Institution.connection_id == connection.id,
+                                Institution.name == institution.name,
+                                Institution.external_id.not_in(
+                                    incoming_institution_external_ids
+                                ),
+                            )
+                        )
+                    )
+                    .scalars()
+                    .all()
+                )
+                matched_inst_primary = [
+                    link
+                    for link in primary_fallbacks
+                    if link.account is not None
+                    and link.account.institution_id in same_name_ids
+                ]
+            if matched_inst_primary:
+                primary_fallbacks = matched_inst_primary
+            else:
+                primary_fallbacks = [
+                    link
+                    for link in primary_fallbacks
+                    if link.account is not None and link.account.institution_id is None
+                ]
+        else:
+            primary_fallbacks = [
+                link
+                for link in primary_fallbacks
+                if link.account is not None and link.account.institution_id is None
+            ]
+    fallback_links = [*primary_fallbacks, *secondary_fallbacks]
     if fallback_links:
         matched_fallback_acc: Optional[Account] = None
         if acc_data.masked_number:
@@ -3515,6 +3622,7 @@ async def _maybe_promote_secondary_link(
         .where(
             AccountConnectionLink.account_id == locked_account.id,
             AccountConnectionLink.id != link.id,
+            AccountConnectionLink.is_primary_feed.is_(True),
         )
         .values(is_primary_feed=False)
     )
@@ -4456,7 +4564,8 @@ async def _find_synced_duplicate(
         if not rekey_matches and not late_ref_matches and rewritten_ref_matches:
             return rewritten_ref_matches[0]
     elif txn_data.status == "posted" and (
-        provider == "enable_banking" or allow_booked_dedup
+        (provider == "enable_banking" and live_external_ids is not None)
+        or (provider != "enable_banking" and allow_booked_dedup)
     ):
         # Path 4b: strict unique booked↔booked match when external_id rotates —
         # for Enable Banking entries lacking `entry_reference` (including holds
@@ -5821,6 +5930,13 @@ async def sync_connection(
         failover_dedup_ids = _failover_dedup_account_ids(conn_settings)
         pending_failover_dedup_ids: set[str] = set()
         cleared_failover_dedup_ids: set[str] = set()
+        connection_had_links = (
+            await session.scalar(
+                select(AccountConnectionLink.id)
+                .where(AccountConnectionLink.connection_id == connection.id)
+                .limit(1)
+            )
+        ) is not None
         for acc_data in accounts_data:
             institution = await _resolve_institution(
                 session, connection.id, institution_cache, acc_data
@@ -5847,7 +5963,6 @@ async def sync_connection(
                 if acc_data.account_fingerprint is not None:
                     active_link.account_fingerprint = acc_data.account_fingerprint
                 if account.is_closed:
-                    active_link.last_synced_at = datetime.now(timezone.utc)
                     continue
                 promoted = await _maybe_promote_secondary_link(
                     session,
@@ -5859,7 +5974,6 @@ async def sync_connection(
                     institution=institution,
                 )
                 if not promoted:
-                    active_link.last_synced_at = datetime.now(timezone.utc)
                     if not account.is_closed:
                         account.balance = _provider_to_internal_balance(
                             connection.provider,
@@ -5872,9 +5986,15 @@ async def sync_connection(
                                 else account.credit_limit
                             ),
                         )
-                        if (
-                            acc_data.account_fingerprint is not None
-                            and account.account_fingerprint is None
+                        if acc_data.account_fingerprint is not None and (
+                            account.account_fingerprint is None
+                            or (
+                                not fingerprint_uses_current_key(
+                                    account.account_fingerprint
+                                )
+                                and account.account_fingerprint
+                                in acc_data.fallback_account_fingerprints
+                            )
                         ):
                             account.account_fingerprint = acc_data.account_fingerprint
                     continue
@@ -6086,6 +6206,9 @@ async def sync_connection(
                     acc_data,
                     is_primary_feed=True,
                     status="active",
+                    last_synced_at=(
+                        connection.last_sync_at if not connection_had_links else None
+                    ),
                 )
 
             await _sync_reserved_balances(session, account, acc_data)
@@ -6103,11 +6226,23 @@ async def sync_connection(
             # when it posts, so pending rows older than the window are
             # re-read by date after this loop. Dedup on external_id below
             # handles overlap cheaply.
-            since = (
-                connection.last_sync_at.date() - timedelta(days=14)
-                if connection.last_sync_at
-                else None
+            #
+            # Use the per-feed transaction checkpoint (`active_link.last_synced_at`)
+            # so a newly promoted secondary feed or newly independent account
+            # after rejecting a pending link requests full history (`since=None`)
+            # until its own first transaction import completes whole.
+            feed_last_sync = (
+                active_link.last_synced_at
+                if active_link is not None
+                else connection.last_sync_at
             )
+            if connection.last_sync_at is None:
+                feed_last_sync = None
+            since: Optional[date] = None
+            if feed_last_sync is not None and connection.last_sync_at is not None:
+                since = min(
+                    feed_last_sync.date(), connection.last_sync_at.date()
+                ) - timedelta(days=14)
             try:
                 transactions_data = await provider.get_transactions(
                     credentials, acc_data.external_id, since, payee_source=payee_source
@@ -6135,8 +6270,6 @@ async def sync_connection(
                 )
                 await sync_opening_balance_for_connected_account(session, account)
                 continue
-            if active_link is not None:
-                active_link.last_synced_at = datetime.now(timezone.utc)
             transactions_fetched += 1
 
             # Every id the provider returned, pending ones included, so the
@@ -6156,6 +6289,8 @@ async def sync_connection(
                 incomplete_fetch_account_ids.add(account.id)
             if _feed_came_whole(provider, acc_data.external_id):
                 complete_feed_account_ids.add(account.id)
+                if active_link is not None:
+                    active_link.last_synced_at = datetime.now(timezone.utc)
             if not import_pending:
                 transactions_data = [t for t in transactions_data if t.status != "pending"]
 
@@ -6974,16 +7109,48 @@ async def _detach_or_promote_joint_accounts(
 ) -> None:
     """Promote surviving joint-account feeds before removing `connection`.
 
+    Locks candidate ``BankConnection`` rows (ordered by id) BEFORE locking
+    ``Account`` rows (ordered by id) so removal follows the exact same
+    ``BankConnection -> Account`` lock order as ``sync_connection`` /
+    ``_maybe_promote_secondary_link`` and cannot AB-BA deadlock.
+
     Reassigns ``Account.connection_id`` via bulk SQL + flush and expires
     ``connection.accounts`` before ``session.delete(connection)`` so ORM
     ``delete-orphan`` cascade never deletes joint accounts shared with
     another connection.
     """
+    fallback_conn_ids = (
+        await session.scalars(
+            select(AccountConnectionLink.connection_id)
+            .join(Account, Account.id == AccountConnectionLink.account_id)
+            .where(
+                Account.connection_id == connection.id,
+                AccountConnectionLink.connection_id != connection.id,
+                AccountConnectionLink.status.in_(("active", "pending")),
+            )
+            .distinct()
+        )
+    ).all()
+    conn_ids_to_lock = {connection.id, *fallback_conn_ids}
+    locked_conns = {
+        conn.id: conn
+        for conn in (
+            await session.scalars(
+                select(BankConnection)
+                .where(BankConnection.id.in_(conn_ids_to_lock))
+                .order_by(BankConnection.id.asc())
+                .with_for_update()
+                .execution_options(populate_existing=True)
+            )
+        ).all()
+    }
     primary_accounts = (
         await session.scalars(
             select(Account)
             .where(Account.connection_id == connection.id)
+            .order_by(Account.id.asc())
             .with_for_update()
+            .execution_options(populate_existing=True)
         )
     ).all()
     for account in primary_accounts:
@@ -7008,6 +7175,7 @@ async def _detach_or_promote_joint_accounts(
         ).first()
         if fallback_row is not None:
             fallback_link, fallback_conn = fallback_row
+            fallback_conn = locked_conns.get(fallback_link.connection_id, fallback_conn)
             # Demote the outgoing primary link before promoting the fallback so
             # uq_account_connection_links_one_active_primary is never violated.
             await session.execute(
@@ -7015,6 +7183,7 @@ async def _detach_or_promote_joint_accounts(
                 .where(
                     AccountConnectionLink.account_id == account.id,
                     AccountConnectionLink.id != fallback_link.id,
+                    AccountConnectionLink.is_primary_feed.is_(True),
                 )
                 .values(is_primary_feed=False)
             )
@@ -7230,6 +7399,18 @@ async def resolve_account_link(
     action: Literal["confirm", "reject"],
 ) -> AccountConnectionLink:
     """Confirm or reject a pending cross-connection joint-account link."""
+    # Lock the connection before the link and account to keep the canonical
+    # BankConnection -> AccountConnectionLink -> Account lock order across
+    # sync, removal, and link resolution.
+    locked_connection = await session.scalar(
+        select(BankConnection)
+        .where(
+            BankConnection.id == connection_id,
+            BankConnection.workspace_id == workspace_id,
+        )
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
     link = (
         await session.execute(
             select(AccountConnectionLink)
@@ -7242,6 +7423,7 @@ async def resolve_account_link(
                 selectinload(AccountConnectionLink.account),
                 selectinload(AccountConnectionLink.connection),
             )
+            .with_for_update()
             .execution_options(populate_existing=True)
         )
     ).scalar_one_or_none()
@@ -7251,7 +7433,7 @@ async def resolve_account_link(
         raise ValueError("Account link is not pending")
 
     if action == "confirm":
-        link_connection = link.connection
+        link_connection = locked_connection or link.connection
         locked_account = await session.scalar(
             select(Account)
             .where(Account.id == link.account_id)
@@ -7270,6 +7452,7 @@ async def resolve_account_link(
                 .where(
                     AccountConnectionLink.account_id == link.account_id,
                     AccountConnectionLink.id != link.id,
+                    AccountConnectionLink.is_primary_feed.is_(True),
                 )
                 .values(is_primary_feed=False)
             )

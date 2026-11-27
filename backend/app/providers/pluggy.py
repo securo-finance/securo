@@ -23,7 +23,7 @@ from app.providers.base import (
     RefreshOutcome,
     ReservedBalanceData,
     TransactionData,
-    hash_account_identifier,
+    hash_account_identifier_with_fallbacks,
     mask_last4,
 )
 from app.providers.pluggy_constants import pluggy_icon_for_compe
@@ -141,7 +141,11 @@ async def _lookup_bank_info(compe: str) -> Optional[dict]:
 
 
 async def _annotate_institutions(
-    raw_accounts: list[dict], accounts: list[AccountData]
+    raw_accounts: list[dict],
+    accounts: list[AccountData],
+    *,
+    connector_id: object = None,
+    connector_name: object = None,
 ) -> None:
     """Tell apart same-subtype accounts that belong to different legal
     institutions under one Pluggy connection.
@@ -157,7 +161,8 @@ async def _annotate_institutions(
     resolve and set the institution_* hint fields — which `_resolve_institution`
     (connection_service.py) turns into an `Institution` row, same mechanism
     SimpleFIN already uses for its own multi-institution connections
-    (issue #345).
+    (issue #345) — and include the COMPE code in those accounts' fingerprints
+    so distinct institutions under the same connector cannot collide.
     """
     codes_by_external_id: dict[str, str] = {}
     codes_by_type: dict[str, set[str]] = {}
@@ -172,12 +177,25 @@ async def _annotate_institutions(
     if not ambiguous_types:
         return
 
-    for acc in accounts:
+    base_inst = _pluggy_institution_key(
+        connector_id=connector_id,
+        connector_name=connector_name,
+    )
+    for raw, acc in zip(raw_accounts, accounts):
         if acc.type not in ambiguous_types:
             continue
         code = codes_by_external_id.get(acc.external_id)
         if not code:
             continue
+        raw_number = raw.get("number")
+        scoped_inst = f"{base_inst}|compe:{code}" if base_inst else f"compe:{code}"
+        acc.account_fingerprint, acc.fallback_account_fingerprints = (
+            hash_account_identifier_with_fallbacks(
+                "pluggy",
+                raw_number if isinstance(raw_number, str) else None,
+                institution=scoped_inst,
+            )
+        )
         info = await _lookup_bank_info(code)
         if info:
             acc.institution_external_id = code
@@ -687,27 +705,28 @@ def _pluggy_institution_key(
 
     Pluggy's ``number`` is a branch/account string with no bank code, so two
     different banks (e.g. Itaú ``1234-56789`` and Bradesco ``1234/5678-9``)
-    normalize to identical digits. Binding the Pluggy connector identity (plus
-    the COMPE code from ``bankData.transferNumber`` when present, which also
-    separates multi-institution banking groups under one connector) guarantees
-    different institutions never share a fingerprint.
+    normalize to identical digits. Scoped to the stable Pluggy connector
+    identity so optional ``bankData.transferNumber`` metadata present on one
+    feed and absent on another never breaks joint-account matching. Falls back
+    to the COMPE code only when connector identity is unavailable; multi-COMPE
+    connectors of the same account type are disambiguated in
+    ``_annotate_institutions``.
     """
-    parts: list[str] = []
     if connector_id is not None and not isinstance(connector_id, bool):
         cid = str(connector_id).strip()
         if cid:
-            parts.append(f"connector:{cid}")
-    elif isinstance(connector_name, str) and connector_name.strip():
+            return f"connector:{cid}"
+    if isinstance(connector_name, str) and connector_name.strip():
         cname = " ".join(connector_name.strip().lower().split())
         if cname and cname != "unknown bank":
-            parts.append(f"connector_name:{cname}")
+            return f"connector_name:{cname}"
     if isinstance(acc, dict):
         compe = _compe_from_transfer_number(
             (acc.get("bankData") or {}).get("transferNumber")
         )
         if compe:
-            parts.append(f"compe:{compe}")
-    return "|".join(parts) if parts else None
+            return f"compe:{compe}"
+    return None
 
 
 def _build_account_data(
@@ -751,7 +770,7 @@ def _build_account_data(
         connector_name=connector_name,
         acc=acc,
     )
-    account_fingerprint = hash_account_identifier(
+    account_fingerprint, fallback_fingerprints = hash_account_identifier_with_fallbacks(
         "pluggy",
         raw_number if isinstance(raw_number, str) else None,
         institution=institution_key,
@@ -774,6 +793,7 @@ def _build_account_data(
         masked_number=mask_last4(raw_number),
         shared_balance_group=shared_balance_group,
         account_fingerprint=account_fingerprint,
+        fallback_account_fingerprints=fallback_fingerprints,
         auto_invested_balance=(
             Decimal(0) if account_type == "credit_card" else _auto_invested_portion(acc)
         ),
@@ -908,7 +928,12 @@ class PluggyProvider(BankProvider):
                     connector_name=connector_name,
                 )
             )
-        await _annotate_institutions(raw_accounts, account_list)
+        await _annotate_institutions(
+            raw_accounts,
+            account_list,
+            connector_id=connector_id,
+            connector_name=connector_name,
+        )
 
         creds: dict = {"item_id": item_id}
         if connector_id is not None and not isinstance(connector_id, bool):
@@ -990,7 +1015,12 @@ class PluggyProvider(BankProvider):
                     connector_name=connector_name,
                 )
             )
-        await _annotate_institutions(data.get("results", []), accounts)
+        await _annotate_institutions(
+            data.get("results", []),
+            accounts,
+            connector_id=connector_id,
+            connector_name=connector_name,
+        )
         return accounts
 
     async def get_transactions(

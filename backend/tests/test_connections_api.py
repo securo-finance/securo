@@ -812,39 +812,58 @@ async def test_sync_connection_rate_limited_after_mid_sync_delete_returns_404(
 
 
 @pytest.mark.asyncio
-async def test_plugin_payload_provider_server_hmacs_account_fingerprint():
+async def test_plugin_payload_provider_server_hmacs_account_fingerprint(monkeypatch):
     """PluginPayloadProvider server-HMACs plugin-supplied account_fingerprint
     with secret_key + provider."""
+    import hashlib
+    import hmac
+
+    from app.core.config import get_settings
     from app.plugins.contract import parse_payload
     from app.plugins.provider import PluginPayloadProvider
-    from app.providers.base import hash_account_identifier, hash_plugin_account_fingerprint
+    from app.providers.base import hash_account_identifier
 
-    raw_fp = "deadbeef" * 8
-    payload = parse_payload(
-        {
-            "contract": 1,
-            "accounts": [
-                {
-                    "external_id": "A1",
-                    "name": "Checking",
-                    "type": "checking",
-                    "balance": "100.00",
-                    "currency": "USD",
-                    "account_fingerprint": raw_fp,
-                }
-            ],
-        },
-        ["accounts"],
-    )
-    assert payload is not None
-    p1 = PluginPayloadProvider("plugin:acme/one", payload)
-    p2 = PluginPayloadProvider("plugin:acme/two", payload)
-    (a1,) = await p1.get_accounts({})
-    (a2,) = await p2.get_accounts({})
-    assert a1.account_fingerprint is not None
-    assert a1.account_fingerprint != raw_fp
-    assert a1.account_fingerprint == hash_plugin_account_fingerprint("plugin:acme/one", raw_fp)
-    assert a1.account_fingerprint != a2.account_fingerprint
-    assert a1.account_fingerprint != hash_account_identifier(
-        "plugin:acme/one", raw_fp, institution="acme"
-    )
+    test_secret = "plugin-fp-unit-test-secret-key"
+    monkeypatch.setenv("SECRET_KEY", test_secret)
+    get_settings.cache_clear()
+    try:
+        raw_fp = "deadbeef" * 8
+        payload = parse_payload(
+            {
+                "contract": 1,
+                "accounts": [
+                    {
+                        "external_id": "A1",
+                        "name": "Checking",
+                        "type": "checking",
+                        "balance": "100.00",
+                        "currency": "USD",
+                        "account_fingerprint": raw_fp,
+                    }
+                ],
+            },
+            ["accounts"],
+        )
+        assert payload is not None
+        p1 = PluginPayloadProvider("plugin:acme/one", payload)
+        p2 = PluginPayloadProvider("plugin:acme/two", payload)
+        (a1,) = await p1.get_accounts({})
+        (a2,) = await p2.get_accounts({})
+
+        msg = f"plugin-account-fingerprint:v1:plugin:acme/one:{raw_fp}".encode("utf-8")
+        expected_hmac = hmac.new(
+            test_secret.encode("utf-8"), msg, hashlib.sha256
+        ).hexdigest()
+        unkeyed_sha256 = hashlib.sha256(msg).hexdigest()
+
+        assert a1.account_fingerprint is not None
+        assert a1.account_fingerprint != raw_fp
+        assert a1.account_fingerprint == expected_hmac
+        assert a1.account_fingerprint != unkeyed_sha256
+        assert a1.account_fingerprint != a2.account_fingerprint
+        assert a1.account_fingerprint != hash_account_identifier(
+            "plugin:acme/one", raw_fp, institution="acme"
+        )
+    finally:
+        monkeypatch.delenv("SECRET_KEY", raising=False)
+        get_settings.cache_clear()

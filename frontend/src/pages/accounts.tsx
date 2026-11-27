@@ -639,9 +639,13 @@ export default function AccountsPage() {
                         {pendingLinks.map((link) => {
                           const targetAcc = accountsList?.find((a) => a.id === link.account_id)
                           const targetConn = connectionsList?.find((c) => c.id === targetAcc?.connection_id)
+                          const fallbackMask = formatAccountMask({
+                            masked_number: link.account_masked_number,
+                          })
+                          const fallbackName = link.account_name ?? link.external_id
                           const accountLabel = targetAcc
-                            ? getAccountName(targetAcc)
-                            : (link.account_name ?? link.external_id)
+                            ? getAccountLabel(targetAcc)
+                            : (fallbackMask ? `${fallbackName} ${fallbackMask}` : fallbackName)
                           const connectionLabel = targetConn
                             ? getConnectionName(targetConn, t)
                             : (targetAcc?.institution_name ?? link.institution_name ?? '')
