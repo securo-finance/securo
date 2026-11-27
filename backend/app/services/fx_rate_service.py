@@ -564,6 +564,10 @@ class DatedRateBook:
     :func:`_resolve_rate` (exact date, then closest before, then closest
     after). A date that would trigger an on-demand provider fetch still goes
     through :func:`get_rate`, so that path keeps its behavior and its guards.
+    When such a fetch stores nothing for its date (no provider configured, a
+    spent quota, a failed call), the book stops asking: the next dates resolve
+    in memory from the stored series instead of repeating the fetch, the
+    settings read and the closest-rate queries once per date.
 
     For reads only, like :class:`RateBook`.
     """
@@ -574,6 +578,7 @@ class DatedRateBook:
         self._series: dict[str, tuple[list[date], list[Decimal]]] = {}
         self._rates: dict[tuple[str, str, date], Decimal] = {}
         self._warned: set[tuple[str, str]] = set()
+        self._fetch_exhausted = False
 
     async def _load(self, currency: str) -> tuple[list[date], list[Decimal]]:
         series = self._series.get(currency)
@@ -612,13 +617,24 @@ class DatedRateBook:
         return i < len(dates) and dates[i] < next_first
 
     def _may_fetch(self, target: date, legs: dict[str, tuple[list[date], list[Decimal]]]) -> bool:
-        if not self._allow_fetch or _stored_only.get() or _fetch_blocked(target):
+        if (
+            not self._allow_fetch
+            or self._fetch_exhausted
+            or _stored_only.get()
+            or _fetch_blocked(target)
+        ):
             return False
         if _samples_monthly(target) and legs and all(
             self._month_has(series, target) for series in legs.values()
         ):
             return False
         return True
+
+    async def _date_has_rates(self, target: date) -> bool:
+        found = await self._session.scalar(
+            select(FxRate.id).where(FxRate.date == target).limit(1)
+        )
+        return found is not None
 
     async def rate(self, from_currency: str, to_currency: str, target_date: date) -> Decimal:
         source, quote = _code(from_currency), _code(to_currency)
@@ -637,13 +653,20 @@ class DatedRateBook:
                 self._session, source, quote, target, allow_fetch=self._allow_fetch
             )
             # The fetch may have stored this date's rows: keep the series current.
+            stored_any = False
             for currency, series in legs.items():
                 if exact[currency] is None:
                     stored = await _get_exact_date_rate(self._session, currency, target)
                     if stored is not None:
+                        stored_any = True
                         i = bisect_left(series[0], target)
                         series[0].insert(i, target)
                         series[1].insert(i, stored)
+            if not stored_any and not await self._date_has_rates(target):
+                # Nothing came back for the day: the provider is off, out of
+                # quota or failing. Asking again for every later date would
+                # give the same answer at the cost of a fetch attempt each.
+                self._fetch_exhausted = True
             self._rates[key] = rate
             return rate
 

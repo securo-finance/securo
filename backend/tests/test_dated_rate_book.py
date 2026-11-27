@@ -3,6 +3,7 @@
 import uuid
 from datetime import date, timedelta
 from decimal import Decimal
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from sqlalchemy import event
@@ -11,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.asset import Asset
 from app.models.asset_value import AssetValue
 from app.models.fx_rate import FxRate
+from app.providers.openexchangerates import FxProviderNotConfigured
 from app.services.asset_service import get_portfolio_trend
 from app.services.fx_rate_service import DatedRateBook, get_rate
 
@@ -85,3 +87,56 @@ async def test_portfolio_trend_reads_fx_rates_once_per_currency(
     fx_reads = [s for s in statements if "fx_rates" in s.lower()]
     # has_rate for the currency plus one series read, not two or more per date.
     assert len(fx_reads) <= 3, f"{len(fx_reads)} fx_rates statements for one trend"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "failure", [FxProviderNotConfigured("not configured"), RuntimeError("provider down")]
+)
+async def test_trend_stops_fetching_once_the_provider_gives_nothing(
+    session: AsyncSession, test_user, test_workspace, failure
+):
+    """Only this month's rates stored and no provider: older months are unsampled.
+
+    Each of those dates used to try the provider again (a settings read and
+    the whole get_rate chain per date). One empty attempt is enough.
+    """
+    today = date.today()
+    session.add_all(_rate("BRL", today - timedelta(days=i), "5.00") for i in range(3))
+    start = today - timedelta(days=400)
+    asset = Asset(
+        id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+        name="ETF", type="investment", currency="USD", valuation_method="manual",
+    )
+    session.add(asset)
+    await session.flush()
+    session.add_all(
+        AssetValue(asset_id=asset.id, amount=Decimal(100 + i), date=start + timedelta(days=i))
+        for i in range(0, 400, 5)
+    )
+    await session.commit()
+
+    statements: list[str] = []
+
+    def record(conn, cursor, statement, parameters, context, executemany):
+        statements.append(statement)
+
+    not_configured = AsyncMock(side_effect=failure)
+    engine = session.bind.sync_engine
+    with patch("app.services.fx_rate_service.OpenExchangeRatesProvider") as provider_class:
+        provider_class.return_value.fetch_historical = not_configured
+        provider_class.return_value.fetch_latest = not_configured
+        event.listen(engine, "before_cursor_execute", record)
+        try:
+            trend = await get_portfolio_trend(session, test_workspace.id, primary_currency="BRL")
+        finally:
+            event.remove(engine, "before_cursor_execute", record)
+
+    assert len(trend["trend"]) == 80
+    # The closest stored rate, as get_rate gives it with no provider.
+    assert trend["trend"][0]["_total"] == 500.0
+    assert not_configured.await_count == 1
+    fx_reads = [s for s in statements if "fx_rates" in s.lower()]
+    settings_reads = [s for s in statements if "app_settings" in s.lower()]
+    assert len(fx_reads) <= 12, f"{len(fx_reads)} fx_rates statements for one trend"
+    assert len(settings_reads) <= 3, f"{len(settings_reads)} app_settings reads for one trend"
