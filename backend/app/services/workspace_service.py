@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
 from app.core.row_security import bind_workspace
+from app.services import quota_service
 from app.models.user import User
 from app.models.workspace import (
     MANAGER_VIRTUAL_ROLE,
@@ -236,6 +237,7 @@ async def create_workspace(
     new workspace would force the user to rebuild their taxonomy from
     scratch.
     """
+    await quota_service.check_new_workspace(session, creator.id, kind)
     prefs = creator.preferences or {}
     workspace_locale = locale or prefs.get("language") or "en"
     workspace = Workspace(
@@ -334,6 +336,7 @@ async def add_member(
     existing = await get_membership(session, workspace_id, user_id)
     if existing:
         raise HTTPException(status_code=409, detail="User is already a member")
+    await quota_service.check_new_member(session, workspace_id, user_id)
     member = WorkspaceMember(
         workspace_id=workspace_id,
         user_id=user_id,

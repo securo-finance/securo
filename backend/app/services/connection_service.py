@@ -61,6 +61,7 @@ from app.providers.base import (
 from app.services.provider_settings import resolve_settings
 from app.services import oauth_state
 from app.services import admin_service
+from app.services import quota_service
 from app.services import category_line_service, notification_service, reconciliation_service, recurring_match_service
 from app.services.text_similarity import normalize_words, token_overlap
 from app.services.account_service import (
@@ -2213,6 +2214,8 @@ async def handle_oauth_callback(
         await session.refresh(existing_reconnect)
         return existing_reconnect
 
+    # A new connection, not a reconnect: it counts toward the account's limit (ADR 0049).
+    await quota_service.check_new_bank_connection(session, workspace_id)
     flow_params = dict(state_payload.get("flow_params") or {})
     flow_sync_assets = flow_params.pop("sync_assets", None)
     initial_settings: dict[str, object] = {"flow_params": flow_params}
