@@ -1671,6 +1671,15 @@ class _QuotableTickerLinker:
         await session.refresh(asset)
 
 
+def _priced_by_ticker(asset: Asset) -> bool:
+    """Whether today's point of a synced holding is units × its last quote."""
+    return (
+        asset.valuation_method == "market_price"
+        and asset.last_price is not None
+        and asset.units is not None
+    )
+
+
 def _holding_value_for_today(asset: Asset, holding: HoldingData):
     """Today's valuation point for a synced holding.
 
@@ -1678,7 +1687,7 @@ def _holding_value_for_today(asset: Asset, holding: HoldingData):
     asset list shows, so the chart and the header agree. Every other holding
     uses the provider's reported balance.
     """
-    if asset.valuation_method == "market_price" and asset.last_price is not None and asset.units is not None:
+    if _priced_by_ticker(asset):
         return Decimal(str(asset.last_price)) * Decimal(str(asset.units))
     return holding.current_value
 
@@ -1690,12 +1699,12 @@ def _holding_price_for_today(asset: Asset, holding: HoldingData) -> Optional[Dec
     like a manual market-priced holding's, so the history rebuild recomputes
     the point from the ledger quantity when a later trade correction moves
     units across dates, instead of keeping a baked amount. A provider-valued
-    point keeps the unit price the provider reported (None when it sends
-    none), which the chart uses between syncs.
+    point keeps the unit value of the provider's amount
+    (`_snapshot_unit_price`).
     """
-    if asset.valuation_method == "market_price" and asset.last_price is not None and asset.units is not None:
+    if _priced_by_ticker(asset):
         return Decimal(str(asset.last_price))
-    return holding.unit_price
+    return _snapshot_unit_price(holding)
 
 
 async def _upsert_asset_from_holding(
@@ -1908,13 +1917,17 @@ async def _store_todays_snapshot(
 
     The date only makes sense next to the amount the payload brought; when
     that amount is past the column and left out, it has to go with it.
+
+    A holding priced by its ticker is worth units × quote. The gross the
+    provider reports goes with the provider's own balance, not with that
+    figure, so its point carries no gross.
     """
     stored = await _upsert_asset_value_for_today(
         session,
         asset,
         _holding_value_for_today(asset, holding),
         today,
-        gross_amount=holding.gross_value,
+        gross_amount=None if _priced_by_ticker(asset) else holding.gross_value,
         price=_holding_price_for_today(asset, holding),
     )
     if not stored:

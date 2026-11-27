@@ -104,6 +104,7 @@ def _b3_holding(
     quantity: Decimal = Decimal("7"),
     current_value: Decimal = Decimal("300.00"),
     unit_price: Optional[Decimal] = None,
+    gross_value: Optional[Decimal] = None,
 ) -> HoldingData:
     return HoldingData(
         external_id=external_id,
@@ -112,6 +113,7 @@ def _b3_holding(
         current_value=current_value,
         quantity=quantity,
         unit_price=unit_price,
+        gross_value=gross_value,
         ticker=ticker,
         ticker_quotable=quotable,
         metadata={"status": "ACTIVE", "code": "PSSA3", "type": "EQUITY"},
@@ -636,29 +638,37 @@ async def test_market_priced_snapshot_stores_the_quote_it_was_valued_at(
 
 
 @pytest.mark.asyncio
-async def test_provider_valued_snapshot_has_no_price(
-    session: AsyncSession, test_user: User, conn: BankConnection, market: _FakeMarket
-):
-    _MockProvider._holdings = [_b3_holding()]
-    await _sync(session, test_user, conn)
-
-    row = await _today_row(session, await _only_asset(session, test_user))
-    assert Decimal(str(row.amount)) == Decimal("300.00")
-    assert row.price is None
-
-
-@pytest.mark.asyncio
-async def test_provider_valued_snapshot_keeps_the_reported_unit_price(
+async def test_provider_valued_snapshot_keeps_the_provider_figures(
     session: AsyncSession, test_user: User, conn: BankConnection, market: _FakeMarket
 ):
     # No quote, so the holding stays provider-valued: its point keeps the
-    # provider's amount and the unit price it reported, not a quote.
-    _MockProvider._holdings = [_b3_holding(unit_price=Decimal("42.50"))]
+    # provider's amount and gross, and the unit value of that amount rather
+    # than the unit price the provider quoted, which can lag the balance.
+    _MockProvider._holdings = [_b3_holding(
+        quantity=Decimal("6"), unit_price=Decimal("42.50"), gross_value=Decimal("320.00"),
+    )]
     await _sync(session, test_user, conn)
 
     row = await _today_row(session, await _only_asset(session, test_user))
     assert Decimal(str(row.amount)) == Decimal("300.00")
-    assert row.price == Decimal("42.500000")
+    assert Decimal(str(row.gross_amount)) == Decimal("320.00")
+    assert row.price == Decimal("50.000000")
+
+
+@pytest.mark.asyncio
+async def test_ticker_priced_snapshot_is_units_times_quote_with_no_provider_gross(
+    session: AsyncSession, test_user: User, conn: BankConnection, market: _FakeMarket
+):
+    market.quotes["PSSA3.SA"] = _quote("PSSA3.SA", 44.00)
+    _MockProvider._holdings = [_b3_holding(gross_value=Decimal("320.00"))]
+    await _sync(session, test_user, conn)
+    # A second sync of the same day rewrites the point it wrote.
+    await _sync(session, test_user, conn)
+
+    row = await _today_row(session, await _only_asset(session, test_user))
+    assert Decimal(str(row.amount)) == Decimal("308.00")
+    assert row.price == Decimal("44.000000")
+    assert row.gross_amount is None
 
 
 @pytest.mark.asyncio
@@ -879,6 +889,28 @@ def _add_manual_point(session: AsyncSession, asset_id: uuid.UUID) -> None:
         id=_LATE_ID, asset_id=asset_id, amount=Decimal("999.00"), date=date.today(),
         source="manual",
     ))
+
+
+@pytest.mark.asyncio
+async def test_link_drops_the_provider_gross_from_the_sync_point_it_reprices(
+    client: AsyncClient, auth_headers: dict, session: AsyncSession, test_user: User,
+    conn: BankConnection, market: _FakeMarket,
+):
+    _MockProvider._holdings = [_b3_holding(gross_value=Decimal("320.00"))]
+    await _sync(session, test_user, conn)
+    asset_id = (await _only_asset(session, test_user)).id
+    (row,) = await _today_rows(session, asset_id)
+    assert Decimal(str(row.gross_amount)) == Decimal("320.00")
+    market.quotes["PSSA3.SA"] = _quote("PSSA3.SA", 44.00)
+
+    response = await client.post(
+        f"/api/assets/{asset_id}/link-ticker", json={"ticker": "PSSA3.SA"}, headers=auth_headers
+    )
+
+    assert response.status_code == 200, response.text
+    (row,) = await _today_rows(session, asset_id)
+    assert Decimal(str(row.amount)) == Decimal("308.00")
+    assert row.gross_amount is None
 
 
 @pytest.mark.asyncio

@@ -1705,6 +1705,10 @@ async def upsert_today_value(
         today_value.amount = new_amount
         today_value.price = price
         today_value.source = "sync"
+        if asset.connection_id is not None:
+            # The sync stored the provider's gross next to its own balance;
+            # units × price is another figure, so that gross no longer applies.
+            today_value.gross_amount = None
     else:
         session.add(
             AssetValue(
