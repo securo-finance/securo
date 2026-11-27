@@ -1,10 +1,16 @@
 import axios from 'axios'
+import type { LayoutItem } from '@/lib/library'
+import { normalizeBudgetComparisonRows } from '@/lib/budget-settings-utils'
 import type { AxiosResponse } from 'axios'
 import { markDataChanged } from '@/lib/data-changed'
 import type { NumberFormat, DateFormat } from '@/lib/format'
 import type {
+  AppNotificationKind,
+  AppNotificationList,
+  NotificationPreference,
   User,
   AdminUser,
+  AdminAccessLogList,
   AdminUserList,
   Passkey,
   PasskeyOptionsResponse,
@@ -17,6 +23,7 @@ import type {
   ConnectionSettings,
   SyncResult,
   Account,
+  AccountCard,
   AccountSummary,
   AccountRunningBalancePoint,
   Collection,
@@ -52,6 +59,9 @@ import type {
   InvoiceSettings,
   InvoiceSummary,
   RecurringTransaction,
+  RecurringPriceChange,
+  RecurringPriceChangeHistory,
+  RecurringMonthSummary,
   ProjectedTransaction,
   TransactionCalendarResponse,
   Budget,
@@ -64,6 +74,8 @@ import type {
   RulePack,
   RulePackRemoval,
   InstalledPlugin,
+  PluginConnection,
+  PluginFileValue,
   PluginAction,
   PluginCatalogEntry,
   PluginPlan,
@@ -84,6 +96,7 @@ import type {
   AssetImportPreview,
   AssetImportResult,
   AssetOrderImport,
+  AssetPriceRefreshResult,
   AssetTransaction,
   AssetValue,
   MarketSymbolMatch,
@@ -102,6 +115,8 @@ import type {
   BalanceHistory,
   PaginatedTransactions,
   ReportResponse,
+  PluginReportResponse,
+  CategoryStatementResponse,
   Group,
   GroupKind,
   GroupMember,
@@ -110,6 +125,8 @@ import type {
   GroupSummary,
   TransactionSplitsInput,
   TransactionEditPayload,
+  FlagDue,
+  FlaggedSummary,
   InstallmentSeriesInput,
   TransactionApplyScope,
   InvoiceAttachment,
@@ -120,6 +137,12 @@ import type {
   ReconciliationRulePatch,
   ReconciliationSuggestion,
   ReconciliationHistoryEvent,
+  DocumentAiSettings,
+  DocumentAiSettingsUpdate,
+  DocumentAiStatus,
+  DocumentExtraction,
+  DocumentKind,
+  DocumentReceiptTransaction,
 } from '@/types'
 
 const api = axios.create({
@@ -139,7 +162,8 @@ api.interceptors.request.use((config) => {
     config.headers.Authorization = `Bearer ${token}`
   }
   const workspaceId = localStorage.getItem(WORKSPACE_STORAGE_KEY)
-  if (workspaceId) {
+  // A request that names its workspace keeps it (a save queued before a switch).
+  if (workspaceId && !config.headers['X-Workspace-Id']) {
     config.headers['X-Workspace-Id'] = workspaceId
   }
   return config
@@ -268,6 +292,13 @@ export const auth = {
     const { data } = await api.post('/auth/register', { email, password, preferences })
     return data
   },
+  /** Ask for a recovery link. Unknown addresses get the same answer. */
+  forgotPassword: async (email: string): Promise<void> => {
+    await api.post('/auth/forgot-password', { email }, readOnly)
+  },
+  resetPassword: async (token: string, password: string): Promise<void> => {
+    await api.post('/auth/reset-password', { token, password }, readOnly)
+  },
   me: async (): Promise<User> => {
     const { data } = await api.get('/users/me')
     return data
@@ -279,6 +310,21 @@ export const auth = {
   changePassword: async (password: string): Promise<User> => {
     const { data } = await api.patch('/users/me', { password })
     return data
+  },
+  /**
+   * Move the account to the address an administrator asked for (ADR 0042,
+   * #556). Only the person whose account it is can, from their own session —
+   * which is what makes the request useless as a way into the account.
+   *
+   * `email` is the address that was on screen: sending it back means accepting
+   * the address the person read, not whatever an administrator asked for after.
+   */
+  confirmEmailChange: async (email: string): Promise<User> => {
+    const { data } = await api.post('/users/me/email-change', { email })
+    return data
+  },
+  declineEmailChange: async (): Promise<void> => {
+    await api.delete('/users/me/email-change')
   },
   setup2fa: async (): Promise<{ secret: string; otpauth_uri: string }> => {
     const { data } = await api.post('/auth/2fa/setup')
@@ -347,11 +393,28 @@ export const auth = {
     }, readOnly)
     return data
   },
-  oidcConfig: async (): Promise<{ enabled: boolean; provider_name: string; local_auth_enabled: boolean }> => {
+  oidcConfig: async (): Promise<{ enabled: boolean; provider_name: string; local_auth_enabled: boolean; password_reset_enabled: boolean }> => {
     // The login card blocks on this call while it decides which sign-in
     // methods to offer, so a hung request must fail fast and let the caller
     // fall back instead of leaving the page stuck on its loading state.
     const { data } = await api.get('/auth/oidc/config', { timeout: 5000 })
+    return data
+  },
+  oidcLogoutUrl: async (): Promise<{
+    /** Where to send the browser so the provider session ends too (#1623). */
+    logout_url: string
+  }> => {
+    // Only the sign-out asks this: it may reach the provider, so it is kept
+    // off /config, which the sign-in page waits on.
+    const { data } = await api.get('/auth/oidc/logout-url', { timeout: 10000 })
+    return data
+  },
+}
+
+/** Administrative actions on my account, and on members of workspaces I own (ADR 0042). */
+export const accessLog = {
+  mine: async (params?: { page?: number; limit?: number }): Promise<AdminAccessLogList> => {
+    const { data } = await api.get('/access-log/mine', { params })
     return data
   },
 }
@@ -477,8 +540,29 @@ export const connections = {
     const { data } = await api.post(`/connections/${connectionId}/oauth/reauth-url`, undefined, readOnly)
     return data.url
   },
-  sync: async (id: string): Promise<SyncResult> => {
-    const { data } = await api.post(`/connections/${id}/sync`)
+  // retryTradeImport asks the provider again for holdings whose trade
+  // history didn't add up last time, even if no position moved.
+  // workspaceId pins the request to the workspace it was started in, so a
+  // batch that outlives a workspace switch keeps syncing the same one.
+  sync: async (
+    id: string,
+    options?: { retryTradeImport?: boolean; workspaceId?: string | null },
+  ): Promise<SyncResult> => {
+    const config = {
+      ...workspaceHeader(options?.workspaceId),
+      ...(options?.retryTradeImport ? { params: { retry_trade_import: true } } : {}),
+    }
+    const { data } = await api.post(
+      `/connections/${id}/sync`,
+      undefined,
+      Object.keys(config).length ? config : undefined,
+    )
+    return data
+  },
+  // One-time backfill: pairs the transfer rows the active rules are sure
+  // about across the whole history, not only the rows that just arrived.
+  detectTransfers: async (): Promise<{ pairs_created: number }> => {
+    const { data } = await api.post('/connections/transfers/detect')
     return data
   },
   getReconnectToken: async (connectionId: string): Promise<string> => {
@@ -492,8 +576,10 @@ export const connections = {
     const { data } = await api.patch(`/connections/${id}/settings`, settings)
     return data
   },
-  delete: async (id: string): Promise<void> => {
-    await api.delete(`/connections/${id}`)
+  // Disconnecting keeps the accounts and their history unless the caller
+  // asks for them to be deleted too.
+  delete: async (id: string, { keepAccounts = true }: { keepAccounts?: boolean } = {}): Promise<void> => {
+    await api.delete(`/connections/${id}`, { params: { keep_accounts: keepAccounts } })
   },
 }
 
@@ -550,6 +636,17 @@ export const accounts = {
   },
   bills: async (id: string, limit = 24): Promise<CreditCardBill[]> => {
     const { data } = await api.get(`/accounts/${id}/bills`, { params: { limit } })
+    return data
+  },
+  linkedCards: async (id?: string): Promise<AccountCard[]> => {
+    const { data } = await api.get(id ? `/accounts/${id}/linked-cards` : '/accounts/linked-cards')
+    return data
+  },
+  updateLinkedCards: async (
+    id: string,
+    cards: { id: string; label: string }[],
+  ): Promise<AccountCard[]> => {
+    const { data } = await api.patch(`/accounts/${id}/linked-cards`, { cards })
     return data
   },
   close: async (id: string): Promise<Account> => {
@@ -610,10 +707,13 @@ export const transactions = {
   list: async (params?: {
     account_id?: string
     account_ids?: string[]
+    linked_card_ids?: string[]
     category_id?: string
     category_ids?: string[]
     payee_id?: string
     uncategorized?: boolean
+    shared_as_uncategorized?: boolean
+    workspace_only?: boolean
     type?: string
     status?: string
     from?: string
@@ -630,6 +730,10 @@ export const transactions = {
     exclude_transfers?: boolean
     user_pnl_only?: boolean
     exclude_ignored?: boolean
+    flagged?: boolean
+    flag_due?: FlagDue
+    unpaid_only?: boolean
+    unread_only?: boolean
     tags?: string[]
     min_amount?: number
     max_amount?: number
@@ -646,6 +750,7 @@ export const transactions = {
     month?: string
     account_id?: string
     account_ids?: string[]
+    date_basis?: 'reporting' | 'bank'
   }): Promise<TransactionCalendarResponse> => {
     const { data } = await api.get('/transactions/calendar', {
       params,
@@ -686,6 +791,18 @@ export const transactions = {
     const { data } = await api.patch(`/transactions/${id}/ignore`)
     return data
   },
+  // Issue #636: clear the "new" marker of one row, or of every unread row in
+  // the workspace. `workspaceId` pins the write to the workspace the list was
+  // rendered with, whatever the interceptor would send if another tab switched
+  // in the meantime.
+  markRead: async (id: string, workspaceId?: string | null): Promise<Transaction> => {
+    const { data } = await api.patch(`/transactions/${id}/read`, undefined, workspaceHeader(workspaceId))
+    return data
+  },
+  markAllRead: async (workspaceId?: string | null): Promise<{ updated: number }> => {
+    const { data } = await api.post('/transactions/read-all', undefined, workspaceHeader(workspaceId))
+    return data
+  },
   unlinkRecurring: async (id: string): Promise<Transaction> => {
     const { data } = await api.patch(`/transactions/${id}/unlink-recurring`)
     return data
@@ -718,6 +835,22 @@ export const transactions = {
       transaction_ids: transactionIds,
       tags,
     })
+    return data
+  },
+  bulkFlag: async (
+    transactionIds: string[],
+    isFlagged: boolean,
+    flagDueDate?: string,
+  ): Promise<{ updated: number }> => {
+    const { data } = await api.patch('/transactions/bulk-flag', {
+      transaction_ids: transactionIds,
+      is_flagged: isFlagged,
+      flag_due_date: flagDueDate,
+    })
+    return data
+  },
+  flaggedSummary: async (): Promise<FlaggedSummary> => {
+    const { data } = await api.get('/transactions/flagged-summary')
     return data
   },
   bulkRemoveTags: async (transactionIds: string[], tags: string[]): Promise<{ updated: number }> => {
@@ -799,7 +932,7 @@ export const transactions = {
     transactions: ImportPreviewTransaction[],
     filename: string,
     detected_format: string,
-    options?: { detect_duplicates?: boolean },
+    options?: { detect_duplicates?: boolean; document_extraction_id?: string },
   ): Promise<{ imported: number; skipped: number; excluded: number; import_log_id: string }> => {
     const payload: {
       account_id: string
@@ -807,10 +940,14 @@ export const transactions = {
       filename: string
       detected_format: string
       detect_duplicates?: boolean
+      document_extraction_id?: string
     } = { account_id, transactions, filename, detected_format }
 
     if (typeof options?.detect_duplicates === 'boolean') {
       payload.detect_duplicates = options.detect_duplicates
+    }
+    if (options?.document_extraction_id) {
+      payload.document_extraction_id = options.document_extraction_id
     }
 
     const { data } = await api.post('/transactions/import', payload)
@@ -819,6 +956,7 @@ export const transactions = {
   export: async (params?: {
     account_id?: string
     account_ids?: string[]
+    linked_card_ids?: string[]
     category_id?: string
     category_ids?: string[]
     payee_id?: string
@@ -830,6 +968,10 @@ export const transactions = {
     q?: string
     tags?: string[]
     exclude_ignored?: boolean
+    flagged?: boolean
+    flag_due?: FlagDue
+    unpaid_only?: boolean
+    unread_only?: boolean
     transaction_ids?: string[]
   }): Promise<void> => {
     const { data } = await api.get('/transactions/export', {
@@ -1032,6 +1174,8 @@ export interface GroupSettlementPayload {
   currency: string
   date: string
   transaction_id?: string | null
+  // The receiver's credit that already arrived, linked instead of creating one.
+  receiver_transaction_id?: string | null
   notes?: string | null
   // When provided, the backend creates a debit transaction on this
   // account and links it via transaction_id. Mutually exclusive with
@@ -1118,6 +1262,8 @@ export type { TransactionSplitsInput }
 export interface UserLookupResult {
   id: string
   email: string
+  /** The name the person set for themselves; null when they never set one. */
+  display_name: string | null
 }
 
 export const users = {
@@ -1142,6 +1288,12 @@ export const users = {
 export const rules = {
   list: async (): Promise<Rule[]> => {
     const { data } = await api.get('/rules')
+    return data
+  },
+  /** Provider categories the workspace already received, for the
+   * `provider_category` condition's suggestions. */
+  providerCategories: async (): Promise<string[]> => {
+    const { data } = await api.get('/rules/provider-categories')
     return data
   },
   create: async (rule: Omit<Rule, 'id' | 'user_id'>): Promise<Rule & { applied_count: number }> => {
@@ -1332,7 +1484,16 @@ export const recurring = {
     const { data } = await api.get('/recurring-transactions')
     return data
   },
-  create: async (rt: Partial<RecurringTransaction>): Promise<RecurringTransaction> => {
+  // `skip_first` and `source_transaction_id` are write-only: the first moves
+  // the first occurrence one period ahead when the transaction that would
+  // cover it already exists, and the second links that transaction to the new
+  // bill so it is not offered again.
+  create: async (
+    rt: Partial<RecurringTransaction> & {
+      skip_first?: boolean
+      source_transaction_id?: string
+    },
+  ): Promise<RecurringTransaction> => {
     const { data } = await api.post('/recurring-transactions', rt)
     return data
   },
@@ -1347,19 +1508,44 @@ export const recurring = {
     const { data } = await api.post('/recurring-transactions/generate')
     return data
   },
+  // Read-only price-change projections. Explicit methods keep the
+  // wire paths visible; both are plain GETs with no optimistic mutation.
+  recentPriceChanges: async (limit = 20): Promise<RecurringPriceChange[]> => {
+    const { data } = await api.get('/recurring-transactions/price-changes/recent', {
+      params: { limit },
+    })
+    return data
+  },
+  priceHistory: async (id: string): Promise<RecurringPriceChangeHistory> => {
+    const { data } = await api.get(`/recurring-transactions/${id}/price-changes`)
+    return data
+  },
+  /** `month` is `"YYYY-MM"`; totals come in the primary currency. */
+  monthSummary: async (month: string): Promise<RecurringMonthSummary> => {
+    const { data } = await api.get('/recurring-transactions/summary', {
+      params: { month: `${month}-01` },
+    })
+    return data
+  },
 }
 
 // Budgets
 export const budgets = {
-  list: async (month?: string): Promise<Budget[]> => {
-    const { data } = await api.get('/budgets', { params: { month } })
+  // `workspaceId` pins the read to one workspace, for a screen that must not
+  // follow the active one when another tab switches it. `primaryMonth` gives
+  // `amount_primary` at that month's rate, for a copy preview into it.
+  list: async (month?: string, workspaceId?: string | null, primaryMonth?: string): Promise<Budget[]> => {
+    const { data } = await api.get('/budgets', {
+      params: { month, primary_month: primaryMonth },
+      ...workspaceHeader(workspaceId),
+    })
     return data
   },
   create: async (budget: { category_id: string; amount: number; month: string; is_recurring?: boolean }): Promise<Budget> => {
     const { data } = await api.post('/budgets', budget)
     return data
   },
-  update: async (id: string, budget: { amount?: number }): Promise<Budget> => {
+  update: async (id: string, budget: { amount?: number; effective_month?: string }): Promise<Budget> => {
     const { data } = await api.patch(`/budgets/${id}`, budget)
     return data
   },
@@ -1368,7 +1554,7 @@ export const budgets = {
   },
   comparison: async (month?: string): Promise<BudgetVsActual[]> => {
     const { data } = await api.get('/budgets/comparison', { params: { month } })
-    return data
+    return normalizeBudgetComparisonRows(data)
   },
   suggestions: async (month: string, months: number): Promise<BudgetSuggestionResponse> => {
     const { data } = await api.get('/budgets/suggestions', { params: { month, months } })
@@ -1380,6 +1566,17 @@ export const budgets = {
     items: { category_id: string; amount: number }[]
   }): Promise<Budget[]> => {
     const { data } = await api.post('/budgets/batch', payload)
+    return data
+  },
+  // Pinned to the workspace the preview was built from: the active one can
+  // change under an open dialog when another tab switches it.
+  copyMonth: async (payload: {
+    source_month: string
+    target_month: string
+    adjustment_percentage?: number
+    overwrite_existing?: boolean
+  }, workspaceId?: string | null): Promise<Budget[]> => {
+    const { data } = await api.post('/budgets/copy-month', payload, workspaceHeader(workspaceId))
     return data
   },
 }
@@ -1474,8 +1671,13 @@ export const dashboard = {
 
 // Assets
 export const assets = {
-  list: async (includeArchived = false): Promise<Asset[]> => {
-    const { data } = await api.get('/assets', { params: { include_archived: includeArchived } })
+  // workspaceId pins the read to one workspace, for a caller whose cache
+  // belongs to it while another tab may have switched the shared default.
+  list: async (includeArchived = false, workspaceId?: string | null): Promise<Asset[]> => {
+    const { data } = await api.get('/assets', {
+      params: { include_archived: includeArchived },
+      ...workspaceHeader(workspaceId),
+    })
     return data
   },
   get: async (id: string): Promise<Asset> => {
@@ -1524,10 +1726,12 @@ export const assets = {
     assetGroupIds?: string[] | null,
     selectedAssetGroupIds?: string[],
     assetIds?: string[],
+    workspaceId?: string | null,
     method: PerformanceMethod = 'twr',
   ): Promise<PortfolioPerformance> => {
     const hasGroups = assetGroupIds != null && assetGroupIds.length > 0
     const { data } = await api.get('/assets/performance', {
+      ...workspaceHeader(workspaceId),
       params: {
         ...(benchmarks.length
           ? {
@@ -1547,16 +1751,22 @@ export const assets = {
     })
     return data
   },
-  tradeImport: async (): Promise<HoldingTradeImport> => {
-    const { data } = await api.get('/assets/performance/trade-import')
+  tradeImport: async (workspaceId?: string | null): Promise<HoldingTradeImport> => {
+    const { data } = await api.get('/assets/performance/trade-import', workspaceHeader(workspaceId))
     return data
   },
-  enableTradeImport: async (): Promise<HoldingTradeImport> => {
-    const { data } = await api.post('/assets/performance/trade-import')
+  enableTradeImport: async (workspaceId?: string | null): Promise<HoldingTradeImport> => {
+    const { data } = await api.post(
+      '/assets/performance/trade-import',
+      undefined,
+      workspaceHeader(workspaceId),
+    )
     return data
   },
-  marketSearch: async (q: string, limit = 15): Promise<MarketSymbolMatch[]> => {
-    const { data } = await api.get('/assets/market/search', { params: { q, limit } })
+  marketSearch: async (q: string, limit = 15, currency?: string): Promise<MarketSymbolMatch[]> => {
+    const { data } = await api.get('/assets/market/search', {
+      params: { q, limit, ...(currency ? { currency } : {}) },
+    })
     return data
   },
   marketQuote: async (symbol: string): Promise<MarketSymbolQuote> => {
@@ -1566,6 +1776,22 @@ export const assets = {
   refreshPrice: async (id: string): Promise<Asset> => {
     const { data } = await api.post(`/assets/${id}/refresh-price`)
     return data
+  },
+  refreshPrices: async (workspaceId?: string | null): Promise<AssetPriceRefreshResult> => {
+    try {
+      const { data } = await api.post('/assets/refresh-prices', undefined, workspaceHeader(workspaceId))
+      return data
+    } catch (error) {
+      // A 429 can arrive after the provider answered for part of the portfolio
+      // and the service committed those prices. The response interceptor only
+      // signals on success, so tell the other tabs here; the tab that asked
+      // still gets the error and refetches with its own counters.
+      const response = (error as { response?: { status?: number; data?: { detail?: { refreshed?: number } } } }).response
+      if (response?.status === 429 && Number(response.data?.detail?.refreshed ?? 0) > 0) {
+        markDataChanged()
+      }
+      throw error
+    }
   },
   // Transaction ledger (issue #235)
   transactions: async (id: string): Promise<AssetTransaction[]> => {
@@ -1578,14 +1804,16 @@ export const assets = {
   },
   addTransaction: async (
     id: string,
-    tx: { kind: 'buy' | 'sell'; quantity: number; price: number; fee?: number; date: string; notes?: string },
+    tx:
+      | { kind: 'buy' | 'sell'; quantity: number; price: number; fee?: number; date: string; notes?: string }
+      | { kind: 'split'; old_units: number; new_units: number; date: string; notes?: string },
   ): Promise<Asset> => {
     const { data } = await api.post(`/assets/${id}/transactions`, tx)
     return data
   },
   updateTransaction: async (
     txId: string,
-    tx: Partial<{ kind: 'buy' | 'sell'; quantity: number; price: number; fee: number; date: string; notes: string }>,
+    tx: Partial<{ kind: 'buy' | 'sell' | 'split'; quantity: number; price: number; fee: number; old_units: number; new_units: number; date: string; notes: string }>,
   ): Promise<Asset> => {
     const { data } = await api.patch(`/assets/transactions/${txId}`, tx)
     return data
@@ -1637,8 +1865,8 @@ export const assets = {
 
 // Asset Groups ("wallets")
 export const assetGroups = {
-  list: async (): Promise<AssetGroup[]> => {
-    const { data } = await api.get('/asset-groups')
+  list: async (workspaceId?: string | null): Promise<AssetGroup[]> => {
+    const { data } = await api.get('/asset-groups', workspaceHeader(workspaceId))
     return data
   },
   create: async (group: Partial<AssetGroup> & { name: string }): Promise<AssetGroup> => {
@@ -1648,6 +1876,9 @@ export const assetGroups = {
   update: async (id: string, group: Partial<AssetGroup>): Promise<AssetGroup> => {
     const { data } = await api.patch(`/asset-groups/${id}`, group)
     return data
+  },
+  reorder: async (groupIds: string[]): Promise<void> => {
+    await api.put('/asset-groups/order', { group_ids: groupIds })
   },
   delete: async (id: string): Promise<void> => {
     await api.delete(`/asset-groups/${id}`)
@@ -1708,12 +1939,17 @@ export const reports = {
     days?: number,
     startDate?: string,
     endDate?: string,
+    // A preset sent as explicit dates (This Month, a window stepped back)
+    // keeps its projections; a custom range is actuals only.
+    includeForecasts = false,
   ): Promise<ReportResponse> => {
     const extra = acctIdsParam(accountIds)
     const { data } = await api.get('/reports/income-expenses', {
       params: {
         months, interval, period, days,
-        ...(startDate && endDate ? { start_date: startDate, end_date: endDate } : {}),
+        ...(startDate && endDate
+          ? { start_date: startDate, end_date: endDate, ...(includeForecasts ? { include_forecasts: true } : {}) }
+          : {}),
         ...(extra.params ?? {}),
       },
       ...(extra.paramsSerializer ? { paramsSerializer: extra.paramsSerializer } : {}),
@@ -1725,9 +1961,34 @@ export const reports = {
     const { data } = await api.get('/reports/cash-flow', { params: { months, interval, baseline, ...(extra.params ?? {}) }, ...(extra.paramsSerializer ? { paramsSerializer: extra.paramsSerializer } : {}) })
     return data
   },
+  // `month` is "YYYY-MM"; the response covers it and the `months - 1` before it.
+  categoryStatement: async (month: string, months: number, accountIds?: string[]): Promise<CategoryStatementResponse> => {
+    const extra = acctIdsParam(accountIds)
+    const { data } = await api.get('/reports/category-statement', { params: { month, months, ...(extra.params ?? {}) }, ...(extra.paramsSerializer ? { paramsSerializer: extra.paramsSerializer } : {}) })
+    return data
+  },
   // Oldest and newest transaction dates in the workspace (opening
   // balances excluded). The reports page builds its year picker from
   // these bounds (issue #765).
+  /**
+   * A report an installed plugin declares, or (on the dashboard) one of its
+   * widgets (ADR 0034); `pluginId` is "owner/name".
+   */
+  plugin: async (
+    pluginId: string,
+    key: string,
+    startDate: string,
+    endDate: string,
+    accountIds?: string[],
+    surface: 'reports' | 'dashboard' = 'reports',
+  ): Promise<PluginReportResponse> => {
+    const extra = acctIdsParam(accountIds)
+    const { data } = await api.get(`/${surface}/plugins/${pluginId}/${encodeURIComponent(key)}`, {
+      params: { start_date: startDate, end_date: endDate, ...(extra.params ?? {}) },
+      ...(extra.paramsSerializer ? { paramsSerializer: extra.paramsSerializer } : {}),
+    })
+    return data
+  },
   dataRange: async (): Promise<{ min_date: string | null; max_date: string | null }> => {
     const { data } = await api.get('/reports/data-range')
     return data
@@ -1748,7 +2009,7 @@ export const fxRates = {
     const { data } = await api.post('/fx-rates/refresh')
     return data
   },
-  status: async (): Promise<{ last_sync_date: string | null; total_rates: number }> => {
+  status: async (): Promise<{ last_sync_date: string | null; total_rates: number; fx_sync_mode: string; configured: boolean }> => {
     const { data } = await api.get('/fx-rates/status')
     return data
   },
@@ -1774,23 +2035,160 @@ export const settings = {
 }
 
 // Backup
+export type BackupContent = 'configuration' | 'data' | 'both'
+export type BackupRestoreMode = 'new_workspace' | 'current_workspace'
+
+export interface BackupConfig {
+  scheduled_enabled: boolean
+  storage_shared: boolean
+  schedule: 'daily' | 'weekly'
+  content: BackupContent
+  retention_count: number
+  retention_days: number | null
+  last_run_at: string | null
+  next_run_at: string | null
+}
+
+export interface BackupItem {
+  id: string
+  filename: string
+  size_bytes: number
+  created_at: string
+  workspace_id: string | null
+  workspace_name: string | null
+  content: BackupContent
+  entity_counts: Record<string, number>
+}
+
+export interface BackupPreview {
+  valid: boolean
+  format_version: string | null
+  export_date: string | null
+  workspace_id: string | null
+  workspace_name: string | null
+  content: BackupContent
+  entity_counts: Record<string, number>
+  warnings: string[]
+}
+
+export interface BackupRestoreResult {
+  workspace_id: string
+  workspace_name: string
+  mode: BackupRestoreMode
+  content: BackupContent
+  restored_counts: Record<string, number>
+  warnings: string[]
+}
+
+export type BackupConfigUpdate = Partial<Omit<BackupConfig, 'last_run_at' | 'next_run_at'>>
+
+function downloadBlob(data: BlobPart, filename: string) {
+  const blob = new Blob([data], { type: 'application/zip' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(url)
+}
+
+function filenameFromDisposition(disposition?: string): string | null {
+  const match = disposition?.match(/filename="?([^";]+)"?/i)
+  return match?.[1] ?? null
+}
+
 export const backup = {
-  /**
-   * Download the workspace archive, encrypted with AES-256 when a password is
-   * given. POST rather than GET so the password stays out of browser history
-   * and proxy logs.
-   */
-  download: async (password?: string): Promise<void> => {
+  getConfig: async (): Promise<BackupConfig> => {
+    const { data } = await api.get('/backups/config')
+    return data
+  },
+  updateConfig: async (payload: BackupConfigUpdate): Promise<BackupConfig> => {
+    const { data } = await api.put('/backups/config', payload)
+    return data
+  },
+  list: async (): Promise<BackupItem[]> => {
+    const { data } = await api.get('/backups')
+    return data
+  },
+  run: async (content?: BackupContent): Promise<BackupItem> => {
+    const { data } = await api.post('/backups/run', content ? { content } : {})
+    return data
+  },
+  previewUpload: async (file: File, password?: string): Promise<BackupPreview> => {
+    const form = new FormData()
+    form.append('file', file)
+    if (password) form.append('password', password)
+    const { data } = await api.post('/backups/preview-upload', form)
+    return data
+  },
+  restoreUpload: async (
+    file: File,
+    payload: {
+      content: BackupContent
+      mode: BackupRestoreMode
+      confirmation?: string
+      password?: string
+    },
+  ): Promise<BackupRestoreResult> => {
+    const form = new FormData()
+    form.append('file', file)
+    form.append('content', payload.content)
+    form.append('mode', payload.mode)
+    if (payload.confirmation) form.append('confirmation', payload.confirmation)
+    if (payload.password) form.append('password', payload.password)
+    const { data } = await api.post('/backups/restore-upload', form)
+    return data
+  },
+  previewStored: async (id: string): Promise<BackupPreview> => {
+    const { data } = await api.get(`/backups/${id}/preview`)
+    return data
+  },
+  restoreStored: async (
+    id: string,
+    payload: { content: BackupContent; mode: BackupRestoreMode; confirmation?: string },
+  ): Promise<BackupRestoreResult> => {
+    const { data } = await api.post(`/backups/${id}/restore`, payload)
+    return data
+  },
+  downloadStored: async (id: string): Promise<void> => {
+    const response = await api.get(`/backups/${id}/download`, { responseType: 'blob' })
+    const filename = filenameFromDisposition(response.headers['content-disposition']) ?? `${id}.zip`
+    downloadBlob(response.data, filename)
+  },
+  download: async (content: BackupContent = 'both'): Promise<void> => {
+    const { data } = await api.get('/export/backup', { params: { content }, responseType: 'blob' })
+    downloadBlob(data, `securo-backup-${new Date().toISOString().slice(0, 10)}.zip`)
+  },
+  /** Send the optional password in the body so it never enters URL logs. */
+  downloadProtected: async (password?: string): Promise<void> => {
     const { data } = await api.post(
       '/export/backup',
       password ? { password } : {},
       { ...readOnly, responseType: 'blob' },
     )
+    downloadBlob(data, `securo-backup-${new Date().toISOString().slice(0, 10)}.zip`)
+  },
+}
+
+// Accountant export: the categorized transactions and the profit and loss of
+// one period, as two CSV files inside a zip. Business workspaces only.
+export const accountantExport = {
+  download: async (startDate: string, endDate: string): Promise<void> => {
+    const { data, headers } = await api.get('/export/accountant', {
+      params: { start_date: startDate, end_date: endDate },
+      responseType: 'blob',
+    })
     const blob = new Blob([data], { type: 'application/zip' })
     const url = URL.createObjectURL(blob)
+    // The server names the file after the workspace and the period; fall
+    // back to the same shape when the header isn't readable.
+    const disposition = String(headers['content-disposition'] ?? '')
+    const filename = /filename="?([^";]+)"?/.exec(disposition)?.[1]
     const a = document.createElement('a')
     a.href = url
-    a.download = `securo-backup-${new Date().toISOString().slice(0, 10)}.zip`
+    a.download = filename ?? `securo-accountant-${startDate}_${endDate}.zip`
     document.body.appendChild(a)
     a.click()
     document.body.removeChild(a)
@@ -1799,6 +2197,28 @@ export const backup = {
 }
 
 // Admin
+
+/** What the admin screen may change on this instance (ADR 0045). */
+export interface InstanceMode {
+  managed: boolean
+  locked_settings: string[]
+  locked_providers: boolean
+}
+
+export interface ProviderSettingStatus {
+  name: string
+  configured: boolean
+  can_store_secrets: boolean
+  fields: Record<string, {
+    configured: boolean
+    source: 'app' | 'environment' | 'none'
+    invalid: boolean
+    environment_configured: boolean
+  }>
+  /** Callback URL to register with the provider, derived from the server URL. */
+  redirect_uri?: string | null
+}
+
 export interface TimezoneSetting {
   /** The timezone in use, after fallbacks. */
   timezone: string
@@ -1807,6 +2227,21 @@ export interface TimezoneSetting {
   /** Where the application lands without a saved value. */
   fallback: string
   available: string[]
+}
+
+export interface EmailTemplate {
+  subject: string
+  body: string
+}
+
+/** How the recovery email is set up, and the templates it would use. */
+export interface EmailState {
+  enabled: boolean
+  provider: 'smtp' | 'resend'
+  /** The From address; read-only, it comes from the server environment. */
+  sender: string
+  /** Keyed by language: 'en' and 'pt'. */
+  templates: Record<string, EmailTemplate>
 }
 
 export const timezones = {
@@ -1829,12 +2264,41 @@ export const admin = {
     const { data } = await api.post('/admin/users', user)
     return data
   },
-  updateUser: async (id: string, user: Partial<{ email: string; password: string; is_active: boolean; is_superuser: boolean; preferences: Record<string, unknown> }>): Promise<AdminUser> => {
+  /** Changing an account needs a reason, and it is logged (ADR 0042). */
+  updateUser: async (id: string, user: { reason: string; email?: string; is_active?: boolean; is_superuser?: boolean; preferences?: Record<string, unknown> }): Promise<AdminUser> => {
     const { data } = await api.patch(`/admin/users/${id}`, user)
     return data
   },
-  deleteUser: async (id: string): Promise<void> => {
-    await api.delete(`/admin/users/${id}`)
+  deleteUser: async (id: string, reason: string): Promise<void> => {
+    await api.delete(`/admin/users/${id}`, { params: { reason } })
+  },
+  accessLog: async (params?: { user_id?: string; page?: number; limit?: number }): Promise<AdminAccessLogList> => {
+    const { data } = await api.get('/admin/access-log', { params })
+    return data
+  },
+  instanceMode: async (): Promise<InstanceMode> => {
+    const { data } = await api.get('/admin/instance-mode')
+    return data
+  },
+  providerSettings: async (): Promise<ProviderSettingStatus[]> => {
+    const { data } = await api.get('/admin/provider-settings')
+    return data
+  },
+  emailState: async (): Promise<EmailState> => {
+    const { data } = await api.get('/admin/email')
+    return data
+  },
+  /** Replace the recovery templates; an empty object restores the built-in text. */
+  updateEmailTemplates: async (templates: Record<string, EmailTemplate>): Promise<EmailState> => {
+    const { data } = await api.put('/admin/email', { templates })
+    return data
+  },
+  updateProviderSettings: async (
+    provider: string,
+    values: Record<string, string | boolean | null>,
+  ): Promise<ProviderSettingStatus> => {
+    const { data } = await api.patch(`/admin/provider-settings/${encodeURIComponent(provider)}`, { values })
+    return data
   },
   getSetting: async (key: string): Promise<AppSetting> => {
     const { data } = await api.get(`/admin/settings/${key}`)
@@ -1873,6 +2337,67 @@ export const admin = {
   },
 }
 
+// How someone arranged the dashboard and the reports in this workspace;
+// null is Securo's default arrangement.
+export interface UiLayouts {
+  dashboard: LayoutItem[] | null
+  reports: LayoutItem[] | null
+}
+
+function workspaceHeader(workspaceId?: string | null) {
+  return workspaceId ? { headers: { 'X-Workspace-Id': workspaceId } } : undefined
+}
+
+export const uiLayouts = {
+  get: async (workspaceId?: string | null): Promise<UiLayouts> => {
+    const { data } = await api.get('/ui/layouts', workspaceHeader(workspaceId))
+    return data
+  },
+  // `workspaceId` pins a read or a write to one workspace, whatever the active
+  // one is when it goes out (a queued save, another tab switching).
+  save: async (surface: 'dashboard' | 'reports', items: LayoutItem[], workspaceId?: string | null): Promise<void> => {
+    await api.put(`/ui/layouts/${surface}`, { items }, workspaceHeader(workspaceId))
+  },
+  reset: async (surface: 'dashboard' | 'reports', workspaceId?: string | null): Promise<void> => {
+    await api.delete(`/ui/layouts/${surface}`, workspaceHeader(workspaceId))
+  },
+}
+
+// Reading a notification changes nothing other tabs show.
+export type NotificationFilter = 'open' | 'unread' | 'all'
+
+export const notifications = {
+  list: async (
+    params: { status?: NotificationFilter; limit?: number; offset?: number } = {},
+  ): Promise<AppNotificationList> => {
+    const { data } = await api.get('/notifications', { params })
+    return data
+  },
+  preferences: async (): Promise<NotificationPreference[]> => {
+    const { data } = await api.get('/notifications/preferences')
+    return data
+  },
+  // `workspaceId` pins the write: it may wait in line while another tab switches workspace.
+  setPreference: async (change: {
+    kind: AppNotificationKind
+    channel: string
+    enabled: boolean
+    workspaceId?: string
+  }): Promise<void> => {
+    await api.put(
+      `/notifications/preferences/${change.kind}/${change.channel}`,
+      { enabled: change.enabled },
+      { ...readOnly, ...workspaceHeader(change.workspaceId) },
+    )
+  },
+  markRead: async (id: string): Promise<void> => {
+    await api.post(`/notifications/${id}/read`, undefined, readOnly)
+  },
+  markAllRead: async (): Promise<void> => {
+    await api.post('/notifications/read-all', undefined, readOnly)
+  },
+}
+
 // Global search (powers the command palette)
 export type SearchHitType =
   | 'transaction'
@@ -1905,7 +2430,7 @@ export const search = {
 
 // App-level feature flags (whether optional modules like agents are mounted)
 export interface AppInfo {
-  features: { agents: boolean; tesouro_direto?: boolean; performance_benchmarks?: boolean; plugins?: boolean }
+  features: { agents: boolean; tesouro_direto?: boolean; performance_benchmarks?: boolean; plugins?: boolean; document_ai?: boolean }
 }
 
 export const info = {
@@ -1915,14 +2440,60 @@ export const info = {
   },
 }
 
-// Data plugins -- only reachable when info.features.plugins === true.
+// Document reading -- only reachable when info.features.document_ai === true.
+export const documentAi = {
+  status: async (): Promise<DocumentAiStatus> => {
+    const { data } = await api.get('/document-ai/status')
+    return data
+  },
+  getSettings: async (): Promise<DocumentAiSettings> => {
+    const { data } = await api.get('/document-ai/settings')
+    return data
+  },
+  updateSettings: async (payload: DocumentAiSettingsUpdate): Promise<DocumentAiSettings> => {
+    const { data } = await api.put('/document-ai/settings', payload)
+    return data
+  },
+  resetSettings: async (): Promise<void> => {
+    await api.delete('/document-ai/settings')
+  },
+  upload: async (file: File, kind: DocumentKind): Promise<DocumentExtraction> => {
+    const formData = new FormData()
+    formData.append('file', file)
+    formData.append('kind', kind)
+    // Stores the file and queues the read; nothing lands until confirmed.
+    const { data } = await api.post('/document-ai/extractions', formData, readOnly)
+    return data
+  },
+  get: async (id: string): Promise<DocumentExtraction> => {
+    const { data } = await api.get(`/document-ai/extractions/${id}`)
+    return data
+  },
+  retry: async (id: string): Promise<DocumentExtraction> => {
+    const { data } = await api.post(`/document-ai/extractions/${id}/retry`, undefined, readOnly)
+    return data
+  },
+  remove: async (id: string): Promise<void> => {
+    await api.delete(`/document-ai/extractions/${id}`, readOnly)
+  },
+  attach: async (id: string, transactionId: string): Promise<DocumentExtraction> => {
+    const { data } = await api.post(`/document-ai/extractions/${id}/attach`, { transaction_id: transactionId })
+    return data
+  },
+  createTransaction: async (id: string, payload: DocumentReceiptTransaction): Promise<DocumentExtraction> => {
+    const { data } = await api.post(`/document-ai/extractions/${id}/transaction`, payload)
+    return data
+  },
+}
+
+// Plugins -- only reachable when info.features.plugins === true.
 export const plugins = {
   /** Installed in this workspace; reads the database only, never the catalog. */
   installed: async (): Promise<InstalledPlugin[]> => {
     const { data } = await api.get('/plugins')
     return data
   },
-  /** The catalog: fetched from the index now, so only call it when the user asks. */
+  /** The catalog: fetched from the index now, so only call it when the user asks or a plugin's icon is on screen (ADR 0026). */
   catalog: async (): Promise<PluginCatalogEntry[]> => {
     const { data } = await api.get('/plugins/catalog')
     return data
@@ -1943,6 +2514,49 @@ export const plugins = {
       commit: plan.commit,
       token: plan.token,
     })
+    return data
+  },
+  /** Connections made through plugins with code in this workspace. */
+  connections: async (): Promise<PluginConnection[]> => {
+    const { data } = await api.get('/plugins/connections')
+    return data
+  },
+  /** Sign-in integrations answer with the link to send the browser to. */
+  connect: async (body: {
+    plugin_id: string
+    integration: string
+    name: string
+    values: Record<string, string | PluginFileValue>
+  }): Promise<{ connection: PluginConnection; authorize_url: string | null }> => {
+    const { data } = await api.post('/plugins/connections', body)
+    return data
+  },
+  /** New form values; fields left blank keep what they had. Then it syncs afresh. */
+  updateValues: async (
+    connectionId: string,
+    body: { name?: string; values: Record<string, string | PluginFileValue> },
+  ): Promise<PluginConnection> => {
+    const { data } = await api.put(`/plugins/connections/${connectionId}/values`, body)
+    return data
+  },
+  authorize: async (connectionId: string): Promise<{ authorize_url: string; redirect_uri: string }> => {
+    const { data } = await api.post(`/plugins/connections/${connectionId}/authorize`)
+    return data
+  },
+  sync: async (connectionId: string): Promise<PluginConnection> => {
+    const { data } = await api.post(`/plugins/connections/${connectionId}/sync`)
+    return data
+  },
+  /** Run one routine of a connection now, and wait for it (ADR 0035). */
+  runRoutine: async ({ connectionId, routine }: { connectionId: string; routine: string }): Promise<PluginConnection> => {
+    const { data } = await api.post(`/plugins/connections/${connectionId}/routines/${encodeURIComponent(routine)}/run`)
+    return data
+  },
+  disconnect: async (connectionId: string): Promise<void> => {
+    await api.delete(`/plugins/connections/${connectionId}`)
+  },
+  oauthCallback: async (code: string, state: string): Promise<PluginConnection> => {
+    const { data } = await api.post('/plugins/oauth/callback', { code, state })
     return data
   },
 }

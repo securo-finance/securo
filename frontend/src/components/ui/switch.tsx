@@ -38,7 +38,7 @@ export function Switch({
         aria-hidden="true"
         className={cn(
           'pointer-events-none inline-block h-4 w-4 rounded-full bg-background shadow-sm ring-0 transition-transform',
-          checked ? 'translate-x-[18px]' : 'translate-x-0.5',
+          checked ? 'translate-x-[18px] rtl:-translate-x-[18px]' : 'translate-x-0.5 rtl:-translate-x-0.5',
         )}
       />
     </button>

@@ -217,12 +217,12 @@ export function LoanScheduleCard({
           <table className="w-full text-xs tabular-nums">
             <thead className="sticky top-0 bg-card text-muted-foreground">
               <tr>
-                <th className="px-5 py-2 text-left font-medium">#</th>
-                <th className="px-2 py-2 text-left font-medium">{t('loans.colDate')}</th>
-                <th className="px-2 py-2 text-right font-medium">{t('loans.colPayment')}</th>
-                <th className="px-2 py-2 text-right font-medium">{t('loans.colInterest')}</th>
-                <th className="px-2 py-2 text-right font-medium">{t('loans.colPrincipal')}</th>
-                <th className="px-5 py-2 text-right font-medium">{t('loans.colBalance')}</th>
+                <th className="px-5 py-2 text-start font-medium">#</th>
+                <th className="px-2 py-2 text-start font-medium">{t('loans.colDate')}</th>
+                <th className="px-2 py-2 text-end font-medium">{t('loans.colPayment')}</th>
+                <th className="px-2 py-2 text-end font-medium">{t('loans.colInterest')}</th>
+                <th className="px-2 py-2 text-end font-medium">{t('loans.colPrincipal')}</th>
+                <th className="px-5 py-2 text-end font-medium">{t('loans.colBalance')}</th>
               </tr>
             </thead>
             <tbody>
@@ -235,10 +235,10 @@ export function LoanScheduleCard({
                 >
                   <td className="px-5 py-2">{row.number}</td>
                   <td className="px-2 py-2">{day(row.due_date)}</td>
-                  <td className="px-2 py-2 text-right">{money(row.payment)}</td>
-                  <td className="px-2 py-2 text-right">{money(row.interest)}</td>
-                  <td className="px-2 py-2 text-right">{money(row.principal)}</td>
-                  <td className="px-5 py-2 text-right">{money(row.balance)}</td>
+                  <td className="px-2 py-2 text-end">{money(row.payment)}</td>
+                  <td className="px-2 py-2 text-end">{money(row.interest)}</td>
+                  <td className="px-2 py-2 text-end">{money(row.principal)}</td>
+                  <td className="px-5 py-2 text-end">{money(row.balance)}</td>
                 </tr>
               ))}
             </tbody>

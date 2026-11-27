@@ -7,16 +7,21 @@ import { info } from '@/lib/api'
  * server has the feature disabled.
  */
 export function useFeatureFlags() {
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError } = useQuery({
     queryKey: ['app-info'],
     queryFn: () => info.get(),
     staleTime: 1000 * 60 * 60,
   })
   return {
     isLoading,
+    /** The flags couldn't be read: every feature reads as off, though it may not be. */
+    isError: isError && data === undefined,
+    /** The flags were read: off means off. */
+    isKnown: data !== undefined,
     agentsEnabled: !!data?.features?.agents,
     // On unless the server says otherwise, matching the backend default.
     benchmarksEnabled: data?.features?.performance_benchmarks !== false,
     pluginsEnabled: !!data?.features?.plugins,
+    documentAiEnabled: !!data?.features?.document_ai,
   }
 }

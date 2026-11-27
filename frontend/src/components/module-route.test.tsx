@@ -82,4 +82,20 @@ describe('ModuleRoute', () => {
     expect(screen.queryByText('home')).not.toBeInTheDocument()
     expect(screen.queryByText('budgets page')).not.toBeInTheDocument()
   })
+
+  it('does not redirect when the workspace could not be loaded', () => {
+    // Issue #292: an unreachable server left the workspace list empty, so
+    // `hasModule` answered false and /transactions ended on "/". A failed load
+    // says nothing about the modules: keep the page the person asked for.
+    useWorkspace.mockReturnValue({
+      hasModule: () => false,
+      isLoading: false,
+      loadFailed: true,
+    })
+
+    renderGuard()
+
+    expect(screen.getByText('budgets page')).toBeInTheDocument()
+    expect(screen.queryByText('home')).not.toBeInTheDocument()
+  })
 })

@@ -1,7 +1,22 @@
 """Tests for recurring transactions API."""
+import uuid
 from datetime import date, timedelta
+from decimal import Decimal
 
 import pytest
+from sqlalchemy import select
+
+from app.models.account import Account
+from app.models.recurring_transaction import RecurringTransaction
+from app.models.transaction import Transaction
+from app.models.workspace import Workspace
+from app.services import recurring_transaction_service
+
+
+@pytest.fixture(autouse=True)
+def frozen_recent_calendar(monkeypatch):
+    monkeypatch.setattr("app.services.recurring_price_change_service.app_today",
+                        lambda: date(2026, 7, 15))
 
 
 @pytest.mark.asyncio
@@ -508,3 +523,688 @@ async def test_weekend_adjustment_update_rejects_null_but_allows_omission(
         row for row in list_response.json() if row["id"] == recurring_id
     )
     assert listed["weekend_adjustment"] == "previous_friday"
+
+
+# ---------------------------------------------------------------------------
+# Read-only price-change routes
+# ---------------------------------------------------------------------------
+
+
+def _add_months(when: date, months: int) -> date:
+    import calendar
+
+    month_index = when.month - 1 + months
+    year = when.year + month_index // 12
+    month = month_index % 12 + 1
+    return date(year, month, min(when.day, calendar.monthrange(year, month)[1]))
+
+
+async def _seed_price_series(
+    session,
+    *,
+    workspace,
+    user,
+    account,
+    description,
+    start,
+    amounts=("10.00", "10.00", "11.00"),
+):
+    """Persist a debit BRL series with posted csv rows, one per amount."""
+    series = RecurringTransaction(
+        id=uuid.uuid4(),
+        user_id=user.id,
+        workspace_id=workspace.id,
+        account_id=account.id,
+        description=description,
+        amount=Decimal(amounts[0]),
+        currency="BRL",
+        type="debit",
+        frequency="monthly",
+        start_date=start,
+        next_occurrence=_add_months(start, len(amounts)),
+    )
+    session.add(series)
+    rows = []
+    for index, amount in enumerate(amounts):
+        rows.append(
+            Transaction(
+                id=uuid.uuid4(),
+                user_id=user.id,
+                workspace_id=workspace.id,
+                account_id=account.id,
+                description=description,
+                amount=Decimal(amount),
+                currency="BRL",
+                # Keep query fixtures in the frozen Recent window, retaining order.
+                date=date(2026, 7, 1) + timedelta(
+                    days=(start - date(2026, 1, 1)).days // 30 + index
+                ),
+                type="debit",
+                source="csv",
+                status="posted",
+                recurring_transaction_id=series.id,
+            )
+        )
+    session.add_all(rows)
+    await session.commit()
+    return series, rows
+
+
+@pytest.mark.asyncio
+async def test_recent_price_changes_returns_latest_event_per_series(
+    client, auth_headers, session, test_user, test_workspace, test_account
+):
+    first, _ = await _seed_price_series(
+        session,
+        workspace=test_workspace,
+        user=test_user,
+        account=test_account,
+        description="Streaming",
+        start=date(2026, 1, 15),
+        amounts=("10.00", "10.00", "10.00", "12.00", "12.00", "12.00", "15.00"),
+    )
+    second, _ = await _seed_price_series(
+        session,
+        workspace=test_workspace,
+        user=test_user,
+        account=test_account,
+        description="Academia",
+        start=date(2026, 2, 1),
+        amounts=("20.00", "20.00", "25.00"),
+    )
+
+    response = await client.get(
+        "/api/recurring-transactions/price-changes/recent", headers=auth_headers
+    )
+
+    assert response.status_code == 200
+    events = response.json()
+    # The two-event series appears exactly once, carrying only its latest event.
+    first_events = [event for event in events if event["recurring_id"] == str(first.id)]
+    assert len(first_events) == 1
+    assert first_events[0]["previous_amount"] == "12.00"
+    assert first_events[0]["current_amount"] == "15.00"
+    second_events = [event for event in events if event["recurring_id"] == str(second.id)]
+    assert len(second_events) == 1
+    assert second_events[0]["current_amount"] == "25.00"
+    # Newest current_date first; ISO dates sort chronologically as strings.
+    dates = [event["current_date"] for event in events]
+    assert dates == sorted(dates, reverse=True)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "amounts, expected",
+    [
+        (("39.90", "39.90", "42.90"), ("39.90", "42.90", "3.00", "7.52")),
+        (("17.00", "17.00", "15.00"), ("17.00", "15.00", "2.00", "-11.76")),
+    ],
+)
+async def test_both_price_change_routes_preserve_exact_decimal_strings(
+    client, auth_headers, session, test_user, test_workspace, test_account,
+    amounts, expected,
+):
+    series, _ = await _seed_price_series(
+        session, workspace=test_workspace, user=test_user, account=test_account,
+        description="Wire contract", start=date(2026, 1, 15), amounts=amounts,
+    )
+    fields = ("previous_amount", "current_amount", "absolute_delta", "percent_delta")
+    for path in (
+        f"/api/recurring-transactions/{series.id}/price-changes",
+        "/api/recurring-transactions/price-changes/recent",
+    ):
+        response = await client.get(path, headers=auth_headers)
+        assert response.status_code == 200
+        body = response.json()
+        events = body["changes"] if isinstance(body, dict) else body
+        assert len(events) == 1
+        assert {field: events[0][field] for field in fields} == dict(zip(fields, expected))
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("amounts", [
+    ("10.00", "10.00", "10.00"),
+    ("80.00", "100.00", "90.00", "110.00"),
+])
+async def test_price_history_no_qualifying_change_contract(
+    client, auth_headers, session, test_user, test_workspace, test_account, amounts,
+):
+    series, _ = await _seed_price_series(
+        session, workspace=test_workspace, user=test_user, account=test_account,
+        description="No qualifying change", start=date(2026, 1, 15), amounts=amounts,
+    )
+    response = await client.get(
+        f"/api/recurring-transactions/{series.id}/price-changes", headers=auth_headers,
+    )
+    assert response.status_code == 200
+    assert response.json()["eligibility"] == "no_qualifying_change"
+    assert response.json()["eligible_occurrence_count"] == len(amounts)
+    assert response.json()["changes"] == []
+
+
+@pytest.mark.asyncio
+async def test_price_history_is_scoped_to_workspace(
+    client, auth_headers, session, test_user, test_workspace, test_account
+):
+    other = Workspace(
+        id=uuid.uuid4(),
+        name="Outro",
+        kind="personal",
+        created_by_user_id=test_user.id,
+        default_currency="USD",
+        locale="en",
+    )
+    session.add(other)
+    await session.commit()
+    foreign, _ = await _seed_price_series(
+        session,
+        workspace=other,
+        user=test_user,
+        account=test_account,
+        description="Netflix FR",
+        start=date(2026, 1, 1),
+    )
+    ws_headers = {**auth_headers, "X-Workspace-Id": str(test_workspace.id)}
+
+    # A series in another workspace is unknown from this one...
+    response = await client.get(
+        f"/api/recurring-transactions/{foreign.id}/price-changes", headers=ws_headers
+    )
+    assert response.status_code == 404
+
+    # ...and stays unknown even when the other workspace is named directly,
+    # because the caller is not a member of it.
+    other_headers = {**auth_headers, "X-Workspace-Id": str(other.id)}
+    response = await client.get(
+        f"/api/recurring-transactions/{foreign.id}/price-changes", headers=other_headers
+    )
+    assert response.status_code == 404
+
+    # A linked row physically stored in another workspace cannot leak into
+    # this workspace's history even when the FK points at an in-scope series.
+    own, _ = await _seed_price_series(
+        session,
+        workspace=test_workspace,
+        user=test_user,
+        account=test_account,
+        description="Spotify",
+        start=date(2026, 1, 10),
+        amounts=("10.00", "10.00", "10.00"),
+    )
+    session.add(
+        Transaction(
+            id=uuid.uuid4(),
+            user_id=test_user.id,
+            workspace_id=other.id,
+            account_id=test_account.id,
+            description="Spotify",
+            amount=Decimal("11.00"),
+            currency="BRL",
+            date=_add_months(date(2026, 1, 10), 3),
+            type="debit",
+            source="csv",
+            status="posted",
+            recurring_transaction_id=own.id,
+        )
+    )
+    await session.commit()
+
+    response = await client.get(
+        f"/api/recurring-transactions/{own.id}/price-changes", headers=ws_headers
+    )
+    assert response.status_code == 200
+    body = response.json()
+    # Only the three same-workspace rows count; the foreign 11.00 cannot
+    # complete an event.
+    assert body["eligible_occurrence_count"] == 3
+    assert body["changes"] == []
+
+    recent = await client.get(
+        "/api/recurring-transactions/price-changes/recent", headers=ws_headers
+    )
+    assert recent.status_code == 200
+    assert all(event["recurring_id"] != str(foreign.id) for event in recent.json())
+
+
+@pytest.mark.asyncio
+async def test_price_history_unknown_series_returns_404(client, auth_headers):
+    response = await client.get(
+        f"/api/recurring-transactions/{uuid.uuid4()}/price-changes", headers=auth_headers
+    )
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Recurring transaction not found"
+
+
+@pytest.mark.asyncio
+async def test_price_history_does_not_mutate_series_or_transactions(
+    client, auth_headers, session, test_user, test_workspace, test_account
+):
+    series, rows = await _seed_price_series(
+        session,
+        workspace=test_workspace,
+        user=test_user,
+        account=test_account,
+        description="Netflix",
+        start=date(2026, 1, 15),
+    )
+    row_ids = [row.id for row in rows]
+
+    async def snapshot():
+        tx_result = await session.execute(
+            select(Transaction)
+            .where(Transaction.id.in_(row_ids))
+            .execution_options(populate_existing=True)
+        )
+        txs = sorted(tx_result.scalars().all(), key=lambda tx: tx.date)
+        series_result = await session.execute(
+            select(RecurringTransaction)
+            .where(RecurringTransaction.id == series.id)
+            .execution_options(populate_existing=True)
+        )
+        stored = series_result.scalar_one()
+        return (
+            len(txs),
+            tuple(
+                (tx.id, tx.recurring_transaction_id, tx.amount, tx.status, tx.source)
+                for tx in txs
+            ),
+            stored.amount,
+            stored.next_occurrence,
+            stored.currency,
+        )
+
+    before = await snapshot()
+    history = await client.get(
+        f"/api/recurring-transactions/{series.id}/price-changes", headers=auth_headers
+    )
+    recent = await client.get(
+        "/api/recurring-transactions/price-changes/recent", headers=auth_headers
+    )
+    assert history.status_code == 200
+    assert recent.status_code == 200
+    assert len(history.json()["changes"]) == 1
+    assert len(recent.json()) == 1
+    assert await snapshot() == before
+
+
+@pytest.mark.asyncio
+async def test_price_history_ignores_unlinked_transactions(
+    client, auth_headers, session, test_user, test_workspace, test_account
+):
+    series, _ = await _seed_price_series(
+        session,
+        workspace=test_workspace,
+        user=test_user,
+        account=test_account,
+        description="Netflix",
+        start=date(2026, 1, 15),
+        amounts=("10.00", "10.00", "11.00"),
+    )
+    session.add(
+        Transaction(
+            id=uuid.uuid4(),
+            user_id=test_user.id,
+            workspace_id=test_workspace.id,
+            account_id=test_account.id,
+            description="GHOST CHARGE",
+            amount=Decimal("99.00"),
+            currency="BRL",
+            date=_add_months(date(2026, 1, 15), 3),
+            type="debit",
+            source="csv",
+            status="posted",
+            # No recurring_transaction_id: unlinked, therefore invisible.
+        )
+    )
+    await session.commit()
+
+    history = await client.get(
+        f"/api/recurring-transactions/{series.id}/price-changes", headers=auth_headers
+    )
+    assert history.status_code == 200
+    body = history.json()
+    assert body["eligible_occurrence_count"] == 3
+    assert len(body["changes"]) == 1
+    assert body["changes"][0]["current_amount"] == "11.00"
+
+    recent = await client.get(
+        "/api/recurring-transactions/price-changes/recent", headers=auth_headers
+    )
+    assert recent.status_code == 200
+    assert len(recent.json()) == 1
+    assert recent.json()[0]["current_amount"] == "11.00"
+
+
+@pytest.mark.asyncio
+async def test_price_history_route_is_readable_by_read_workspace(
+    client, viewer_auth_headers, session, test_user, test_workspace, test_account
+):
+    series, _ = await _seed_price_series(
+        session,
+        workspace=test_workspace,
+        user=test_user,
+        account=test_account,
+        description="Netflix",
+        start=date(2026, 1, 15),
+    )
+
+    history = await client.get(
+        f"/api/recurring-transactions/{series.id}/price-changes",
+        headers=viewer_auth_headers,
+    )
+    assert history.status_code == 200
+    assert history.json()["eligibility"] == "changes_detected"
+
+    recent = await client.get(
+        "/api/recurring-transactions/price-changes/recent", headers=viewer_auth_headers
+    )
+    assert recent.status_code == 200
+    assert len(recent.json()) == 1
+
+    # The projection is read-only for a read role: no write route opens up,
+    # and the UI hides its mutation controls for the same viewer.
+    create = await client.post(
+        "/api/recurring-transactions",
+        json={
+            "description": "Should fail",
+            "amount": 10.00,
+            "currency": "BRL",
+            "type": "debit",
+            "frequency": "monthly",
+            "start_date": "2026-03-01",
+            "account_id": str(test_account.id),
+        },
+        headers=viewer_auth_headers,
+    )
+    assert create.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_recent_price_changes_limit_is_bounded(
+    client, auth_headers, session, test_user, test_workspace, test_account
+):
+    for index in range(21):
+        await _seed_price_series(
+            session,
+            workspace=test_workspace,
+            user=test_user,
+            account=test_account,
+            description=f"Servico {index}",
+            start=date(2026, 1, 1) + timedelta(days=index),
+        )
+
+    default_response = await client.get(
+        "/api/recurring-transactions/price-changes/recent", headers=auth_headers
+    )
+    assert default_response.status_code == 200
+    assert len(default_response.json()) == 20  # default limit
+
+    one = await client.get(
+        "/api/recurring-transactions/price-changes/recent?limit=1", headers=auth_headers
+    )
+    assert one.status_code == 200
+    assert len(one.json()) == 1
+
+    fifty = await client.get(
+        "/api/recurring-transactions/price-changes/recent?limit=50", headers=auth_headers
+    )
+    assert fifty.status_code == 200
+    assert len(fifty.json()) == 21  # all series, within the bound
+
+    for invalid in ("0", "51", "abc"):
+        rejected = await client.get(
+            f"/api/recurring-transactions/price-changes/recent?limit={invalid}",
+            headers=auth_headers,
+        )
+        assert rejected.status_code == 422, invalid
+
+
+@pytest.mark.asyncio
+async def test_price_history_rejects_non_evidence_sources(
+    client, auth_headers, session, test_user, test_workspace, test_account
+):
+    series, rows = await _seed_price_series(
+        session,
+        workspace=test_workspace,
+        user=test_user,
+        account=test_account,
+        description="Condomínio",
+        start=date(2026, 1, 15),
+        amounts=("10.00", "10.00", "10.00"),
+    )
+    # Non-evidence rows at a new amount would complete a price change if they
+    # leaked into the observed-source allowlist: opening_balance was never a
+    # charge, and an unposted generated row is only a schedule projection.
+    # (A posted generated row is the manual-account charge and is covered by
+    # the recurring-price-change regressions.)
+    for offset, source, status in (
+        (3, "opening_balance", "posted"),
+        (4, "recurring", "pending"),
+    ):
+        session.add(
+            Transaction(
+                id=uuid.uuid4(),
+                user_id=test_user.id,
+                workspace_id=test_workspace.id,
+                account_id=test_account.id,
+                description=series.description,
+                amount=Decimal("12.00"),
+                currency="BRL",
+                date=_add_months(date(2026, 1, 15), offset),
+                type="debit",
+                source=source,
+                status=status,
+                recurring_transaction_id=series.id,
+            )
+        )
+    await session.commit()
+
+    history = await client.get(
+        f"/api/recurring-transactions/{series.id}/price-changes", headers=auth_headers
+    )
+    assert history.status_code == 200
+    body = history.json()
+    assert body["eligible_occurrence_count"] == 3
+    assert body["changes"] == []
+
+    recent = await client.get(
+        "/api/recurring-transactions/price-changes/recent", headers=auth_headers
+    )
+    assert recent.status_code == 200
+    assert recent.json() == []
+
+
+def _bill_payload(account_id, **overrides):
+    """The payload the "make recurring" dialog sends for a paid bill."""
+    payload = {
+        "description": "Academia Smart Fit",
+        "amount": 129.90,
+        "currency": "BRL",
+        "type": "debit",
+        "frequency": "monthly",
+        "start_date": "2026-10-31",
+        "account_id": str(account_id),
+        "skip_first": True,
+    }
+    payload.update(overrides)
+    return payload
+
+
+@pytest.mark.asyncio
+async def test_saving_the_same_bill_twice_returns_409(client, auth_headers, test_account):
+    """A second save of the same bill is a 409 with a readable message, not a 500."""
+    payload = _bill_payload(test_account.id)
+
+    first = await client.post("/api/recurring-transactions", json=payload, headers=auth_headers)
+    assert first.status_code == 201
+
+    second = await client.post("/api/recurring-transactions", json=payload, headers=auth_headers)
+    assert second.status_code == 409
+    assert second.json()["detail"] == "A recurring transaction with the same description, frequency and start date already exists"
+
+
+@pytest.mark.asyncio
+async def test_create_from_transaction_links_the_source(
+    client, auth_headers, test_account, test_transactions, session
+):
+    """The transaction the bill is made from belongs to it afterwards."""
+    source = test_transactions[0]
+    payload = _bill_payload(
+        test_account.id,
+        description=source.description,
+        start_date=source.date.isoformat(),
+        source_transaction_id=str(source.id),
+    )
+
+    response = await client.post(
+        "/api/recurring-transactions", json=payload, headers=auth_headers
+    )
+    assert response.status_code == 201, response.text
+
+    linked = (
+        await session.execute(
+            select(Transaction.recurring_transaction_id).where(Transaction.id == source.id)
+        )
+    ).scalar_one()
+    assert str(linked) == response.json()["id"]
+
+
+@pytest.mark.asyncio
+async def test_create_from_a_transaction_that_already_has_a_bill_returns_409(
+    client, auth_headers, test_account, test_transactions
+):
+    """The source is linked, so the row stops offering "make recurring"."""
+    source = test_transactions[0]
+    first = await client.post(
+        "/api/recurring-transactions",
+        json=_bill_payload(
+            test_account.id,
+            description="Academia Smart Fit",
+            source_transaction_id=str(source.id),
+        ),
+        headers=auth_headers,
+    )
+    assert first.status_code == 201
+
+    # A different description and start date dodge the unique constraint, so
+    # only the source link can catch the second save.
+    second = await client.post(
+        "/api/recurring-transactions",
+        json=_bill_payload(
+            test_account.id,
+            description="Academia Smart Fit ",
+            start_date="2026-11-30",
+            source_transaction_id=str(source.id),
+        ),
+        headers=auth_headers,
+    )
+    assert second.status_code == 409
+    assert second.json()["detail"] == "This transaction already belongs to a recurring transaction"
+
+
+@pytest.mark.asyncio
+async def test_source_transaction_from_another_workspace_is_rejected(
+    client, auth_headers, session, test_user, test_account
+):
+    """Only a transaction of the workspace this request writes to can be linked."""
+    # The row exists, in another workspace: the request finds it only if the
+    # workspace filter on the lookup goes missing.
+    other = Workspace(
+        id=uuid.uuid4(),
+        name="Outro",
+        kind="personal",
+        created_by_user_id=test_user.id,
+        default_currency="BRL",
+        locale="pt-BR",
+    )
+    other_account = Account(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=other.id,
+        name="Conta do outro workspace",
+        type="checking",
+        currency="BRL",
+        balance=Decimal("0"),
+    )
+    foreign = Transaction(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=other.id,
+        account_id=other_account.id,
+        description="Academia do outro workspace",
+        amount=Decimal("129.90"),
+        currency="BRL",
+        date=date(2026, 10, 31),
+        type="debit",
+        source="manual",
+        status="posted",
+    )
+    session.add_all([other, other_account, foreign])
+    await session.commit()
+
+    payload = _bill_payload(test_account.id, source_transaction_id=str(foreign.id))
+
+    response = await client.post(
+        "/api/recurring-transactions", json=payload, headers=auth_headers
+    )
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Source transaction not found"
+
+
+@pytest.mark.asyncio
+async def test_source_on_the_start_date_covers_the_first_occurrence(
+    client, auth_headers, session, test_user, test_workspace, test_account
+):
+    """A source dated on start_date is the first occurrence, even without skip_first."""
+    source = Transaction(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        account_id=test_account.id,
+        description="Aluguel",
+        amount=Decimal("2500"),
+        currency="BRL",
+        date=date(2026, 10, 31),
+        type="debit",
+        source="manual",
+        status="posted",
+    )
+    session.add(source)
+    await session.commit()
+
+    # A direct API call leaves skip_first out; generation must not create a
+    # second row for a charge the source already is.
+    payload = _bill_payload(
+        test_account.id,
+        description="Aluguel",
+        start_date="2026-10-31",
+        source_transaction_id=str(source.id),
+    )
+    payload.pop("skip_first")
+
+    response = await client.post(
+        "/api/recurring-transactions", json=payload, headers=auth_headers
+    )
+    assert response.status_code == 201, response.text
+    assert response.json()["next_occurrence"] == "2026-11-30"
+
+
+@pytest.mark.asyncio
+async def test_race_past_the_duplicate_check_still_returns_409(
+    client, auth_headers, test_account, monkeypatch
+):
+    """The unique constraint backs up the check: a lost race is a 409, never a 500."""
+    payload = _bill_payload(test_account.id)
+    first = await client.post("/api/recurring-transactions", json=payload, headers=auth_headers)
+    assert first.status_code == 201
+
+    async def _no_duplicate_found(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr(
+        recurring_transaction_service, "_find_duplicate_recurring", _no_duplicate_found
+    )
+
+    second = await client.post("/api/recurring-transactions", json=payload, headers=auth_headers)
+    assert second.status_code == 409
+    assert second.json()["detail"] == "A recurring transaction with the same description, frequency and start date already exists"

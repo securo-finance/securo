@@ -16,26 +16,45 @@ unchanged for Securo's own UI.
 from __future__ import annotations
 
 import uuid
-from decimal import Decimal
-from typing import Any, cast
+from datetime import date, datetime
+from decimal import ROUND_HALF_UP, Decimal
+from typing import Any, Literal, cast
 
 from pydantic import ValidationError
-from sqlalchemy import String, select
+from pydantic_core import PydanticCustomError
+from sqlalchemy import String, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.app_clock import app_today
+from app.core.currency import normalize_currency_code, same_currency
+from app.core.money import (
+    MAX_FX_RATE,
+    MAX_MONEY_AMOUNT,
+    bounded_fx_rate,
+    bounded_money,
+)
 from app.models.account import Account
+from app.models.bank_connection import BankConnection
 from app.models.budget import Budget
 from app.models.category import Category
 from app.models.category_group import CategoryGroup
 from app.models.goal import Goal
 from app.models.group import Group, GroupMember
+from app.models.invoice_schedule import InvoiceSchedule
+from app.models.payee import Payee
 from app.models.recurring_transaction import RecurringTransaction
 from app.models.transaction import Transaction
-from app.schemas.budget import BudgetCreate, BudgetUpdate
+from app.models.user import User
+from app.fiscal.registry import TaxIdKind, normalise_and_validate
+from app.schemas.budget import (
+    BudgetCreate,
+    BudgetUpdate,
+    validate_budget_amount,
+)
 from app.schemas.category import CategoryCreate
 from app.schemas.category_group import CategoryGroupCreate
 from app.schemas.goal import GoalCreate, GoalUpdate
+from app.schemas.payee import PayeeCreate, PayeeUpdate, TaxIdInput
 from app.schemas.recurring_transaction import (
     RecurringTransactionCreate,
     RecurringTransactionUpdate,
@@ -50,7 +69,9 @@ from app.services import (
     category_group_service,
     category_line_service,
     category_service,
+    fx_rate_service,
     goal_service,
+    payee_service,
     recurring_transaction_service,
     rule_service,
     transaction_service,
@@ -525,6 +546,16 @@ async def propose_create_category_group(
     return preview
 
 
+def _budget_amount_refusal(amount: Decimal, *, allow_zero: bool = False) -> str | None:
+    """The message the budget schema would answer, so a preview never proposes
+    an amount the save rejects (issue #406)."""
+    try:
+        validate_budget_amount(amount, allow_zero=allow_zero)
+    except PydanticCustomError as exc:
+        return str(exc)
+    return None
+
+
 @tool(
     name="propose_create_budget",
     description=_PROPOSAL_PREFACE
@@ -567,6 +598,10 @@ async def propose_create_budget(
     ws_id = await resolve_workspace_id(session, ctx)
     cat_id = parse_uuid(category_id)
     target_month = (parse_date(month) or app_today()).replace(day=1)
+    new_amount = Decimal(str(amount))
+    refusal = _budget_amount_refusal(new_amount)
+    if refusal:
+        return {"error": refusal}
 
     cat = (
         await session.execute(
@@ -582,7 +617,7 @@ async def propose_create_budget(
             "category_id": str(cat.id),
             "category_name": cat.name,
             "month": target_month.isoformat(),
-            "amount": float(amount),
+            "amount": float(new_amount),
             "currency": currency,
             "is_recurring": is_recurring,
         },
@@ -596,7 +631,7 @@ async def propose_create_budget(
             ctx.user_id,
             BudgetCreate(
                 category_id=cat.id,
-                amount=Decimal(str(amount)),
+                amount=new_amount,
                 month=target_month,
                 is_recurring=is_recurring,
             ),
@@ -647,19 +682,28 @@ async def propose_update_budget(
     if amount <= 0:
         return {"error": "amount must be greater than zero"}
     new_amount = Decimal(str(amount))
-    if new_amount == budget.amount:
+    refusal = _budget_amount_refusal(new_amount)
+    if refusal:
+        return {"error": refusal}
+    # The new amount is in the proposer's currency, as the save stamps it;
+    # the stored limit is compared in that currency too, at its month's rate.
+    currency = await budget_service._primary_currency(session, ctx.user_id)
+    current = await budget_service.amount_in_currency(
+        session, budget.amount, budget.currency, currency, budget.month
+    )
+    if new_amount == current.quantize(Decimal("0.01")):
         return {"error": "the budget already has that amount; nothing to change"}
 
     preview = {
         "kind": "update_budget",
         "target": _budget_target(budget, category_name),
-        "changes": {"amount": float(new_amount)},
+        "changes": {"amount": float(new_amount), "currency": currency},
         "apply_endpoint": f"PATCH /api/budgets/{budget.id}",
     }
 
     if _can_apply(ctx, apply):
         updated = await budget_service.update_budget(
-            session, budget.id, ws_id, BudgetUpdate(amount=new_amount)
+            session, budget.id, ws_id, BudgetUpdate(amount=new_amount), ctx.user_id
         )
         if updated is None:
             return {**preview, "error": "budget not found"}
@@ -772,6 +816,7 @@ def _budget_target(budget: Budget, category_name: str | None) -> dict[str, Any]:
             "amount": {
                 "type": "number",
                 "exclusiveMinimum": 0,
+                "maximum": float(MAX_MONEY_AMOUNT),
                 "description": "Absolute value, always positive — direction comes from `type`",
             },
             "type": {
@@ -1707,3 +1752,937 @@ async def propose_create_payee_rule(
         return {**preview, "applied": True, "id": str(created.id)}
 
     return preview
+
+
+def _payee_snapshot(payee) -> dict[str, Any]:
+    """The fields a payee update can touch, small enough for an LLM."""
+    return {
+        "id": str(payee.id),
+        "name": payee.name,
+        "type": payee.type,
+        "source": payee.source,
+        "is_favorite": bool(payee.is_favorite),
+        "notes": payee.notes,
+        "email": payee.email,
+        "phone": payee.phone,
+        "address": payee.address,
+        "website": payee.website,
+        "tax_ids": [{"kind": row.kind, "value": row.value} for row in payee.tax_ids],
+    }
+
+
+def _normalise_tax_ids(
+    tax_ids: list[dict[str, Any]],
+) -> tuple[list[dict[str, str]] | None, str | None]:
+    """Validate the incoming document set without writing it.
+
+    The service repeats this on apply. Doing it here means a preview shows
+    the reason a document would be refused instead of pretending the whole
+    change is ready and failing halfway through.
+    """
+    normalised: list[dict[str, str]] = []
+    seen: set[TaxIdKind] = set()
+    for item in tax_ids:
+        raw_kind = item.get("kind")
+        try:
+            kind = TaxIdKind(raw_kind)
+        except (TypeError, ValueError):
+            return None, f"unknown_tax_id_kind:{raw_kind}"
+        if kind in seen:
+            return None, f"duplicate_tax_id:{kind.value}"
+        seen.add(kind)
+        value, error = normalise_and_validate(kind, str(item.get("value") or ""))
+        if error == "empty":
+            # An emptied field means "remove this document", not "store
+            # nothing"; mirrors payee_service._apply_tax_ids.
+            continue
+        if error:
+            return None, f"invalid_tax_id:{kind.value}:{error}"
+        normalised.append({"kind": kind.value, "value": value})
+    return normalised, None
+
+
+@tool(
+    name="propose_create_payee",
+    description=_PROPOSAL_PREFACE
+    + (
+        "Build a preview for adding a payee (counterparty) that does not "
+        "exist yet. Returns any payee that already uses the same name, "
+        "because the workspace refuses duplicates. `tax_ids` are validated "
+        "on preview, so an invalid document is refused before anything is "
+        "written."
+    ),
+    parameters={
+        "type": "object",
+        "properties": {
+            "name": {"type": "string", "minLength": 1, "maxLength": 255},
+            "type": {"type": "string", "enum": ["person", "company"]},
+            "notes": {"type": "string", "maxLength": 1000},
+            "email": {"type": "string", "maxLength": 255},
+            "phone": {"type": "string", "maxLength": 50},
+            "address": {"type": "string", "maxLength": 500},
+            "website": {"type": "string", "maxLength": 255},
+            "tax_ids": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "kind": {
+                            "type": "string",
+                            "enum": [kind.value for kind in TaxIdKind],
+                        },
+                        "value": {"type": "string", "maxLength": 120},
+                    },
+                    "required": ["kind", "value"],
+                    "additionalProperties": False,
+                },
+            },
+            "apply": _APPLY_FIELD,
+        },
+        "required": ["name"],
+        "additionalProperties": False,
+    },
+    is_proposal=True,
+    tags=["propose", "payees"],
+)
+async def propose_create_payee(
+    *,
+    session: AsyncSession,
+    ctx: CallContext,
+    name: str,
+    type: Literal["person", "company"] | None = None,
+    notes: str | None = None,
+    email: str | None = None,
+    phone: str | None = None,
+    address: str | None = None,
+    website: str | None = None,
+    tax_ids: list[dict[str, Any]] | None = None,
+    apply: bool = False,
+) -> dict[str, Any]:
+    ws_id = await resolve_workspace_id(session, ctx)
+    cleaned = name.strip()
+    if not cleaned:
+        return {"error": "payee name cannot be empty"}
+
+    proposed: dict[str, Any] = {"name": cleaned}
+    for field, value in (
+        ("type", type),
+        ("notes", notes),
+        ("email", email),
+        ("phone", phone),
+        ("address", address),
+        ("website", website),
+    ):
+        if value is not None:
+            proposed[field] = value
+
+    normalised_tax_ids: list[dict[str, str]] = []
+    if tax_ids is not None:
+        normalised, error = _normalise_tax_ids(tax_ids)
+        if error:
+            return {"error": error}
+        if normalised is not None:
+            normalised_tax_ids = normalised
+            proposed["tax_ids"] = normalised
+
+    # Same reason as propose_update_payee: the dispatcher does not enforce
+    # the advertised schema, so validate before showing a preview.
+    try:
+        create_data = PayeeCreate(
+            name=cleaned,
+            type=type,
+            notes=notes,
+            email=email,
+            phone=phone,
+            address=address,
+            website=website,
+            tax_ids=[TaxIdInput(**item) for item in normalised_tax_ids],
+        )
+    except ValueError as exc:
+        return {"error": str(exc)}
+
+    existing = await payee_service.find_payee_by_name(session, ws_id, cleaned)
+    preview = {
+        "kind": "create_payee",
+        "proposed": proposed,
+        "existing": _payee_snapshot(existing) if existing is not None else None,
+        "apply_endpoint": "POST /api/payees",
+    }
+    if existing is not None:
+        # The service refuses this on apply; surface it in the preview so the
+        # caller learns before anything is written.
+        return {**preview, "applied": False, "error": "duplicate_payee_name"}
+
+    if _can_apply(ctx, apply):
+        try:
+            created = await payee_service.create_payee(
+                session, ws_id, ctx.user_id, create_data
+            )
+        except ValueError as exc:
+            return {**preview, "applied": False, "error": str(exc)}
+        fresh = await payee_service.get_payee(session, created.id, ws_id)
+        return {
+            **preview,
+            "applied": True,
+            "payee": _payee_snapshot(fresh or created),
+        }
+
+    return preview
+
+
+@tool(
+    name="propose_update_payee",
+    description=_PROPOSAL_PREFACE
+    + (
+        "Build a preview for editing one payee (counterparty), including "
+        "its fiscal documents. Pass the payee_id and only the fields to "
+        "change. `tax_ids` replaces the whole document set, so send every "
+        "document the payee should keep. Returns the current values next "
+        "to the proposed ones."
+    ),
+    parameters={
+        "type": "object",
+        "properties": {
+            "payee_id": {"type": "string", "format": "uuid"},
+            "name": {"type": "string", "minLength": 1, "maxLength": 255},
+            "type": {"type": "string", "enum": ["person", "company"]},
+            "notes": {"type": "string", "maxLength": 1000},
+            "email": {"type": "string", "maxLength": 255},
+            "phone": {"type": "string", "maxLength": 50},
+            "address": {"type": "string", "maxLength": 500},
+            "website": {"type": "string", "maxLength": 255},
+            "is_favorite": {"type": "boolean"},
+            "tax_ids": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "kind": {
+                            "type": "string",
+                            "enum": [kind.value for kind in TaxIdKind],
+                        },
+                        "value": {"type": "string", "maxLength": 120},
+                    },
+                    "required": ["kind", "value"],
+                    "additionalProperties": False,
+                },
+            },
+            "apply": _APPLY_FIELD,
+        },
+        "required": ["payee_id"],
+        "additionalProperties": False,
+    },
+    is_proposal=True,
+    tags=["propose", "payees"],
+)
+async def propose_update_payee(
+    *,
+    session: AsyncSession,
+    ctx: CallContext,
+    payee_id: str,
+    name: str | None = None,
+    type: str | None = None,
+    notes: str | None = None,
+    email: str | None = None,
+    phone: str | None = None,
+    address: str | None = None,
+    website: str | None = None,
+    is_favorite: bool | None = None,
+    tax_ids: list[dict[str, Any]] | None = None,
+    apply: bool = False,
+) -> dict[str, Any]:
+    ws_id = await resolve_workspace_id(session, ctx)
+    pid = parse_uuid(payee_id)
+    payee = await payee_service.get_payee(session, pid, ws_id) if pid else None
+    if payee is None:
+        return {"error": "payee not found"}
+
+    changes: dict[str, Any] = {}
+    if name is not None:
+        cleaned = name.strip()
+        if not cleaned:
+            return {"error": "payee name cannot be empty"}
+        clash = await payee_service.find_payee_by_name(session, ws_id, cleaned)
+        if clash is not None and clash.id != payee.id:
+            return {"error": "duplicate_payee_name", "existing": _payee_snapshot(clash)}
+        changes["name"] = cleaned
+    if type is not None:
+        changes["type"] = type
+    if notes is not None:
+        changes["notes"] = notes
+    if email is not None:
+        changes["email"] = email
+    if phone is not None:
+        changes["phone"] = phone
+    if address is not None:
+        changes["address"] = address
+    if website is not None:
+        changes["website"] = website
+    if is_favorite is not None:
+        # Left as sent: PayeeUpdate turns "true"/"false" into a bool and
+        # rejects anything else, so bool("false") cannot come out true.
+        changes["is_favorite"] = is_favorite
+
+    normalised_tax_ids: list[dict[str, str]] | None = None
+    if tax_ids is not None:
+        normalised_tax_ids, error = _normalise_tax_ids(tax_ids)
+        if error:
+            return {"error": error}
+        changes["tax_ids"] = normalised_tax_ids
+
+    if not changes:
+        return {"error": "no changes provided"}
+
+    # The MCP dispatcher passes arguments straight to the handler, so an
+    # external client can send a value the advertised schema forbids. Build
+    # the update here: a preview must not describe a change the apply path
+    # will refuse.
+    update_data: dict[str, Any] = dict(changes)
+    if normalised_tax_ids is not None:
+        update_data["tax_ids"] = [TaxIdInput(**item) for item in normalised_tax_ids]
+    try:
+        validated_update = PayeeUpdate(**update_data)
+    except ValueError as exc:
+        return {"error": str(exc)}
+
+    # The preview shows the value the apply path will write, not the one
+    # the client sent.
+    if validated_update.is_favorite is not None:
+        changes["is_favorite"] = validated_update.is_favorite
+
+    preview = {
+        "kind": "update_payee",
+        "target": _payee_snapshot(payee),
+        "changes": changes,
+        "apply_endpoint": f"PATCH /api/payees/{payee.id}",
+    }
+
+    if _can_apply(ctx, apply):
+        try:
+            updated = await payee_service.update_payee(
+                session, payee.id, ws_id, validated_update
+            )
+        except ValueError as exc:
+            return {**preview, "applied": False, "error": str(exc)}
+        if updated is None:
+            return {**preview, "applied": False, "error": "payee not found"}
+        fresh = await payee_service.get_payee(session, updated.id, ws_id)
+        return {
+            **preview,
+            "applied": True,
+            "payee": _payee_snapshot(fresh or updated),
+        }
+
+    return preview
+
+
+@tool(
+    name="propose_merge_payees",
+    description=_PROPOSAL_PREFACE
+    + (
+        "Build a preview for merging one or more payees into another. The "
+        "target keeps the history: transactions, invoices and fiscal "
+        "documents move to it. A document whose kind the target already "
+        "holds is dropped, because one payee carries one document per "
+        "kind; the target's value stays and the first source in source_ids "
+        "wins a shared kind. A source with a live recurring invoice "
+        "schedule is refused, because the agreement is about the future; "
+        "an ended one moves with its invoices. Use this for a duplicate "
+        "counterparty, never for a rename: a rename is propose_update_payee."
+    ),
+    parameters={
+        "type": "object",
+        "properties": {
+            "source_ids": {
+                "type": "array",
+                "items": {"type": "string", "format": "uuid"},
+                "minItems": 1,
+            },
+            "target_id": {"type": "string", "format": "uuid"},
+            "apply": _APPLY_FIELD,
+        },
+        "required": ["source_ids", "target_id"],
+        "additionalProperties": False,
+    },
+    is_proposal=True,
+    tags=["propose", "payees"],
+)
+async def propose_merge_payees(
+    *,
+    session: AsyncSession,
+    ctx: CallContext,
+    source_ids: list[str],
+    target_id: str,
+    apply: bool = False,
+) -> dict[str, Any]:
+    ws_id = await resolve_workspace_id(session, ctx)
+    tid = parse_uuid(target_id)
+    target = await payee_service.get_payee(session, tid, ws_id) if tid else None
+    if target is None:
+        return {"error": "target payee not found"}
+
+    parsed_sources = list(dict.fromkeys(parse_uuid_list(source_ids) or []))
+    if not parsed_sources:
+        return {"error": "source_ids is required"}
+    if tid in parsed_sources:
+        return {"error": "target payee cannot also be a source"}
+
+    sources: list[dict[str, Any]] = []
+    transactions_to_reassign = 0
+    live_schedules = 0
+    documents_deleted: list[dict[str, str]] = []
+    # merge_payees moves a source's documents onto the target unless the
+    # target already holds that kind, so the preview has to walk the sources
+    # in the same order to know which rows are actually lost: the target's
+    # kinds are claimed first, then each source's in turn.
+    held_kinds = {row.kind for row in target.tax_ids}
+    for source_id in parsed_sources:
+        source = await payee_service.get_payee(session, source_id, ws_id)
+        if source is None:
+            return {"error": f"source payee {source_id} not found"}
+        count = int(
+            await session.scalar(
+                select(func.count())
+                .select_from(Transaction)
+                .where(Transaction.payee_id == source_id)
+            )
+            or 0
+        )
+        # Only a live agreement blocks the merge. An ended one is history
+        # and moves to the target with the invoices it issued.
+        live_schedule_count = int(
+            await session.scalar(
+                select(func.count())
+                .select_from(InvoiceSchedule)
+                .where(InvoiceSchedule.payee_id == source_id)
+                .where(InvoiceSchedule.status != "ended")
+            )
+            or 0
+        )
+        transactions_to_reassign += count
+        live_schedules += live_schedule_count
+        source_tax_ids = [
+            {"kind": row.kind, "value": row.value} for row in source.tax_ids
+        ]
+        # Only a document whose kind is already taken is lost: the row goes
+        # down with the source instead of moving to the target. Listing
+        # those rows is the only place the caller sees that a value is
+        # about to disappear; the rest survive on the target.
+        for document in source_tax_ids:
+            if document["kind"] in held_kinds:
+                documents_deleted.append(document)
+            else:
+                held_kinds.add(document["kind"])
+        sources.append(
+            {
+                "id": str(source.id),
+                "name": source.name,
+                "transaction_count": count,
+                "live_schedule_count": live_schedule_count,
+                "tax_ids": source_tax_ids,
+            }
+        )
+
+    preview = {
+        "kind": "merge_payees",
+        "target": {
+            "id": str(target.id),
+            "name": target.name,
+            "transaction_count": int(
+                await session.scalar(
+                    select(func.count())
+                    .select_from(Transaction)
+                    .where(Transaction.payee_id == target.id)
+                )
+                or 0
+            ),
+            "tax_ids": [
+                {"kind": row.kind, "value": row.value} for row in target.tax_ids
+            ],
+        },
+        "sources": sources,
+        "transactions_to_reassign": transactions_to_reassign,
+        "documents_deleted": documents_deleted,
+        "apply_endpoint": "POST /api/payees/merge",
+    }
+
+    if live_schedules:
+        # The service refuses this on apply; the preview says so first so
+        # the caller does not present a merge that cannot land.
+        return {
+            **preview,
+            "applied": False,
+            "error": f"payee_has_schedules:{live_schedules}",
+        }
+
+    if _can_apply(ctx, apply):
+        try:
+            reassigned = await payee_service.merge_payees(
+                session, ws_id, target.id, parsed_sources
+            )
+        except ValueError as exc:
+            return {**preview, "applied": False, "error": str(exc)}
+        return {
+            **preview,
+            "applied": True,
+            "transactions_reassigned": reassigned,
+        }
+
+    return preview
+
+
+# --- propose_update_transaction ---------------------------------------------
+
+_DESCRIPTION_MAX_LENGTH: int = cast(
+    int, cast(String, Transaction.__table__.c.description.type).length
+)
+
+
+def _json_scalar(value: Any) -> Any:
+    """JSON-safe form of a column value, for a preview or a snapshot."""
+    if isinstance(value, Decimal):
+        return float(value)
+    if isinstance(value, (datetime, date)):
+        return value.isoformat()
+    if isinstance(value, uuid.UUID):
+        return str(value)
+    return value
+
+
+async def _transaction_snapshot(
+    session: AsyncSession, tx: Transaction
+) -> dict[str, Any]:
+    """The row as the caller needs to see it next to the proposed change."""
+    account = await session.get(Account, tx.account_id) if tx.account_id else None
+    return {
+        "id": str(tx.id),
+        "date": tx.date.isoformat() if tx.date else None,
+        "description": tx.description,
+        "amount": num(tx.amount),
+        "currency": tx.currency,
+        "amount_primary": num(tx.amount_primary),
+        "fx_rate_used": num(tx.fx_rate_used),
+        "type": tx.type,
+        "status": tx.status,
+        "account_id": str(tx.account_id) if tx.account_id else None,
+        "account_name": account.name if account else None,
+        "category_id": str(tx.category_id) if tx.category_id else None,
+        "category_name": tx.category.name if tx.category else None,
+        "payee_id": str(tx.payee_id) if tx.payee_id else None,
+        "payee_name": tx.payee_entity.name if tx.payee_entity else None,
+        "notes": tx.notes,
+        "is_ignored": bool(tx.is_ignored),
+        "exclude_from_pnl": bool(tx.exclude_from_pnl),
+        "transfer_pair_id": str(tx.transfer_pair_id) if tx.transfer_pair_id else None,
+    }
+
+
+@tool(
+    name="propose_update_transaction",
+    description=_PROPOSAL_PREFACE
+    + (
+        "Build a preview for editing one transaction (description, amount, "
+        "date, type, currency, account, category, payee, notes, ignored, "
+        "excluded from P&L, status). Pass only the fields to change; every "
+        "other field stays as it is, except the FX conversion: changing "
+        "`amount`, `currency` or `date` restamps the row from the market "
+        "rate for its date, which replaces a manual rate, and the preview "
+        "shows the resulting `amount_primary` and `fx_rate_used`. "
+        "Foreign-currency rows: set "
+        "`amount_primary` (the value in the primary currency) or "
+        "`fx_rate_used`, and the other side is derived the same way the save "
+        "derives it. `clear_fx=true` removes a manual FX override and lets "
+        "Securo restamp the row from the current rate; it cannot be combined "
+        "with `amount_primary` or `fx_rate_used`. On a transfer, amount, "
+        "date, description and notes follow the other leg automatically, and "
+        "`apply_to_transfer_pair=true` sends the category too. Returns the "
+        "current row next to the proposed values, with the derived FX "
+        "counterpart when relevant. Splits and category splits are not "
+        "edited here."
+    ),
+    parameters={
+        "type": "object",
+        "properties": {
+            "transaction_id": {"type": "string", "format": "uuid"},
+            "description": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": _DESCRIPTION_MAX_LENGTH,
+            },
+            "amount": {
+                "type": "number",
+                "exclusiveMinimum": 0,
+                "maximum": float(MAX_MONEY_AMOUNT),
+                "description": "Absolute value, always positive — direction comes from `type`",
+            },
+            "date": {"type": "string", "format": "date"},
+            "type": {
+                "type": "string",
+                "enum": ["debit", "credit"],
+                "description": "debit = expense, credit = income",
+            },
+            "currency": {"type": "string", "minLength": 3, "maxLength": 3},
+            "account_id": {"type": "string", "format": "uuid"},
+            "category_id": {"type": "string", "format": "uuid"},
+            "payee_id": {"type": "string", "format": "uuid"},
+            "notes": {
+                "type": "string",
+                "maxLength": NOTES_MAX_LENGTH,
+                "description": "Replaces the whole notes text; an empty string clears it",
+            },
+            "amount_primary": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": float(MAX_MONEY_AMOUNT),
+                "description": (
+                    "Value in the primary currency. Setting it alone derives "
+                    "fx_rate_used = amount_primary / amount. 0 is valid when "
+                    "the conversion rounds to 0.00 (0.01 BRL at 0.2 is 0.00 USD)."
+                ),
+            },
+            "fx_rate_used": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": float(MAX_FX_RATE),
+                "description": (
+                    "Rate from the transaction currency to the primary "
+                    "currency. Setting it alone derives "
+                    "amount_primary = amount * fx_rate_used. 0 is valid only "
+                    "next to the amount_primary it was rounded from (a "
+                    "conversion of 0.00, or one under 5e-11 of amount)."
+                ),
+            },
+            "is_ignored": {"type": "boolean"},
+            "exclude_from_pnl": {"type": "boolean"},
+            "status": {
+                "type": "string",
+                "enum": ["posted", "pending"],
+                "description": "posted = settled, pending = not yet settled",
+            },
+            "apply_to_transfer_pair": {
+                "type": "boolean",
+                "default": False,
+                "description": (
+                    "Also send the category to the other leg of a transfer "
+                    "pair. Amount, date, description and notes already follow "
+                    "it whenever they change."
+                ),
+            },
+            "clear_fx": {
+                "type": "boolean",
+                "default": False,
+                "description": (
+                    "Remove the manual FX override and let Securo restamp the "
+                    "primary amount. Cannot be combined with amount_primary "
+                    "or fx_rate_used."
+                ),
+            },
+            "apply": _APPLY_FIELD,
+        },
+        "required": ["transaction_id"],
+        "additionalProperties": False,
+    },
+    is_proposal=True,
+    tags=["propose", "transactions"],
+)
+async def propose_update_transaction(
+    *,
+    session: AsyncSession,
+    ctx: CallContext,
+    transaction_id: str,
+    description: str | None = None,
+    amount: float | None = None,
+    date: str | None = None,
+    type: str | None = None,
+    currency: str | None = None,
+    account_id: str | None = None,
+    category_id: str | None = None,
+    payee_id: str | None = None,
+    notes: str | None = None,
+    amount_primary: float | None = None,
+    fx_rate_used: float | None = None,
+    is_ignored: bool | None = None,
+    exclude_from_pnl: bool | None = None,
+    status: str | None = None,
+    apply_to_transfer_pair: bool = False,
+    clear_fx: bool = False,
+    apply: bool = False,
+) -> dict[str, Any]:
+    ws_id = await resolve_workspace_id(session, ctx)
+    try:
+        tx_id = parse_uuid(transaction_id)
+    except (TypeError, ValueError):
+        return {"error": "invalid transaction_id"}
+    if tx_id is None:
+        return {"error": "invalid transaction_id"}
+    tx = await transaction_service.get_transaction(session, tx_id, ws_id)
+    if tx is None:
+        return {"error": "transaction not found"}
+
+    if clear_fx and (amount_primary is not None or fx_rate_used is not None):
+        return {
+            "error": "clear_fx cannot be combined with amount_primary or fx_rate_used"
+        }
+
+    changes: dict[str, Any] = {}
+    if description is not None:
+        cleaned = description.strip()
+        if not cleaned:
+            return {"error": "description cannot be empty"}
+        if len(cleaned) > _DESCRIPTION_MAX_LENGTH:
+            return {
+                "error": (
+                    f"description must be {_DESCRIPTION_MAX_LENGTH} "
+                    "characters or fewer"
+                )
+            }
+        changes["description"] = cleaned
+    if amount is not None:
+        # The same bound the PATCH applies: a value the column would round to
+        # zero or refuse used to slip through the preview and come back from
+        # the database as raw SQL text (issue #270).
+        try:
+            changes["amount"] = bounded_money(Decimal(str(amount)))
+        except ValueError as exc:
+            return {"error": str(exc)}
+    if date is not None:
+        try:
+            parsed_date = parse_date(date)
+        except (TypeError, ValueError):
+            return {"error": "invalid date"}
+        if parsed_date is None:
+            return {"error": "date cannot be empty"}
+        changes["date"] = parsed_date
+    if type is not None:
+        if type not in ("debit", "credit"):
+            return {"error": "type must be 'debit' or 'credit'"}
+        changes["type"] = type
+    if currency is not None:
+        code = normalize_currency_code(currency.strip())
+        if not code or len(code) != 3:
+            return {"error": "currency must be a 3-letter code"}
+        changes["currency"] = code
+    if account_id is not None:
+        try:
+            parsed_account = parse_uuid(account_id)
+        except (TypeError, ValueError):
+            return {"error": "invalid account_id"}
+        if parsed_account is None:
+            return {"error": "account_id cannot be empty"}
+        account_exists = (
+            await session.execute(
+                select(Account.id)
+                .outerjoin(BankConnection)
+                .where(
+                    Account.id == parsed_account,
+                    or_(
+                        Account.workspace_id == ws_id,
+                        BankConnection.workspace_id == ws_id,
+                    ),
+                )
+            )
+        ).scalar_one_or_none()
+        if account_exists is None:
+            return {"error": "account not found"}
+        changes["account_id"] = parsed_account
+    if category_id is not None:
+        try:
+            parsed_category = parse_uuid(category_id)
+        except (TypeError, ValueError):
+            return {"error": "invalid category_id"}
+        if parsed_category is None:
+            return {"error": "category_id cannot be empty"}
+        category_exists = (
+            await session.execute(
+                select(Category.id).where(
+                    Category.id == parsed_category,
+                    Category.workspace_id == ws_id,
+                )
+            )
+        ).scalar_one_or_none()
+        if category_exists is None:
+            return {"error": "category not found"}
+        changes["category_id"] = parsed_category
+    if payee_id is not None:
+        try:
+            parsed_payee = parse_uuid(payee_id)
+        except (TypeError, ValueError):
+            return {"error": "invalid payee_id"}
+        if parsed_payee is None:
+            return {"error": "payee_id cannot be empty"}
+        payee_exists = (
+            await session.execute(
+                select(Payee.id).where(
+                    Payee.id == parsed_payee,
+                    Payee.workspace_id == ws_id,
+                )
+            )
+        ).scalar_one_or_none()
+        if payee_exists is None:
+            return {"error": "payee not found"}
+        changes["payee_id"] = parsed_payee
+    if notes is not None:
+        new_notes = notes.strip() or None
+        if new_notes is not None and len(new_notes) > NOTES_MAX_LENGTH:
+            return {"error": f"notes must be {NOTES_MAX_LENGTH} characters or fewer"}
+        changes["notes"] = new_notes
+    if amount_primary is not None:
+        try:
+            changes["amount_primary"] = bounded_money(
+                Decimal(str(amount_primary)), "amount_primary", allow_zero=True
+            )
+        except ValueError as exc:
+            return {"error": str(exc)}
+    if fx_rate_used is not None:
+        try:
+            changes["fx_rate_used"] = bounded_fx_rate(
+                Decimal(str(fx_rate_used)), "fx_rate_used", allow_zero=True
+            )
+        except ValueError as exc:
+            return {"error": str(exc)}
+    if is_ignored is not None:
+        changes["is_ignored"] = bool(is_ignored)
+    if exclude_from_pnl is not None:
+        changes["exclude_from_pnl"] = bool(exclude_from_pnl)
+    if status is not None:
+        if status not in ("posted", "pending"):
+            return {"error": "status must be 'posted' or 'pending'"}
+        changes["status"] = status
+    if apply_to_transfer_pair:
+        changes["apply_to_transfer_pair"] = True
+    if clear_fx:
+        changes["amount_primary"] = None
+        changes["fx_rate_used"] = None
+
+    if not changes:
+        return {"error": "no changes provided"}
+
+    preview: dict[str, Any] = {
+        "kind": "update_transaction",
+        "target": await _transaction_snapshot(session, tx),
+        "changes": {key: _json_scalar(value) for key, value in changes.items()},
+        "apply_endpoint": f"PATCH /api/transactions/{tx.id}",
+    }
+
+    # The save derives the other side of an FX override, so the preview
+    # computes it with the same math, against the amount the row will have.
+    new_amount = changes.get("amount", tx.amount)
+    if amount_primary is not None and fx_rate_used is not None:
+        preview["derived"] = {
+            "amount_primary": float(amount_primary),
+            "fx_rate_used": float(fx_rate_used),
+        }
+    elif amount_primary is not None:
+        rate = (
+            Decimal(str(amount_primary)) / Decimal(str(new_amount))
+            if new_amount
+            else Decimal("1")
+        )
+        preview["derived"] = {"fx_rate_used": num(rate)}
+    elif fx_rate_used is not None:
+        primary = (
+            Decimal(str(new_amount)) * Decimal(str(fx_rate_used))
+        ).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        preview["derived"] = {"amount_primary": num(primary)}
+    elif clear_fx:
+        preview["derived"] = {"amount_primary": "auto", "fx_rate_used": "auto"}
+    elif {"amount", "currency", "date"} & set(changes):
+        # Changing the amount, the currency or the date makes the save restamp
+        # the row from the market rate for its date, which replaces a rate the
+        # user typed. The preview has to show that conversion, and say when it
+        # is only an estimate, instead of claiming every other field stays as
+        # it is (issue #271).
+        user = await session.get(User, ctx.user_id)
+        target_currency = changes.get("currency", tx.currency)
+        amount = changes.get("amount", tx.amount)
+        if user is not None and amount is not None:
+            if same_currency(target_currency, user.primary_currency):
+                # A row moving into the primary currency is stamped 1:1. One
+                # already there has no conversion to show at all.
+                if not same_currency(tx.currency, user.primary_currency):
+                    preview["derived"] = {
+                        "amount_primary": num(amount),
+                        "fx_rate_used": num(Decimal("1")),
+                        "note": (
+                            "the row is now in the primary currency, so the "
+                            "stored conversion becomes the amount at 1:1"
+                        ),
+                    }
+            else:
+                stamp = await fx_rate_service.resolve_primary_stamp(
+                    session,
+                    user.primary_currency,
+                    amount,
+                    target_currency,
+                    changes.get("date", tx.date),
+                    # The preview never reaches the provider. It shows the
+                    # rate stored for the date, or the closest stored one as
+                    # an estimate, and says which.
+                    allow_fetch=False,
+                )
+                if stamp.amount_primary is None:
+                    # No stored rate at all: the save resolves one, and the
+                    # preview cannot know which, so it must not imply the row
+                    # keeps its current conversion.
+                    preview["derived"] = {
+                        "amount_primary": "auto",
+                        "fx_rate_used": "auto",
+                        "note": (
+                            "no market rate stored for this date: the save "
+                            "resolves the rate automatically, so the preview "
+                            "cannot show the exact conversion"
+                        ),
+                    }
+                else:
+                    notes: list[str] = []
+                    if not stamp.rate_is_exact_date:
+                        notes.append(
+                            "estimated from the closest stored market rate; "
+                            "the save uses the market rate for the row's date, "
+                            "which may differ"
+                        )
+                    if (
+                        tx.fx_rate_used is not None
+                        and tx.fx_rate_used != stamp.fx_rate_used
+                    ):
+                        notes.append(
+                            "the stored fx_rate_used is replaced by the market "
+                            "rate for the row's date; pass amount_primary or "
+                            "fx_rate_used to keep a manual conversion"
+                        )
+                    derived: dict[str, Any] = {
+                        "amount_primary": num(stamp.amount_primary),
+                        "fx_rate_used": num(stamp.fx_rate_used),
+                    }
+                    if notes:
+                        derived["note"] = " ".join(notes)
+                    preview["derived"] = derived
+
+    if tx.transfer_pair_id:
+        cascaded_fields = {"amount", "date", "description", "notes"} & set(changes)
+        if apply_to_transfer_pair and "category_id" in changes:
+            cascaded_fields.add("category_id")
+        cascaded = sorted(cascaded_fields)
+        preview["transfer_pair"] = {
+            "id": str(tx.transfer_pair_id),
+            "cascades": cascaded,
+        }
+
+    if not _can_apply(ctx, apply):
+        return preview
+
+    try:
+        updated = await transaction_service.update_transaction(
+            session, tx.id, ws_id, ctx.user_id, TransactionUpdate(**changes)
+        )
+    except ValueError as exc:
+        return {**preview, "applied": False, "error": str(exc)}
+    if updated is None:
+        return {**preview, "applied": False, "error": "transaction not found"}
+
+    fresh = await transaction_service.get_transaction(session, updated.id, ws_id)
+    return {
+        **preview,
+        "applied": True,
+        "transaction": await _transaction_snapshot(session, fresh or updated),
+    }

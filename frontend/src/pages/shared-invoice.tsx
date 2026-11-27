@@ -54,7 +54,7 @@ export default function SharedInvoicePage() {
         <div className="flex justify-end">
           <Button asChild size="sm" variant="outline" data-testid="shared-download">
             <a href={publicInvoices.pdfUrl(token)} target="_blank" rel="noopener noreferrer">
-              <Download className="h-4 w-4 mr-1.5" />
+              <Download className="h-4 w-4 me-1.5" />
               {t('invoices.action.downloadPdf')}
             </a>
           </Button>

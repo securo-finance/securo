@@ -3,7 +3,7 @@ import { screen } from '@testing-library/react'
 import { Route, Routes } from 'react-router-dom'
 
 import { ProtectedRoute } from '@/components/protected-route'
-import { renderWithProviders } from '@/test/utils'
+import { renderWithProviders, t } from '@/test/utils'
 
 const useAuth = vi.hoisted(() => vi.fn())
 vi.mock('@/contexts/auth-context', () => ({ useAuth }))
@@ -61,5 +61,41 @@ describe('ProtectedRoute', () => {
     renderGuard()
 
     expect(screen.queryByText('private page')).not.toBeInTheDocument()
+  })
+
+  it('keeps the requested URL and says the data is unavailable when the server cannot be reached', () => {
+    // Issue #292: with the token kept but the session uncheckable, the app used
+    // to render the shell and the dashboard with $0.00. This is an offline
+    // state, not a sign-out: no login, and the URL is untouched.
+    useAuth.mockReturnValue({
+      token: 'jwt',
+      user: null,
+      isLoading: false,
+      sessionUnreachable: true,
+      retrySession: vi.fn(),
+    })
+
+    renderGuard()
+
+    expect(screen.getByText(t('offline.title'))).toBeInTheDocument()
+    expect(screen.getByText(t('offline.description'))).toBeInTheDocument()
+    expect(screen.queryByText('login screen')).not.toBeInTheDocument()
+    expect(screen.queryByText('private page')).not.toBeInTheDocument()
+  })
+
+  it('asks the provider to check the session again', async () => {
+    const retrySession = vi.fn()
+    useAuth.mockReturnValue({
+      token: 'jwt',
+      user: null,
+      isLoading: false,
+      sessionUnreachable: true,
+      retrySession,
+    })
+
+    const { user } = renderGuard()
+    await user.click(screen.getByRole('button', { name: t('common.retry') }))
+
+    expect(retrySession).toHaveBeenCalledTimes(1)
   })
 })

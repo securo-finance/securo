@@ -22,6 +22,7 @@ from tests.test_mortgage_payments_api import (  # noqa: F401 -- rerun on Postgre
     test_breakdown_rows_cannot_become_transfers,
     test_breakdown_can_be_removed_before_editing_payment,
     test_deleting_payment_removes_its_principal_entry,
+    test_foreign_currency_loan_principal_entry_is_fx_stamped_and_counted_in_running_balance,
     test_historical_mortgage_payment_links_without_double_reducing_current_balance,
     test_linked_loan_without_breakdowns_can_become_another_type,
     test_loan_with_breakdowns_cannot_be_deleted_or_retyped,
@@ -31,6 +32,7 @@ from tests.test_mortgage_payments_api import (  # noqa: F401 -- rerun on Postgre
     test_payment_on_snapshot_date_is_already_in_the_balance,
     test_principal_entry_is_owned_by_its_breakdown,
     test_replacing_payment_removes_only_its_previous_principal_transaction,
+    test_unsecured_student_loan_can_allocate_principal_and_interest,
 )
 
 
@@ -129,6 +131,8 @@ async def test_payment_edit_waits_for_a_breakdown_being_saved(
     payment, loan = await _make_payment_and_loan(
         session, test_user, test_workspace, snapshot_date=date(2026, 5, 31)
     )
+    payment.source = "manual"
+    await session.commit()
 
     async with postgres_sessions() as saving:
         await saving.execute(
@@ -155,7 +159,8 @@ async def test_payment_edit_waits_for_a_breakdown_being_saved(
         response = await asyncio.wait_for(edit, timeout=10)
 
     assert response.status_code == 400
-    assert "mortgage breakdown" in response.json()["detail"]
+    await session.refresh(payment)
+    assert payment.amount == Decimal("232.83")
 
 
 @pytest.mark.asyncio

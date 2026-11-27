@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { Toaster } from '@/components/ui/sonner'
 import { TooltipProvider } from '@/components/ui/tooltip'
+import { AppDirection } from '@/components/app-direction'
 import { ThemeProvider } from '@/components/theme-provider'
 import { AuthProvider } from '@/contexts/auth-provider'
 import { WorkspaceProvider } from '@/contexts/workspace-provider'
@@ -19,11 +20,15 @@ import { AppLayout } from '@/components/app-layout'
 const SetupPage = lazy(() => import('@/pages/setup'))
 const LoginPage = lazy(() => import('@/pages/login'))
 const RegisterPage = lazy(() => import('@/pages/register'))
+const ForgotPasswordPage = lazy(() => import('@/pages/forgot-password'))
+const ResetPasswordPage = lazy(() => import('@/pages/reset-password'))
 const DashboardPage = lazy(() => import('@/pages/dashboard'))
 const TransactionsPage = lazy(() => import('@/pages/transactions'))
 const AccountsPage = lazy(() => import('@/pages/accounts'))
 const AccountDetailPage = lazy(() => import('@/pages/account-detail'))
 const ImportPage = lazy(() => import('@/pages/import'))
+const NotificationsPage = lazy(() => import('@/pages/notifications'))
+const BackupPage = lazy(() => import('@/pages/backups'))
 const RulesPage = lazy(() => import('@/pages/rules'))
 const CategoriesPage = lazy(() => import('@/pages/categories'))
 const CollectionsPage = lazy(() => import('@/pages/collections'))
@@ -49,6 +54,7 @@ const InvoiceDetailPage = lazy(() => import('@/pages/invoice-detail'))
 const SharedInvoicePage = lazy(() => import('@/pages/shared-invoice'))
 const WorkspaceSettingsPage = lazy(() => import('@/pages/workspace-settings'))
 const OAuthCallbackPage = lazy(() => import('@/pages/oauth-callback'))
+const PluginOAuthCallbackPage = lazy(() => import('@/pages/plugin-oauth-callback'))
 const OIDCCallbackPage = lazy(() => import('@/pages/oidc-callback'))
 
 const queryClient = new QueryClient({
@@ -83,6 +89,7 @@ function App() {
     <ThemeProvider>
       <QueryClientProvider client={queryClient}>
         <CrossTabRefresh />
+        <AppDirection>
         <TooltipProvider>
         <BrowserRouter>
           <AuthProvider>
@@ -93,6 +100,10 @@ function App() {
                 <Route path="/login" element={<LoginPage />} />
                 <Route path="/auth/oidc/callback" element={<OIDCCallbackPage />} />
                 <Route path="/register" element={<RegisterPage />} />
+                {/* Password recovery: the link the email carries lands on
+                    /reset-password?token=..., outside the protected routes. */}
+                <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+                <Route path="/reset-password" element={<ResetPasswordPage />} />
                 {/* A client opening a link the sender shared. Deliberately
                     outside ProtectedRoute and outside AppLayout: the
                     recipient has no account, and the token is the whole
@@ -116,6 +127,9 @@ function App() {
                   <Route path="/oauth/callback" element={<OAuthCallbackPage />} />
                   <Route path="/enable-banking" element={<OAuthCallbackPage />} />
                   <Route path="/import" element={<ModuleRoute module="import"><ImportPage /></ModuleRoute>} />
+                  <Route path="/backup" element={<Navigate to="/backups" replace />} />
+                  <Route path="/notifications" element={<NotificationsPage />} />
+                  <Route path="/backups" element={<BackupPage />} />
                   <Route path="/rules" element={<ModuleRoute module="rules"><RulesPage /></ModuleRoute>} />
                   <Route path="/categories" element={<ModuleRoute module="categories"><CategoriesPage /></ModuleRoute>} />
                   <Route path="/collections" element={<CollectionsPage />} />
@@ -137,6 +151,7 @@ function App() {
                   <Route path="/invoices/:id" element={<ModuleRoute module="invoices"><InvoiceDetailPage /></ModuleRoute>} />
                   <Route path="/workspace/settings" element={<WorkspaceSettingsPage />} />
                   <Route path="/plugins" element={<PluginsRoute><PluginsPage /></PluginsRoute>} />
+                  <Route path="/plugins/oauth/callback" element={<PluginsRoute><PluginOAuthCallbackPage /></PluginsRoute>} />
                   <Route path="/plugins/:owner/:name" element={<PluginsRoute><PluginDetailPage /></PluginsRoute>} />
                   <Route path="/admin" element={<AdminRoute><AdminSettingsPage /></AdminRoute>} />
                   <Route path="/agents" element={<AgentsRoute><AgentsListPage /></AgentsRoute>} />
@@ -150,6 +165,7 @@ function App() {
           </AuthProvider>
         </BrowserRouter>
         </TooltipProvider>
+        </AppDirection>
       </QueryClientProvider>
     </ThemeProvider>
   )

@@ -60,6 +60,7 @@ function makeTx(overrides: Partial<Transaction> = {}): Transaction {
     splits: [],
     is_ignored: false,
     ...overrides,
+    reporting_date_override: overrides.reporting_date_override ?? null,
   }
 }
 
@@ -129,5 +130,76 @@ describe('MobileTransactionRow transfer indicator', () => {
     const category = makeCategory({ treat_as_transfer: false })
     renderRow(makeTx({ category_id: category.id, category }))
     expect(screen.queryByLabelText('transactions.transfer')).not.toBeInTheDocument()
+  })
+})
+
+describe('MobileTransactionRow flag marker (#56)', () => {
+  it('marks a flagged row with a labelled flag', () => {
+    renderRow(makeTx({ is_flagged: true }))
+    expect(screen.getByLabelText('transactions.flagged')).toBeInTheDocument()
+  })
+
+  it('shows no flag on an unflagged row', () => {
+    renderRow(makeTx({ is_flagged: false }))
+    expect(screen.queryByLabelText('transactions.flagged')).not.toBeInTheDocument()
+  })
+})
+
+describe('MobileTransactionRow description line (#433)', () => {
+  it('keeps the badges on their own line, under the description', () => {
+    renderRow(
+      makeTx({
+        description: 'Geladeira Brastemp',
+        installment_number: 5,
+        total_installments: 10,
+        is_paid: false,
+      }),
+    )
+
+    const description = screen.getByText('Geladeira Brastemp')
+    const badges = screen.getByTestId('transaction-badges')
+
+    expect(badges).toContainElement(screen.getByText('5/10'))
+    expect(badges).toContainElement(screen.getByLabelText('transactions.unpaid'))
+    // The description keeps the whole line, so a narrow phone column cannot
+    // squeeze it into a few characters and break words in the middle.
+    expect(description.nextElementSibling).toBe(badges)
+    expect(description.contains(badges)).toBe(false)
+  })
+
+  it('renders no badge line when the row has no badges', () => {
+    renderRow(makeTx({ description: 'Supermercado Pão de Açúcar' }))
+    expect(screen.getByText('Supermercado Pão de Açúcar')).toBeInTheDocument()
+    expect(screen.queryByTestId('transaction-badges')).not.toBeInTheDocument()
+  })
+})
+
+describe('MobileTransactionRow payback badge', () => {
+  it('marks a credit that pays back a group debt (#424)', () => {
+    renderRow(makeTx({
+      type: 'credit',
+      amount: 30,
+      settled_by: [{ id: 's-1', group_id: 'g-1', from_member_id: 'm-1', amount: 30 }],
+    }))
+    expect(screen.getByText('splitGroups.shareSettlement')).toBeInTheDocument()
+  })
+
+  it('shows no payback badge on a credit that settles nothing', () => {
+    renderRow(makeTx({ type: 'credit', amount: 30, settled_by: [] }))
+    expect(screen.queryByText('splitGroups.shareSettlement')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('transaction-badges')).not.toBeInTheDocument()
+  })
+})
+
+describe('MobileTransactionRow reporting date indicator', () => {
+  it('shows reporting and original bank dates for moved rows', () => {
+    renderRow(makeTx({ reporting_date_override: '2026-09-30' }))
+    expect(screen.getByText(/^transactions.reportingDate:/)).toHaveTextContent('9/30/2026')
+    expect(screen.getByText(/^· transactions.bankDate:/)).toHaveTextContent('10/20/2026')
+  })
+
+  it('does not mark an unchanged date as moved', () => {
+    renderRow(makeTx({ reporting_date_override: '2026-10-20' }))
+    expect(screen.queryByText(/^transactions.reportingDate:/)).not.toBeInTheDocument()
   })
 })

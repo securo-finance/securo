@@ -1,4 +1,4 @@
-{{- if .Values.persistence.attachments.enabled }}
+{{- if and .Values.persistence.attachments.enabled (not .Values.persistence.attachments.existingClaim) }}
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:

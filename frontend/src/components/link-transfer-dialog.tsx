@@ -45,8 +45,10 @@ function CounterpartCard({ label, description, account, date, amount, currency, 
         {new Date(date + 'T00:00:00').toLocaleDateString(dateLocale)}{/* date order from setting, words from app language */}
       </p>
       <p className={`text-sm font-bold tabular-nums ${colorClass} mt-2`}>
-        {sign}
-        {formatCurrency(amount, currency, locale)}
+        <span dir="ltr">
+          {sign}
+          {formatCurrency(amount, currency, locale)}
+        </span>
       </p>
     </div>
   )
@@ -169,7 +171,7 @@ export function LinkTransferDialog({
             <DialogTitle>{t('transactions.linkTransferPickerTitle')}</DialogTitle>
           </DialogHeader>
 
-          <div className="min-h-0 min-w-0 space-y-4 overflow-y-auto overscroll-contain pr-1">
+          <div className="min-h-0 min-w-0 space-y-4 overflow-y-auto overscroll-contain pe-1">
             <DialogDescription>
               {t('transactions.linkTransferPickerDescription')}
             </DialogDescription>
@@ -187,13 +189,13 @@ export function LinkTransferDialog({
             />
 
             <div className="relative">
-              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+              <Search size={14} className="absolute start-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
               <input
                 type="text"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 placeholder={t('transactions.linkTransferSearchPlaceholder')}
-                className="w-full pl-9 pr-3 py-2 text-sm rounded-md border border-border bg-card text-foreground focus:outline-none focus-visible:ring-ring/30 focus-visible:ring-[2px]"
+                className="w-full ps-9 pe-3 py-2 text-sm rounded-md border border-border bg-card text-foreground focus:outline-none focus-visible:ring-ring/30 focus-visible:ring-[2px]"
               />
             </div>
 
@@ -224,7 +226,7 @@ export function LinkTransferDialog({
                         <button
                           type="button"
                           onClick={() => setPickedCandidate(c)}
-                          className="w-full text-left rounded-lg border border-border bg-card hover:bg-muted/50 hover:border-primary/40 transition-colors p-3 flex items-center gap-3 min-w-0"
+                          className="w-full text-start rounded-lg border border-border bg-card hover:bg-muted/50 hover:border-primary/40 transition-colors p-3 flex items-center gap-3 min-w-0"
                         >
                           <div className="min-w-0 flex-1">
                             <div className="flex items-center gap-2 min-w-0">
@@ -243,8 +245,10 @@ export function LinkTransferDialog({
                             </p>
                           </div>
                           <p className={`text-sm font-bold tabular-nums ${colorClass} shrink-0`}>
-                            {sign}
-                            {formatCurrency(amount, c.currency, locale)}
+                            <span dir="ltr">
+                              {sign}
+                              {formatCurrency(amount, c.currency, locale)}
+                            </span>
                           </p>
                         </button>
                       </li>
@@ -316,7 +320,7 @@ export function LinkTransferDialog({
           <DialogTitle>{t('transactions.linkTransferTitle')}</DialogTitle>
         </DialogHeader>
 
-        <div className="min-h-0 space-y-4 overflow-y-auto overscroll-contain pr-1">
+        <div className="min-h-0 space-y-4 overflow-y-auto overscroll-contain pe-1">
           <DialogDescription>
             {t('transactions.linkTransferDescription')}
           </DialogDescription>
@@ -334,7 +338,7 @@ export function LinkTransferDialog({
               dateLocale={dateLocale}
             />
             <div className="flex items-center justify-center">
-              <ArrowRight size={18} className="rotate-90 text-muted-foreground sm:rotate-0" />
+              <ArrowRight size={18} className="rtl-no-flip rotate-90 text-muted-foreground sm:rotate-0 rtl:sm:rotate-180" />
             </div>
             <CounterpartCard
               label={t('transactions.linkTransferTo')}
@@ -369,9 +373,9 @@ export function LinkTransferDialog({
               variant="ghost"
               onClick={() => setPickedCandidate(null)}
               disabled={loading}
-              className="mr-auto"
+              className="me-auto"
             >
-              <ArrowLeft size={14} className="mr-1" />
+              <ArrowLeft size={14} className="me-1" />
               {t('transactions.linkTransferBack')}
             </Button>
           )}

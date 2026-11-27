@@ -34,12 +34,12 @@ export function PluginReadme({ markdown, base }: { markdown: string; base: strin
           h3: ({ children }: NodeProps) => <h4 className="mb-1.5 mt-4 text-sm font-semibold text-foreground">{children}</h4>,
           h4: ({ children }: NodeProps) => <h5 className="mb-1 mt-3 text-sm font-semibold text-foreground">{children}</h5>,
           p: ({ children }: NodeProps) => <p className="my-3">{children}</p>,
-          ul: ({ children }: NodeProps) => <ul className="my-3 list-disc space-y-1 pl-5">{children}</ul>,
-          ol: ({ children }: NodeProps) => <ol className="my-3 list-decimal space-y-1 pl-5">{children}</ol>,
+          ul: ({ children }: NodeProps) => <ul className="my-3 list-disc space-y-1 ps-5">{children}</ul>,
+          ol: ({ children }: NodeProps) => <ol className="my-3 list-decimal space-y-1 ps-5">{children}</ol>,
           li: ({ children }: NodeProps) => <li className="marker:text-muted-foreground/70">{children}</li>,
           strong: ({ children }: NodeProps) => <strong className="font-semibold text-foreground">{children}</strong>,
           blockquote: ({ children }: NodeProps) => (
-            <blockquote className="my-3 border-l-2 pl-3 text-muted-foreground">{children}</blockquote>
+            <blockquote className="my-3 border-s-2 ps-3 text-muted-foreground">{children}</blockquote>
           ),
           a: ({ href, children }: NodeProps & { href?: string }) => (
             <a href={resolve(href)} target="_blank" rel="noopener noreferrer nofollow" className="text-primary underline underline-offset-2 hover:opacity-80">
@@ -72,7 +72,7 @@ export function PluginReadme({ markdown, base }: { markdown: string; base: strin
               <table className="w-full text-xs">{children}</table>
             </div>
           ),
-          th: ({ children }: NodeProps) => <th className="border-b bg-muted/50 px-3 py-1.5 text-left font-medium">{children}</th>,
+          th: ({ children }: NodeProps) => <th className="border-b bg-muted/50 px-3 py-1.5 text-start font-medium">{children}</th>,
           td: ({ children }: NodeProps) => <td className="border-b px-3 py-1.5 last:border-b-0">{children}</td>,
         }}
       >

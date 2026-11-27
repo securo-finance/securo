@@ -49,7 +49,7 @@ export function DeleteConfirmationDialog({
             {t('common.cancel')}
           </Button>
           <Button variant="destructive" onClick={onConfirm} disabled={isPending}>
-            <Trash2 size={14} className="mr-1" />
+            <Trash2 size={14} className="me-1" />
             {t('common.delete')}
           </Button>
         </DialogFooter>

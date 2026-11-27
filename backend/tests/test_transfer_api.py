@@ -1,5 +1,5 @@
 import uuid
-from datetime import date
+from datetime import date, datetime, timezone
 from decimal import Decimal
 
 import pytest
@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.account import Account
 from app.models.bank_connection import BankConnection
+from app.models.transaction import Transaction
 from app.models.user import User
 
 
@@ -89,6 +90,132 @@ async def test_create_same_currency_transfer(
 
     # Both share the same transfer_pair_id
     assert data["debit"]["transfer_pair_id"] == data["credit"]["transfer_pair_id"]
+
+
+@pytest_asyncio.fixture
+async def manual_accounts(client: AsyncClient, auth_headers) -> list[dict]:
+    """Two manual BRL accounts, whose balance is the sum of their rows."""
+    accounts = []
+    for name, balance in (("Checking", "2000.00"), ("Card", "700.00")):
+        response = await client.post(
+            "/api/accounts",
+            json={"name": name, "type": "checking", "balance": balance, "currency": "BRL"},
+            headers=auth_headers,
+        )
+        assert response.status_code == 201
+        accounts.append(response.json())
+    return accounts
+
+
+async def _balance(client: AsyncClient, auth_headers, account_id: str) -> Decimal:
+    response = await client.get(f"/api/accounts/{account_id}", headers=auth_headers)
+    assert response.status_code == 200
+    return Decimal(str(response.json()["current_balance"]))
+
+
+async def _create_rule(client: AsyncClient, headers, **rule) -> None:
+    response = await client.post(
+        "/api/rules",
+        json={"conditions_op": "and", "is_active": True, **rule},
+        headers=headers,
+    )
+    assert response.status_code == 201, response.text
+
+
+async def _transfer(client: AsyncClient, auth_headers, accounts, description: str) -> dict:
+    response = await client.post(
+        "/api/transactions/transfer",
+        json={
+            "from_account_id": accounts[0]["id"],
+            "to_account_id": accounts[1]["id"],
+            "amount": "500.00",
+            "date": "2025-01-15",
+            "description": description,
+        },
+        headers=auth_headers,
+    )
+    assert response.status_code == 201, response.text
+    return response.json()
+
+
+@pytest.mark.asyncio
+async def test_create_transfer_applies_rules_to_each_leg(
+    client: AsyncClient, auth_headers, manual_accounts, test_categories,
+    session: AsyncSession, test_user: User,
+):
+    """Both legs used to stay uncategorized until rules were run by hand (#1276)."""
+    from app.services.workspace_service import create_workspace
+
+    other = await create_workspace(
+        session, name="Other", creator=test_user, self_membership=True, seed_defaults=False
+    )
+    wrong = [{"op": "append_notes", "value": "#wrong"}]
+    match = [{"field": "description", "op": "contains", "value": "CARD PAYMENT"}]
+    await _create_rule(client, auth_headers, name="Inactive", conditions=match,
+                       actions=wrong, is_active=False)
+    await _create_rule(client, {**auth_headers, "X-Workspace-Id": str(other.id)},
+                       name="Other workspace", conditions=match, actions=wrong)
+    for leg_type, category in zip(("debit", "credit"), test_categories[:2]):
+        await _create_rule(
+            client, auth_headers,
+            name=f"Card payment {leg_type}",
+            conditions=[*match, {"field": "type", "op": "equals", "value": leg_type}],
+            actions=[
+                {"op": "set_category", "value": str(category.id)},
+                {"op": "append_notes", "value": f"#{leg_type}"},
+            ],
+        )
+
+    data = await _transfer(client, auth_headers, manual_accounts, "CARD PAYMENT 1234")
+
+    for leg_type, category in zip(("debit", "credit"), test_categories[:2]):
+        stored = (
+            await client.get(f"/api/transactions/{data[leg_type]['id']}", headers=auth_headers)
+        ).json()
+        for leg in (data[leg_type], stored):
+            assert leg["category_id"] == str(category.id)
+            assert leg["notes"] == f"#{leg_type}"
+            assert leg["transfer_pair_id"] == data["transfer_pair_id"]
+            assert Decimal(str(leg["amount"])) == Decimal("500.00")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("target_leg", ["debit", "credit"])
+@pytest.mark.parametrize("unsafe", ["ignore", "ignored_category"])
+async def test_create_transfer_rules_cannot_take_one_leg_out_of_balances(
+    client: AsyncClient, auth_headers, manual_accounts, test_categories, target_leg, unsafe,
+):
+    """A rule ignoring one leg would make the money arrive without leaving."""
+    if unsafe == "ignored_category":
+        category = await client.post(
+            "/api/categories",
+            json={"name": "Hidden from reports", "is_ignored": True},
+            headers=auth_headers,
+        )
+        assert category.status_code == 201
+        action = {"op": "set_category", "value": category.json()["id"]}
+    else:
+        action = {"op": "ignore", "value": True}
+    await _create_rule(
+        client, auth_headers, name="Unsafe", priority=1,
+        conditions=[{"field": "type", "op": "equals", "value": target_leg}],
+        actions=[action, {"op": "append_notes", "value": "#kept"}],
+    )
+    await _create_rule(
+        client, auth_headers, name="Safe", priority=10,
+        conditions=[{"field": "type", "op": "equals", "value": target_leg}],
+        actions=[{"op": "set_category", "value": str(test_categories[0].id)}],
+    )
+    before = [await _balance(client, auth_headers, a["id"]) for a in manual_accounts]
+
+    data = await _transfer(client, auth_headers, manual_accounts, "Move money")
+
+    after = [await _balance(client, auth_headers, a["id"]) for a in manual_accounts]
+    assert after == [before[0] - Decimal("500.00"), before[1] + Decimal("500.00")]
+    leg = data[target_leg]
+    assert leg["is_ignored"] is False
+    assert leg["category_id"] == str(test_categories[0].id)
+    assert leg["notes"] == "#kept"
 
 
 @pytest.mark.asyncio
@@ -377,8 +504,10 @@ async def test_delete_cascades_to_paired_transaction(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("new_amount", ["450.00", None], ids=["amount-change", "amount-omitted"])
 async def test_update_cascades_to_paired_transaction(
-    client: AsyncClient, auth_headers, test_account: Account, second_account: Account
+    client: AsyncClient, auth_headers, test_account: Account, second_account: Account,
+    new_amount,
 ):
     # Create transfer
     response = await client.post(
@@ -397,11 +526,14 @@ async def test_update_cascades_to_paired_transaction(
     debit_id = data["debit"]["id"]
     credit_id = data["credit"]["id"]
 
-    # Update debit description and date
+    # Update description and date, optionally changing the amount.
     new_date = "2025-06-15"
+    payload = {"description": "Updated description", "date": new_date}
+    if new_amount is not None:
+        payload["amount"] = new_amount
     update_response = await client.patch(
         f"/api/transactions/{debit_id}",
-        json={"description": "Updated description", "date": new_date},
+        json=payload,
         headers=auth_headers,
     )
     assert update_response.status_code == 200
@@ -414,6 +546,7 @@ async def test_update_cascades_to_paired_transaction(
     credit_data = credit_response.json()
     assert credit_data["description"] == "Updated description"
     assert credit_data["date"] == new_date
+    assert Decimal(str(credit_data["amount"])) == Decimal(new_amount or "300.00")
 
 
 @pytest.mark.asyncio
@@ -571,15 +704,54 @@ async def _create_manual_tx(
     return response.json()
 
 
+async def _insert_unpaired(
+    session: AsyncSession,
+    user: User,
+    account: Account,
+    *,
+    type: str,
+    amount: float,
+    description: str,
+    tx_date: str | None = None,
+) -> dict:
+    """A row sitting in the books that transfer detection has not seen.
+
+    Creating a transaction now pairs it when its other leg matches
+    (#1798), so tests about linking two rows by hand start from the
+    store, the way a row imported before pairing existed would.
+    """
+    transaction = Transaction(
+        id=uuid.uuid4(),
+        user_id=user.id,
+        account_id=account.id,
+        description=description,
+        amount=Decimal(str(amount)),
+        currency=account.currency,
+        date=date.fromisoformat(tx_date) if tx_date else date.today(),
+        type=type,
+        source="manual",
+        created_at=datetime.now(timezone.utc),
+    )
+    session.add(transaction)
+    await session.commit()
+    await session.refresh(transaction)
+    return {"id": str(transaction.id)}
+
+
 @pytest.mark.asyncio
 async def test_link_existing_transactions_as_transfer(
-    client: AsyncClient, auth_headers, test_account: Account, second_account: Account
+    client: AsyncClient,
+    auth_headers,
+    session: AsyncSession,
+    test_user: User,
+    test_account: Account,
+    second_account: Account,
 ):
-    debit = await _create_manual_tx(
-        client, auth_headers, test_account.id, type="debit", amount=200.00, description="Sent"
+    debit = await _insert_unpaired(
+        session, test_user, test_account, type="debit", amount=200.00, description="Sent"
     )
-    credit = await _create_manual_tx(
-        client, auth_headers, second_account.id, type="credit", amount=200.00, description="Received"
+    credit = await _insert_unpaired(
+        session, test_user, second_account, type="credit", amount=200.00, description="Received"
     )
 
     response = await client.post(
@@ -690,21 +862,27 @@ async def test_link_transfer_rejects_already_linked(
 
 @pytest.mark.asyncio
 async def test_link_transfer_excludes_from_reports(
-    client: AsyncClient, auth_headers, test_account: Account, second_account: Account
+    client: AsyncClient,
+    auth_headers,
+    session: AsyncSession,
+    test_user: User,
+    test_account: Account,
+    second_account: Account,
 ):
     """After linking, both transactions should be excluded when exclude_transfers=true."""
-    debit = await _create_manual_tx(
-        client, auth_headers, test_account.id, type="debit", amount=300.00, description="To exclude"
+    debit = await _insert_unpaired(
+        session, test_user, test_account, type="debit", amount=300.00, description="To exclude"
     )
-    credit = await _create_manual_tx(
-        client, auth_headers, second_account.id, type="credit", amount=300.00, description="To exclude"
+    credit = await _insert_unpaired(
+        session, test_user, second_account, type="credit", amount=300.00, description="To exclude"
     )
 
-    await client.post(
+    link_response = await client.post(
         "/api/transactions/link-transfer",
         json={"transaction_ids": [debit["id"], credit["id"]]},
         headers=auth_headers,
     )
+    assert link_response.status_code == 200
 
     list_response = await client.get(
         "/api/transactions", params={"exclude_transfers": True}, headers=auth_headers
@@ -718,31 +896,36 @@ async def test_link_transfer_excludes_from_reports(
 
 @pytest.mark.asyncio
 async def test_transfer_candidates_returns_ranked_matches(
-    client: AsyncClient, auth_headers, test_account: Account, second_account: Account
+    client: AsyncClient,
+    auth_headers,
+    session: AsyncSession,
+    test_user: User,
+    test_account: Account,
+    second_account: Account,
 ):
     """Closest date and amount candidates should rank first."""
     today = date.today()
-    anchor = await _create_manual_tx(
-        client, auth_headers, test_account.id,
+    anchor = await _insert_unpaired(
+        session, test_user, test_account,
         type="debit", amount=500.00, description="Anchor",
         tx_date=today.isoformat(),
     )
 
     # Best match: same date, exact amount
-    best = await _create_manual_tx(
-        client, auth_headers, second_account.id,
+    best = await _insert_unpaired(
+        session, test_user, second_account,
         type="credit", amount=500.00, description="Best",
         tx_date=today.isoformat(),
     )
     # Same amount but a few days off
-    far_date = await _create_manual_tx(
-        client, auth_headers, second_account.id,
+    far_date = await _insert_unpaired(
+        session, test_user, second_account,
         type="credit", amount=500.00, description="Far date",
         tx_date=(today - __import__("datetime").timedelta(days=5)).isoformat(),
     )
     # Same date but different amount
-    different_amount = await _create_manual_tx(
-        client, auth_headers, second_account.id,
+    different_amount = await _insert_unpaired(
+        session, test_user, second_account,
         type="credit", amount=499.00, description="Different amount",
         tx_date=today.isoformat(),
     )

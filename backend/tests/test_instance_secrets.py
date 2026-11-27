@@ -1,0 +1,797 @@
+"""An install with no SECRET_KEY of its own, or one of the public defaults that
+shipped with every install path (#1173), gets a unique key generated once and
+kept in the database, and the credentials encrypted with the public default
+move to it. Nothing has to be done by hand, and an install that set its own
+key keeps it.
+
+Most cases run on a SQLite file; the concurrency and JSON column cases need
+Postgres and run when POSTGRES_TEST_URL is set (CI sets it).
+"""
+from __future__ import annotations
+
+import asyncio
+import json
+import os
+import re
+import threading
+import time
+from pathlib import Path
+
+import pytest
+from pydantic import SecretStr
+from sqlalchemy import make_url, text
+from sqlalchemy.exc import OperationalError, ProgrammingError
+from sqlalchemy.ext.asyncio import create_async_engine
+from sqlalchemy.pool import NullPool
+
+from app.agents.services import crypto
+from app.core import instance_secrets as instance
+from app.core.config import Settings, resolve_secret_key
+from app.plugins import vault
+
+PUBLIC_DEFAULTS = [
+    "change-me-in-production",
+    "dev-secret-change-in-production",
+]
+OLD_COMPOSE_DEFAULT = "dev-secret-change-in-production"
+
+
+def run(coro):
+    return asyncio.run(coro)
+
+
+async def execute(url: str, *statements: tuple[str, dict]) -> None:
+    engine = create_async_engine(url, poolclass=NullPool)
+    try:
+        async with engine.begin() as conn:
+            for sql, params in statements:
+                await conn.execute(text(sql), params)
+    finally:
+        await engine.dispose()
+
+
+async def fetch(url: str, sql: str, params: dict | None = None) -> list:
+    engine = create_async_engine(url, poolclass=NullPool)
+    try:
+        async with engine.connect() as conn:
+            return list((await conn.execute(text(sql), params or {})).all())
+    finally:
+        await engine.dispose()
+
+
+@pytest.fixture
+def db_url(tmp_path: Path) -> str:
+    return f"sqlite+aiosqlite:///{tmp_path / 'instance.sqlite'}"
+
+
+def settings_for(url: str, secret_key: str | None, monkeypatch) -> Settings:
+    if secret_key is None:
+        monkeypatch.delenv("SECRET_KEY", raising=False)
+    else:
+        monkeypatch.setenv("SECRET_KEY", secret_key)
+    return resolve_secret_key(Settings(_env_file=None, _secrets_dir=None, database_url=url))
+
+
+def stored(url: str, name: str = instance.SECRET_KEY_NAME) -> list[str]:
+    return [v for (v,) in run(fetch(url, "SELECT value FROM instance_secrets WHERE name = :n", {"n": name}))]
+
+
+# --- Which key the instance uses ---------------------------------------------
+
+def test_unset_secret_key_generates_one_and_keeps_it(db_url, monkeypatch):
+    first = settings_for(db_url, None, monkeypatch).secret_key.get_secret_value()
+
+    assert re.fullmatch(r"[0-9a-f]{64}", first)
+    assert stored(db_url) == [first]
+    # A restart, or the worker next to the API, reads the same key.
+    again = settings_for(db_url, None, monkeypatch).secret_key.get_secret_value()
+    assert again == first
+    # Long enough to save provider credentials in Admin Settings.
+    assert len(first) >= 32
+
+
+@pytest.mark.parametrize("value", ["", "   ", *PUBLIC_DEFAULTS, f" {OLD_COMPOSE_DEFAULT}\n"])
+def test_public_or_blank_secret_key_is_replaced(db_url, monkeypatch, value):
+    settings = settings_for(db_url, value, monkeypatch)
+    key = settings.secret_key.get_secret_value()
+
+    assert key not in PUBLIC_DEFAULTS
+    assert "change" not in key
+    assert stored(db_url) == [key]
+    # The public default is only ever tried to open old ciphertexts.
+    assert set(PUBLIC_DEFAULTS) <= set(settings.secret_key_fallbacks)
+    assert key not in settings.secret_key_fallbacks
+
+
+def test_public_secret_key_from_secrets_dir_is_replaced(db_url, monkeypatch, tmp_path):
+    secrets_dir = tmp_path / "secrets"
+    secrets_dir.mkdir()
+    (secrets_dir / "secret_key").write_text("change-me-in-production\n")
+    monkeypatch.delenv("SECRET_KEY", raising=False)
+
+    settings = resolve_secret_key(
+        Settings(_env_file=None, _secrets_dir=str(secrets_dir), database_url=db_url)
+    )
+
+    assert settings.secret_key.get_secret_value() == stored(db_url)[0]
+
+
+@pytest.mark.parametrize("value", [None, "", "   ", *PUBLIC_DEFAULTS, f" {OLD_COMPOSE_DEFAULT}\n"])
+def test_required_secret_key_missing_or_public_refuses_to_start(db_url, monkeypatch, value):
+    monkeypatch.setenv("REQUIRE_SECRET_KEY", "true")
+
+    with pytest.raises(RuntimeError, match="REQUIRE_SECRET_KEY"):
+        settings_for(db_url, value, monkeypatch)
+
+    # Refused before the database was touched.
+    assert run(fetch(db_url, "SELECT name FROM sqlite_master WHERE name = 'instance_secrets'")) == []
+
+
+def test_required_secret_key_refuses_even_with_a_stored_key(db_url, monkeypatch):
+    generated = settings_for(db_url, None, monkeypatch).secret_key.get_secret_value()
+    monkeypatch.setenv("REQUIRE_SECRET_KEY", "true")
+
+    with pytest.raises(RuntimeError, match="REQUIRE_SECRET_KEY"):
+        settings_for(db_url, None, monkeypatch)
+
+    # Giving the instance a key of its own starts it, and what the stored key
+    # encrypted still opens.
+    settings = settings_for(db_url, "a-unique-value-only-this-install-knows", monkeypatch)
+    assert settings.secret_key.get_secret_value() == "a-unique-value-only-this-install-knows"
+    assert settings.secret_key_fallbacks[0] == generated
+
+
+def test_own_secret_key_is_kept_and_nothing_is_written(db_url, monkeypatch):
+    settings = settings_for(db_url, "a-unique-value-only-this-install-knows", monkeypatch)
+
+    assert settings.secret_key.get_secret_value() == "a-unique-value-only-this-install-knows"
+    # An install that manages its own key gets no table and no generated key.
+    assert run(fetch(db_url, "SELECT name FROM sqlite_master WHERE name = 'instance_secrets'")) == []
+
+
+def test_own_secret_key_set_later_still_opens_what_the_instance_key_encrypted(db_url, monkeypatch):
+    generated = settings_for(db_url, None, monkeypatch).secret_key.get_secret_value()
+
+    settings = settings_for(db_url, "a-unique-value-only-this-install-knows", monkeypatch)
+
+    assert settings.secret_key.get_secret_value() == "a-unique-value-only-this-install-knows"
+    assert settings.secret_key_fallbacks[0] == generated
+
+
+def test_own_secret_key_starts_when_the_database_is_down(monkeypatch):
+    settings = settings_for(
+        "postgresql+asyncpg://nobody:nothing@127.0.0.1:1/none", "a-unique-value-only-this-install-knows",
+        monkeypatch,
+    )
+
+    assert settings.secret_key.get_secret_value() == "a-unique-value-only-this-install-knows"
+
+
+def test_missing_key_and_unreachable_database_fail_clearly(monkeypatch):
+    monkeypatch.setattr(instance, "_CONNECT_DEADLINE_SECONDS", 0.0)
+
+    with pytest.raises(RuntimeError, match="instance secret_key"):
+        settings_for("postgresql+asyncpg://nobody:nothing@127.0.0.1:1/none", None, monkeypatch)
+
+
+def test_missing_key_waits_for_the_database(db_url, monkeypatch):
+    """Compose and Helm start the API next to a database still coming up."""
+    calls = {"n": 0}
+    real = instance._fetch_or_create
+
+    async def flaky(*args, **kwargs):
+        calls["n"] += 1
+        if calls["n"] < 3:
+            raise ConnectionRefusedError("database starting")
+        return await real(*args, **kwargs)
+
+    monkeypatch.setattr(instance, "_fetch_or_create", flaky)
+    monkeypatch.setattr(instance.time, "sleep", lambda _s: None)
+
+    key = settings_for(db_url, None, monkeypatch).secret_key.get_secret_value()
+
+    assert calls["n"] == 3
+    assert stored(db_url) == [key]
+
+
+def test_settings_resolve_inside_a_running_event_loop(db_url, monkeypatch):
+    """uvicorn imports the app, and so first reads the settings, from inside
+    its event loop."""
+    async def inside_loop():
+        return settings_for(db_url, None, monkeypatch).secret_key.get_secret_value()
+
+    key = asyncio.run(inside_loop())
+
+    assert stored(db_url) == [key]
+
+
+# --- Saved credentials move to the new key ------------------------------------
+
+def seed_credentials(url: str, old_key: str) -> dict:
+    agents_old = crypto.fernet_for(old_key)
+    plugins_old = vault.fernet_for(old_key)
+    unrelated = crypto.fernet_for("some-other-install-key")
+    values = {
+        "llm": agents_old.encrypt(b"sk-llm-key").decode(),
+        "plugin": plugins_old.encrypt(json.dumps({"token": "plugin-token"}).encode()).decode(),
+        "simplefin": agents_old.encrypt(b"https://user:pass@bridge.example/simplefin").decode(),
+        "enable_banking": agents_old.encrypt(b"eb-session-id").decode(),
+        "setting": agents_old.encrypt(b"pluggy-client-secret").decode(),
+        "unreadable": unrelated.encrypt(b"lost-already").decode(),
+    }
+    run(execute(
+        url,
+        ("CREATE TABLE agent_llm_connections (id INTEGER PRIMARY KEY, api_key_encrypted TEXT)", {}),
+        ("CREATE TABLE plugin_connections (id INTEGER PRIMARY KEY, secrets TEXT)", {}),
+        ("CREATE TABLE bank_connections (id INTEGER PRIMARY KEY, credentials TEXT)", {}),
+        ("CREATE TABLE app_settings (key TEXT PRIMARY KEY, value TEXT)", {}),
+        ("INSERT INTO agent_llm_connections VALUES (1, :v), (2, NULL), (3, :u)",
+         {"v": values["llm"], "u": values["unreadable"]}),
+        ("INSERT INTO plugin_connections VALUES (1, :v)", {"v": values["plugin"]}),
+        ("INSERT INTO bank_connections VALUES (1, :a), (2, :b), (3, :c), (4, NULL)", {
+            "a": json.dumps({"access_url_enc": values["simplefin"], "other": "kept"}),
+            "b": json.dumps({"session_id_enc": values["enable_banking"], "valid_until": "2027-01-01"}),
+            # Pluggy keeps only an item id, which isn't encrypted.
+            "c": json.dumps({"item_id": "item-123"}),
+        }),
+        ("INSERT INTO app_settings VALUES ('pluggy_client_secret', :v), ('simplefin_enabled', 'true'),"
+         " ('timezone', 'Europe/Paris')", {"v": values["setting"]}),
+    ))
+    return values
+
+
+def read_credentials(url: str) -> dict:
+    return {
+        "llm": dict(run(fetch(url, "SELECT id, api_key_encrypted FROM agent_llm_connections"))),
+        "plugin": run(fetch(url, "SELECT secrets FROM plugin_connections"))[0][0],
+        "bank": {i: (json.loads(c) if c else None) for i, c in run(fetch(url, "SELECT id, credentials FROM bank_connections"))},
+        "settings": dict(run(fetch(url, "SELECT key, value FROM app_settings"))),
+    }
+
+
+@pytest.mark.parametrize("old_key", PUBLIC_DEFAULTS)
+def test_credentials_under_a_public_default_move_to_the_new_key(db_url, monkeypatch, old_key):
+    seeded = seed_credentials(db_url, old_key)
+
+    new_key = settings_for(db_url, old_key, monkeypatch).secret_key.get_secret_value()
+
+    after = read_credentials(db_url)
+    agents_new = crypto.fernet_for(new_key)
+    agents_old = crypto.fernet_for(old_key)
+    assert agents_new.decrypt(after["llm"][1].encode()) == b"sk-llm-key"
+    assert after["llm"][2] is None
+    assert after["llm"][3] == seeded["unreadable"]  # never readable: left alone
+    assert json.loads(vault.fernet_for(new_key).decrypt(after["plugin"].encode())) == {"token": "plugin-token"}
+    assert agents_new.decrypt(after["bank"][1]["access_url_enc"].encode()) == (
+        b"https://user:pass@bridge.example/simplefin"
+    )
+    assert after["bank"][1]["other"] == "kept"
+    assert agents_new.decrypt(after["bank"][2]["session_id_enc"].encode()) == b"eb-session-id"
+    assert after["bank"][2]["valid_until"] == "2027-01-01"
+    assert after["bank"][3] == {"item_id": "item-123"}
+    assert after["bank"][4] is None
+    assert agents_new.decrypt(after["settings"]["pluggy_client_secret"].encode()) == b"pluggy-client-secret"
+    assert after["settings"]["simplefin_enabled"] == "true"
+    assert after["settings"]["timezone"] == "Europe/Paris"
+    # The public key no longer opens anything that was moved.
+    for token in (after["llm"][1], after["bank"][1]["access_url_enc"], after["settings"]["pluggy_client_secret"]):
+        with pytest.raises(Exception):
+            agents_old.decrypt(token.encode())
+
+
+def test_unset_key_moves_credentials_the_old_compose_default_encrypted(db_url, monkeypatch):
+    """The new Compose file drops the default, so the environment comes in
+    empty, while the data was encrypted with the default the old file set."""
+    seed_credentials(db_url, OLD_COMPOSE_DEFAULT)
+
+    new_key = settings_for(db_url, "", monkeypatch).secret_key.get_secret_value()
+
+    after = read_credentials(db_url)
+    assert crypto.fernet_for(new_key).decrypt(after["llm"][1].encode()) == b"sk-llm-key"
+
+
+def test_credentials_move_only_once(db_url, monkeypatch):
+    seed_credentials(db_url, OLD_COMPOSE_DEFAULT)
+    settings_for(db_url, OLD_COMPOSE_DEFAULT, monkeypatch)
+    first = read_credentials(db_url)
+
+    settings_for(db_url, OLD_COMPOSE_DEFAULT, monkeypatch)
+
+    assert read_credentials(db_url) == first
+
+
+def test_a_failed_move_stores_no_key(db_url, monkeypatch):
+    """Key and re-encrypted values commit together, or neither does."""
+    seed_credentials(db_url, OLD_COMPOSE_DEFAULT)
+    before = read_credentials(db_url)
+
+    def broken(_old):
+        async def hook(conn, new_key):
+            await conn.execute(text("UPDATE agent_llm_connections SET api_key_encrypted = 'x'"))
+            raise ValueError("boom")
+        return hook
+
+    monkeypatch.setattr(instance, "reencrypt_with", broken)
+    with pytest.raises(ValueError, match="boom"):
+        settings_for(db_url, OLD_COMPOSE_DEFAULT, monkeypatch)
+
+    assert stored(db_url) == []
+    assert read_credentials(db_url) == before
+
+
+# --- Reading and writing through the app's helpers ----------------------------
+
+@pytest.fixture
+def app_settings(db_url, monkeypatch):
+    """Point crypto and the plugin vault at settings resolved for db_url."""
+    def use(secret_key):
+        settings = settings_for(db_url, secret_key, monkeypatch)
+        monkeypatch.setattr(crypto, "get_settings", lambda: settings)
+        monkeypatch.setattr(vault, "get_settings", lambda: settings)
+        crypto._fernet.cache_clear()
+        return settings
+    yield use
+    crypto._fernet.cache_clear()
+
+
+def test_value_written_with_the_public_default_after_the_move_still_opens(app_settings):
+    """A worker still on the old key during an upgrade can write one more
+    value with it; the new key's processes must still read it."""
+    settings = app_settings(OLD_COMPOSE_DEFAULT)
+    late = crypto.fernet_for(OLD_COMPOSE_DEFAULT).encrypt(b"late-write").decode()
+    late_sealed = vault.fernet_for(OLD_COMPOSE_DEFAULT).encrypt(b'{"k": "v"}').decode()
+
+    assert crypto.decrypt(late) == "late-write"
+    assert vault.unseal(late_sealed) == {"k": "v"}
+    # New values use the instance key only.
+    fresh = crypto.encrypt("fresh")
+    assert fresh is not None
+    key = settings.secret_key.get_secret_value()
+    assert crypto.fernet_for(key).decrypt(fresh.encode()) == b"fresh"
+    with pytest.raises(Exception):
+        crypto.fernet_for(OLD_COMPOSE_DEFAULT).decrypt(fresh.encode())
+
+
+def test_own_key_set_after_the_instance_key_keeps_credentials_readable(app_settings):
+    generated = app_settings(None).secret_key.get_secret_value()
+    saved = crypto.encrypt("bank-token")
+    sealed = vault.seal({"api_key": "x"})
+
+    app_settings("a-unique-value-only-this-install-knows")
+
+    assert crypto.decrypt(saved) == "bank-token"
+    assert vault.unseal(sealed) == {"api_key": "x"}
+    assert generated != "a-unique-value-only-this-install-knows"
+
+
+def test_unrelated_ciphertext_still_reads_as_missing(app_settings):
+    app_settings(None)
+    stranger = crypto.fernet_for("another-install").encrypt(b"x").decode()
+
+    assert crypto.decrypt(stranger) is None
+    with pytest.raises(vault.SealBroken):
+        vault.unseal(vault.fernet_for("another-install").encrypt(b"{}").decode())
+
+
+# --- Sessions -----------------------------------------------------------------
+
+def test_tokens_signed_with_a_public_default_are_refused(db_url, monkeypatch):
+    """Fallback keys open saved credentials only. A session token forged with
+    the public default must not verify."""
+    import jwt as pyjwt
+
+    from fastapi_users.jwt import decode_jwt, generate_jwt
+
+    import warnings
+
+    settings = settings_for(db_url, OLD_COMPOSE_DEFAULT, monkeypatch)
+    with warnings.catch_warnings():
+        # The public default is shorter than pyjwt recommends; that's the point.
+        warnings.simplefilter("ignore")
+        forged = generate_jwt({"sub": "admin", "aud": ["fastapi-users:auth"]}, OLD_COMPOSE_DEFAULT, 60)
+
+    with pytest.raises(pyjwt.InvalidSignatureError):
+        decode_jwt(forged, settings.secret_key.get_secret_value(), ["fastapi-users:auth"])
+
+
+# --- Postgres -------------------------------------------------------------------
+
+PG_URL = os.environ.get("POSTGRES_TEST_URL")
+needs_pg = pytest.mark.skipif(not PG_URL, reason="POSTGRES_TEST_URL not set")
+
+
+@pytest.fixture
+def pg_url():
+    assert PG_URL
+    url = PG_URL if "+asyncpg" in PG_URL else PG_URL.replace("postgresql://", "postgresql+asyncpg://", 1)
+    drop = [
+        ("DROP TABLE IF EXISTS instance_secrets", {}),
+        ("DROP TABLE IF EXISTS agent_llm_connections", {}),
+        ("DROP TABLE IF EXISTS plugin_connections", {}),
+        ("DROP TABLE IF EXISTS bank_connections", {}),
+        ("DROP TABLE IF EXISTS app_settings", {}),
+    ]
+    run(execute(url, *drop))
+    yield url
+    run(execute(url, *drop))
+
+
+@needs_pg
+def test_processes_starting_together_agree_on_one_key(pg_url, monkeypatch):
+    """API, worker, beat, migrate and the MCP server start at once. Exactly
+    one of them generates the key and moves the credentials."""
+    old = OLD_COMPOSE_DEFAULT
+    run(execute(
+        pg_url,
+        ("CREATE TABLE agent_llm_connections (id INTEGER PRIMARY KEY, api_key_encrypted TEXT)", {}),
+        ("INSERT INTO agent_llm_connections VALUES (1, :v)",
+         {"v": crypto.fernet_for(old).encrypt(b"sk-llm-key").decode()}),
+        # The table can already exist (another instance value came first), so
+        # creating it does not serialize the processes by itself.
+        ("CREATE TABLE instance_secrets (name VARCHAR(64) PRIMARY KEY, value TEXT NOT NULL,"
+         " created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)", {}),
+        ("INSERT INTO instance_secrets (name, value) VALUES ('another_value', 'x')", {}),
+    ))
+    monkeypatch.setenv("SECRET_KEY", old)
+    keys: list[str] = []
+    errors: list[BaseException] = []
+    start = threading.Barrier(8)
+
+    def boot():
+        try:
+            start.wait()
+            settings = resolve_secret_key(Settings(_env_file=None, database_url=pg_url))
+            keys.append(settings.secret_key.get_secret_value())
+        except BaseException as exc:
+            errors.append(exc)
+
+    threads = [threading.Thread(target=boot) for _ in range(8)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert errors == []
+    assert len(set(keys)) == 1
+    assert stored(pg_url) == keys[:1]
+    (token,) = run(fetch(pg_url, "SELECT api_key_encrypted FROM agent_llm_connections"))[0]
+    # Moved exactly once: a second move would have failed to open it with the
+    # public key and left it as is, so this alone can't tell. The key check
+    # above and the single stored row can.
+    assert crypto.fernet_for(keys[0]).decrypt(token.encode()) == b"sk-llm-key"
+
+
+@needs_pg
+def test_bank_credentials_json_column_on_postgres(pg_url, monkeypatch):
+    old = OLD_COMPOSE_DEFAULT
+    enc = crypto.fernet_for(old).encrypt(b"https://bridge.example/simplefin").decode()
+    run(execute(
+        pg_url,
+        ("CREATE TABLE bank_connections (id UUID PRIMARY KEY, credentials JSON)", {}),
+        ("INSERT INTO bank_connections VALUES ('00000000-0000-0000-0000-000000000001', CAST(:c AS JSON))",
+         {"c": json.dumps({"access_url_enc": enc, "other": 1})}),
+    ))
+
+    key = settings_for(pg_url, old, monkeypatch).secret_key.get_secret_value()
+
+    (creds,) = run(fetch(pg_url, "SELECT credentials FROM bank_connections"))[0]
+    creds = json.loads(creds) if isinstance(creds, str) else creds
+    assert crypto.fernet_for(key).decrypt(creds["access_url_enc"].encode()) == b"https://bridge.example/simplefin"
+    assert creds["other"] == 1
+
+
+def test_settings_secret_key_is_a_secretstr(db_url, monkeypatch):
+    assert isinstance(settings_for(db_url, None, monkeypatch).secret_key, SecretStr)
+
+
+# --- Entry points ---------------------------------------------------------------
+
+@pytest.mark.parametrize("module", [
+    "app.core.database",  # what alembic's env.py and every model import first
+    "app.main",
+    "app.worker",
+    "mcp_server.main",
+])
+def test_entry_points_start_without_a_secret_key(tmp_path, module):
+    """Settings first load while app.core.database imports, so generating the
+    key and moving credentials must not need the models or services."""
+    import subprocess
+    import sys
+
+    url = f"sqlite+aiosqlite:///{tmp_path / 'boot.sqlite'}"
+    env = {k: v for k, v in os.environ.items() if k not in ("SECRET_KEY", "AGENTS_MCP_JWT_SECRET")}
+    env.update(DATABASE_URL=url, CREDENTIALS_DIRECTORY="", AGENTS_ENABLED="true")
+    done = subprocess.run(
+        [sys.executable, "-c", f"import {module}"],
+        cwd=Path(__file__).resolve().parents[1], env=env, capture_output=True, text=True, timeout=120,
+    )
+
+    assert done.returncode == 0, done.stderr[-2000:]
+    assert len(stored(url)) == 1
+
+
+# --- Review follow-ups ------------------------------------------------------------
+
+def test_stored_key_missed_at_startup_is_read_once_the_database_answers(db_url, monkeypatch):
+    """An install that set its own key after running on the instance key:
+    if the database is still starting when settings load, the instance key
+    must not be dropped from the fallbacks for the life of the process."""
+    generated = settings_for(db_url, None, monkeypatch).secret_key.get_secret_value()
+    settings = settings_for(db_url, "a-unique-value-only-this-install-knows", monkeypatch)
+    real_read = instance.read_existing
+    calls = {"n": 0}
+
+    def flaky(url, name):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise ConnectionRefusedError("database starting")
+        return real_read(url, name)
+
+    monkeypatch.setattr(instance, "read_existing", flaky)
+
+    assert generated not in settings.secret_key_fallbacks  # first look fails
+    assert settings.secret_key_fallbacks[0] == generated  # next one reads it
+    assert settings.secret_key_fallbacks[0] == generated
+    assert calls["n"] == 2  # kept once read
+
+
+@pytest.mark.parametrize("raw", [f" {OLD_COMPOSE_DEFAULT}\n", "", "   "])
+def test_credentials_under_the_exact_old_value_move(db_url, monkeypatch, raw):
+    """Values were encrypted with SECRET_KEY exactly as set: padded, or an
+    explicitly empty value."""
+    seed_credentials(db_url, raw)
+
+    settings = settings_for(db_url, raw, monkeypatch)
+    new_key = settings.secret_key.get_secret_value()
+
+    after = read_credentials(db_url)
+    assert crypto.fernet_for(new_key).decrypt(after["llm"][1].encode()) == b"sk-llm-key"
+    assert json.loads(vault.fernet_for(new_key).decrypt(after["plugin"].encode())) == {"token": "plugin-token"}
+    assert raw in settings.secret_key_fallbacks
+
+
+def test_value_under_an_empty_legacy_key_still_opens(app_settings):
+    app_settings("")
+    legacy = crypto.fernet_for("").encrypt(b"legacy").decode()
+    sealed = vault.fernet_for("").encrypt(b'{"k": 1}').decode()
+
+    assert crypto.decrypt(legacy) == "legacy"
+    assert vault.unseal(sealed) == {"k": 1}
+
+
+def test_stored_key_is_never_read_from_the_event_loop(db_url, monkeypatch):
+    """A request must not wait on the database for it: inside the loop the
+    fallbacks come back without it, and a thread (the API's startup task)
+    loads it."""
+    generated = settings_for(db_url, None, monkeypatch).secret_key.get_secret_value()
+    settings = settings_for(db_url, "a-unique-value-only-this-install-knows", monkeypatch)
+    reads = {"n": 0}
+    real_read = instance.read_existing
+
+    def counting(url, name):
+        reads["n"] += 1
+        return real_read(url, name)
+
+    monkeypatch.setattr(instance, "read_existing", counting)
+
+    async def in_loop():
+        before = settings.secret_key_fallbacks
+        after = await asyncio.to_thread(lambda: settings.secret_key_fallbacks)
+        return before, after
+
+    before, after = asyncio.run(in_loop())
+
+    assert generated not in before
+    assert after[0] == generated
+    assert reads["n"] == 1
+
+
+def test_startup_loader_reports_when_done(db_url, monkeypatch):
+    from app.core import config as core_config
+
+    settings_for(db_url, None, monkeypatch)
+    settings = settings_for(db_url, "a-unique-value-only-this-install-knows", monkeypatch)
+    monkeypatch.setattr(core_config, "get_settings", lambda: settings)
+
+    assert core_config.load_stored_secret_key() is True
+    assert settings.secret_key_fallbacks[0] == stored(db_url)[0]
+
+
+@needs_pg
+def test_the_move_locks_the_rows_it_rewrites(pg_url, monkeypatch):
+    """A reconnect committing new credentials while the move runs must not be
+    overwritten by the re-encrypted older value: the move holds the rows."""
+    old = OLD_COMPOSE_DEFAULT
+    enc = crypto.fernet_for(old).encrypt(b"old-url").decode()
+    run(execute(
+        pg_url,
+        ("CREATE TABLE bank_connections (id INTEGER PRIMARY KEY, credentials JSON)", {}),
+        ("INSERT INTO bank_connections VALUES (1, CAST(:c AS JSON)), (2, CAST(:d AS JSON))",
+         {"c": json.dumps({"access_url_enc": enc}), "d": json.dumps({"item_id": "item-2"})}),
+    ))
+    real_move = instance.reencrypt_with
+    blocked = {}
+
+    def move_then_probe(old_keys):
+        hook = real_move(old_keys)
+
+        async def wrapped(conn, new_key):
+            await hook(conn, new_key)
+            # While the move's transaction is open, another connection can't
+            # take a row it read, even one it had nothing to rewrite in (a
+            # reconnect could be about to give it encrypted credentials).
+            engine = create_async_engine(pg_url, poolclass=NullPool)
+            try:
+                async with engine.connect() as other:
+                    await other.execute(text("SET lock_timeout = '200ms'"))
+                    try:
+                        await other.execute(text("SELECT id FROM bank_connections WHERE id = 2 FOR UPDATE"))
+                        blocked["row"] = False
+                    except Exception:
+                        blocked["row"] = True
+            finally:
+                await engine.dispose()
+
+        return wrapped
+
+    monkeypatch.setattr(instance, "reencrypt_with", move_then_probe)
+    settings_for(pg_url, old, monkeypatch)
+
+    assert blocked == {"row": True}
+
+
+# --- Refusals fail at once (#601) --------------------------------------------
+
+class _PgError(Exception):
+    def __init__(self, sqlstate: str | None):
+        super().__init__(f"sqlstate {sqlstate}")
+        self.sqlstate = sqlstate
+
+
+def _no_waiting(monkeypatch):
+    """A long deadline, and any wait fails the test."""
+    monkeypatch.setattr(instance, "_CONNECT_DEADLINE_SECONDS", 3600.0)
+
+    def no_sleep(_seconds):
+        raise AssertionError("retried a refusal")
+
+    monkeypatch.setattr(instance.time, "sleep", no_sleep)
+
+
+@pytest.mark.parametrize("sqlstate", ["42501", "28P01"])
+def test_a_refusal_is_not_retried(db_url, monkeypatch, sqlstate):
+    """Permission denied or a wrong password: the database answered, so
+    waiting only delays the same error and blames the network for it."""
+    calls = {"n": 0}
+
+    async def refused(*args, **kwargs):
+        calls["n"] += 1
+        raise ProgrammingError("CREATE TABLE IF NOT EXISTS instance_secrets", {}, _PgError(sqlstate))
+
+    monkeypatch.setattr(instance, "_fetch_or_create", refused)
+    _no_waiting(monkeypatch)
+
+    with pytest.raises(RuntimeError, match="refused") as caught:
+        settings_for(db_url, None, monkeypatch)
+
+    assert calls["n"] == 1
+    assert "SECRET_KEY" in str(caught.value)
+    assert "Could not reach" not in str(caught.value)
+
+
+@pytest.mark.parametrize("sqlstate", [None, "57P03", "08006"])
+def test_an_outage_is_still_retried(db_url, monkeypatch, sqlstate):
+    calls = {"n": 0}
+    real = instance._fetch_or_create
+
+    async def starting(*args, **kwargs):
+        calls["n"] += 1
+        if calls["n"] < 3:
+            raise OperationalError("SELECT 1", {}, _PgError(sqlstate))
+        return await real(*args, **kwargs)
+
+    monkeypatch.setattr(instance, "_fetch_or_create", starting)
+    monkeypatch.setattr(instance.time, "sleep", lambda _s: None)
+
+    key = settings_for(db_url, None, monkeypatch).secret_key.get_secret_value()
+
+    assert calls["n"] == 3
+    assert stored(db_url) == [key]
+
+
+def test_row_security_without_a_secret_key_fails_at_once(monkeypatch):
+    """The restricted role can't read or create the stored key (ADR 0043),
+    so asking the database is pointless: say what to set instead."""
+    monkeypatch.setenv("ROW_SECURITY_ENABLED", "true")
+    called = {"n": 0}
+
+    def must_not_run(*args, **kwargs):
+        called["n"] += 1
+        raise AssertionError("asked the database for the instance key")
+
+    monkeypatch.setattr(instance, "fetch_or_create", must_not_run)
+
+    for value in (None, "", "change-me-in-production"):
+        with pytest.raises(RuntimeError, match="ROW_SECURITY_ENABLED needs its own SECRET_KEY"):
+            settings_for("postgresql+asyncpg://nobody:nothing@127.0.0.1:1/none", value, monkeypatch)
+    assert called["n"] == 0
+
+
+def test_row_security_startup_error_keeps_an_existing_install_on_its_stored_key(
+    app_settings, db_url, monkeypatch
+):
+    """An install that ran without SECRET_KEY encrypted its credentials with
+    the stored key. The error must lead it back to that key, not to a new one."""
+    generated = app_settings(None).secret_key.get_secret_value()
+    saved = crypto.encrypt("bank-token")
+    monkeypatch.setenv("ROW_SECURITY_ENABLED", "true")
+
+    with pytest.raises(RuntimeError) as refused:
+        app_settings(None)
+    message = str(refused.value)
+    query = re.search(r"`(SELECT [^`]+)`", message)
+    assert query is not None, message
+    assert "openssl rand -hex 32" in message  # still the advice for a new install
+
+    # The query the message gives, run as the owner, returns the stored key...
+    assert [v for (v,) in run(fetch(db_url, query.group(1)))] == [generated]
+    # ...and with it the saved credentials still open under row security.
+    app_settings(generated)
+    assert crypto.decrypt(saved) == "bank-token"
+    # A new key instead would have lost them: that's why the message tells apart.
+    app_settings("a-new-key-generated-after-the-error")
+    assert crypto.decrypt(saved) is None
+
+
+def test_row_security_with_its_own_key_never_reads_the_stored_one(monkeypatch):
+    """Each attempt would fail with permission denied and log a warning, on
+    every use of the fallbacks for the life of the process."""
+    monkeypatch.setenv("ROW_SECURITY_ENABLED", "true")
+    reads = {"n": 0}
+
+    def denied(*args, **kwargs):
+        reads["n"] += 1
+        raise PermissionError("permission denied for table instance_secrets")
+
+    monkeypatch.setattr(instance, "read_existing", denied)
+
+    settings = settings_for(
+        "postgresql+asyncpg://nobody:nothing@127.0.0.1:1/none",
+        "a-unique-value-only-this-install-knows",
+        monkeypatch,
+    )
+
+    assert settings.secret_key.get_secret_value() == "a-unique-value-only-this-install-knows"
+    assert set(PUBLIC_DEFAULTS) <= set(settings.secret_key_fallbacks)
+    assert set(PUBLIC_DEFAULTS) <= set(settings.secret_key_fallbacks)
+    assert reads["n"] == 0
+
+
+@pytest.fixture
+def restricted_url(pg_url):
+    """A role like the one apply-row-security sets up: it may use the schema
+    but not create tables in it."""
+    role = "securo_secrets_probe"
+    run(execute(
+        pg_url,
+        (f"DROP ROLE IF EXISTS {role}", {}),
+        (f"CREATE ROLE {role} LOGIN PASSWORD 'probe' NOSUPERUSER", {}),
+        ("REVOKE CREATE ON SCHEMA public FROM PUBLIC", {}),
+        (f"GRANT USAGE ON SCHEMA public TO {role}", {}),
+    ))
+    url = make_url(pg_url).set(username=role, password="probe")
+    yield url.render_as_string(hide_password=False)
+    run(execute(pg_url, (f"DROP OWNED BY {role}", {}), (f"DROP ROLE IF EXISTS {role}", {})))
+
+
+@needs_pg
+def test_a_role_that_cant_create_the_table_fails_at_once(restricted_url, monkeypatch):
+    _no_waiting(monkeypatch)
+    monkeypatch.delenv("ROW_SECURITY_ENABLED", raising=False)
+
+    started = time.monotonic()
+    with pytest.raises(RuntimeError, match="refused") as caught:
+        settings_for(restricted_url, None, monkeypatch)
+
+    assert time.monotonic() - started < 10
+    assert "permission denied" in str(caught.value)

@@ -505,6 +505,53 @@ async def test_create_with_tools_scopes_the_agent_in_one_step(
     assert allowed == {("securo", "list_budgets"), ("securo", "get_budget_vs_actual")}
 
 
+def _discover_returning(*names: str):
+    from app.agents.mcp.client import ToolHandle
+
+    async def _discover(self, *, user_id, workspace_id=None, conversation_id=None, agent_id=None):
+        return [ToolHandle(server="securo", name=n, description="", parameters={}) for n in names]
+    return patch("app.agents.api.agents.MCPRegistry.discover", new=_discover)
+
+
+async def test_create_without_tools_enables_every_discovered_tool(
+    client: AsyncClient, auth_headers: dict, session: AsyncSession
+):
+    from app.agents.services.agent_service import allowed_tool_pairs
+
+    with _discover_returning("list_accounts", "list_budgets"):
+        resp = await client.post("/api/agents", headers=auth_headers, json={"name": "All"})
+    assert resp.status_code == 201, resp.text
+    allowed = await allowed_tool_pairs(session, uuid.UUID(resp.json()["id"]))
+    assert allowed == {("securo", "list_accounts"), ("securo", "list_budgets")}
+
+
+async def test_create_with_empty_tools_has_no_tools(
+    client: AsyncClient, auth_headers: dict, session: AsyncSession
+):
+    from app.agents.services.agent_service import allowed_tool_pairs
+
+    with _discover_returning("list_accounts"):
+        resp = await client.post("/api/agents", headers=auth_headers, json={"name": "None", "tools": []})
+        assert resp.status_code == 201, resp.text
+        aid = resp.json()["id"]
+        listing = (await client.get(f"/api/agents/{aid}/tools", headers=auth_headers)).json()
+    assert await allowed_tool_pairs(session, uuid.UUID(aid)) == set()
+    assert [t["enabled"] for t in listing["tools"]] == [False]
+
+
+async def test_tool_discovered_after_creation_starts_disabled(
+    client: AsyncClient, auth_headers: dict
+):
+    with _discover_returning("list_accounts"):
+        aid = (await client.post("/api/agents", headers=auth_headers, json={"name": "Later"})).json()["id"]
+    with _discover_returning("list_accounts", "delete_everything"):
+        listing = (await client.get(f"/api/agents/{aid}/tools", headers=auth_headers)).json()
+    assert {t["name"]: t["enabled"] for t in listing["tools"]} == {
+        "list_accounts": True,
+        "delete_everything": False,
+    }
+
+
 async def test_create_with_tools_is_atomic(
     session: AsyncSession, test_user, test_workspace
 ):

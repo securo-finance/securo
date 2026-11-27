@@ -83,7 +83,8 @@ export interface PerformanceSelection {
   walletIds: string[]
   assetIds: string[]
   period: PortfolioPerformancePeriod
-  method: PerformanceMethod
+  /** Time-weighted when absent. */
+  method?: PerformanceMethod
 }
 
 /** A named set of wallets and holdings, saved to the user's preferences. */
@@ -271,4 +272,51 @@ export function moneyWeightedReturn(
     x = next
   }
   return (Math.exp(x) - 1) * 100
+}
+
+/** Above this span, month labels alone are distinct; below it the day shows too. */
+export const SHORT_SPAN_DAYS = 186
+
+/**
+ * A `YYYY-MM-DD` date as the timestamp of its UTC midnight, for the chart's
+ * time axis. UTC keeps the day intact in every time zone; format the
+ * timestamp back with `timeZone: 'UTC'`.
+ */
+export function dateToTimestamp(date: string): number {
+  const [year, month, day] = date.split('-').map(Number)
+  return Date.UTC(year, month - 1, day)
+}
+
+export function timestampToDate(timestamp: number): string {
+  return new Date(timestamp).toISOString().slice(0, 10)
+}
+
+export function isShortSpan(start: number, end: number): boolean {
+  return end - start <= SHORT_SPAN_DAYS * DAY_MS
+}
+
+/**
+ * Ticks for a time axis from `start` to `end` (UTC-midnight timestamps). Over
+ * a long span, one per month, on the 1st. Over a short one, days spaced
+ * evenly from the start, or the 1st of each month once that is too many.
+ */
+export function timeAxisTicks(start: number, end: number, maxTicks = 8): number[] {
+  const firstsOfMonth = () => {
+    const first = new Date(start)
+    const year = first.getUTCFullYear()
+    // Date.UTC rolls month 12 over into January of the next year.
+    let month = first.getUTCMonth() + (first.getUTCDate() === 1 ? 0 : 1)
+    const ticks: number[] = []
+    for (let tick = Date.UTC(year, month, 1); tick <= end; tick = Date.UTC(year, ++month, 1)) {
+      ticks.push(tick)
+    }
+    return ticks
+  }
+  if (!isShortSpan(start, end)) return firstsOfMonth()
+  const days = Math.round((end - start) / DAY_MS)
+  const step = [1, 2, 7, 14].find((candidate) => Math.floor(days / candidate) + 1 <= maxTicks)
+  if (step === undefined) return firstsOfMonth()
+  const ticks: number[] = []
+  for (let day = 0; day <= days; day += step) ticks.push(start + day * DAY_MS)
+  return ticks
 }

@@ -5,13 +5,21 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from app.core.money import bounded_asset_value
+
+#: How an asset's current value is kept: recorded by hand, projected by a
+#: growth rule, or read from the market through its ticker. The jobs, the
+#: import and the screens know only these three, so anything else is refused
+#: when it arrives instead of being stored and never priced.
+AssetValuationMethod = Literal["manual", "growth_rule", "market_price"]
+
 
 class AssetCreate(BaseModel):
     name: str
     type: str
     currency: str = "USD"
     units: Optional[Decimal] = None
-    valuation_method: str = "manual"
+    valuation_method: AssetValuationMethod = "manual"
     purchase_date: Optional[_date] = None
     purchase_price: Optional[Decimal] = None
     sell_date: Optional[_date] = None
@@ -53,7 +61,7 @@ class AssetUpdate(BaseModel):
     type: Optional[str] = None
     currency: Optional[str] = None
     units: Optional[Decimal] = None
-    valuation_method: Optional[str] = None
+    valuation_method: Optional[AssetValuationMethod] = None
     purchase_date: Optional[_date] = None
     purchase_price: Optional[Decimal] = None
     sell_date: Optional[_date] = None
@@ -106,6 +114,9 @@ class AssetRead(BaseModel):
     last_price: Optional[float] = None
     last_price_at: Optional[datetime] = None
     logo_url: Optional[str] = None
+    # Date the sync provider says current_value refers to. Lets the UI flag a
+    # synced position whose provider stopped updating the value.
+    provider_value_date: Optional[_date] = None
     # Ledger-derived fields (issue #235). average_price = weighted-average cost
     # per unit (preço médio); total_invested = cost basis of the held units;
     # realized_gain = cumulative gain/loss from sells; transaction_count lets
@@ -114,17 +125,29 @@ class AssetRead(BaseModel):
     total_invested: Optional[float] = None
     realized_gain: Optional[float] = None
     transaction_count: int = 0
+    # Closed holdings only (sell_date set), on list and single reads: what the
+    # sold units cost (`sold_cost`) and brought in after sell fees
+    # (`sale_proceeds`), and the average buy and sell price per unit, in the
+    # units held after any split. From the ledger, or from the purchase and
+    # sell prices of a holding sold by hand. Null otherwise.
+    average_buy_price: Optional[float] = None
+    average_sell_price: Optional[float] = None
+    sold_cost: Optional[float] = None
+    sale_proceeds: Optional[float] = None
 
     model_config = ConfigDict(from_attributes=True)
 
 
 class AssetTransactionCreate(BaseModel):
-    kind: str  # buy | sell
-    quantity: Decimal
-    price: Decimal
+    kind: str  # buy | sell | split
+    quantity: Optional[Decimal] = None  # required for a buy or sell
+    price: Optional[Decimal] = None  # required for a buy or sell
     fee: Decimal = Decimal("0")
     date: _date
     notes: Optional[str] = None
+    # Split only: units held before → after (a 100-for-1 split is 1 → 100).
+    old_units: Optional[int] = None
+    new_units: Optional[int] = None
 
 
 class AssetTransactionUpdate(BaseModel):
@@ -134,6 +157,8 @@ class AssetTransactionUpdate(BaseModel):
     fee: Optional[Decimal] = None
     date: Optional[_date] = None
     notes: Optional[str] = None
+    old_units: Optional[int] = None
+    new_units: Optional[int] = None
 
 
 class AssetBuyCreate(BaseModel):
@@ -159,6 +184,9 @@ class AssetTransactionRead(BaseModel):
     date: _date
     source: str
     notes: Optional[str] = None
+    # Split only: the units held before and after it (null on buys and sells).
+    old_units: Optional[int] = None
+    new_units: Optional[int] = None
     # Denormalized holding context so the global transactions tab can render
     # rows without an extra per-row asset lookup.
     asset_name: Optional[str] = None
@@ -183,6 +211,18 @@ class MarketSymbolQuote(BaseModel):
     logo_url: Optional[str] = None
 
 
+class AssetPriceRefreshResult(BaseModel):
+    """Outcome of a portfolio-wide price refresh (issue #778).
+
+    Same counters the scheduled task returns, so the UI can say how many
+    holdings actually got a new quote instead of claiming success blindly.
+    """
+
+    refreshed: int
+    skipped: int
+    rate_limited: int
+
+
 class MarketSymbolMatch(BaseModel):
     """A single search result returned by /assets/market/search."""
 
@@ -192,11 +232,24 @@ class MarketSymbolMatch(BaseModel):
     quote_type: Optional[str] = None
 
 
+class HoldingTradeImportIssueRead(BaseModel):
+    """A connected holding whose provider trades could not be imported:
+    the history the provider returned doesn't add up to the share count it
+    reports (``incomplete``), or it returned none (``no_history``)."""
+
+    connection_id: uuid.UUID
+    asset_id: uuid.UUID
+    name: str
+    ticker: Optional[str] = None
+    status: Literal["incomplete", "no_history"]
+
+
 class HoldingTradeImportRead(BaseModel):
     """Whether bank sync imports the trades behind connected holdings."""
 
     available: bool
     enabled: bool
+    issues: list[HoldingTradeImportIssueRead] = Field(default_factory=list)
 
 
 class BenchmarkMatch(BaseModel):
@@ -217,6 +270,10 @@ class BenchmarkPerformanceRead(BaseModel):
     key: str
     symbol: str
     provider: str
+    #: First date this benchmark is compared from: the portfolio's start, or
+    #: the benchmark's first close when its history begins later. None when
+    #: it has no usable data. Its return and excess cover this date to the end.
+    start_date: Optional[_date] = None
     benchmark_return: Optional[float] = None
     excess_return: Optional[float] = None
     source_error: Optional[BenchmarkSourceError] = None
@@ -225,7 +282,9 @@ class BenchmarkPerformanceRead(BaseModel):
 class PortfolioPerformancePoint(BaseModel):
     date: _date
     portfolio: float
-    benchmark: float
+    #: The first requested benchmark's value; None before its start or when it failed.
+    benchmark: Optional[float] = None
+    #: Only benchmarks that have started by this date, rebased to 0 on their start.
     benchmarks: dict[str, float] = Field(default_factory=dict)
 
 
@@ -266,6 +325,16 @@ class PortfolioPerformanceRead(BaseModel):
 class AssetValueCreate(BaseModel):
     amount: Decimal
     date: _date
+
+    @field_validator("amount")
+    @classmethod
+    def check_amount_bounds(cls, value: Decimal) -> Decimal:
+        # The column's own ceiling, both sides, the same rule the values the
+        # backend works out follow (ADR 0008). Without it a larger value
+        # reached the driver and came back as a raw database error instead of
+        # a 422 (issue #642); the negative side and `-Infinity` had the same
+        # hole.
+        return bounded_asset_value(value)
 
 
 class AssetValueRead(BaseModel):

@@ -1,5 +1,6 @@
 import json
 import uuid
+from datetime import datetime
 
 import pyotp
 from fastapi import APIRouter, Depends, HTTPException
@@ -23,8 +24,16 @@ router = APIRouter()
 TOTP_VALID_WINDOW = 1
 
 
-def _verify_totp(secret: str, code: str) -> bool:
-    return pyotp.TOTP(secret).verify(code, valid_window=TOTP_VALID_WINDOW)
+def _verify_totp(secret: str, code: str, for_time: datetime | None = None) -> bool:
+    """Check a code against now, accepting the tick before and after it.
+
+    `for_time` only exists so a test can pin the clock through pyotp's own
+    API: patching the clock it reads internally does not survive a release
+    that changes how pyotp gets the current time.
+    """
+    return pyotp.TOTP(secret).verify(
+        code, for_time=for_time, valid_window=TOTP_VALID_WINDOW
+    )
 
 
 def _parse_temp_token_payload(raw: str | bytes) -> dict[str, object] | None:
@@ -49,6 +58,11 @@ async def setup_2fa(
     user: User = Depends(current_active_user),
     session: AsyncSession = Depends(get_async_session),
 ):
+    # Replacing the secret of an enrolled account has to go through /2fa/disable,
+    # which checks the password and a current code.
+    if user.is_2fa_enabled:
+        raise HTTPException(status_code=409, detail="2FA is already enabled")
+
     secret = pyotp.random_base32()
     user.totp_secret = secret
     session.add(user)

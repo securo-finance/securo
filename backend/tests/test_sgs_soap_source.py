@@ -77,7 +77,10 @@ async def test_soap_errors_and_empty_ranges_allow_fallback(case):
     def respond(request):
         calls.append(request.url.host)
         if request.url.host == "json.example":
-            return httpx.Response(200, json=[{"date": "2026-01-02", "rate": "0.1"}])
+            return httpx.Response(
+                200,
+                json=[{"date": "2026-01-02", "rate": "0.1"}, {"date": "2026-01-03", "rate": "0.2"}],
+            )
         if case == "timeout":
             raise httpx.ReadTimeout("timeout", request=request)
         if case == "429":

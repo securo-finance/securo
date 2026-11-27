@@ -1,8 +1,9 @@
+import { forwardArrow } from '@/lib/format'
 import { useRef, useState, useMemo } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { categories as categoriesApi, categoryGroups as categoryGroupsApi, rules as rulesApi, accounts as accountsApi, payees as payeesApi } from '@/lib/api'
+import { categories as categoriesApi, categoryGroups as categoryGroupsApi, rules as rulesApi, accounts as accountsApi, payees as payeesApi, connections as connectionsApi } from '@/lib/api'
 import { extractApiError } from '@/lib/api-errors'
 import { invalidateFinancialQueries } from '@/lib/invalidate-queries'
 import { toast } from 'sonner'
@@ -20,7 +21,7 @@ import {
 import type { Category, Payee, Rule, RuleAction, RuleExportPayload, RulePack } from '@/types'
 import { conditionSummary } from '@/lib/rule-summary'
 import { normalizeRuleMatchValue, ruleSearchText } from '@/lib/rule-match-utils'
-import { Trash2, Plus, RefreshCw, Package, Check, ArrowUpDown, ArrowUp, ArrowDown, Download, Upload, Search, Power } from 'lucide-react'
+import { Trash2, Plus, RefreshCw, Package, Check, ArrowUpDown, ArrowUp, ArrowDown, Download, Upload, Search, Power, ArrowLeftRight } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { localized } from '@/lib/localized-text'
 import { PageHeader } from '@/components/page-header'
@@ -67,20 +68,21 @@ function SectionHeader({
 }
 
 function actionSummary(actions: RuleAction[], categories: Category[], payeesList: Payee[], t: (key: string) => string): string {
+  const arrow = forwardArrow()
   return actions.map(a => {
     if (a.op === 'set_category') {
       const cat = findCategoryReference(categories, a.value)
-      return cat ? `→ ${cat.name}` : `→ ${t('transactions.category')}`
+      return cat ? `${arrow} ${cat.name}` : `${arrow} ${t('transactions.category')}`
     }
     if (a.op === 'set_payee') {
       const p = payeesList.find(p => p.id === a.value)
-      return p ? `→ ${t('payees.payee')}: ${p.name}` : `→ ${t('payees.payee')}`
+      return p ? `${arrow} ${t('payees.payee')}: ${p.name}` : `${arrow} ${t('payees.payee')}`
     }
     if (a.op === 'set_description') {
-      return `→ ${t('rules.fieldDescription')}: ${a.value}`
+      return `${arrow} ${t('rules.fieldDescription')}: ${a.value}`
     }
-    if (a.op === 'append_notes') return `→ ${t('rules.fieldNotes')}: ${a.value}`
-    if (a.op === 'ignore') return `→ ${t('rules.ignoreAction')}`
+    if (a.op === 'append_notes') return `${arrow} ${t('rules.fieldNotes')}: ${a.value}`
+    if (a.op === 'ignore') return `${arrow} ${t('rules.ignoreAction')}`
     return a.op
   }).join('  ') || t('rules.noActions')
 }
@@ -249,6 +251,34 @@ export default function RulesPage() {
     },
     onError: () => toast.error(t('common.error')),
   })
+
+  // The one-time backfill: pairs the transfer rows that entered the books
+  // before the detector ran on arrival. It walks the whole history, so on a
+  // large workspace it is one long request, and the action confirms first.
+  const detectTransfersMutation = useMutation({
+    mutationFn: () => connectionsApi.detectTransfers(),
+    onSuccess: (data) => {
+      invalidateFinancialQueries(queryClient)
+      // The scan files a question for every pair it was not sure about, and
+      // each question writes a "suggested" event to the history. So the
+      // queue, its count on the tab and the history are stale even when no
+      // pair was linked and the toast says nothing was found. Linking a pair
+      // writes only the pair id on the two rows, which is what the money
+      // views above are invalidated for.
+      queryClient.invalidateQueries({ queryKey: ['reconciliation-suggestions'] })
+      queryClient.invalidateQueries({ queryKey: ['reconciliation-history'] })
+      if (data.pairs_created > 0) {
+        toast.success(t('rules.transferScanCreated', { count: data.pairs_created }))
+      } else {
+        toast.success(t('rules.transferScanNone'))
+      }
+    },
+    onError: () => toast.error(t('common.error')),
+  })
+  const scanningTransfers = detectTransfersMutation.isPending
+  const scanTransfersLabel = scanningTransfers
+    ? t('rules.scanningForTransfers')
+    : t('rules.scanForTransfers')
 
   const exportMutation = useMutation({
     mutationFn: () => rulesApi.exportFile(),
@@ -444,6 +474,8 @@ export default function RulesPage() {
                   className="gap-1.5 h-8"
                   onClick={() => exportMutation.mutate()}
                   disabled={exportMutation.isPending}
+                  aria-label={t('rules.export')}
+                  title={t('rules.export')}
                 >
                   <Download size={12} />
                   <span className="hidden sm:inline">{t('rules.export')}</span>
@@ -454,6 +486,8 @@ export default function RulesPage() {
                   className="gap-1.5 h-8"
                   onClick={() => importInputRef.current?.click()}
                   disabled={importMutation.isPending}
+                  aria-label={t('rules.import')}
+                  title={t('rules.import')}
                 >
                   <Upload size={12} />
                   <span className="hidden sm:inline">{t('rules.import')}</span>
@@ -463,9 +497,29 @@ export default function RulesPage() {
                   size="sm"
                   className="gap-1.5 h-8"
                   onClick={() => setPacksDialogOpen(true)}
+                  aria-label={t('rules.packs')}
+                  title={t('rules.packs')}
                 >
                   <Package size={12} />
                   <span className="hidden sm:inline">{t('rules.packs')}</span>
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-1.5 h-8"
+                  onClick={() => {
+                    if (window.confirm(t('rules.confirmScanForTransfers'))) {
+                      detectTransfersMutation.mutate()
+                    }
+                  }}
+                  disabled={scanningTransfers}
+                  aria-label={scanTransfersLabel}
+                  title={scanTransfersLabel}
+                >
+                  {scanningTransfers
+                    ? <RefreshCw size={12} className="animate-spin" />
+                    : <ArrowLeftRight size={12} />}
+                  <span className="hidden sm:inline">{scanTransfersLabel}</span>
                 </Button>
                 <Button
                   variant="outline"
@@ -477,11 +531,19 @@ export default function RulesPage() {
                     }
                   }}
                   disabled={applyAllMutation.isPending}
+                  aria-label={t('rules.resetAndReapplyAll', 'Reset and reapply')}
+                  title={t('rules.resetAndReapplyAll', 'Reset and reapply')}
                 >
                   <RefreshCw size={12} />
                   <span className="hidden sm:inline">{t('rules.resetAndReapplyAll', 'Reset and reapply')}</span>
                 </Button>
-                <Button size="sm" className="gap-1.5 h-8" onClick={openCreate}>
+                <Button
+                  size="sm"
+                  className="gap-1.5 h-8"
+                  onClick={openCreate}
+                  aria-label={t('rules.add')}
+                  title={t('rules.add')}
+                >
                   <Plus size={13} /> <span className="hidden sm:inline">{t('rules.add')}</span>
                 </Button>
               </div>
@@ -501,6 +563,7 @@ export default function RulesPage() {
           </div>
           <select
             className={FILTER_CONTROL_CLASS}
+            aria-label={t('rules.filterByCategory')}
             value={filterCategory}
             onChange={(e) => setFilterCategory(e.target.value)}
           >
@@ -513,6 +576,7 @@ export default function RulesPage() {
           </select>
           <select
             className={FILTER_CONTROL_CLASS}
+            aria-label={t('rules.filterByStatus')}
             value={filterStatus}
             onChange={(e) => setFilterStatus(e.target.value as '' | 'active' | 'inactive')}
           >
@@ -522,6 +586,7 @@ export default function RulesPage() {
           </select>
           <select
             className={FILTER_CONTROL_CLASS}
+            aria-label={t('rules.filterByAction')}
             value={filterAction}
             onChange={(e) => setFilterAction(e.target.value)}
           >
@@ -909,7 +974,7 @@ function RemovePackDialog({ pack, onClose }: { pack: RulePack; onClose: () => vo
           </Button>
           {failed ? (
             <Button variant="outline" onClick={() => void refetch()} disabled={isFetching}>
-              <RefreshCw size={14} className="mr-1" />
+              <RefreshCw size={14} className="me-1" />
               {t('common.retry')}
             </Button>
           ) : (
@@ -918,7 +983,7 @@ function RemovePackDialog({ pack, onClose }: { pack: RulePack; onClose: () => vo
               onClick={() => plan && removeMutation.mutate(plan.token)}
               disabled={pending || !confirmable}
             >
-              <Trash2 size={14} className="mr-1" />
+              <Trash2 size={14} className="me-1" />
               {t('rules.removePackConfirm')}
             </Button>
           )}

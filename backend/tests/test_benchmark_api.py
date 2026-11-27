@@ -20,6 +20,15 @@ from app.providers.benchmark import (
 )
 from app.schemas.asset import BenchmarkMatch
 
+# The endpoint ends its window at app_today() in the workspace timezone; the
+# fixtures seed their latest valuation on the same pinned day.
+TODAY = date(2026, 3, 16)
+
+
+@pytest.fixture(autouse=True)
+def _pinned_today(monkeypatch):
+    monkeypatch.setattr("app.services.portfolio_performance_service.app_today", lambda: TODAY)
+
 
 class FakeBenchmarkProvider:
     def __init__(self, *, history_error: Exception | None = None, empty: bool = False) -> None:
@@ -45,7 +54,7 @@ class FakeBenchmarkProvider:
 
 
 async def _seed_performance_asset(session: AsyncSession, user: User, workspace) -> uuid.UUID:
-    end = date.today()
+    end = TODAY
     start = end - timedelta(days=30)
     asset = Asset(
         id=uuid.uuid4(),
@@ -133,6 +142,7 @@ async def test_performance_endpoint_returns_aligned_metrics(
             "benchmark_return": pytest.approx(10.0),
             "excess_return": pytest.approx(0.0),
             "source_error": None,
+            "start_date": data["start_date"],
         }
     ]
     assert data["points"][-1]["benchmarks"]["yahoo:^TEST"] == pytest.approx(10.0)
@@ -300,7 +310,7 @@ async def test_performance_keeps_healthy_benchmarks_when_another_source_fails(
     assert set(data["points"][-1]["benchmarks"]) == {healthy["key"]}
     if failed_symbol == "^FIRST":
         assert data["benchmark_return"] is None
-        assert all(point["benchmark"] == 0 for point in data["points"])
+        assert all(point["benchmark"] is None for point in data["points"])
 
 
 @pytest.mark.asyncio
@@ -397,7 +407,7 @@ async def test_performance_endpoint_filters_to_individual_assets(
     monkeypatch,
 ):
     selected_id = await _seed_performance_asset(session, test_user, test_workspace)
-    end = date.today()
+    end = TODAY
     start = end - timedelta(days=30)
     excluded = Asset(
         id=uuid.uuid4(),

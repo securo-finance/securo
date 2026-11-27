@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { fireEvent, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 
-import { PortfolioPerformance } from '@/components/portfolio-performance'
-import { assets, info } from '@/lib/api'
+import { PortfolioPerformance, type PerformanceInventory } from '@/components/portfolio-performance'
+import { assets, auth, connections, info } from '@/lib/api'
 import {
   readBenchmarkSelections,
   readLastSelection,
@@ -15,11 +15,23 @@ import type {
   AssetGroup,
   BenchmarkMatch,
   PortfolioPerformance as PerformanceData,
+  User,
 } from '@/types'
 
-vi.mock('@/contexts/auth-context', () => ({
-  useAuth: () => ({ user: { preferences: {} }, updateUser: vi.fn() }),
+const authState = vi.hoisted(() => ({
+  user: { preferences: {} } as { preferences: Record<string, unknown> },
+  updateUser: (() => undefined) as (user: unknown) => void,
 }))
+vi.mock('@/contexts/auth-context', () => ({
+  useAuth: () => authState,
+}))
+
+const toastMock = vi.hoisted(() => ({
+  success: vi.fn(),
+  warning: vi.fn(),
+  error: vi.fn(),
+}))
+vi.mock('sonner', () => ({ toast: toastMock }))
 
 vi.mock('@/lib/api', () => ({
   assets: {
@@ -28,7 +40,8 @@ vi.mock('@/lib/api', () => ({
     tradeImport: vi.fn(),
     enableTradeImport: vi.fn(),
   },
-  auth: { updateMe: vi.fn() },
+  connections: { sync: vi.fn() },
+  auth: { updateMe: vi.fn(), me: vi.fn() },
   info: { get: vi.fn() },
 }))
 
@@ -63,6 +76,7 @@ const performanceData: PerformanceData = {
       provider: 'yahoo',
       benchmark_return: 15.75,
       excess_return: -3.25,
+      start_date: '2026-01-07',
     },
     {
       key: 'yahoo:^GSPC',
@@ -70,6 +84,7 @@ const performanceData: PerformanceData = {
       provider: 'yahoo',
       benchmark_return: 8.25,
       excess_return: 4.25,
+      start_date: '2026-01-07',
     },
   ],
   points: [
@@ -99,24 +114,47 @@ function renderPerformance(
     mask?: (value: string) => string
     assetGroupIds?: string[] | null
     holdings?: Asset[]
+    wallets?: AssetGroup[]
+    inventory?: PerformanceInventory | null
+    inventoryError?: boolean
+    onRetryInventory?: () => void
     canManage?: boolean
   } = {},
 ) {
   const queryClient = createTestQueryClient()
   queryClient.setQueryDefaults(['asset-performance'], { retryDelay: 0 })
-  return renderWithProviders(
+  const shownHoldings = options.holdings ?? holdings
+  const shownWallets = options.wallets ?? wallets
+  const element = (inventory: PerformanceInventory | null) => (
     <PortfolioPerformance
       workspaceId={workspaceId}
       assetGroupIds={options.assetGroupIds ?? null}
-      holdings={options.holdings ?? holdings}
-      wallets={wallets}
+      holdings={shownHoldings}
+      wallets={shownWallets}
+      inventory={inventory}
+      inventoryError={options.inventoryError}
+      onRetryInventory={options.onRetryInventory}
       locale="en-US"
       dateLocale="en-US"
       mask={options.mask ?? ((value) => value)}
       canManage={options.canManage}
-    />,
+    />
+  )
+  const result = renderWithProviders(
+    element(
+      options.inventory !== undefined
+        ? options.inventory
+        : {
+            walletIds: shownWallets.map((wallet) => wallet.id),
+            assetIds: shownHoldings.map((holding) => holding.id),
+          },
+    ),
     { queryClient },
   )
+  return {
+    ...result,
+    loadInventory: (inventory: PerformanceInventory) => result.rerender(element(inventory)),
+  }
 }
 
 /** Point at the chart. jsdom has no layout, so the chart gets a size first. */
@@ -138,16 +176,29 @@ describe('PortfolioPerformance', () => {
     vi.mocked(assets.performance).mockResolvedValue(performanceData)
     vi.mocked(assets.benchmarkSearch).mockResolvedValue([benchmarks[4]])
     vi.mocked(info.get).mockResolvedValue({ features: { agents: false } })
+    authState.user = { preferences: {} }
+    authState.updateUser = () => undefined
   })
 
   it('lets only an owner turn on trade import', async () => {
-    vi.mocked(assets.tradeImport).mockResolvedValue({ available: true, enabled: false })
-    vi.mocked(assets.enableTradeImport).mockResolvedValue({ available: true, enabled: true })
+    vi.mocked(assets.tradeImport).mockResolvedValue({
+      available: true,
+      enabled: false,
+      issues: [],
+    })
+    vi.mocked(assets.enableTradeImport).mockResolvedValue({
+      available: true,
+      enabled: true,
+      issues: [],
+    })
     const { user, unmount } = renderPerformance({ canManage: true })
 
     await user.click(await screen.findByRole('button', { name: 'Import trades' }))
 
+    // The request names the workspace it was clicked in.
     expect(assets.enableTradeImport).toHaveBeenCalledTimes(1)
+    expect(assets.enableTradeImport).toHaveBeenCalledWith(workspaceId)
+    expect(assets.tradeImport).toHaveBeenCalledWith(workspaceId)
     await waitFor(() => {
       expect(screen.queryByRole('button', { name: 'Import trades' })).not.toBeInTheDocument()
     })
@@ -159,17 +210,106 @@ describe('PortfolioPerformance', () => {
     expect(screen.queryByRole('button', { name: 'Import trades' })).not.toBeInTheDocument()
   })
 
-  it('hides benchmark comparison when the server has it disabled', async () => {
-    vi.mocked(info.get).mockResolvedValue({
-      features: { agents: false, performance_benchmarks: false },
+  it('lists holdings whose trades could not be imported and retries their connections', async () => {
+    const issue = (
+      connection_id: string,
+      asset_id: string,
+      name: string,
+      status: 'incomplete' | 'no_history',
+    ) => ({ connection_id, asset_id, name, ticker: null, status })
+    vi.mocked(assets.tradeImport)
+      .mockResolvedValueOnce({
+        available: true,
+        enabled: true,
+        issues: [
+          issue('connection-a', 'asset-a', 'Carbon Fund', 'incomplete'),
+          issue('connection-b', 'asset-b', 'Global ETF', 'no_history'),
+          issue('connection-a', 'asset-c', 'World ETF', 'no_history'),
+        ],
+      })
+      .mockResolvedValue({ available: true, enabled: true, issues: [] })
+    vi.mocked(connections.sync).mockResolvedValue({ sync_outcome: 'refreshed' } as never)
+    const { user } = renderPerformance({ canManage: true })
+
+    expect(await screen.findByText('Carbon Fund')).toBeInTheDocument()
+    expect(screen.getByText('Global ETF').parentElement).toHaveTextContent(
+      'Global ETF · No history from the bank',
+    )
+    expect(screen.getByText('Carbon Fund').parentElement).toHaveTextContent(
+      'Carbon Fund · Incomplete history',
+    )
+
+    await user.click(screen.getByRole('button', { name: 'Try again' }))
+
+    // Each affected connection is synced once, asking for the histories again.
+    await waitFor(() => {
+      expect(vi.mocked(connections.sync).mock.calls).toEqual([
+        ['connection-a', { retryTradeImport: true, workspaceId }],
+        ['connection-b', { retryTradeImport: true, workspaceId }],
+      ])
     })
-    writeBenchmarkSelections(workspaceId, benchmarks.slice(0, 2))
+    await waitFor(() => {
+      expect(screen.queryByText('Carbon Fund')).not.toBeInTheDocument()
+    })
+  })
+
+  it('reports a trade-import retry that only partly synced as partial, not done', async () => {
+    vi.mocked(assets.tradeImport).mockResolvedValue({
+      available: true,
+      enabled: true,
+      issues: [
+        {
+          connection_id: 'connection-a',
+          asset_id: 'asset-a',
+          name: 'Carbon Fund',
+          ticker: null,
+          status: 'incomplete',
+        },
+      ],
+    })
+    vi.mocked(connections.sync).mockResolvedValue({ sync_outcome: 'partial' } as never)
+    const { user } = renderPerformance({ canManage: true })
+
+    await screen.findByText('Carbon Fund')
+    await user.click(screen.getByRole('button', { name: 'Try again' }))
+
+    await waitFor(() => expect(toastMock.warning).toHaveBeenCalledTimes(1))
+    expect(toastMock.warning).toHaveBeenCalledWith(i18n.t('accounts.syncPartial'))
+    expect(toastMock.success).not.toHaveBeenCalled()
+    // The issue list is asked for again, so what still needs attention shows.
+    await waitFor(() => expect(assets.tradeImport).toHaveBeenCalledTimes(2))
+  })
+
+  it('does not list import problems to someone who cannot manage the workspace', async () => {
     renderPerformance()
     await screen.findByText('+12.50%')
 
-    await waitFor(() => {
-      expect(vi.mocked(assets.performance).mock.lastCall?.[0]).toEqual([])
+    expect(assets.tradeImport).not.toHaveBeenCalled()
+    expect(screen.queryByRole('button', { name: 'Try again' })).not.toBeInTheDocument()
+  })
+
+  it('hides benchmark comparison when the server has it disabled', async () => {
+    // /info answers after the component mounts: nothing may be requested
+    // with the stored benchmarks while it is loading.
+    let answerInfo!: (value: Awaited<ReturnType<typeof info.get>>) => void
+    vi.mocked(info.get).mockReturnValue(
+      new Promise((resolve) => {
+        answerInfo = resolve
+      }),
+    )
+    writeBenchmarkSelections(workspaceId, benchmarks.slice(0, 2))
+    renderPerformance()
+    expect(screen.getByRole('status', { name: 'Loading...' })).toBeInTheDocument()
+    await waitFor(() => expect(info.get).toHaveBeenCalled())
+    expect(assets.performance).not.toHaveBeenCalled()
+
+    await act(async () => {
+      answerInfo({ features: { agents: false, performance_benchmarks: false } })
     })
+    await screen.findByText('+12.50%')
+
+    expect(assets.performance).toHaveBeenCalled()
+    for (const call of vi.mocked(assets.performance).mock.calls) expect(call[0]).toEqual([])
     expect(screen.queryByRole('button', { name: /Compare/ })).not.toBeInTheDocument()
     expect(screen.queryByRole('complementary', { name: 'Benchmarks' })).not.toBeInTheDocument()
     // The stored choice survives, so re-enabling brings it back.
@@ -197,26 +337,26 @@ describe('PortfolioPerformance', () => {
     })
     await user.click(apple)
     await waitFor(() =>
-      expect(assets.performance).toHaveBeenLastCalledWith([], '1y', null, [], ['apple'], 'twr'),
+      expect(assets.performance).toHaveBeenLastCalledWith([], '1y', null, [], ['apple'], workspaceId, 'twr'),
     )
 
     await user.click(brokerage)
     expect(apple).toBeChecked()
     expect(apple).toBeDisabled()
     await waitFor(() =>
-      expect(assets.performance).toHaveBeenLastCalledWith([], '1y', null, ['brokerage'], [], 'twr'),
+      expect(assets.performance).toHaveBeenLastCalledWith([], '1y', null, ['brokerage'], [], workspaceId, 'twr'),
     )
     expect(within(scope).getByText('1 selected')).toBeInTheDocument()
 
     await user.click(within(scope).getByRole('checkbox', { name: 'Cash reserve' }))
     await waitFor(() =>
-      expect(assets.performance).toHaveBeenLastCalledWith([], '1y', null, ['brokerage'], ['cash'], 'twr'),
+      expect(assets.performance).toHaveBeenLastCalledWith([], '1y', null, ['brokerage'], ['cash'], workspaceId, 'twr'),
     )
     await user.click(brokerage)
     expect(apple).not.toBeChecked()
     expect(apple).toBeEnabled()
     await waitFor(() =>
-      expect(assets.performance).toHaveBeenLastCalledWith([], '1y', null, [], ['cash'], 'twr'),
+      expect(assets.performance).toHaveBeenLastCalledWith([], '1y', null, [], ['cash'], workspaceId, 'twr'),
     )
   })
 
@@ -241,7 +381,7 @@ describe('PortfolioPerformance', () => {
     const scope = screen.getByRole('dialog', { name: 'Portfolio scope' })
     await user.click(within(scope).getByRole('checkbox', { name: 'Tesla · TSLA · Sold' }))
     await waitFor(() =>
-      expect(assets.performance).toHaveBeenLastCalledWith([], '1y', null, [], ['tesla'], 'twr'),
+      expect(assets.performance).toHaveBeenLastCalledWith([], '1y', null, [], ['tesla'], workspaceId, 'twr'),
     )
   })
 
@@ -265,6 +405,7 @@ describe('PortfolioPerformance', () => {
         ['wallet-a', 'wallet-z'],
         undefined,
         undefined,
+        workspaceId,
         'twr',
       ),
     )
@@ -290,6 +431,7 @@ describe('PortfolioPerformance', () => {
         null,
         undefined,
         undefined,
+        workspaceId,
         'mwr',
       ),
     )
@@ -334,6 +476,7 @@ describe('PortfolioPerformance', () => {
         null,
         undefined,
         undefined,
+        workspaceId,
         'twr',
       ),
     )
@@ -524,4 +667,320 @@ describe('PortfolioPerformance', () => {
     expect(container.querySelectorAll('.recharts-line')).toHaveLength(0)
     await waitFor(() => expect(container.querySelector('.recharts-area-curve')).toBeInTheDocument())
   })
+  it('labels the periods in the current language', async () => {
+    await i18n.changeLanguage('pt-BR')
+    renderPerformance()
+    const periods = screen.getByRole('group', { name: 'Período' })
+    expect(within(periods).getAllByRole('button').map((button) => button.textContent)).toEqual([
+      '3M',
+      '6M',
+      'YTD',
+      '1A',
+      '3A',
+      '5A',
+    ])
+  })
+
+  it('keeps saved-view members the collection hides, drops deleted ones, and saves onto fresh preferences', async () => {
+    const view = {
+      id: 'view-1',
+      name: 'Long term',
+      wallet_ids: ['brokerage', 'hidden-wallet', 'deleted-wallet'],
+      asset_ids: ['cash', 'archived-asset', 'deleted-asset'],
+    }
+    authState.user = { preferences: { performance_views: { [workspaceId]: [view] } } }
+    // Another tab has since saved a setting and a second view.
+    const otherTabView = { id: 'view-2', name: 'Other tab', wallet_ids: ['brokerage'], asset_ids: [] }
+    vi.mocked(auth.me).mockResolvedValue({
+      preferences: {
+        language: 'en',
+        performance_views: { [workspaceId]: [view, otherTabView], 'other-workspace': [] },
+      },
+    } as unknown as User)
+    vi.mocked(auth.updateMe).mockImplementation(async (updates) => updates as User)
+    const { user } = renderPerformance({
+      // The active collection shows only the brokerage wallet.
+      wallets,
+      inventory: {
+        walletIds: ['brokerage', 'hidden-wallet'],
+        assetIds: ['apple', 'cash', 'archived-asset'],
+      },
+    })
+    await screen.findByText('+12.50%')
+
+    await user.click(screen.getByRole('button', { name: /Entire portfolio/ }))
+    await user.click(
+      within(screen.getByRole('dialog', { name: 'Portfolio scope' })).getByRole('button', {
+        name: 'Long term',
+      }),
+    )
+    await waitFor(() =>
+      expect(assets.performance).toHaveBeenLastCalledWith(
+        [],
+        '1y',
+        null,
+        ['brokerage', 'hidden-wallet'],
+        ['archived-asset', 'cash'],
+        workspaceId,
+        'twr',
+      ),
+    )
+    // The view still matches: nothing to update yet.
+    expect(screen.getByRole('button', { name: /Long term\s*4/ })).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: /Long term/ }))
+    const scope = screen.getByRole('dialog', { name: 'Portfolio scope' })
+    await user.click(within(scope).getByRole('checkbox', { name: 'Cash reserve' }))
+    await user.click(within(scope).getByRole('button', { name: 'Update “Long term”' }))
+
+    await waitFor(() => expect(auth.updateMe).toHaveBeenCalledTimes(1))
+    expect(vi.mocked(auth.me).mock.invocationCallOrder[0]).toBeLessThan(
+      vi.mocked(auth.updateMe).mock.invocationCallOrder[0],
+    )
+    expect(vi.mocked(auth.updateMe).mock.calls[0][0]).toEqual({
+      preferences: {
+        language: 'en',
+        performance_views: {
+          'other-workspace': [],
+          [workspaceId]: [
+            { ...view, wallet_ids: ['brokerage', 'hidden-wallet'], asset_ids: ['archived-asset'] },
+            otherTabView,
+          ],
+        },
+      },
+    })
+  })
+
+  it('says so when the view being updated was deleted in another tab, and keeps the selection', async () => {
+    const view = { id: 'view-1', name: 'Long term', wallet_ids: ['brokerage'], asset_ids: [] }
+    authState.user = { preferences: { performance_views: { [workspaceId]: [view] } } }
+    const updateUser = vi.fn()
+    authState.updateUser = updateUser
+    // Another tab has deleted the view since this one loaded.
+    const fresh = { preferences: { performance_views: { [workspaceId]: [] } } }
+    vi.mocked(auth.me).mockResolvedValue(fresh as unknown as User)
+    const { user } = renderPerformance()
+    await screen.findByText('+12.50%')
+
+    await user.click(screen.getByRole('button', { name: /Entire portfolio/ }))
+    await user.click(
+      within(screen.getByRole('dialog', { name: 'Portfolio scope' })).getByRole('button', {
+        name: 'Long term',
+      }),
+    )
+    await user.click(screen.getByRole('button', { name: /Long term/ }))
+    const scope = screen.getByRole('dialog', { name: 'Portfolio scope' })
+    await user.click(within(scope).getByRole('checkbox', { name: 'Cash reserve' }))
+    await user.click(within(scope).getByRole('button', { name: 'Update “Long term”' }))
+
+    await waitFor(() =>
+      expect(toastMock.error).toHaveBeenCalledWith(
+        i18n.t('assets.performanceViewGone', { name: 'Long term' }),
+      ),
+    )
+    expect(auth.updateMe).not.toHaveBeenCalled()
+    expect(toastMock.success).not.toHaveBeenCalled()
+    // This tab catches up with the deletion.
+    expect(updateUser).toHaveBeenCalledWith(fresh)
+    // The selection stays and can be saved as a new view.
+    expect(within(scope).getByRole('checkbox', { name: 'Brokerage' })).toBeChecked()
+    expect(within(scope).getByRole('checkbox', { name: 'Cash reserve' })).toBeChecked()
+    expect(
+      within(scope).queryByRole('button', { name: 'Update “Long term”' }),
+    ).not.toBeInTheDocument()
+    expect(
+      within(scope).getByRole('textbox', { name: i18n.t('assets.performanceViewNamePlaceholder') }),
+    ).toBeInTheDocument()
+  })
+
+  it('offers a retry when the inventory fails to load for a remembered custom selection', async () => {
+    writeLastSelection(workspaceId, {
+      scope: 'custom',
+      walletIds: ['brokerage'],
+      assetIds: ['cash'],
+      period: '1y',
+    })
+    const onRetryInventory = vi.fn()
+    const { user } = renderPerformance({ inventory: null, inventoryError: true, onRetryInventory })
+
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent(i18n.t('assets.performanceLoadError'))
+    expect(screen.queryByRole('status', { name: 'Loading...' })).not.toBeInTheDocument()
+    await user.click(within(alert).getByRole('button', { name: i18n.t('common.retry') }))
+    expect(onRetryInventory).toHaveBeenCalledTimes(1)
+    // Without the inventory, the custom selection is not sent.
+    expect(assets.performance).not.toHaveBeenCalled()
+  })
+
+  it('leaves deleted wallets and holdings out of a restored selection once the inventory loads', async () => {
+    writeLastSelection(workspaceId, {
+      scope: 'custom',
+      walletIds: ['brokerage', 'deleted-wallet'],
+      assetIds: ['cash', 'deleted-asset'],
+      period: '1y',
+    })
+    const { loadInventory } = renderPerformance({ inventory: null })
+    expect(screen.getByRole('status', { name: 'Loading...' })).toBeInTheDocument()
+    await waitFor(() => expect(info.get).toHaveBeenCalled())
+    expect(assets.performance).not.toHaveBeenCalled()
+
+    loadInventory({ walletIds: ['brokerage'], assetIds: ['apple', 'cash'] })
+    await screen.findByText('+12.50%')
+
+    expect(vi.mocked(assets.performance).mock.calls).toEqual([
+      [[], '1y', null, ['brokerage'], ['cash'], workspaceId, 'twr'],
+    ])
+    expect(screen.getByRole('button', { name: /Wallets or assets\s*2/ })).toBeInTheDocument()
+    expect(readLastSelection(workspaceId)).toMatchObject({
+      walletIds: ['brokerage'],
+      assetIds: ['cash'],
+    })
+  })
+
+  it('measures a period from the keyboard', async () => {
+    vi.mocked(assets.performance).mockResolvedValue({
+      ...performanceData,
+      points: [
+        { date: '2026-01-07', portfolio: 0, benchmark: null, benchmarks: {} },
+        { date: '2026-05-04', portfolio: 10, benchmark: null, benchmarks: {} },
+        { date: '2026-09-29', portfolio: 12.5, benchmark: null, benchmarks: {} },
+      ],
+    })
+    const { container } = renderPerformance()
+    await screen.findByText('+12.50%')
+
+    const chart = await waitFor(() => {
+      const surface = container.querySelector<SVGElement>('.recharts-surface')
+      expect(surface).toBeInTheDocument()
+      return surface!
+    })
+    expect(chart).toHaveAccessibleName('Portfolio performance chart')
+    expect(chart).toHaveAccessibleDescription(/Enter or Space to mark the start/)
+
+    await markRange(container, chart, 1)
+    // The headline now shows the marked period's return, Jan 7 to May 4.
+    expect(screen.getByText('Selected period').nextElementSibling).toHaveTextContent('+10.00%')
+    expect(Array.from(container.querySelectorAll('time'), (date) => date.dateTime)).toEqual([
+      '2026-01-07',
+      '2026-05-04',
+    ])
+
+    fireEvent.keyDown(chart, { key: 'Escape' })
+    expect(screen.queryByText('Selected period')).not.toBeInTheDocument()
+    expect(screen.getByText('+12.50%')).toBeInTheDocument()
+  })
+
+  it('plots dates on a time scale with one tick per month and finds dates by time', async () => {
+    const dates = ['01-10', '01-12', '03-10', '06-10', '08-10', '08-11', '10-10', '11-10', '11-25']
+    vi.mocked(assets.performance).mockResolvedValue({
+      ...performanceData,
+      start_date: '2026-01-10',
+      end_date: '2026-11-25',
+      points: dates.map((date, index) => ({
+        date: `2026-${date}`,
+        portfolio: index,
+        benchmark: null,
+        benchmarks: {},
+      })),
+    })
+    const { container } = renderPerformance()
+    const ticks = await waitFor(() => {
+      const found = [
+        ...container.querySelectorAll<SVGTextElement>(
+          '.recharts-xAxis-tick-labels .recharts-cartesian-axis-tick-value',
+        ),
+      ]
+      expect(found.length).toBeGreaterThan(0)
+      return found
+    })
+    const labels = ticks.map((tick) => tick.textContent)
+    expect(labels).toEqual(
+      ['Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov'].map((m) => `${m} 26`),
+    )
+    // Ticks sit by elapsed time: Mar 1 to Jun 1 is 92 days, Aug 1 to Sep 1 is 31.
+    const x = (label: string) => Number(ticks[labels.indexOf(label)].getAttribute('x'))
+    expect((x('Jun 26') - x('Mar 26')) / (x('Sep 26') - x('Aug 26'))).toBeCloseTo(92 / 31, 1)
+
+    const wrapper = container.querySelector<HTMLElement>('.recharts-wrapper')!
+    const pointAt = async (label: string, date: string) => {
+      fireEvent.mouseMove(wrapper, { clientX: x(label), clientY: 150 })
+      await waitFor(() =>
+        expect(container.querySelector('.recharts-tooltip-wrapper')).toHaveTextContent(date),
+      )
+    }
+    // The pointer at Mar 1 is nearest the Mar 10 point; with one slot per
+    // point it would land on Jan 12.
+    hoverChart(container, x('Mar 26'))
+    await pointAt('Mar 26', 'Mar 10, 2026')
+
+    // Dragging from Mar 1 to Nov 1 measures Mar 10 to Nov 10.
+    fireEvent.mouseDown(wrapper, { clientX: x('Mar 26'), clientY: 150 })
+    fireEvent.mouseMove(wrapper, { clientX: x('Nov 26'), clientY: 150 })
+    await waitFor(() => expect(screen.getByText('Selected period')).toBeInTheDocument())
+    fireEvent.mouseUp(wrapper, { clientX: x('Nov 26'), clientY: 150 })
+    expect(Array.from(container.querySelectorAll('time'), (date) => date.dateTime)).toEqual([
+      '2026-03-10',
+      '2026-11-10',
+    ])
+  })
+
+  it('notes a benchmark that starts mid-series and shows it as unavailable before then', async () => {
+    writeBenchmarkSelections(workspaceId, benchmarks.slice(0, 2))
+    vi.mocked(assets.performance).mockResolvedValue({
+      ...performanceData,
+      benchmarks: performanceData.benchmarks.map((metric) =>
+        metric.key === 'yahoo:^IXIC' ? { ...metric, start_date: '2026-05-04' } : metric,
+      ),
+      points: [
+        { date: '2026-01-07', portfolio: 0, benchmark: 0, benchmarks: { 'yahoo:^GSPC': 0 } },
+        {
+          date: '2026-05-04',
+          portfolio: 10,
+          benchmark: 2,
+          benchmarks: { 'yahoo:^GSPC': 2, 'yahoo:^IXIC': 0 },
+        },
+        {
+          date: '2026-09-29',
+          portfolio: 12.5,
+          benchmark: 8.25,
+          benchmarks: { 'yahoo:^GSPC': 8.25, 'yahoo:^IXIC': 15.75 },
+        },
+      ],
+    })
+    const { container } = renderPerformance()
+    const comparisons = await screen.findByRole('complementary', { name: 'Benchmarks' })
+
+    const nasdaqCard = within(comparisons).getByText('+15.75%').parentElement!
+    expect(within(nasdaqCard).getByText('from May 4, 2026')).toBeInTheDocument()
+    const sp500Card = within(comparisons).getByText('+8.25%').parentElement!
+    expect(within(sp500Card).queryByText(/^from/)).not.toBeInTheDocument()
+    expect(container).toHaveTextContent('Nasdaq Composite · from May 4, 2026')
+
+    // Jan 7 to May 4: the Nasdaq has no value at the start.
+    const chart = container.querySelector<SVGElement>('.recharts-surface')!
+    await markRange(container, chart, 1)
+    expect(within(sp500Card).getByText('+2.00%')).toBeInTheDocument()
+    expect(within(sp500Card).getByText('+8.00 pp')).toBeInTheDocument()
+    expect(within(nasdaqCard).getAllByText('—')).toHaveLength(2)
+    expect(container).not.toHaveTextContent('NaN')
+  })
 })
+
+/**
+ * Focus the chart (its first date becomes active), mark the start with
+ * Enter, move right `steps` dates and mark the end with Space.
+ */
+async function markRange(container: HTMLElement, chart: SVGElement, steps: number) {
+  const tooltipDate = async (text: string) =>
+    waitFor(() =>
+      expect(container.querySelector('.recharts-tooltip-wrapper')).toHaveTextContent(text),
+    )
+  act(() => chart.focus())
+  await tooltipDate('Jan 7, 2026')
+  fireEvent.keyDown(chart, { key: 'Enter' })
+  await waitFor(() => expect(screen.getByText(/Period start marked at Jan 7, 2026/)).toBeInTheDocument())
+  for (let step = 0; step < steps; step += 1) fireEvent.keyDown(chart, { key: 'ArrowRight' })
+  await tooltipDate('May 4, 2026')
+  fireEvent.keyDown(chart, { key: ' ' })
+  await screen.findByText('Selected period')
+}

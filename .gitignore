@@ -10,11 +10,24 @@ CLAUDE.md
 docs/plans/
 tmp/
 docker-compose.override.yml
+.idea
+.junie
 
 # Ignore local configuration files
 .vscode/
 
 # Runtime artifacts written by the agents feature (uploaded KB files,
-# downloaded ONNX embedding models, transaction attachments). User data
-# — never commit.
+# downloaded ONNX embedding models, transaction attachments) and local Docker
+# Compose bind mounts (for example ./data/backups). User data — never commit.
 backend/data/
+
+# Default location of STORAGE_LOCAL_PATH ("./data/attachments"), resolved
+# against the working directory. Running the plugin or export scripts from
+# the repository root writes attachments here. Anchored to the root on
+# purpose: a bare "data/" would also match backend/app/data/ (rule packs
+# and default categories), which is versioned.
+/data/
+
+# Python bytecode. A .pyc from .github/ci/ was committed once.
+__pycache__/
+*.pyc

@@ -3,11 +3,15 @@ import logging
 import os
 from contextlib import asynccontextmanager
 
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from fastapi.routing import APIRoute
+from sqlalchemy.exc import TimeoutError as PoolTimeoutError
 
 from app.api.accounts import router as accounts_router
 from app.api.budgets import router as budgets_router
+from app.api.backups import router as backups_router
 from app.api.goals import router as goals_router
 from app.api.groups import router as groups_router
 from app.api.categories import router as categories_router
@@ -17,7 +21,9 @@ from app.api.custom_auth import router as custom_auth_router
 from app.api.dashboard import router as dashboard_router
 from app.api.import_logs import router as import_logs_router
 from app.api.oidc_auth import router as oidc_auth_router
+from app.api.password_reset import router as password_reset_router
 from app.api.passkeys import router as passkeys_router
+from app.api.forecast import router as forecast_router
 from app.api.import_transactions import router as import_router
 from app.api.info import router as info_router
 from app.api.recurring_transactions import router as recurring_router
@@ -40,6 +46,8 @@ from app.api.invoices import router as invoices_router
 from app.api.mortgage_payments import router as mortgage_payments_router
 from app.api.products import router as products_router
 from app.api.public_invoices import router as public_invoices_router
+from app.api.operator import router as operator_router
+from app.api.notifications import router as notifications_router
 from app.api.payees import router as payees_router
 from app.api.settings import router as settings_router
 from app.api.timezones import router as timezones_router
@@ -47,8 +55,12 @@ from app.api.transactions import router as transactions_router
 from app.api.two_factor import router as two_factor_router
 from app.api.user_lookup import router as user_lookup_router
 from app.api.workspaces import router as workspaces_router
+from app.api.access_log import router as access_log_router
+from app.api.account_email import router as account_email_router
+from app.api.users_me import router as users_me_router
 from app.api.access_tokens import router as access_tokens_router
 from app.api.plugins import router as plugins_router
+from app.api.ui_layouts import router as ui_layouts_router
 from app.api.admin import router as admin_router, check_registration_enabled
 from app.core.auth import fastapi_users
 from app.core.auth_policy import require_local_auth_enabled
@@ -95,8 +107,37 @@ async def _warm_tesouro_cache() -> None:
         logger.exception("Startup: Tesouro Direto cache warm failed")
 
 
+async def _load_stored_secret_key() -> None:
+    from app.core.config import load_stored_secret_key
+
+    for _ in range(60):
+        if await asyncio.to_thread(load_stored_secret_key):
+            return
+        await asyncio.sleep(5)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Agents on means the API mints MCP tokens and the MCP server accepts
+    # them. Refuse to start when the signing key is a public default: every
+    # token would be forgeable, and the failure is otherwise silent until
+    # someone uses it (issue #1174).
+    if os.getenv("AGENTS_ENABLED", "false").strip().lower() in ("1", "true", "yes", "on"):
+        from app.agents.mcp.keys import resolve_mcp_jwt_secret
+
+        resolve_mcp_jwt_secret()
+
+    if settings.row_security_enabled:
+        from app.core.database import async_session_maker
+        from app.core.row_security import check_connection
+
+        async with async_session_maker() as session:
+            await check_connection(session)
+
+    # Old credentials may need the instance key as a fallback; read it off
+    # the event loop, and keep trying while the database comes up.
+    app.state.stored_key_task = asyncio.create_task(_load_stored_secret_key())
+
     # Startup: dispatch sync for all stale bank connections
     try:
         from app.worker import celery_app  # noqa: F811
@@ -128,6 +169,21 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+# A request that finds no free connection waits for one and then fails with
+# SQLAlchemy's pool timeout. That is the instance being busy, not a bad
+# request, so it answers 503 with a sentence that says so, and the client knows
+# to retry. Without this it surfaced as a 500 carrying "QueuePool limit of size
+# 5 overflow 10 reached" (issue #1901).
+@app.exception_handler(PoolTimeoutError)
+async def database_pool_exhausted(request: Request, exc: PoolTimeoutError) -> JSONResponse:
+    logger.warning("Database pool exhausted on %s %s: %s", request.method, request.url.path, exc)
+    return JSONResponse(
+        status_code=503,
+        content={"detail": "The instance is at its database connection limit. Try again in a moment."},
+        headers={"Retry-After": "5"},
+    )
+
 # Auth routes — custom login/logout with 2FA support (mounted first to take precedence)
 app.include_router(
     custom_auth_router,
@@ -157,17 +213,34 @@ app.include_router(
     ],
 )
 app.include_router(
-    fastapi_users.get_reset_password_router(),
+    password_reset_router,
     prefix="/api/auth",
     tags=["auth"],
     dependencies=[Depends(require_local_auth_enabled), Depends(password_reset_rate_limit)],
 )
-# user_lookup must precede the fastapi-users router below so the
-# `/api/users/lookup` path isn't captured by the catch-all `/{id}`
-# route fastapi-users mounts.
 app.include_router(user_lookup_router)
+app.include_router(account_email_router)
+# fastapi-users mounts superuser-only `GET`, `PATCH` and `DELETE /{id}` beside
+# `/me`. Through `PATCH /{id}` an administrator could set another account's
+# address, password or flags in one request, with no reason and no entry in the
+# access log: the second door around ADR 0042 (#556). Only the `/me` routes are
+# kept; every administrative change goes through `/api/admin/users/{id}`, which
+# asks for a reason and records it.
+#
+# Of those two, only the `GET` comes from the library: `PATCH /me` is
+# `app/api/users_me.py`, which takes the account's row before writing it so a
+# concurrent deletion cannot make the edit fail with a 500 (#567).
+users_router = fastapi_users.get_users_router(UserRead, UserUpdate)
+users_router.routes = [
+    route
+    for route in users_router.routes
+    if isinstance(route, APIRoute)
+    and route.path == "/me"
+    and route.methods == {"GET"}
+]
+app.include_router(users_me_router)
 app.include_router(
-    fastapi_users.get_users_router(UserRead, UserUpdate),
+    users_router,
     prefix="/api/users",
     tags=["users"],
 )
@@ -184,7 +257,9 @@ app.include_router(import_logs_router)
 app.include_router(accounts_router)
 app.include_router(connections_router)
 app.include_router(recurring_router)
+app.include_router(forecast_router)
 app.include_router(budgets_router)
+
 app.include_router(goals_router)
 app.include_router(groups_router)
 app.include_router(assets_router)
@@ -198,19 +273,24 @@ app.include_router(currencies_router)
 app.include_router(timezones_router)
 app.include_router(fx_rates_router)
 app.include_router(export_router)
+app.include_router(backups_router)
 app.include_router(attachments_router)
 app.include_router(fiscal_router)
+app.include_router(notifications_router)
 app.include_router(payees_router)
 app.include_router(invoices_router)
 app.include_router(invoice_attachments_router)
 app.include_router(invoice_schedules_router)
 app.include_router(public_invoices_router)
+app.include_router(operator_router)
 app.include_router(products_router)
 app.include_router(settings_router)
 app.include_router(workspaces_router)
 app.include_router(access_tokens_router)
 app.include_router(plugins_router)
+app.include_router(ui_layouts_router)
 app.include_router(admin_router)
+app.include_router(access_log_router)
 app.include_router(info_router)
 
 
@@ -226,6 +306,9 @@ if os.getenv("AGENTS_ENABLED", "false").strip().lower() in ("1", "true", "yes", 
         from app.agents.api.chat import router as agents_chat_router
         from app.agents.api.knowledge import router as agents_knowledge_router
         from app.agents.api.mcp_tokens import router as agents_mcp_tokens_router
+        # Document reading is part of the agents module (ADR 0037): with
+        # agents off, none of its code is even imported.
+        from app.api.document_extractions import router as document_ai_router
 
         # Mount literal-prefix routers (conversations, connections,
         # mcp-tokens) BEFORE the generic agents router so paths like
@@ -237,6 +320,7 @@ if os.getenv("AGENTS_ENABLED", "false").strip().lower() in ("1", "true", "yes", 
         app.include_router(agents_router)
         app.include_router(agents_chat_router)
         app.include_router(agents_knowledge_router)
+        app.include_router(document_ai_router)
         logger.info("Agents feature enabled — mounted /api/agents routes")
     except Exception:
         logger.exception("Agents feature flag is on but import failed; routes not mounted")
@@ -245,3 +329,31 @@ if os.getenv("AGENTS_ENABLED", "false").strip().lower() in ("1", "true", "yes", 
 @app.get("/api/health")
 async def health_check():
     return {"status": "healthy"}
+
+
+# Serve the built SPA from this process. Inert unless FRONTEND_DIST_PATH
+# points at a real directory, so the published backend image, which contains
+# no frontend build, behaves exactly as before.
+#
+# `app.frontend()` rather than mounting StaticFiles at "/": a Mount at the
+# root matches every path, so an unknown /api/... would be answered with
+# index.html and HTTP 200 instead of a JSON 404, and the trailing-slash
+# redirect would never be reached. The frontend route is low-priority (it is
+# consulted after every real route, after 405 handling, and after the
+# redirect) and its index.html fallback only fires for requests that accept
+# text/html. A caveat worth knowing: that makes `curl /transactions` a 404,
+# because curl sends `Accept: */*`. Health checks should use /api/health.
+_frontend_dist = settings.frontend_dist_path.strip()
+if _frontend_dist and os.path.isdir(_frontend_dist):
+    from app.core.spa import FrontendCacheHeadersMiddleware
+
+    app.add_middleware(FrontendCacheHeadersMiddleware)
+    # The isdir() above is the check; check_dir would only re-run it and
+    # raise at import time on a race.
+    app.frontend("/", directory=_frontend_dist, check_dir=False)
+    logger.info("Serving the frontend in-process from %s", _frontend_dist)
+elif _frontend_dist:
+    logger.warning(
+        "FRONTEND_DIST_PATH=%s is not a directory; the frontend is not served",
+        _frontend_dist,
+    )

@@ -1,5 +1,7 @@
 # backend/app/services/rule_service.py
 import uuid
+from collections.abc import Iterable
+from dataclasses import dataclass
 from typing import Optional
 
 from sqlalchemy import delete, select
@@ -9,7 +11,7 @@ from sqlalchemy.orm import load_only
 from app.models.rule import Rule
 from app.models.category import Category
 from app.models.payee import Payee
-from app.models.transaction import Transaction
+from app.models.transaction import Transaction, provider_category_text
 
 from app.schemas.rule import (
     RuleCreate,
@@ -41,7 +43,7 @@ class DuplicateRuleError(Exception):
 
 _ALLOWED_CONDITION_FIELDS = {
     "description", "payee", "notes", "amount", "type", "account_id", "payee_id", "date",
-    "status",
+    "status", "provider_category",
 }
 # Status is a closed set, so only equality makes sense and the value must be one
 # of the statuses a transaction can carry.
@@ -53,6 +55,12 @@ _ALLOWED_CONDITION_OPS = {
 }
 _ALLOWED_ACTION_OPS = {
     "set_category", "set_payee", "set_description", "append_notes", "ignore",
+}
+# The provider category is free text, so a numeric comparison would read the
+# label as 0 and match every row, including those without provider data.
+_PROVIDER_CATEGORY_CONDITION_OPS = {
+    "contains", "not_contains", "equals", "not_equals", "starts_with",
+    "ends_with", "regex",
 }
 
 
@@ -86,14 +94,30 @@ async def validate_rule_definition(
     for condition in _flatten_conditions(conditions):
         field = _rule_item_value(condition, "field")
         op = _rule_item_value(condition, "op")
-        if field not in _ALLOWED_CONDITION_FIELDS or op not in _ALLOWED_CONDITION_OPS:
-            raise ValueError("Invalid rule condition")
-        if field == "status" and (
-            op not in _STATUS_CONDITION_OPS
-            or str(_rule_item_value(condition, "value") or "").strip().lower()
-            not in _STATUS_CONDITION_VALUES
-        ):
-            raise ValueError("Invalid rule condition")
+        if field not in _ALLOWED_CONDITION_FIELDS:
+            raise ValueError(f"Invalid condition: unsupported field {field!r}")
+        if op not in _ALLOWED_CONDITION_OPS:
+            raise ValueError(
+                f"Invalid condition: unsupported op {op!r} for field {field!r}"
+            )
+        if field == "status":
+            if op not in _STATUS_CONDITION_OPS:
+                raise ValueError(
+                    f"Invalid condition: unsupported op {op!r} for field 'status'; "
+                    "status supports only 'equals' and 'not_equals'"
+                )
+            value = str(_rule_item_value(condition, "value") or "").strip().lower()
+            if value not in _STATUS_CONDITION_VALUES:
+                raise ValueError(
+                    f"Invalid condition: unsupported status value {value!r}; "
+                    "use 'pending' or 'posted'"
+                )
+        if field == "provider_category" and op not in _PROVIDER_CATEGORY_CONDITION_OPS:
+            raise ValueError(
+                f"Invalid condition: unsupported op {op!r} for field 'provider_category'; "
+                "provider_category accepts only contains, not_contains, equals, "
+                "not_equals, starts_with, ends_with and regex"
+            )
         if op == "regex":
             compile_rule_regex(str(_rule_item_value(condition, "value") or ""))
 
@@ -101,7 +125,7 @@ async def validate_rule_definition(
         op = _rule_item_value(action, "op")
         value = _rule_item_value(action, "value")
         if op not in _ALLOWED_ACTION_OPS:
-            raise ValueError("Invalid rule action")
+            raise ValueError(f"Invalid action: unsupported op {op!r}")
         if op == "set_category":
             try:
                 category_id = uuid.UUID(str(value))
@@ -391,6 +415,44 @@ async def get_rules(session: AsyncSession, workspace_id: uuid.UUID) -> list[Rule
     return list(result.scalars().all())
 
 
+async def list_provider_categories(
+    session: AsyncSession, workspace_id: uuid.UUID
+) -> list[str]:
+    """Distinct provider categories the workspace's transactions already carry.
+
+    The `provider_category` condition compares against the exact label the
+    provider sent (often an English name such as "Groceries"), so the rule
+    editor offers these values instead of letting people guess a translation
+    (#280). Values arrive in different cases across providers, so they are
+    ordered case-insensitively.
+
+    The JSON value is read as JSON, not as text, and turned into a suggestion
+    by `provider_category_text`, the same function behind
+    `Transaction.provider_category`: the editor offers exactly what a rule can
+    match, including a numeric code in its text form, and nothing the engine
+    treats as no label (#353).
+
+    There is deliberately no `DISTINCT`: `raw_data` is a `JSON` column, so the
+    bare value is typed `json`, and PostgreSQL has no equality operator for it
+    — `SELECT DISTINCT raw_data -> 'category'` fails at planning on every
+    PostgreSQL instance (#375). The set below de-duplicates instead, after the
+    values that are no label are dropped.
+    """
+    value = Transaction.raw_data["category"]
+    result = await session.execute(
+        select(value).where(
+            Transaction.workspace_id == workspace_id,
+            Transaction.raw_data.is_not(None),
+        )
+    )
+    return sorted(
+        {
+            text
+            for raw in result.scalars()
+            if (text := provider_category_text(raw)) is not None
+        },
+        key=str.casefold,
+    )
 
 
 async def export_rules(session: AsyncSession, workspace_id: uuid.UUID) -> RuleExportPayload:
@@ -602,7 +664,8 @@ async def existing_rule_names(
 # Exactly the columns `_rule_preview` copies. Anything reading a column that is
 # not here off a transaction loaded with `load_only(*_PREVIEW_COLUMNS)` would
 # trigger a lazy refresh — which raises under async — so the two lists move
-# together.
+# together. `raw_data` joins this list only for conditions that read the
+# provider category, since the payload dwarfs the rest of the row.
 _PREVIEW_COLUMNS = (
     Transaction.user_id,
     Transaction.workspace_id,
@@ -622,10 +685,11 @@ _PREVIEW_COLUMNS = (
     Transaction.notes,
     Transaction.is_ignored,
     Transaction.has_category_lines,
+    Transaction.transfer_pair_id,
 )
 
 
-def _rule_preview(transaction: Transaction) -> Transaction:
+def _rule_preview(transaction: Transaction, *, include_raw_data: bool = True) -> Transaction:
     """Build a detached transaction-shaped object for side-effect-free rule evaluation."""
     return Transaction(
         user_id=transaction.user_id,
@@ -645,6 +709,8 @@ def _rule_preview(transaction: Transaction) -> Transaction:
         payee_id=transaction.payee_id,
         notes=transaction.notes,
         is_ignored=transaction.is_ignored,
+        transfer_pair_id=transaction.transfer_pair_id,
+        raw_data=transaction.raw_data if include_raw_data else None,
     )
 
 
@@ -667,6 +733,10 @@ async def preview_rules_for_transaction(
     user_id: uuid.UUID,
     transaction: Transaction,
     skip_category_rules: bool = False,
+    *,
+    skip_description: bool = False,
+    skip_payee: bool = False,
+    workspace_rules: "WorkspaceRules | None" = None,
 ) -> Transaction:
     """Apply active rules to a detached preview and return it without persistence."""
     preview = _rule_preview(transaction)
@@ -675,13 +745,203 @@ async def preview_rules_for_transaction(
         user_id,
         preview,
         skip_category_rules=skip_category_rules,
+        skip_description=skip_description,
+        skip_payee=skip_payee,
+        workspace_rules=workspace_rules,
     )
     return preview
+
+
+def description_is_manual(transaction: Transaction) -> bool:
+    """Whether the row's description must survive a rule pass.
+
+    Read it before a sync merges the provider's text into the row: a user who
+    renamed a placeholder to exactly what the bank later sends would otherwise
+    look like provider text. A row with no provenance is kept as it is, the
+    same way the sync merge treats it.
+    """
+    return not transaction.description_is_rule_managed and (
+        transaction.original_description is None
+        or transaction.description != transaction.original_description
+    )
+
+
+async def read_description_is_manual(
+    session: AsyncSession, transaction: Transaction,
+) -> bool:
+    """Lock a settling row, re-read its description and say if it is the user's.
+
+    Call it before the sync merges the provider's text: a rename the user
+    saved after the sync loaded the row would otherwise look like provider
+    text, so the merge would write over it and a rule could rename it.
+    """
+    # Write the sync's own changes first, since a refresh would drop them.
+    await session.flush()
+    await session.refresh(
+        transaction,
+        ["description", "original_description", "description_is_rule_managed"],
+        with_for_update=True,
+    )
+    return description_is_manual(transaction)
+
+
+async def apply_rules_to_settled_transaction(
+    session: AsyncSession,
+    user_id: uuid.UUID,
+    transaction: Transaction,
+    *,
+    manual_description: bool,
+    synced_payee_id: uuid.UUID | None = None,
+) -> None:
+    """Run the rules again on a row whose pending entry just posted.
+
+    A pending entry often carries placeholder text and no counterparty, so
+    the rules that ran on it matched nothing; the posted entry brings the real
+    description and payee. What the row already holds wins: the rules fill an
+    empty category or payee, append their notes and may ignore the row, and
+    they replace the description only when the user did not write it
+    (`manual_description`, from `description_is_manual` before the merge).
+    The rules run with those fields pinned, so a later rule never acts on a
+    value the row will not keep. A row the user ignored is left alone.
+    `synced_payee_id` is a payee the sync itself linked to a row that had
+    none: the rules may replace it, and it stays when none does.
+    """
+    if transaction.is_ignored:
+        return
+    # Write the sync's own changes first, since a refresh would drop them,
+    # then read what the rules check under a row lock: a category, split,
+    # payee or note the user saved since the sync loaded the row is kept.
+    await session.flush()
+    await session.refresh(
+        transaction,
+        [
+            "notes",
+            "category_id",
+            "has_category_lines",
+            "payee_id",
+            "is_ignored",
+        ],
+        with_for_update=True,
+    )
+    if transaction.is_ignored:
+        return
+    preview = await preview_rules_for_transaction(
+        session,
+        user_id,
+        transaction,
+        skip_category_rules=transaction.has_category_lines,
+        skip_description=manual_description,
+        skip_payee=(
+            transaction.payee_id is not None
+            and transaction.payee_id != synced_payee_id
+        ),
+    )
+    transaction.category_id = preview.category_id
+    transaction.payee_id = preview.payee_id
+    transaction.description = preview.description
+    transaction.original_description = preview.original_description
+    transaction.description_is_rule_managed = preview.description_is_rule_managed
+    # The preview started from the row's notes, so its notes keep the user's.
+    transaction.notes = preview.notes
+    transaction.is_ignored = preview.is_ignored
+
+
+def rule_payee_ids(rules: Iterable[Rule]) -> set[uuid.UUID]:
+    """Ids of the payees the rules' `set_payee` actions name."""
+    payee_ids: set[uuid.UUID] = set()
+    for rule in rules:
+        for action in rule.actions or []:
+            if _rule_item_value(action, "op") != "set_payee":
+                continue
+            try:
+                payee_ids.add(uuid.UUID(str(_rule_item_value(action, "value"))))
+            except ValueError:
+                continue
+    return payee_ids
+
+
+async def get_existing_rule_payee_ids(
+    session: AsyncSession, rules: Iterable[Rule],
+) -> set[uuid.UUID]:
+    """The payees the rules' `set_payee` actions name that still exist.
+
+    A rule keeps the payee id in a JSON action with no foreign key behind it,
+    so it can outlive the payee. Writing that id fails the flush and takes the
+    whole import or sync batch with it.
+    """
+    payee_ids = rule_payee_ids(rules)
+    if not payee_ids:
+        return set()
+    result = await session.execute(select(Payee.id).where(Payee.id.in_(payee_ids)))
+    return set(result.scalars().all())
+
+
+async def get_transfer_unsafe_category_ids(
+    session: AsyncSession,
+    workspace_id: uuid.UUID | None,
+    transactions: Iterable[Transaction],
+) -> set[uuid.UUID]:
+    """Ignored categories a rule must not put a transfer leg in.
+
+    An ignored category drops the row from its account's balance, so filing
+    only one leg there unbalances the transfer. Empty when none of
+    `transactions` is a transfer leg, which spares the query on the common path.
+    """
+    if workspace_id is None or not any(
+        tx.transfer_pair_id is not None for tx in transactions
+    ):
+        return set()
+    result = await session.execute(
+        select(Category.id).where(
+            Category.workspace_id == workspace_id, Category.is_ignored.is_(True)
+        )
+    )
+    return set(result.scalars().all())
+
+
+@dataclass(frozen=True)
+class WorkspaceRules:
+    """What every rule pass in one workspace reads, loaded once for a batch.
+
+    A batch (an import) runs the rules on each of its rows, and the rules,
+    the payees they name and the categories they may file under do not
+    change between rows; asking for them again per row was most of an
+    import's queries (#1919).
+    """
+
+    workspace_id: uuid.UUID
+    rules: tuple[Rule, ...]
+    existing_payee_ids: frozenset[uuid.UUID]
+    assignable_category_ids: frozenset[uuid.UUID]
+
+
+async def load_workspace_rules(
+    session: AsyncSession, workspace_id: uuid.UUID
+) -> WorkspaceRules:
+    """The active rules of a workspace and what they check, for a batch."""
+    result = await session.execute(
+        select(Rule)
+        .where(Rule.workspace_id == workspace_id, Rule.is_active == True)
+        .order_by(Rule.priority, Rule.id)
+    )
+    rules = tuple(result.scalars().all())
+    return WorkspaceRules(
+        workspace_id=workspace_id,
+        rules=rules,
+        existing_payee_ids=frozenset(await get_existing_rule_payee_ids(session, rules)),
+        assignable_category_ids=frozenset(
+            await get_assignable_category_ids(session, workspace_id)
+        ),
+    )
 
 
 async def apply_rules_to_transaction(
     session: AsyncSession, user_id: uuid.UUID, transaction: Transaction,
     skip_category_rules: bool = False,
+    *,
+    skip_description: bool = False,
+    skip_payee: bool = False,
+    workspace_rules: WorkspaceRules | None = None,
 ) -> None:
     """Apply all active rules to a transaction, modifying it in-place. Commits nothing.
 
@@ -689,16 +949,33 @@ async def apply_rules_to_transaction(
     haven't been migrated to pass workspace_id directly; rules are scoped by
     workspace via the transaction's own workspace_id when available, falling
     back to the legacy user filter so historical rows still match.
+
+    `workspace_rules`, from `load_workspace_rules` for the transaction's own
+    workspace, spares a batch the same lookups on every row.
     """
-    rule_filter = Rule.user_id == user_id
-    if getattr(transaction, "workspace_id", None) is not None:
-        rule_filter = Rule.workspace_id == transaction.workspace_id
-    result = await session.execute(
-        select(Rule)
-        .where(rule_filter, Rule.is_active == True)
-        .order_by(Rule.priority, Rule.id)
-    )
-    rules = result.scalars().all()
+    workspace_id = getattr(transaction, "workspace_id", None)
+    if workspace_rules is not None and workspace_rules.workspace_id == workspace_id:
+        rules = workspace_rules.rules
+        existing_payees = workspace_rules.existing_payee_ids
+        assignable_categories = workspace_rules.assignable_category_ids
+    else:
+        rule_filter = Rule.user_id == user_id
+        if workspace_id is not None:
+            rule_filter = Rule.workspace_id == workspace_id
+        result = await session.execute(
+            select(Rule)
+            .where(rule_filter, Rule.is_active == True)
+            .order_by(Rule.priority, Rule.id)
+        )
+        rules = result.scalars().all()
+        existing_payees = await get_existing_rule_payee_ids(session, rules)
+        # None means "do not filter": a transaction with no workspace at hand
+        # has no category list to check against.
+        assignable_categories = (
+            await get_assignable_category_ids(session, workspace_id)
+            if workspace_id is not None
+            else None
+        )
 
     # A row split across categories is categorized: its lines hold the
     # categories and its own category_id stays null.
@@ -707,12 +984,8 @@ async def apply_rules_to_transaction(
         or transaction.has_category_lines
         or skip_category_rules
     )
-    # None means "do not filter": a transaction with no workspace at hand
-    # has no category list to check against.
-    assignable_categories = (
-        await get_assignable_category_ids(session, transaction.workspace_id)
-        if getattr(transaction, "workspace_id", None) is not None
-        else None
+    transfer_unsafe_categories = await get_transfer_unsafe_category_ids(
+        session, getattr(transaction, "workspace_id", None), [transaction]
     )
 
     for rule in rules:
@@ -723,7 +996,11 @@ async def apply_rules_to_transaction(
                 actions,
                 transaction,
                 category_set,
+                skip_description=skip_description,
+                skip_payee=skip_payee,
                 assignable_category_ids=assignable_categories,
+                existing_payee_ids=existing_payees,
+                ignored_category_ids=transfer_unsafe_categories,
             )
 
 
@@ -776,13 +1053,22 @@ async def preview_rule(
     will_apply = is_active and apply_to_existing
     await validate_rule_definition(session, workspace_id, conditions, actions or [])
 
+    needs_raw_data = any(
+        _rule_item_value(leaf, "field") == "provider_category"
+        for leaf in _flatten_conditions(conditions or [])
+    )
     # Every transaction is evaluated in Python, so only the columns the engine
-    # reads and `_rule_preview` copies are worth fetching — notably not
-    # `raw_data`, whose provider payloads dwarf the rest of the row and which
-    # no condition or action can see.
+    # reads and `_rule_preview` copies are worth fetching. Provider payloads in
+    # `raw_data` dwarf the rest of the row, so it comes along only when a
+    # condition can see it.
+    preview_columns = (
+        (*_PREVIEW_COLUMNS, Transaction.raw_data)
+        if needs_raw_data
+        else _PREVIEW_COLUMNS
+    )
     result = await session.execute(
         select(Transaction)
-        .options(load_only(*_PREVIEW_COLUMNS))
+        .options(load_only(*preview_columns))
         .where(
             Transaction.workspace_id == workspace_id,
             Transaction.source != "opening_balance",
@@ -806,6 +1092,9 @@ async def preview_rule(
     # The save path skips `set_category` at an unavailable target, so a preview that
     # did not would promise a move that saving never makes.
     assignable_categories = await get_assignable_category_ids(session, workspace_id)
+    transfer_unsafe_categories = await get_transfer_unsafe_category_ids(
+        session, workspace_id, transactions
+    )
 
     matched = 0
     changed = 0
@@ -816,7 +1105,7 @@ async def preview_rule(
         # A rule that renamed this row before should still recognise it, so a
         # miss is retried against the original text — same as apply_single_rule.
         if not matches and tx.original_description is not None:
-            original_target = _rule_preview(tx)
+            original_target = _rule_preview(tx, include_raw_data=needs_raw_data)
             original_target.description = tx.original_description
             matches = evaluate_conditions(conditions_op, conditions or [], original_target)
         if not matches:
@@ -824,7 +1113,7 @@ async def preview_rule(
         matched += 1
         # An untouched copy when nothing is applied, so `new_category_*` below
         # simply mirrors what the transaction already has.
-        draft = _rule_preview(tx)
+        draft = _rule_preview(tx, include_raw_data=needs_raw_data)
         will_change = False
         if will_apply:
             before = _rule_effect_state(draft)
@@ -836,6 +1125,7 @@ async def preview_rule(
                 or (tx.category_id is not None and not overwrite_existing_categories),
                 skip_description=_has_manual_description(tx),
                 assignable_category_ids=assignable_categories,
+                ignored_category_ids=transfer_unsafe_categories,
             )
             will_change = _rule_effect_state(draft) != before
             if will_change:
@@ -900,6 +1190,10 @@ async def apply_single_rule(
     actions = rule.actions or []
 
     assignable_categories = await get_assignable_category_ids(session, workspace_id)
+    existing_payees = await get_existing_rule_payee_ids(session, [rule])
+    transfer_unsafe_categories = await get_transfer_unsafe_category_ids(
+        session, workspace_id, transactions
+    )
     count = 0
     for tx in transactions:
         matches = evaluate_conditions(rule.conditions_op, conditions, tx)
@@ -929,6 +1223,8 @@ async def apply_single_rule(
             or (tx.category_id is not None and not overwrite_existing_categories),
             skip_description=_has_manual_description(tx),
             assignable_category_ids=assignable_categories,
+            existing_payee_ids=existing_payees,
+            ignored_category_ids=transfer_unsafe_categories,
         )
         after = (
             tx.category_id,
@@ -964,6 +1260,10 @@ async def apply_all_rules(session: AsyncSession, workspace_id: uuid.UUID) -> int
     rules = rules_result.scalars().all()
 
     assignable_categories = await get_assignable_category_ids(session, workspace_id)
+    existing_payees = await get_existing_rule_payee_ids(session, rules)
+    transfer_unsafe_categories = await get_transfer_unsafe_category_ids(
+        session, workspace_id, transactions
+    )
     count = 0
     for tx in transactions:
         preserve_manual_description = _has_manual_description(tx)
@@ -998,6 +1298,8 @@ async def apply_all_rules(session: AsyncSession, workspace_id: uuid.UUID) -> int
                     category_set,
                     skip_description=preserve_manual_description,
                     assignable_category_ids=assignable_categories,
+                    existing_payee_ids=existing_payees,
+                    ignored_category_ids=transfer_unsafe_categories,
                 )
 
         after = (

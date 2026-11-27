@@ -18,6 +18,7 @@ from app.services.module_service import ModuleId
 from app.core.workspace_context import WorkspaceContext
 from app.schemas.invoice import InvoiceAttachmentRead, InvoiceAttachmentUpdate
 from app.services import invoice_attachment_service
+from app.services.attachment_service import served_content_type, served_headers
 
 router = APIRouter(
     prefix="/api/invoices/{invoice_id}/attachments", tags=["invoices"]
@@ -48,7 +49,6 @@ async def upload_attachment(
             user_id=ctx.user_id,
             invoice_id=invoice_id,
             filename=file.filename or "unnamed",
-            content_type=file.content_type or "application/octet-stream",
             data=await file.read(),
             kind=kind,
             source=source,
@@ -86,12 +86,20 @@ async def download_attachment(
         attachment, data = await invoice_attachment_service.download(
             session, attachment_id, ctx.workspace.id
         )
+    except FileNotFoundError:
+        # The row is there and the bytes are not: storage was cleared or
+        # migrated without this file. Different from a missing row, and a
+        # 500 would say we broke when the truth is the file is gone.
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Attachment file is missing from storage",
+        )
     except LookupError:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Attachment not found")
     return Response(
         content=data,
-        media_type=attachment.content_type,
-        headers={"Content-Disposition": f'inline; filename="{attachment.filename}"'},
+        media_type=served_content_type(attachment.filename),
+        headers=served_headers(attachment.filename),
     )
 
 

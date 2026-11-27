@@ -63,10 +63,10 @@ async def test_set_tool_enabled_inserts_then_updates_existing_row(session, test_
 
 
 @pytest.mark.asyncio
-async def test_allowed_tool_pairs_returns_none_when_no_rows(session, test_agent):
-    """No explicit AgentTool rows → returns None ('allow all')."""
+async def test_allowed_tool_pairs_is_empty_when_no_rows(session, test_agent):
+    """No AgentTool rows means no tools, never 'allow all'."""
     out = await agent_service.allowed_tool_pairs(session, test_agent.id)
-    assert out is None
+    assert out == set()
 
 
 # --------------------------------------------------------------------- agents API: /default + /tools
@@ -141,7 +141,7 @@ async def test_get_agent_tools_returns_merged_state(
         body = r.json()
         assert body["servers"] == [{"name": "securo"}]
         by_name = {t["name"]: t for t in body["tools"]}
-        # First-run with no AgentTool rows yet → enabled defaults to True.
+        # Created without a tool list → every discovered tool was enabled.
         assert by_name["list_accounts"]["enabled"] is True
         assert by_name["propose_x"]["is_proposal"] is True
 

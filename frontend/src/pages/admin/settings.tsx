@@ -1,8 +1,8 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { useTheme } from 'next-themes'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { admin as adminApi, currencies as currenciesApi } from '@/lib/api'
+import { extractApiError } from '@/lib/api-errors'
 import { resolveDisplayLocale, resolveDateLocale, type NumberFormat, type DateFormat } from '@/lib/format'
 import { resolveSupportedLang, SUPPORTED_LANGS } from '@/lib/i18n'
 import { useAuth } from '@/contexts/auth-context'
@@ -30,16 +30,33 @@ import {
 } from '@/components/ui/select'
 import { PageHeader } from '@/components/page-header'
 import { TimezoneSettings } from '@/components/timezone-settings'
-import { setThemeBasedOnSystem } from '@/lib/theme-utils'
+import { ProviderSettings } from '@/components/provider-settings'
+import { EmailSettings } from '@/components/email-settings'
+import { DEFAULT_COLORS_QUERY_KEY } from '@/hooks/use-app-theme'
 import { useLocalAuthEnabled } from '@/hooks/use-local-auth'
-import { Search, Plus, Trash2, Shield, ShieldOff, UserCog, Users, Scale, Tag, Palette, Save, Hash, CalendarDays } from 'lucide-react'
+import { Search, Plus, Trash2, Shield, ShieldOff, UserCog, Users, Scale, Tag, Palette, Save, Hash, CalendarDays, Lock } from 'lucide-react'
 import type { AdminUser } from '@/types'
+
+/** The one line a locked section shows in place of its control (ADR 0045). */
+function ManagedNote() {
+  const { t } = useTranslation()
+  return (
+    <p className="text-xs font-medium text-primary">{t('admin.settings.managedReadOnly')}</p>
+  )
+}
 
 export default function AdminSettingsPage() {
   const { t, i18n } = useTranslation()
   const { user: currentUser } = useAuth()
   const queryClient = useQueryClient()
-  const { resolvedTheme } = useTheme()
+
+  // A managed instance belongs to whoever runs it: the instance-wide settings
+  // are theirs, and this screen shows them without the controls (ADR 0045).
+  const { data: instanceMode } = useQuery({
+    queryKey: ['admin', 'instance-mode'],
+    queryFn: adminApi.instanceMode,
+  })
+  const managed = instanceMode?.managed === true
 
   const [search, setSearch] = useState('')
   const [createOpen, setCreateOpen] = useState(false)
@@ -55,8 +72,10 @@ export default function AdminSettingsPage() {
   const [editEmail, setEditEmail] = useState('')
   const [editIsActive, setEditIsActive] = useState(true)
   const [editIsAdmin, setEditIsAdmin] = useState(false)
-  const [editPassword, setEditPassword] = useState('')
-  const [showPasswordField, setShowPasswordField] = useState(false)
+  // Why the account is being touched; the API refuses the change without it
+  // and writes it to the access log (ADR 0042).
+  const [editReason, setEditReason] = useState('')
+  const [deleteReason, setDeleteReason] = useState('')
 
   const [lastSyncedLight, setLastSyncedLight] = useState<string | undefined>()
   const [lastSyncedDark, setLastSyncedDark] = useState<string | undefined>()
@@ -84,7 +103,7 @@ export default function AdminSettingsPage() {
   })
 
   const updateMutation = useMutation({
-    mutationFn: ({ id, ...data }: { id: string } & Record<string, unknown>) =>
+    mutationFn: ({ id, ...data }: { id: string; reason: string; email?: string; is_active?: boolean; is_superuser?: boolean }) =>
       adminApi.updateUser(id, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin', 'users'] })
@@ -97,14 +116,15 @@ export default function AdminSettingsPage() {
   })
 
   const deleteMutation = useMutation({
-    mutationFn: (id: string) => adminApi.deleteUser(id),
+    mutationFn: (data: { id: string; reason: string }) =>
+      adminApi.deleteUser(data.id, data.reason),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin', 'users'] })
       setDeleteUser(null)
       toast.success(t('admin.users.deleted'))
     },
-    onError: (err: { response?: { data?: { detail?: string } } }) => {
-      toast.error(err.response?.data?.detail || t('common.error'))
+    onError: (err) => {
+      toast.error(extractApiError(err, t('common.error')))
     },
   })
 
@@ -248,7 +268,8 @@ export default function AdminSettingsPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin', 'settings'] })
-      setThemeBasedOnSystem(localLight, localDark, resolvedTheme)
+      // The page re-reads the accent colors and keeps each person's theme on top.
+      queryClient.invalidateQueries({ queryKey: DEFAULT_COLORS_QUERY_KEY })
       toast.success(t('admin.settings.updated'))
     },
     onError: () => {
@@ -271,8 +292,12 @@ export default function AdminSettingsPage() {
     setEditEmail(u.email)
     setEditIsActive(u.is_active)
     setEditIsAdmin(u.is_superuser)
-    setEditPassword('')
-    setShowPasswordField(false)
+    setEditReason('')
+  }
+
+  function openDelete(u: AdminUser) {
+    setDeleteUser(u)
+    setDeleteReason('')
   }
 
   const users = usersData?.items ?? []
@@ -289,21 +314,34 @@ export default function AdminSettingsPage() {
         action={
           localAuthEnabled ? (
             <Button onClick={() => { resetCreateForm(); setCreateOpen(true) }}>
-              <Plus size={16} className="mr-1.5" />
+              <Plus size={16} className="me-1.5" />
               {t('admin.users.add')}
             </Button>
           ) : undefined
         }
       />
 
+      {managed && (
+        <div
+          role="status"
+          className="mb-6 flex items-start gap-3 rounded-xl border border-primary/20 bg-primary/5 px-4 py-3"
+        >
+          <Lock size={16} className="mt-0.5 shrink-0 text-primary" aria-hidden="true" />
+          <div>
+            <p className="text-sm font-medium text-foreground">{t('admin.settings.managedTitle')}</p>
+            <p className="mt-0.5 text-xs text-muted-foreground">{t('admin.settings.managedDesc')}</p>
+          </div>
+        </div>
+      )}
+
       {/* Search */}
       <div className="relative max-w-md mb-5">
-        <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+        <Search size={16} className="absolute start-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
         <Input
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder={t('admin.users.searchPlaceholder')}
-          className="pl-9 h-10 bg-card border-border/60 rounded-xl"
+          className="ps-9 h-10 bg-card border-border/60 rounded-xl"
         />
       </div>
 
@@ -324,7 +362,7 @@ export default function AdminSettingsPage() {
               <button
                 key={u.id}
                 onClick={() => openEdit(u)}
-                className="flex items-center gap-4 w-full px-5 py-3.5 text-left hover:bg-muted/40 transition-colors"
+                className="flex items-center gap-4 w-full px-5 py-3.5 text-start hover:bg-muted/40 transition-colors"
               >
                 <Avatar className="h-9 w-9 shrink-0">
                   <AvatarFallback className={u.is_superuser ? 'bg-primary/15 text-primary text-xs font-semibold' : 'bg-muted text-muted-foreground text-xs font-semibold'}>
@@ -338,6 +376,14 @@ export default function AdminSettingsPage() {
                     {isSelf(u) && (
                       <span className="text-[10px] font-medium text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
                         {t('admin.users.you')}
+                      </span>
+                    )}
+                    {u.pending_email && (
+                      <span
+                        className="text-[10px] font-medium text-amber-600 bg-amber-500/10 px-1.5 py-0.5 rounded"
+                        title={t('admin.users.pendingEmail', { email: u.pending_email })}
+                      >
+                        {t('admin.users.pending')}
                       </span>
                     )}
                   </div>
@@ -358,7 +404,7 @@ export default function AdminSettingsPage() {
                   {!isSelf(u) && (
                     <span
                       role="button"
-                      onClick={(e) => { e.stopPropagation(); setDeleteUser(u) }}
+                      onClick={(e) => { e.stopPropagation(); openDelete(u) }}
                       className="p-1.5 rounded-md text-muted-foreground/40 hover:text-destructive hover:bg-destructive/10 transition-colors"
                       title={t('common.delete')}
                     >
@@ -372,7 +418,9 @@ export default function AdminSettingsPage() {
         )}
       </div>
 
-      <TimezoneSettings />
+      <TimezoneSettings readOnly={managed} />
+      <EmailSettings readOnly={managed} />
+      <ProviderSettings readOnly={managed} />
 
       {/* Theme and Customization Section */}
       <div className="grid grid-cols-1 gap-6 mb-8">
@@ -382,13 +430,17 @@ export default function AdminSettingsPage() {
               <Palette size={15} className="text-muted-foreground" />
               <h3 className="text-sm font-semibold text-foreground">{t('settings.customization')}</h3>
             </div>
-            <Button
-              onClick={() => saveColorsMutation.mutate()}
-              disabled={saveColorsMutation.isPending}
-            >
-              <Save size={13} />
-              {saveColorsMutation.isPending ? t('common.loading') : t('common.save')}
-            </Button>
+            {managed ? (
+              <ManagedNote />
+            ) : (
+              <Button
+                onClick={() => saveColorsMutation.mutate()}
+                disabled={saveColorsMutation.isPending}
+              >
+                <Save size={13} />
+                {saveColorsMutation.isPending ? t('common.loading') : t('common.save')}
+              </Button>
+            )}
           </div>
           <div className="p-5 grid grid-cols-1 md:grid-cols-2 gap-6">
             {/* Light Mode Colors */}
@@ -399,11 +451,12 @@ export default function AdminSettingsPage() {
               <div className="space-y-1.5">
                 <Label className="text-xs">{t('settings.themeColor')}</Label>
                 <div className="flex items-center gap-2">
-                  <Input 
-                    type="color" 
-                    className="w-12 h-9 p-1 cursor-pointer" 
+                  <Input
+                    type="color"
+                    className="w-12 h-9 p-1 cursor-pointer"
                     value={localLight}
                     onChange={(e) => setLocalLight(e.target.value)}
+                    disabled={managed}
                   />
                   <span className="text-xs font-mono text-muted-foreground">{localLight}</span>
                 </div>
@@ -418,11 +471,12 @@ export default function AdminSettingsPage() {
               <div className="space-y-1.5">
                 <Label className="text-xs">{t('settings.themeColor')}</Label>
                 <div className="flex items-center gap-2">
-                  <Input 
-                    type="color" 
-                    className="w-12 h-9 p-1 cursor-pointer" 
+                  <Input
+                    type="color"
+                    className="w-12 h-9 p-1 cursor-pointer"
                     value={localDark}
                     onChange={(e) => setLocalDark(e.target.value)}
+                    disabled={managed}
                   />
                   <span className="text-xs font-mono text-muted-foreground">{localDark}</span>
                 </div>
@@ -440,13 +494,14 @@ export default function AdminSettingsPage() {
             <h3 className="text-sm font-semibold text-foreground">{t('admin.settings.accountingTitle')}</h3>
           </div>
           <p className="text-xs text-muted-foreground">{t('admin.settings.accountingSubtitle')}</p>
+          {managed && <div className="mt-1"><ManagedNote /></div>}
         </div>
         <div className="divide-y divide-border/40">
           <button
             type="button"
             onClick={() => updateAccountingModeMutation.mutate('cash')}
-            disabled={updateAccountingModeMutation.isPending}
-            className="flex items-start gap-3 w-full px-5 py-4 text-left hover:bg-muted/40 transition-colors"
+            disabled={managed || updateAccountingModeMutation.isPending}
+            className="flex items-start gap-3 w-full px-5 py-4 text-start hover:bg-muted/40 transition-colors"
           >
             <div className={`mt-0.5 h-4 w-4 rounded-full border-2 shrink-0 ${accountingMode === 'cash' ? 'border-primary bg-primary' : 'border-muted-foreground/40'}`}>
               {accountingMode === 'cash' && <div className="h-full w-full rounded-full bg-primary ring-2 ring-background ring-inset" />}
@@ -459,8 +514,8 @@ export default function AdminSettingsPage() {
           <button
             type="button"
             onClick={() => updateAccountingModeMutation.mutate('accrual')}
-            disabled={updateAccountingModeMutation.isPending}
-            className="flex items-start gap-3 w-full px-5 py-4 text-left hover:bg-muted/40 transition-colors"
+            disabled={managed || updateAccountingModeMutation.isPending}
+            className="flex items-start gap-3 w-full px-5 py-4 text-start hover:bg-muted/40 transition-colors"
           >
             <div className={`mt-0.5 h-4 w-4 rounded-full border-2 shrink-0 ${accountingMode === 'accrual' ? 'border-primary bg-primary' : 'border-muted-foreground/40'}`}>
               {accountingMode === 'accrual' && <div className="h-full w-full rounded-full bg-primary ring-2 ring-background ring-inset" />}
@@ -480,6 +535,7 @@ export default function AdminSettingsPage() {
             <Tag size={15} className="text-muted-foreground" />
             <h3 className="text-sm font-semibold text-foreground">{t('admin.settings.providerCategoriesTitle')}</h3>
           </div>
+          {managed && <ManagedNote />}
         </div>
         <div className="px-5 py-4 flex items-center justify-between">
           <div>
@@ -489,11 +545,11 @@ export default function AdminSettingsPage() {
           <button
             aria-label={t('admin.settings.providerCategories')}
             onClick={() => updateProviderCatsMutation.mutate(useProviderCats ? 'false' : 'true')}
-            disabled={updateProviderCatsMutation.isPending}
+            disabled={managed || updateProviderCatsMutation.isPending}
             className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${useProviderCats ? 'bg-primary' : 'bg-muted-foreground/20'}`}
           >
             <span
-              className={`pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow-sm transition-transform ${useProviderCats ? 'translate-x-6' : 'translate-x-1'}`}
+              className={`pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow-sm transition-transform ${useProviderCats ? 'translate-x-6 rtl:-translate-x-6' : 'translate-x-1 rtl:-translate-x-1'}`}
             />
           </button>
         </div>
@@ -507,6 +563,7 @@ export default function AdminSettingsPage() {
             <h3 className="text-sm font-semibold text-foreground">{t('admin.settings.numberFormatTitle')}</h3>
           </div>
           <p className="text-xs text-muted-foreground">{t('admin.settings.numberFormatDesc')}</p>
+          {managed && <div className="mt-1"><ManagedNote /></div>}
         </div>
         <div className="divide-y divide-border/40">
           {([
@@ -525,8 +582,8 @@ export default function AdminSettingsPage() {
                 key={opt.value}
                 type="button"
                 onClick={() => updateNumberFormatMutation.mutate(opt.value)}
-                disabled={updateNumberFormatMutation.isPending}
-                className="flex items-start gap-3 w-full px-5 py-4 text-left hover:bg-muted/40 transition-colors"
+                disabled={managed || updateNumberFormatMutation.isPending}
+                className="flex items-start gap-3 w-full px-5 py-4 text-start hover:bg-muted/40 transition-colors"
               >
                 <div className={`mt-0.5 h-4 w-4 rounded-full border-2 shrink-0 ${numberFormat === opt.value ? 'border-primary bg-primary' : 'border-muted-foreground/40'}`}>
                   {numberFormat === opt.value && <div className="h-full w-full rounded-full bg-primary ring-2 ring-background ring-inset" />}
@@ -554,6 +611,7 @@ export default function AdminSettingsPage() {
             <h3 className="text-sm font-semibold text-foreground">{t('admin.settings.dateFormatTitle')}</h3>
           </div>
           <p className="text-xs text-muted-foreground">{t('admin.settings.dateFormatDesc')}</p>
+          {managed && <div className="mt-1"><ManagedNote /></div>}
         </div>
         <div className="divide-y divide-border/40">
           {([
@@ -573,8 +631,8 @@ export default function AdminSettingsPage() {
                 key={opt.value}
                 type="button"
                 onClick={() => updateDateFormatMutation.mutate(opt.value)}
-                disabled={updateDateFormatMutation.isPending}
-                className="flex items-start gap-3 w-full px-5 py-4 text-left hover:bg-muted/40 transition-colors"
+                disabled={managed || updateDateFormatMutation.isPending}
+                className="flex items-start gap-3 w-full px-5 py-4 text-start hover:bg-muted/40 transition-colors"
               >
                 <div className={`mt-0.5 h-4 w-4 rounded-full border-2 shrink-0 ${dateFormat === opt.value ? 'border-primary bg-primary' : 'border-muted-foreground/40'}`}>
                   {dateFormat === opt.value && <div className="h-full w-full rounded-full bg-primary ring-2 ring-background ring-inset" />}
@@ -603,6 +661,7 @@ export default function AdminSettingsPage() {
             <UserCog size={15} className="text-muted-foreground" />
             <h3 className="text-sm font-semibold text-foreground">{t('admin.settings.registrationTitle')}</h3>
           </div>
+          {managed && <ManagedNote />}
         </div>
 
         {settingsLoading ? (
@@ -618,11 +677,11 @@ export default function AdminSettingsPage() {
             <button
               aria-label={t('admin.settings.registration')}
               onClick={() => updateSettingMutation.mutate(isEnabled ? 'false' : 'true')}
-              disabled={updateSettingMutation.isPending}
+              disabled={managed || updateSettingMutation.isPending}
               className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${isEnabled ? 'bg-primary' : 'bg-muted-foreground/20'}`}
             >
               <span
-                className={`pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow-sm transition-transform ${isEnabled ? 'translate-x-6' : 'translate-x-1'}`}
+                className={`pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow-sm transition-transform ${isEnabled ? 'translate-x-6 rtl:-translate-x-6' : 'translate-x-1 rtl:-translate-x-1'}`}
               />
             </button>
           </div>
@@ -689,7 +748,7 @@ export default function AdminSettingsPage() {
                 className={`flex items-center gap-2 w-full px-3.5 py-2.5 rounded-lg border text-sm font-medium transition-all ${formIsAdmin ? 'bg-primary/8 border-primary/30 text-primary' : 'border-border text-muted-foreground hover:border-border/80'}`}
               >
                 {formIsAdmin ? <Shield size={15} /> : <ShieldOff size={15} />}
-                <span className="flex-1 text-left">{t('admin.users.adminRole')}</span>
+                <span className="flex-1 text-start">{t('admin.users.adminRole')}</span>
                 <span className={`text-xs ${formIsAdmin ? 'text-primary' : 'text-muted-foreground/60'}`}>
                   {formIsAdmin ? t('admin.users.enabled') : t('admin.users.disabled')}
                 </span>
@@ -716,12 +775,14 @@ export default function AdminSettingsPage() {
           {editUser && (
             <form onSubmit={(e) => {
               e.preventDefault()
-              const updates: Record<string, unknown> = { id: editUser.id }
+              const updates: { id: string; reason: string; email?: string; is_active?: boolean; is_superuser?: boolean } = {
+                id: editUser.id,
+                reason: editReason.trim(),
+              }
               if (editEmail !== editUser.email) updates.email = editEmail
               if (editIsActive !== editUser.is_active) updates.is_active = editIsActive
               if (editIsAdmin !== editUser.is_superuser) updates.is_superuser = editIsAdmin
-              if (editPassword && editPassword.length >= 8) updates.password = editPassword
-              updateMutation.mutate(updates as { id: string })
+              updateMutation.mutate(updates)
             }}>
               <div className="space-y-4 py-2">
                 <div className="flex items-center gap-3 pb-2">
@@ -742,32 +803,30 @@ export default function AdminSettingsPage() {
                 <div className="space-y-1.5">
                   <Label className="text-[13px]">{t('admin.users.email')}</Label>
                   <Input type="email" value={editEmail} onChange={(e) => setEditEmail(e.target.value)} required autoComplete="off" className="h-10 rounded-lg" />
+                  <p className="text-[11px] text-muted-foreground">
+                    {editEmail !== editUser.email
+                      ? t('admin.users.emailPendingHint')
+                      : editUser.pending_email
+                        ? t('admin.users.pendingEmail', { email: editUser.pending_email })
+                        : ''}
+                  </p>
                 </div>
-                {localAuthEnabled && (showPasswordField ? (
-                  <div className="space-y-1.5">
-                    <Label className="text-[13px]">{t('admin.users.resetPassword')}</Label>
-                    <Input
-                      type="text"
-                      value={editPassword}
-                      onChange={(e) => setEditPassword(e.target.value)}
-                      placeholder={t('admin.users.resetPasswordPlaceholder')}
-                      minLength={8}
-                      maxLength={72}
-                      autoComplete="off"
-                      autoFocus
-                      className="h-10 rounded-lg"
-                    />
-                  </div>
-                ) : (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="w-full rounded-lg"
-                    onClick={() => setShowPasswordField(true)}
-                  >
-                    {t('admin.users.resetPassword')}
-                  </Button>
-                ))}
+                <div className="space-y-1.5">
+                  <Label className="text-[13px]">{t('admin.users.reason')}</Label>
+                  <Input
+                    value={editReason}
+                    onChange={(e) => setEditReason(e.target.value)}
+                    placeholder={t('admin.users.reasonPlaceholder')}
+                    minLength={3}
+                    maxLength={500}
+                    required
+                    autoComplete="off"
+                    className="h-10 rounded-lg"
+                  />
+                  <p className="text-[11px] text-muted-foreground">
+                    {t('admin.users.reasonHint')}
+                  </p>
+                </div>
 
                 <div className="flex items-center gap-2">
                   <button
@@ -798,7 +857,11 @@ export default function AdminSettingsPage() {
                 <Button variant="outline" type="button" onClick={() => setEditUser(null)} className="rounded-lg">
                   {t('common.cancel')}
                 </Button>
-                <Button type="submit" disabled={updateMutation.isPending} className="rounded-lg">
+                <Button
+                  type="submit"
+                  disabled={updateMutation.isPending || editReason.trim().length < 3}
+                  className="rounded-lg"
+                >
                   {updateMutation.isPending ? t('common.loading') : t('common.save')}
                 </Button>
               </DialogFooter>
@@ -816,14 +879,30 @@ export default function AdminSettingsPage() {
               {t('admin.users.confirmDeleteDesc', { email: deleteUser?.email })}
             </DialogDescription>
           </DialogHeader>
+          <div className="space-y-1.5">
+            <Label className="text-[13px]">{t('admin.users.reason')}</Label>
+            <Input
+              value={deleteReason}
+              onChange={(e) => setDeleteReason(e.target.value)}
+              placeholder={t('admin.users.reasonPlaceholder')}
+              minLength={3}
+              maxLength={500}
+              required
+              autoComplete="off"
+              className="h-10 rounded-lg"
+            />
+            <p className="text-[11px] text-muted-foreground">
+              {t('admin.users.reasonHint')}
+            </p>
+          </div>
           <DialogFooter className="mt-2">
             <Button variant="outline" onClick={() => setDeleteUser(null)} className="rounded-lg">
               {t('common.cancel')}
             </Button>
             <Button
               variant="destructive"
-              disabled={deleteMutation.isPending}
-              onClick={() => deleteUser && deleteMutation.mutate(deleteUser.id)}
+              disabled={deleteMutation.isPending || deleteReason.trim().length < 3}
+              onClick={() => deleteUser && deleteMutation.mutate({ id: deleteUser.id, reason: deleteReason.trim() })}
               className="rounded-lg"
             >
               {deleteMutation.isPending ? t('common.loading') : t('common.delete')}

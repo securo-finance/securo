@@ -31,6 +31,10 @@ Good ways to align first:
 
 Once there's a shared understanding, go ahead and build. Large PRs that arrive without any prior discussion are harder to review and sometimes don't align with where the project is heading, so a quick conversation up front is the best way to make your contribution count.
 
+## Architecture Decisions
+
+The rules the code keeps, and where each feature lives, are in [`AGENTS.md`](AGENTS.md). The reasons behind them are in [`docs/adr/`](docs/adr/README.md): short records of each decision, the code that carries it and the tests that keep it true. Read the ones that touch the area you are changing; if your change makes or changes an architecture decision, add an ADR in the same pull request.
+
 ## Using AI
 
 Use it. We do. Parts of this codebase were written with AI. This isn't a policy against the tools.

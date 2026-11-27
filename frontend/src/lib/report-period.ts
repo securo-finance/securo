@@ -174,3 +174,52 @@ export function periodWindow(
     }
   }
 }
+
+/**
+ * The dates a period covers, always: the stepped window when there is one,
+ * else the current one the API would anchor on its own (a preset's window
+ * up to today, or the custom range). For reports that only take dates, such
+ * as a plugin's (ADR 0028).
+ */
+export function explicitWindow(
+  preset: PeriodPreset,
+  today: string,
+  offset: number,
+  customRange?: PeriodWindow,
+): PeriodWindow | null {
+  const stepped = periodWindow(preset, today, offset, customRange)
+  if (stepped) return stepped
+  switch (preset.kind) {
+    case 'ytd': {
+      const fy = preset.fyStartMonth ?? 1
+      const t = parseIso(today)
+      return { from: iso(t.y - (t.m < fy ? 1 : 0), fy, 1), to: today }
+    }
+    case 'rolling':
+      return { from: rollingStart(today, preset.months), to: today }
+    case 'days':
+      return { from: addDaysIso(today, -(preset.days - 1)), to: today }
+    case 'custom':
+      return customRange?.from && customRange.to ? customRange : null
+    default:
+      return null
+  }
+}
+
+/** The longest period a plugin report reads: the API's own cap (ADR 0028). */
+export const PLUGIN_REPORT_MAX_DAYS = 731
+
+/**
+ * A window trimmed to `maxDays` at most, keeping its end.
+ *
+ * A plugin's report reads at most two years, while the presets and the custom
+ * picker can ask for more: the 2Y preset starts on the 1st of the month 720
+ * days back, so its window runs up to 781 days, and the custom picker takes
+ * any range up to ten years. Trimming the start here keeps the report on the
+ * right period instead of handing the API a window it refuses outright.
+ */
+export function clampPeriodWindow(window: PeriodWindow, maxDays = PLUGIN_REPORT_MAX_DAYS): PeriodWindow {
+  if (daysBetween(window.from, window.to) <= maxDays) return window
+  return { from: addDaysIso(window.to, -maxDays), to: window.to }
+}
+

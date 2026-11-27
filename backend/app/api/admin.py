@@ -1,12 +1,17 @@
-import uuid
+import json
 import re
+import uuid
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
+from pydantic import AfterValidator
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import UserManager, current_active_user, current_superuser, get_user_manager
 from app.core.auth_policy import require_local_auth_enabled
+from app.core.config import get_settings
 from app.core.database import get_async_session
+from app.core.rate_limit import client_ip
 from app.core.app_clock import (
     app_timezone,
     environment_timezone,
@@ -17,15 +22,24 @@ from app.core.app_clock import (
 )
 from app.models.user import User
 from app.schemas.admin import (
+    AdminAccessLogList,
+    AdminAccessLogRead,
     AdminUserCreate,
     AdminUserList,
     AdminUserRead,
     AdminUserUpdate,
     AppSettingRead,
     AppSettingUpdate,
+    EmailStateRead,
+    InstanceModeRead,
+    ProviderSettingRead,
     TimezoneSettingRead,
+    clean_reason,
 )
 from app.services import admin_service
+from app.services import email_service
+from app.services import provider_settings
+from app.services.user_removal_service import SoleOwnerError
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
@@ -39,6 +53,34 @@ ALLOWED_SETTINGS = {
     "date_format",
     "timezone",
 }
+
+#: On a managed instance these belong to the operator, not to the person
+#: logging in as admin: every one of them is instance-wide and changes what
+#: everybody sees (ADR 0045).
+INSTANCE_SETTINGS = frozenset(ALLOWED_SETTINGS)
+
+
+def _refuse_managed_write(what: str) -> None:
+    """403 with a code the admin screen reads, when the operator owns `what`."""
+    if get_settings().managed_instance:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "code": "instance_managed",
+                "message": f"'{what}' is configured by the operator on this instance",
+            },
+        )
+
+
+@router.get("/instance-mode", response_model=InstanceModeRead)
+async def instance_mode(_user: User = Depends(current_superuser)):
+    """What this instance lets its administrator change (ADR 0045)."""
+    managed = get_settings().managed_instance
+    return InstanceModeRead(
+        managed=managed,
+        locked_settings=sorted(INSTANCE_SETTINGS) if managed else [],
+        locked_providers=managed,
+    )
 
 
 @router.get("/users", response_model=AdminUserList)
@@ -91,13 +133,14 @@ async def get_user(
 async def update_user(
     user_id: uuid.UUID,
     data: AdminUserUpdate,
+    request: Request,
     session: AsyncSession = Depends(get_async_session),
     current_user: User = Depends(current_superuser),
 ):
-    if data.password is not None:
-        require_local_auth_enabled()
     try:
-        user = await admin_service.update_user(session, user_id, data, current_user.id)
+        user = await admin_service.update_user(
+            session, user_id, data, current_user.id, ip=client_ip(request)
+        )
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     if not user:
@@ -108,15 +151,47 @@ async def update_user(
 @router.delete("/users/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_user(
     user_id: uuid.UUID,
+    request: Request,
+    # Same rule as the body of an update: trimmed, never blank, no NUL (#557).
+    reason: Annotated[str, Query(...), AfterValidator(clean_reason)],
     session: AsyncSession = Depends(get_async_session),
     current_user: User = Depends(current_superuser),
 ):
     try:
-        deleted = await admin_service.delete_user(session, user_id, current_user.id)
+        deleted = await admin_service.delete_user(
+            session, user_id, current_user.id, reason=reason, ip=client_ip(request)
+        )
+    except SoleOwnerError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "code": "user_sole_owner",
+                "message": str(e),
+                "workspace": e.workspace_name,
+            },
+        )
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     if not deleted:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+
+@router.get("/access-log", response_model=AdminAccessLogList)
+async def access_log(
+    user_id: uuid.UUID | None = Query(None, description="Only this account"),
+    page: int = Query(1, ge=1),
+    limit: int = Query(50, ge=1, le=100),
+    session: AsyncSession = Depends(get_async_session),
+    _user: User = Depends(current_superuser),
+):
+    """Every administrative action on an account, newest first."""
+    entries, total = await admin_service.list_access_log(
+        session, target_user_id=user_id, page=page, limit=limit
+    )
+    return AdminAccessLogList(
+        items=[AdminAccessLogRead.model_validate(e) for e in entries],
+        total=total,
+    )
 
 
 @router.get("/settings/{key}", response_model=AppSettingRead)
@@ -125,10 +200,41 @@ async def get_setting(
     session: AsyncSession = Depends(get_async_session),
     _user: User = Depends(current_superuser),
 ):
+    if key in provider_settings.SETTING_FIELDS:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Setting not found")
     setting = await admin_service.get_app_setting(session, key)
     if not setting:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Setting not found")
     return AppSettingRead.model_validate(setting)
+
+
+@router.get("/provider-settings", response_model=list[ProviderSettingRead])
+async def get_provider_settings(
+    session: AsyncSession = Depends(get_async_session),
+    _user: User = Depends(current_superuser),
+):
+    return await provider_settings.provider_status(session)
+
+
+@router.patch("/provider-settings/{provider}", response_model=ProviderSettingRead)
+async def update_provider_settings(
+    provider: str,
+    request: Request,
+    session: AsyncSession = Depends(get_async_session),
+    _user: User = Depends(current_superuser),
+):
+    _refuse_managed_write(provider)
+    # Parse explicitly so schema validation errors cannot echo submitted secrets.
+    try:
+        body = await request.json()
+        if not isinstance(body, dict) or set(body) != {"values"} or not isinstance(body["values"], dict):
+            raise ValueError("Invalid provider settings")
+        return await provider_settings.update_provider(session, provider, body["values"])
+    except provider_settings.SecretStorageUnavailable as exc:
+        # Fixed server-side text, never the submitted values.
+        raise HTTPException(status_code=409, detail=str(exc)) from None
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid provider settings") from None
 
 
 @router.patch("/settings/{key}", response_model=AppSettingRead)
@@ -143,6 +249,7 @@ async def update_setting(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Setting '{key}' is not configurable",
         )
+    _refuse_managed_write(key)
     if key == "timezone" and not is_valid_timezone(data.value):
         raise HTTPException(status_code=400, detail="Invalid IANA timezone")
     SETTING_VALIDATORS = {
@@ -184,10 +291,76 @@ async def delete_setting(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Setting '{key}' is not configurable",
         )
+    _refuse_managed_write(key)
     await admin_service.delete_app_setting(session, key)
     if key == "timezone":
         invalidate_timezone_cache()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+async def _email_state(session: AsyncSession) -> EmailStateRead:
+    """The state both endpoints answer with, read after any change."""
+    settings = get_settings()
+    saved = await admin_service.get_email_templates(session)
+    return EmailStateRead(
+        enabled=settings.email_enabled,
+        provider=settings.email_provider,
+        sender=settings.email_from or settings.smtp_username,
+        templates=email_service.effective_templates(saved),
+    )
+
+
+@router.get("/email", response_model=EmailStateRead)
+async def email_state(
+    session: AsyncSession = Depends(get_async_session),
+    _user: User = Depends(current_superuser),
+):
+    """How outbound email is set up: the switch, the provider, the sender and
+    the templates the recovery message would use. No secret is returned."""
+    return await _email_state(session)
+
+
+@router.put("/email", response_model=EmailStateRead)
+async def update_email_state(
+    request: Request,
+    session: AsyncSession = Depends(get_async_session),
+    current_user: User = Depends(current_superuser),
+):
+    """Replace the recovery templates, or clear them back to the built-in text.
+
+    The body is read here instead of through a model so a broken template
+    answers 400 with what is wrong, rather than a schema error nobody can act
+    on. Nothing is saved unless every template sent validates, and what is
+    saved is recorded with who saved it and what the text was before (#605).
+    """
+    # The message goes out from the operator's sender to every user of the
+    # instance, so on a hosted instance its text is the operator's (ADR 0045).
+    _refuse_managed_write("email")
+    try:
+        body = json.loads(await request.body())
+    except (ValueError, RecursionError):
+        # RecursionError too: JSON nested past the parser's stack is a broken
+        # body, and letting it escape answers 500 instead of saying so.
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="The body must be a JSON object",
+        )
+    # The field is required, even when empty: {} is a body that forgot it, and
+    # clearing is explicit ({"templates": {}}), so an empty object must not
+    # wipe the templates in use by accident.
+    if not isinstance(body, dict) or "templates" not in body or set(body) - {"templates"}:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="The body takes one field, templates, keyed by language",
+        )
+    try:
+        templates = email_service.validate_templates(body["templates"])
+    except email_service.TemplateError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+    await admin_service.update_email_templates(
+        session, templates, current_user.id, ip=client_ip(request)
+    )
+    return await _email_state(session)
 
 
 @router.get("/timezone", response_model=TimezoneSettingRead)

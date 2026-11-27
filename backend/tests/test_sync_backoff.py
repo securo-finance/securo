@@ -94,7 +94,8 @@ async def _run_sync_all(session, sync_one, hours=4):
          patch("app.tasks.sync_tasks.get_timezone", new_callable=AsyncMock,
                return_value=ZoneInfo("UTC")), \
          patch("app.tasks.sync_tasks._sync_one", sync_one):
-        return await _sync_all()
+        # The count of connections synced; throttled runs are counted apart.
+        return (await _sync_all())["synced"]
 
 
 @pytest.mark.asyncio

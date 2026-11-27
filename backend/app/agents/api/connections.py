@@ -60,11 +60,14 @@ async def update_connection(
     session: AsyncSession = Depends(get_async_session),
     user: User = Depends(current_active_user),
 ):
-    conn = await connection_service.update_connection(
-        session, conn_id, user.id,
-        name=data.name, base_url=data.base_url, api_key=data.api_key,
-        default_model=data.default_model, extra=data.extra, is_default=data.is_default,
-    )
+    try:
+        conn = await connection_service.update_connection(
+            session, conn_id, user.id,
+            name=data.name, base_url=data.base_url, api_key=data.api_key,
+            default_model=data.default_model, extra=data.extra, is_default=data.is_default,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     if conn is None:
         raise HTTPException(status_code=404, detail="connection not found")
     return ConnectionRead.from_orm_row(conn)

@@ -239,8 +239,48 @@ async def test_download_attachment(
         )
     assert response.status_code == 200
     assert response.headers["content-type"] == "image/png"
-    assert "photo.png" in response.headers.get("content-disposition", "")
+    assert response.headers["content-disposition"] == 'inline; filename="photo.png"'
+    assert response.headers["x-content-type-options"] == "nosniff"
     assert response.content == b"fake-file-content"
+
+
+@pytest.mark.asyncio
+async def test_download_attachment_missing_from_storage_returns_404(
+    client: AsyncClient,
+    auth_headers,
+    test_transactions: list[Transaction],
+    monkeypatch,
+    tmp_path,
+):
+    """The row is there and the file is not: 404, not 500.
+
+    A copy that missed a file, or a bucket whose policy hides it, leaves
+    exactly this state: the ledger has the attachment and storage does
+    not have the bytes.
+    """
+    from app.core.config import get_settings
+
+    monkeypatch.setattr(get_settings(), "storage_local_path", str(tmp_path))
+    txn = test_transactions[0]
+
+    upload_resp = await client.post(
+        f"/api/transactions/{txn.id}/attachments",
+        headers=auth_headers,
+        files={"file": ("receipt.png", TINY_PNG, "image/png")},
+    )
+    assert upload_resp.status_code == 201, upload_resp.text
+    attachment_id = upload_resp.json()["id"]
+
+    for path in tmp_path.rglob("*"):
+        if path.is_file():
+            path.unlink()
+
+    response = await client.get(
+        f"/api/transactions/{txn.id}/attachments/{attachment_id}",
+        headers=auth_headers,
+    )
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Attachment file is missing from storage"
 
 
 @pytest.mark.asyncio
@@ -382,7 +422,7 @@ async def test_get_attachment_settings(client: AsyncClient):
     response = await client.get("/api/settings/attachments")
     assert response.status_code == 200
     data = response.json()
-    assert data["allowed_extensions"] == ["jpg", "jpeg", "png", "webp", "gif", "heic", "pdf"]
+    assert data["allowed_extensions"] == ["jpg", "jpeg", "png", "webp", "gif", "heic", "pdf", "xml"]
     assert data["max_file_size_mb"] == 10
     assert data["max_attachments_per_transaction"] == 10
 
@@ -446,3 +486,55 @@ async def test_upload_unauthenticated(
         files={"file": ("receipt.png", TINY_PNG, "image/png")},
     )
     assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_download_serves_the_extension_type_not_the_claimed_one(
+    client: AsyncClient, auth_headers, test_transactions: list[Transaction]
+):
+    txn = test_transactions[0]
+    mock_storage = _make_mock_storage()
+    with patch(STORAGE_PATCH, return_value=mock_storage):
+        upload_resp = await client.post(
+            f"/api/transactions/{txn.id}/attachments",
+            headers=auth_headers,
+            files={"file": ("receipt.pdf", b"<script>1</script>", "text/html")},
+        )
+        assert upload_resp.json()["content_type"] == "application/pdf"
+
+        response = await client.get(
+            f"/api/transactions/{txn.id}/attachments/{upload_resp.json()['id']}",
+            headers=auth_headers,
+        )
+    assert response.headers["content-type"] == "application/pdf"
+
+
+XML_WITH_SCRIPT = (
+    b'<?xml version="1.0"?><html xmlns="http://www.w3.org/1999/xhtml">'
+    b"<script>alert(localStorage.getItem('token'))</script></html>"
+)
+
+
+@pytest.mark.asyncio
+async def test_an_xml_file_is_attached_and_handed_over_as_a_download(
+    client: AsyncClient, auth_headers, test_transactions: list[Transaction]
+):
+    """XML is accepted, and never rendered on the app's origin: an XML page can run script (ADR 0036)."""
+    txn = test_transactions[0]
+    mock_storage = _make_mock_storage()
+    mock_storage.download.return_value = XML_WITH_SCRIPT
+    with patch(STORAGE_PATCH, return_value=mock_storage):
+        upload = await client.post(
+            f"/api/transactions/{txn.id}/attachments",
+            headers=auth_headers,
+            files={"file": ("NFe-3525.xml", XML_WITH_SCRIPT, "application/xml")},
+        )
+        assert upload.status_code == 201, upload.text
+        response = await client.get(
+            f"/api/transactions/{txn.id}/attachments/{upload.json()['id']}", headers=auth_headers
+        )
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/octet-stream"
+    assert response.headers["content-disposition"] == 'attachment; filename="NFe-3525.xml"'
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.content == XML_WITH_SCRIPT

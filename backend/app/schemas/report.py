@@ -1,3 +1,5 @@
+from typing import Any
+
 from pydantic import BaseModel
 
 
@@ -70,3 +72,64 @@ class ReportResponse(BaseModel):
     meta: ReportMeta
     composition: list[ReportCompositionItem] = []
     category_trend: list[CategoryTrendItem] = []
+
+
+class CategoryStatementRow(BaseModel):
+    """One line of the income & expense statement.
+
+    ``values`` are signed net amounts in the primary currency (credits
+    positive, debits negative), aligned with ``CategoryStatementResponse.months``.
+    """
+
+    key: str
+    kind: str  # "group" | "category" | "uncategorized"
+    label: str | None
+    icon: str | None = None
+    color: str | None = None
+    category_ids: list[str] = []
+    # Set on the uncategorized rows only: they are split by transaction type,
+    # so a drill-down has to filter by it to match the row.
+    txn_type: str | None = None
+    values: list[float]
+    children: list["CategoryStatementRow"] = []
+
+
+class CategoryStatementSection(BaseModel):
+    totals: list[float]
+    rows: list[CategoryStatementRow]
+
+
+class CategoryStatementResponse(BaseModel):
+    currency: str
+    # "YYYY-MM", newest first: the selected month, then the ones before it.
+    months: list[str]
+    income: CategoryStatementSection
+    expenses: CategoryStatementSection
+
+
+class PluginReportRow(BaseModel):
+    """One group of a plugin's report: a category, a payee, a month..."""
+
+    key: str
+    #: Null for rows the frontend names itself: `none` (no category or payee) and `other`.
+    label: str | None
+    value: float
+    color: str | None = None
+
+
+class PluginReportResponse(BaseModel):
+    """A plugin's report for the period asked (ADR 0028).
+
+    A query report comes back as `rows` Securo added up; a code report as the
+    `view` the plugin computed, already checked.
+    """
+
+    key: str
+    code: bool = False
+    measure: str | None = None
+    group_by: str | None = None
+    chart: str | None = None
+    currency: str
+    rows: list[PluginReportRow] = []
+    total: float = 0
+    view: dict[str, Any] | None = None

@@ -1,6 +1,6 @@
 import uuid
 from datetime import date
-from typing import Optional
+from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -8,8 +8,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.app_clock import app_today
 from app.core.database import get_async_session
 from app.core.workspace_context import WorkspaceContext, current_workspace
-from app.schemas.report import ReportDataRange, ReportResponse
-from app.services import report_service
+from app.core.feature_flags import feature_flag
+from app.schemas.report import (
+    CategoryStatementResponse,
+    PluginReportResponse,
+    PluginReportRow,
+    ReportDataRange,
+    ReportResponse,
+)
+from app.services import category_statement_service, plugin_report_service, report_service
 
 router = APIRouter(prefix="/api/reports", tags=["reports"])
 
@@ -144,6 +151,7 @@ async def get_income_expenses(
     days: Optional[int] = Query(None, ge=1, le=730),
     start_date: date | None = Query(None),
     end_date: date | None = Query(None),
+    include_forecasts: bool = Query(False),
     ctx: WorkspaceContext = Depends(current_workspace),
     session: AsyncSession = Depends(get_async_session),
 ):
@@ -151,7 +159,9 @@ async def get_income_expenses(
 
     Alternatively `start_date`/`end_date` (both required together) pin the
     window to an explicit historical calendar range, overriding `months`,
-    `period`, and `days`. Custom ranges include actuals only, without estimates.
+    `period`, and `days`. Custom ranges include actuals only, without estimates;
+    `include_forecasts` keeps them for a window that comes from a preset
+    (This Month, Last Month, a preset stepped back).
     """
     financial_year_start_month = _financial_year_start_month(ctx.workspace.tax_jurisdiction)
     custom_start, custom_end = _resolve_custom_range(start_date, end_date)
@@ -164,6 +174,7 @@ async def get_income_expenses(
         account_ids=account_ids, period=effective_period, days=days,
         financial_year_start_month=financial_year_start_month,
         start_date=custom_start, end_date=custom_end,
+        include_forecasts=include_forecasts,
     )
 
 
@@ -179,4 +190,96 @@ async def get_cash_flow(
     return await report_service.get_cash_flow_report(
         session, ctx.workspace.id, ctx.user_id, months, interval, ctx.user.primary_currency,
         baseline=baseline, account_ids=account_ids,
+    )
+
+
+@router.get("/category-statement", response_model=CategoryStatementResponse)
+async def get_category_statement(
+    month: str | None = Query(None, pattern=r"^\d{4}-(0[1-9]|1[0-2])$"),
+    months: int = Query(3, ge=1, le=12),
+    account_ids: Optional[list[uuid.UUID]] = Query(None),
+    ctx: WorkspaceContext = Depends(current_workspace),
+    session: AsyncSession = Depends(get_async_session),
+):
+    """Net income and expenses per category group for `month` (YYYY-MM,
+    default the current month) and the `months - 1` months before it."""
+    selected = (
+        date.fromisoformat(f"{month}-01") if month else app_today().replace(day=1)
+    )
+    return await category_statement_service.get_category_statement(
+        session, ctx.workspace.id, ctx.user_id, selected, months,
+        primary_currency=ctx.user.primary_currency, account_ids=account_ids,
+    )
+
+
+@router.get("/plugins/{owner}/{name}/{key}", response_model=PluginReportResponse)
+async def get_plugin_report(
+    owner: str,
+    name: str,
+    key: str,
+    start_date: date = Query(...),
+    end_date: date = Query(...),
+    account_ids: Optional[list[uuid.UUID]] = Query(None),
+    ctx: WorkspaceContext = Depends(current_workspace),
+    session: AsyncSession = Depends(get_async_session),
+):
+    """A report an installed plugin declares (ADR 0028).
+
+    Read as any report is: by whoever can see the workspace, over the period
+    and accounts they picked. A query report is added up by Securo; a code
+    report is the view the plugin's code returned, checked.
+    """
+    return await plugin_view_response(
+        session, ctx, "reports", f"{owner}/{name}", key, start_date, end_date, account_ids
+    )
+
+
+async def plugin_view_response(
+    session: AsyncSession,
+    ctx: WorkspaceContext,
+    kind: Literal["reports", "widgets"],
+    plugin_id: str,
+    key: str,
+    start_date: date,
+    end_date: date,
+    account_ids: Optional[list[uuid.UUID]],
+) -> PluginReportResponse:
+    """A plugin's report or dashboard widget (ADR 0034) for the period asked, as the API answers it."""
+    if not feature_flag("PLUGINS_ENABLED"):
+        raise HTTPException(status_code=404, detail="Plugins are not enabled")
+    try:
+        record, manifest, report = await plugin_report_service.installed_report(
+            session, ctx.workspace.id, plugin_id, key, kind
+        )
+    except plugin_report_service.PluginReportNotFound:
+        raise HTTPException(status_code=404, detail="Report not found" if kind == "reports" else "Widget not found") from None
+    if report.code:
+        try:
+            view = await plugin_report_service.run_code_report(
+                session, ctx.workspace.id, ctx.user_id, record, report, start_date, end_date, account_ids,
+                lang=(ctx.user.preferences or {}).get("language") or "en",
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from None
+        except plugin_report_service.CodeReportUnavailable as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from None
+        except plugin_report_service.CodeReportFailed as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from None
+        return PluginReportResponse(
+            key=report.key, code=True, currency=view.currency or "USD", view=view.model_dump(exclude_none=True)
+        )
+    try:
+        result = await plugin_report_service.run_report(
+            session, ctx.workspace.id, ctx.user_id, manifest, report, start_date, end_date, account_ids
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from None
+    return PluginReportResponse(
+        key=report.key,
+        measure=report.measure,
+        group_by=report.group_by,
+        chart=report.chart,
+        currency=result.currency,
+        rows=[PluginReportRow(key=r.key, label=r.label, value=float(r.value), color=r.color) for r in result.rows],
+        total=float(result.total),
     )

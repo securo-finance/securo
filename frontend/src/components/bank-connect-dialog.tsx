@@ -3,7 +3,8 @@ import { useTranslation } from 'react-i18next'
 import { useQueryClient } from '@tanstack/react-query'
 import { PluggyConnect } from 'react-pluggy-connect'
 import { connections } from '@/lib/api'
-import { invalidateFinancialQueries } from '@/lib/invalidate-queries'
+import { invalidateSyncedRecords } from '@/lib/invalidate-queries'
+import type { BankConnection } from '@/types'
 import { toast } from 'sonner'
 import {
   Dialog,
@@ -75,22 +76,43 @@ export function BankConnectDialog({
 
   const handleSuccess = async (data: { item: { id: string } }) => {
     try {
+      let connection: BankConnection | null = null
       if (reconnectConnectionId) {
+        // The callback stores the item again and marks the connection active,
+        // which a connection that was disconnected needs before it can sync.
+        await connections.handleCallback(data.item.id, provider, undefined, undefined, reconnectConnectionId)
         await connections.sync(reconnectConnectionId)
       } else {
-        await connections.handleCallback(
+        const knownConnectionIds = new Set(
+          (queryClient.getQueryData<BankConnection[]>(['connections']) ?? []).map((c) => c.id),
+        )
+        connection = await connections.handleCallback(
           data.item.id,
           provider,
           undefined,
           supportsAssetSync ? { sync_assets: syncAssets } : undefined,
         )
+        if (knownConnectionIds.has(connection.id)) {
+          // Connecting the bank again re-authored the connection that already
+          // held it (#1224): the callback only replaced its credentials, so the
+          // accounts of this consent appear on a sync, not before.
+          await connections.sync(connection.id)
+        }
       }
-      invalidateFinancialQueries(queryClient)
-      queryClient.invalidateQueries({ queryKey: ['connections'] })
-      toast.success(t('accounts.connected'))
+      invalidateSyncedRecords(queryClient)
+      if (connection?.status === 'error') {
+        // The bank is connected; only the first import was refused. The
+        // connection card retries it with the credentials already stored.
+        toast.warning(t('accounts.connectedImportFailed'))
+      } else {
+        toast.success(t('accounts.connected'))
+      }
     } catch {
       toast.error(t('accounts.connectError'))
     } finally {
+      // Also after a failure: the callback may have reactivated the
+      // connection before the sync failed, and the list must show that.
+      queryClient.invalidateQueries({ queryKey: ['connections'] })
       handleClose()
     }
   }

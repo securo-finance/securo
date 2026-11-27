@@ -7,10 +7,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.app_clock import app_today
 from app.models.account import Account
+from app.models.account_reserved_balance import AccountReservedBalance
 from app.models.category import Category
+from app.models.fx_rate import FxRate
 from app.models.recurring_transaction import RecurringTransaction
 from app.models.transaction import Transaction
 from app.models.bank_connection import BankConnection
+from app.models.user import User
+from app.models.workspace import WorkspaceMember
 from app.services.dashboard_service import (
     _balance_at,
     _baseline_from_deltas,
@@ -58,12 +62,13 @@ async def _add_txn(
     amount: float, txn_type: str, txn_date: date,
     source: str = "manual", transfer_pair_id: uuid.UUID | None = None,
     category_id: uuid.UUID | None = None, status: str = "posted",
+    currency: str = "BRL",
 ) -> Transaction:
     from datetime import datetime, timezone
     txn = Transaction(
         id=uuid.uuid4(), user_id=user_id, account_id=account_id,
         description=f"Test {txn_type} {amount}", amount=Decimal(str(amount)),
-        date=txn_date, type=txn_type, source=source, currency="BRL",
+        date=txn_date, type=txn_type, source=source, currency=currency,
         transfer_pair_id=transfer_pair_id, category_id=category_id,
         status=status,
         created_at=datetime.now(timezone.utc),
@@ -303,11 +308,36 @@ async def test_total_balance_by_currency(session: AsyncSession, test_user, test_
     today = date.today()
 
     await _add_txn(session, test_user.id, brl_acc.id, 1000, "credit", today, source="opening_balance")
-    await _add_txn(session, test_user.id, usd_acc.id, 500, "credit", today, source="opening_balance")
+    await _add_txn(
+        session, test_user.id, usd_acc.id, 500, "credit", today,
+        source="opening_balance", currency="USD",
+    )
 
     totals = await _total_balance_by_currency(session, test_workspace.id, today)
     assert totals.get("BRL", 0) == pytest.approx(1000.0)
     assert totals.get("USD", 0) == pytest.approx(500.0)
+
+
+@pytest.mark.asyncio
+async def test_balance_series_ignore_unconverted_foreign_rows(
+    session: AsyncSession, test_user, test_workspace
+):
+    """A manual account's series must skip rows with no FX stamp (#1263)."""
+    account = await _make_account(session, test_user.id, "Manual BRL", currency="BRL")
+    today = date.today()
+    await _add_txn(session, test_user.id, account.id, 100, "credit", today - timedelta(days=2))
+    await _add_txn(
+        session, test_user.id, account.id, 700000, "credit", today - timedelta(days=1),
+        currency="CLP",
+    )
+
+    totals = await _total_balance_by_currency(session, test_workspace.id, today)
+    assert totals.get("BRL", 0) == pytest.approx(100.0)
+    assert await _balance_at(session, test_workspace.id, today) == pytest.approx(100.0)
+
+    history = await get_balance_history(session, test_workspace.id, test_user.id)
+    today_point = next(p for p in history.current if p.day == today.day)
+    assert today_point.balance == pytest.approx(100.0)
 
 
 @pytest.mark.asyncio
@@ -359,6 +389,77 @@ async def test_total_balance_backtracks_shared_credit_balance_across_all_cards(
     )
 
     assert totals["BRL"] == pytest.approx(-225.0)
+
+
+# --- reserved balances (ADR 0022) -----------------------------------------
+
+
+async def _add_reserved(
+    session, workspace_id, account_id, external_id, amount, currency="BRL",
+):
+    row = AccountReservedBalance(
+        id=uuid.uuid4(), workspace_id=workspace_id, account_id=account_id,
+        external_id=external_id, name=None, currency=currency, amount=Decimal(amount),
+    )
+    session.add(row)
+    await session.commit()
+    return row
+
+
+async def _connected_account(session, test_user, test_workspace, balance, pockets):
+    from datetime import datetime, timezone
+
+    conn = BankConnection(
+        id=uuid.uuid4(), user_id=test_user.id, provider="pluggy",
+        external_id=f"ext-{uuid.uuid4().hex[:8]}", institution_name="Mercado Pago",
+        credentials={}, status="active",
+        last_sync_at=datetime.now(timezone.utc), created_at=datetime.now(timezone.utc),
+    )
+    session.add(conn)
+    await session.flush()
+    account = Account(
+        id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+        connection_id=conn.id, name="Mercado Pago", type="checking",
+        balance=Decimal(balance), currency="BRL",
+    )
+    session.add(account)
+    await session.commit()
+    for external_id, amount in pockets:
+        await _add_reserved(session, test_workspace.id, account.id, external_id, amount)
+    return account
+
+
+@pytest.mark.asyncio
+async def test_account_balance_at_ignores_reserved_balances(
+    session: AsyncSession, test_user, test_workspace,
+):
+    """Reserves never change current or historical account totals (ADR 0022)."""
+    with_pockets = await _connected_account(
+        session, test_user, test_workspace, "1000.00",
+        [("emergency-fund", "0"), ("round-up", "2000"), ("marketplace", "2000")],
+    )
+    without = await _connected_account(session, test_user, test_workspace, "1000.00", [])
+    today = date.today()
+
+    assert await _account_balance_at(session, with_pockets, today) == pytest.approx(1000.00)
+    assert await _account_balance_at(session, without, today) == pytest.approx(1000.00)
+    assert await _account_balance_at(session, with_pockets, today - timedelta(days=1)) == pytest.approx(1000.00)
+
+
+@pytest.mark.asyncio
+async def test_total_balance_by_currency_ignores_reserved_balances(
+    session: AsyncSession, test_user, test_workspace,
+):
+    """Neither same-currency nor foreign reserves enter dashboard totals."""
+    account = await _connected_account(
+        session, test_user, test_workspace, "1000.00",
+        [("round-up", "2000"), ("marketplace", "2000")],
+    )
+    await _add_reserved(session, test_workspace.id, account.id, "usd", "75", currency="USD")
+
+    totals = await _total_balance_by_currency(session, test_workspace.id, date.today())
+
+    assert totals == {"BRL": pytest.approx(1000.00)}
 
 
 # ---------------------------------------------------------------------------
@@ -556,6 +657,47 @@ async def test_closed_account_balance_stays_out_of_current_totals(
     assert summary.total_balance.get("BRL", 0.0) == pytest.approx(100.0)
     accounts = await _get_open_accounts(session, test_workspace.id)
     assert {a.id for a in accounts} == {open_account.id}
+
+
+@pytest.mark.asyncio
+async def test_past_month_balance_counts_account_closed_later_like_the_report(
+    session: AsyncSession, test_user, test_workspace
+):
+    """A past month's total matches the net worth report's point for it.
+
+    An account closed after that month was still open at its end, so both
+    count it; the current month leaves it out (#1579 fixed only the report).
+    """
+    from datetime import datetime, timezone
+
+    from app.services.report_service import get_net_worth_report
+
+    this_month = app_today().replace(day=1)
+    last_month = (this_month - timedelta(days=1)).replace(day=1)
+    two_months_ago = (last_month - timedelta(days=1)).replace(day=1)
+
+    open_account = await _make_account(session, test_user.id, "Open")
+    closed_later = await _make_account(session, test_user.id, "Closed later")
+    await _add_txn(session, test_user.id, open_account.id, 500, "credit", two_months_ago)
+    await _add_txn(session, test_user.id, closed_later.id, 120, "credit", two_months_ago)
+    await _add_txn(session, test_user.id, closed_later.id, 1666.67, "credit", last_month)
+    closed_later.is_closed = True
+    closed_later.closed_at = datetime.now(timezone.utc)
+    await session.commit()
+
+    report = await get_net_worth_report(
+        session, test_workspace.id, test_user.id, interval="monthly", currency="BRL",
+        start_date=two_months_ago, end_date=this_month - timedelta(days=1),
+    )
+    assert [p.value for p in report.trend] == [620.0, 2286.67]
+
+    for month, point in zip((two_months_ago, last_month), report.trend):
+        summary = await get_summary(session, test_workspace.id, test_user.id, month=month)
+        assert summary.total_balance_primary == pytest.approx(point.value)
+        assert summary.cash_balance_primary == pytest.approx(point.value)
+
+    current = await get_summary(session, test_workspace.id, test_user.id, month=this_month)
+    assert current.total_balance_primary == pytest.approx(500.0)
 
 
 @pytest.mark.asyncio
@@ -1138,6 +1280,122 @@ async def test_balance_history_basic(session, test_user, test_workspace):
     history = await get_balance_history(session, test_workspace.id, test_user.id)
     assert len(history.current) > 0
     assert 28 <= len(history.baseline) <= 31
+
+
+@pytest.mark.asyncio
+async def test_balance_history_resolves_each_rate_once(
+    session: AsyncSession, test_user, test_workspace, monkeypatch
+):
+    """One rate lookup per currency for the whole chart (issue #582).
+
+    The chart converts the month's daily deltas and its forecast rows one by
+    one. Each conversion used to resolve the same rate again: two fx_rates
+    lookups and one app_settings read per row, so a single chart asked the
+    database for hundreds of statements.
+    """
+    from sqlalchemy import event
+
+    today = date(2026, 1, 15)
+    monkeypatch.setattr("app.services.dashboard_service.app_today", lambda: today)
+    month_start = today.replace(day=1)
+    month_end = _month_range(month_start)[1]
+
+    account = await _make_account(session, test_user.id, "Rate book", currency="USD")
+    account.workspace_id = test_workspace.id
+    await session.commit()
+
+    day = month_start
+    while day < month_end:
+        session.add(Transaction(
+            id=uuid.uuid4(), user_id=test_user.id,
+            workspace_id=test_workspace.id, account_id=account.id,
+            description=f"Daily {day.isoformat()}", amount=Decimal("10"),
+            date=day, type="debit", source="manual", currency="USD",
+            status="posted", is_ignored=False,
+        ))
+        day += timedelta(days=1)
+
+    session.add(RecurringTransaction(
+        id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+        description="Daily", amount=Decimal("5"), type="credit",
+        frequency="daily", currency="USD",
+        start_date=month_start, next_occurrence=today + timedelta(days=1),
+    ))
+    await session.commit()
+
+    statements: list[str] = []
+
+    def record(conn, cursor, statement, parameters, context, executemany):
+        statements.append(statement)
+
+    engine = session.bind.sync_engine
+    event.listen(engine, "before_cursor_execute", record)
+    try:
+        history = await get_balance_history(
+            session, test_workspace.id, test_user.id, month=month_start
+        )
+    finally:
+        event.remove(engine, "before_cursor_execute", record)
+
+    assert history.current and history.opening_balance is not None
+    rates = [s for s in statements if "fx_rates" in s.lower()]
+    settings = [s for s in statements if "app_settings" in s.lower()]
+    # One read for credit_card_accounting_mode plus at most one for FX provider settings.
+    assert len(settings) <= 2, f"{len(settings)} app_settings reads for one chart"
+    assert len(rates) <= 4, f"{len(rates)} fx_rates statements for one chart"
+
+
+@pytest.mark.asyncio
+async def test_balance_history_reads_in_each_members_currency(
+    session: AsyncSession, test_user, test_workspace, monkeypatch
+):
+    """A shared workspace: the chart is converted to the currency of whoever reads it.
+
+    The same foreign account reads as BRL for the owner and as USD for the
+    member who displays dollars, and the sharing does not change the numbers
+    either of them sees.
+    """
+    today = date(2026, 1, 15)
+    monkeypatch.setattr("app.services.dashboard_service.app_today", lambda: today)
+    month_start = today.replace(day=1)
+
+    session.add(FxRate(
+        base_currency="USD", quote_currency="BRL", date=today,
+        rate=Decimal("5"), source="test",
+    ))
+    account = await _make_account(session, test_user.id, "Shared", currency="USD")
+    account.workspace_id = test_workspace.id
+    session.add(Transaction(
+        id=uuid.uuid4(), user_id=test_user.id,
+        workspace_id=test_workspace.id, account_id=account.id,
+        description="Shared income", amount=Decimal("10"),
+        date=today, type="credit", source="manual", currency="USD",
+        status="posted", is_ignored=False,
+    ))
+    member = User(
+        id=uuid.uuid4(), email=f"member-{uuid.uuid4().hex[:8]}@example.com",
+        hashed_password="x", is_active=True, is_verified=True,
+        preferences={"currency_display": "USD"},
+    )
+    session.add(member)
+    session.add(WorkspaceMember(
+        id=uuid.uuid4(), workspace_id=test_workspace.id,
+        user_id=member.id, role="viewer",
+    ))
+    await session.commit()
+
+    owner_view = await get_balance_history(
+        session, test_workspace.id, test_user.id, month=month_start
+    )
+    member_view = await get_balance_history(
+        session, test_workspace.id, member.id, month=month_start
+    )
+
+    # Day 15 closes the posted movement: R$ 50 for the owner (BRL), US$ 10 for
+    # the member who reads dollars.
+    assert owner_view.current[today.day - 1].balance == 50.0
+    assert member_view.current[today.day - 1].balance == 10.0
+    assert member_view.opening_balance == owner_view.opening_balance == 0.0
 
 
 @pytest.mark.asyncio

@@ -39,7 +39,7 @@ export default function CollectionsPage() {
   })
   const { data: wallets } = useQuery({
     queryKey: ['asset-groups'],
-    queryFn: assetGroupsApi.list,
+    queryFn: () => assetGroupsApi.list(),
   })
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ['collections'] })
@@ -75,7 +75,7 @@ export default function CollectionsPage() {
         title={t('collections.title')}
         action={
           <Button onClick={() => { setEditing(null); setDialogOpen(true) }}>
-            <Plus size={16} className="mr-1.5" />
+            <Plus size={16} className="me-1.5" />
             {t('collections.add')}
           </Button>
         }

@@ -10,7 +10,11 @@ Why a thin abstraction: swapping Yahoo out (for Stooq, Alpha Vantage,
 CoinGecko, or a user-chosen source) is a realistic future, and keeping
 the asset service off the concrete provider makes those swaps non-events.
 
-yfinance usage notes (matches v1.3.x):
+Calls to Yahoo go through ``market_data_guard``: a cache shared by every
+workspace (keyed by the public symbol only) and an instance-wide throttle,
+because all workspaces of an instance reach Yahoo from the same address.
+
+yfinance usage notes (checked against v1.8.0, the version in ``uv.lock``):
   * ``yfinance.Search(query, max_results=..., news_count=..., enable_fuzzy_query=...)``
     returns a ``.quotes`` list of dicts with keys like ``symbol``, ``shortname``,
     ``longname``, ``exchange``, ``exchDisp``, ``quoteType``.
@@ -20,7 +24,11 @@ yfinance usage notes (matches v1.3.x):
   * ``yf.config.network.retries`` enables transient-error retries (exponential
     backoff). Set once at module import so both Search and Ticker benefit.
   * ``YFRateLimitError`` is raised when Yahoo rate-limits us — we surface it
-    so the caller can decide (UI toast vs. scheduled-task skip).
+    so the caller can decide (UI toast vs. scheduled-task skip). yfinance
+    re-raises it even while ``yf.config.debug.hide_exceptions`` (on by
+    default) swallows other errors.
+  * ``yf.download`` makes one HTTP request per ticker (a loop over
+    ``_download_one`` in ``yfinance/multi.py``), not one per batch.
 """
 
 from __future__ import annotations
@@ -28,13 +36,25 @@ from __future__ import annotations
 import asyncio
 import logging
 from abc import ABC, abstractmethod
+from datetime import date, datetime
 from decimal import Decimal
-from typing import Optional
+from typing import NamedTuple, Optional
 
+from app.providers import market_data_guard
 from app.providers.favicon import favicon_url_for
 from app.schemas.asset import MarketSymbolMatch, MarketSymbolQuote
 
 logger = logging.getLogger(__name__)
+
+
+class LatestClose(NamedTuple):
+    """A symbol's latest price and the trading day it closed on.
+
+    ``on`` is None when the provider can't say which day the price is from.
+    """
+
+    price: Decimal
+    on: Optional[date]
 
 
 # Yahoo Finance occasionally reports prices in minor units (pence, cents).
@@ -44,6 +64,24 @@ _MINOR_UNIT_CURRENCIES: dict[str, tuple[str, float]] = {
     "GBp": ("GBP", 0.01),  # British pence → pounds (e.g. IITU.L)
     "ZAc": ("ZAR", 0.01),  # South African cents → rand (e.g. JSE.JO)
 }
+
+
+def _close_to_cache(close: LatestClose) -> dict:
+    return {"price": str(close.price), "on": close.on.isoformat() if close.on else None}
+
+
+def _close_from_cache(raw: object) -> Optional[LatestClose]:
+    """A cached close, or ``None`` for a miss or anything unreadable."""
+    if not isinstance(raw, dict):
+        return None
+    try:
+        price = Decimal(raw["price"])
+        on = date.fromisoformat(raw["on"]) if raw.get("on") else None
+    except (KeyError, TypeError, ValueError, ArithmeticError):
+        return None
+    if not price.is_finite():
+        return None
+    return LatestClose(price, on)
 
 
 def _normalize_currency_and_price(currency: str, price: float) -> tuple[str, float]:
@@ -107,6 +145,15 @@ class MarketPriceProvider(ABC):
                 out[key] = Decimal(str(quote.price))
         return out
 
+    async def get_latest_closes(self, symbols: list[str]) -> dict[str, Optional[LatestClose]]:
+        """`get_latest_prices` with the trading day each price closed on.
+
+        The scheduled refresh uses the day to tell a close from before a
+        recorded split. The default doesn't know the day.
+        """
+        prices = await self.get_latest_prices(symbols)
+        return {s: LatestClose(p, None) if p is not None else None for s, p in prices.items()}
+
 
 class YFinanceProvider(MarketPriceProvider):
     """Yahoo Finance provider backed by the ``yfinance`` Python library.
@@ -139,9 +186,14 @@ class YFinanceProvider(MarketPriceProvider):
         q = (query or "").strip()
         if not q:
             return []
-        raw = await asyncio.to_thread(self._search_sync, q, limit)
+        raw = await market_data_guard.cached(
+            "search",
+            f"{limit}:{q.casefold()}",
+            market_data_guard.SEARCH_TTL_SECONDS,
+            lambda: self._call_upstream(self._search_sync, q, limit),
+        )
         matches: list[MarketSymbolMatch] = []
-        for quote in raw:
+        for quote in raw or []:
             symbol = quote.get("symbol")
             if not symbol:
                 continue
@@ -157,17 +209,32 @@ class YFinanceProvider(MarketPriceProvider):
             )
         return matches
 
-    # Practical cap per `yf.download` request. Yahoo accepts more but starts
-    # silently dropping symbols beyond ~100 in community reports — we chunk
-    # above this to keep the success rate high.
+    async def _call_upstream(self, fn, *args):
+        """Run one blocking yfinance call under the instance-wide throttle.
+
+        No free slot, or Yahoo cooling down after a 429, raises the same
+        rate-limit error a 429 does, so routes answer "try again" and never
+        a 500. A 429 from Yahoo starts that cooldown for every caller.
+        """
+        if not await market_data_guard.take_call_slot():
+            raise MarketPriceRateLimitedError("Market data calls are throttled; try again shortly")
+        try:
+            return await asyncio.to_thread(fn, *args)
+        except MarketPriceRateLimitedError:
+            await market_data_guard.start_cooldown()
+            raise
+
+    # Tickers per `yf.download` call. yfinance still fetches them one HTTP
+    # request each; the chunk only bounds how much one failed call loses.
     _BATCH_CHUNK_SIZE = 100
 
     async def get_latest_prices(self, symbols: list[str]) -> dict[str, Optional[Decimal]]:
-        """One HTTP request per ~100 tickers via ``yfinance.download``.
+        """Latest close per ticker via ``yfinance.download``.
 
-        Much cheaper than looping ``get_quote`` for a scheduled refresh — a
-        portfolio of 50 market-priced assets goes from 50 calls to 1. The
-        tradeoff: ``download`` returns prices only (no currency/name/etc.).
+        ``download`` costs one HTTP request per ticker, the same count as
+        looping ``get_quote``'s price lookup, but skips the ``info`` fetch
+        and the per-call overhead. The tradeoff: ``download`` returns
+        prices only (no currency/name/etc.).
         That's fine here because ``Asset.currency`` is already cached from
         creation time; we just update the price and let ``current_value``
         recompute from ``units × last_price``.
@@ -179,21 +246,58 @@ class YFinanceProvider(MarketPriceProvider):
         If that lookup fails for a ticker its price is returned as ``None``
         rather than raw, so the caller falls back to ``get_quote``.
         """
+        closes = await self.get_latest_closes(symbols)
+        return {s: c.price if c is not None else None for s, c in closes.items()}
+
+    async def get_latest_closes(self, symbols: list[str]) -> dict[str, Optional[LatestClose]]:
+        """The batch download behind `get_latest_prices`, keeping each close's day."""
         if not symbols:
             return {}
         unique = list(dict.fromkeys(s.strip().upper() for s in symbols if s and s.strip()))
         if not unique:
             return {}
 
-        out: dict[str, Optional[Decimal]] = {s: None for s in unique}
-        for i in range(0, len(unique), self._BATCH_CHUNK_SIZE):
-            chunk = unique[i : i + self._BATCH_CHUNK_SIZE]
+        out: dict[str, Optional[LatestClose]] = {s: None for s in unique}
+        # The scheduled sweep asks once per workspace, and every workspace
+        # holding the same ticker would otherwise download it again. A close
+        # is public and the same for everyone, so it is shared through the
+        # cache for as long as a quote is.
+        missing: list[str] = []
+        for sym in unique:
+            hit = _close_from_cache(await market_data_guard.read("close", sym))
+            if hit is None:
+                missing.append(sym)
+            else:
+                out[sym] = hit
+        if not missing:
+            return out
+
+        refused = False
+        if await market_data_guard.cooling_down():
+            # Yahoo refused a moment ago: the cached closes are the answer
+            # and the rest waits for the next run instead of asking again.
+            missing = []
+            refused = True
+        for i in range(0, len(missing), self._BATCH_CHUNK_SIZE):
+            chunk = missing[i : i + self._BATCH_CHUNK_SIZE]
+            if not await market_data_guard.take_call_slot():
+                # The instance is out of call slots: a batch must not go
+                # around the throttle every other caller waits on.
+                refused = True
+                break
             try:
-                chunk_prices = await asyncio.to_thread(self._download_prices_sync, chunk)
-            except _rate_limit_exception_types():
-                raise MarketPriceRateLimitedError(
-                    "Yahoo Finance rate-limited the batch price download"
+                chunk_prices, chunk_refused = await asyncio.to_thread(
+                    self._download_closes_sync, chunk
                 )
+            except (_rate_limit_exception_types() + (MarketPriceRateLimitedError,)):
+                await market_data_guard.start_cooldown()
+                refused = True
+                break
+
+            # Tickers `yf.download` could not price at all. A symbol dropped
+            # further down for an unknown minor unit is not one of these: it
+            # did answer, so it says nothing about Yahoo refusing.
+            unanswered = [s for s, p in chunk_prices.items() if p is None]
 
             # Normalize minor-unit prices (GBp → GBP, ZAc → ZAR, both ×0.01).
             # yf.download returns raw pence/cents for LSE/JSE tickers without
@@ -204,7 +308,16 @@ class YFinanceProvider(MarketPriceProvider):
                 s for s, p in chunk_prices.items()
                 if p is not None and (s.endswith(".L") or s.endswith(".JO"))
             ]
-            if candidates:
+            if chunk_refused and candidates:
+                # `_get_currencies_sync` talks to Yahoo by itself, outside the
+                # throttle and the cooldown, so right after a refusal it would
+                # send one uncooled request per minor-unit ticker in the batch
+                # — up to a hundred. The closes cannot be scaled without their
+                # currency, so they are dropped here and fall back to
+                # `get_quote`, whose first call hits the cooldown started below.
+                for sym in candidates:
+                    chunk_prices[sym] = None
+            elif candidates:
                 try:
                     currencies = await asyncio.to_thread(
                         self._get_currencies_sync, candidates
@@ -223,41 +336,119 @@ class YFinanceProvider(MarketPriceProvider):
                         chunk_prices[sym] = None
                         continue
                     conv = _MINOR_UNIT_CURRENCIES.get(currency)
-                    price = chunk_prices[sym]
-                    if conv is not None and price is not None:
-                        chunk_prices[sym] = price * Decimal(str(conv[1]))
+                    close = chunk_prices[sym]
+                    if conv is not None and close is not None:
+                        chunk_prices[sym] = close._replace(price=close.price * Decimal(str(conv[1])))
 
+            # The closes that did come back are part of the answer as soon as
+            # they arrive: a refusal found below must not take them back.
             out.update(chunk_prices)
+            for sym, close in chunk_prices.items():
+                if close is not None:
+                    await market_data_guard.write(
+                        "close", sym, _close_to_cache(close), market_data_guard.PRICE_TTL_SECONDS
+                    )
+
+            if chunk_refused:
+                # The batch itself reported a 429 for one of its tickers. The
+                # frame cannot say which, and asking again may well succeed —
+                # the block lifts between calls as often as not — so the
+                # cooldown starts from what the batch said instead of waiting
+                # for the probe to reproduce it.
+                await market_data_guard.start_cooldown()
+                refused = True
+                break
+
+            if unanswered:
+                # `yf.download` records a per-ticker failure instead of
+                # raising it, so a rate limit inside the batch never reaches
+                # the handler above — and it can sit next to tickers that did
+                # answer, which a whole-chunk check would never look at. Every
+                # unanswered ticker is probed until one refuses: a delisted
+                # ticker answering without a price says nothing about the next
+                # one, whose 429 is hidden the same way. Probing stops at the
+                # first refusal, so the extra calls only happen while Yahoo is
+                # still answering them.
+                for symbol in unanswered:
+                    try:
+                        await self._call_upstream(self._price_sync, symbol)
+                    except MarketPriceRateLimitedError:
+                        refused = True
+                        break
+                if refused:
+                    break
+
+        if refused:
+            # A refusal partway through must not throw away the chunks that
+            # already answered: the caller commits what came in and lets the
+            # remaining tickers (still None here) fall back per holding, where
+            # the cooldown stops them at the first call. Only a batch that got
+            # nothing at all is worth raising for.
+            if all(price is None for price in out.values()):
+                raise MarketPriceRateLimitedError(
+                    "Yahoo Finance rate-limited the batch price download"
+                )
         return out
 
     async def get_quote(self, symbol: str) -> Optional[MarketSymbolQuote]:
         sym = (symbol or "").strip().upper()
         if not sym:
             return None
-        raw = await asyncio.to_thread(self._quote_sync, sym)
+        raw = await market_data_guard.cached(
+            "price",
+            sym,
+            market_data_guard.PRICE_TTL_SECONDS,
+            lambda: self._price_for_cache(sym),
+        )
         if raw is None:
             return None
         price = raw.get("price")
         currency = raw.get("currency")
         if price is None or not currency:
             return None
+        # The name and website only matter for display; a throttled or
+        # failed lookup still returns the price.
+        try:
+            info = await market_data_guard.cached(
+                "info",
+                sym,
+                market_data_guard.INFO_TTL_SECONDS,
+                lambda: self._call_upstream(self._info_sync, sym),
+            )
+        except MarketPriceRateLimitedError:
+            info = None
+        info = info or {}
+        quote_type = raw.get("quote_type") or info.get("quote_type")
         normalized_currency, normalized_price = _normalize_currency_and_price(
             currency, float(price)
         )
         return MarketSymbolQuote(
             symbol=sym,
-            name=raw.get("name"),
+            name=info.get("name"),
             exchange=raw.get("exchange"),
             currency=normalized_currency,
             price=normalized_price,
-            quote_type=raw.get("quote_type"),
-            logo_url=_logo_url_for(raw.get("website")),
+            quote_type=quote_type,
+            logo_url=_logo_url_for(info.get("website")),
         )
+
+    async def _price_for_cache(self, symbol: str) -> Optional[dict]:
+        """The price payload, or ``None`` when it cannot be used.
+
+        ``cached`` does not store ``None``, so a quote Yahoo answered with no
+        price (``lastPrice`` and ``previousClose`` both empty) is retried on
+        the next request instead of pinning a 404 on the symbol for the whole
+        price TTL.
+        """
+        raw = await self._call_upstream(self._price_sync, symbol)
+        if not raw or raw.get("price") is None or not raw.get("currency"):
+            return None
+        return raw
 
     # ---- sync helpers (called via asyncio.to_thread) ----
 
     @staticmethod
-    def _search_sync(query: str, limit: int) -> list[dict]:
+    def _search_sync(query: str, limit: int) -> Optional[list[dict]]:
         import yfinance as yf
 
         try:
@@ -273,16 +464,24 @@ class YFinanceProvider(MarketPriceProvider):
                 raise_errors=False,
             )
             quotes = getattr(result, "quotes", None)
+            response = getattr(result, "response", None)
             if isinstance(quotes, list):
+                if not quotes and not response:
+                    # yfinance hides a JSON decode failure (``hide_exceptions``
+                    # is on by default) and leaves its response empty instead
+                    # of raising. That is a failed search, not "no matches",
+                    # so it must not be cached as one for the whole search TTL.
+                    logger.warning("yfinance search returned no payload for %r", query)
+                    return None
                 return quotes
             # Defensive fallback for any future shape drift.
-            response = getattr(result, "response", None) or {}
-            return list(response.get("quotes") or [])
+            return list((response or {}).get("quotes") or [])
         except _rate_limit_exception_types():
             raise MarketPriceRateLimitedError("Yahoo Finance rate-limited the search")
         except Exception as e:  # pragma: no cover (upstream flakiness, not logic)
             logger.warning("yfinance search failed for %r: %s", query, e)
-            return []
+            # None, not [], so a failure is not cached as "no matches".
+            return None
 
     @staticmethod
     def _get_currencies_sync(symbols: list[str]) -> dict[str, Optional[str]]:
@@ -305,20 +504,32 @@ class YFinanceProvider(MarketPriceProvider):
         return out
 
     @staticmethod
-    def _download_prices_sync(symbols: list[str]) -> dict[str, Optional[Decimal]]:
-        """Run ``yf.download`` and extract last-close per symbol.
+    def _download_closes_sync(
+        symbols: list[str],
+    ) -> tuple[dict[str, Optional[LatestClose]], bool]:
+        """Run ``yf.download`` and extract the last close per symbol, with its day.
 
-        ``yf.download`` returns a pandas DataFrame: flat columns for a
-        single symbol, MultiIndex (symbol, field) for multiple. Period is
+        ``yf.download`` returns a pandas DataFrame with (symbol, field)
+        MultiIndex columns, one symbol or many. Period is
         ``"5d"`` so we span weekends and market holidays while still
-        getting today's close once the market has ticked.
+        getting today's close once the market has ticked. Before the market
+        opens, the last row is the previous trading day.
+
+        The boolean says whether the batch recorded a Yahoo rate limit for
+        any of its tickers. It is a return value and not an exception
+        because the tickers this call did price are worth keeping, and only
+        the caller knows how to stop there.
         """
+        import pandas as pd
         import yfinance as yf
 
-        out: dict[str, Optional[Decimal]] = {s: None for s in symbols}
+        out: dict[str, Optional[LatestClose]] = {s: None for s in symbols}
         if not symbols:
-            return out
+            return out, False
 
+        yf_logger = logging.getLogger("yfinance")
+        capture = _BatchRateLimitCapture()
+        yf_logger.addHandler(capture)
         try:
             df = yf.download(
                 tickers=symbols,
@@ -330,23 +541,33 @@ class YFinanceProvider(MarketPriceProvider):
                 threads=False,
                 auto_adjust=False,
                 group_by="ticker",
-                # raise_errors keeps us in control of exception handling.
-                # Swallowing upstream failures silently would leave callers
-                # unable to distinguish "no data" from "request blew up".
+                # `download` has no ``raise_errors`` argument: it catches each
+                # ticker's failure itself and returns an empty frame for it.
+                # A rate limit it does raise is re-raised below; the ones it
+                # swallows only reach the caller through its log, which the
+                # handler around this call captures.
+            )
+        except _rate_limit_exception_types():
+            raise MarketPriceRateLimitedError(
+                "Yahoo Finance rate-limited the batch price download"
             )
         except Exception as e:  # pragma: no cover (upstream flakiness)
             logger.warning("yfinance batch download failed for %d symbols: %s", len(symbols), e)
-            return out
+            return out, capture.rate_limited
+        finally:
+            yf_logger.removeHandler(capture)
 
+        rate_limited = capture.rate_limited
         if df is None or df.empty:
-            return out
+            return out, rate_limited
 
-        # Single-ticker downloads come back with flat columns — no MultiIndex.
-        # Multi-ticker downloads use group_by="ticker" → MultiIndex (sym, field).
-        if len(symbols) == 1:
-            close_series = df.get("Close") if "Close" in df.columns else None
-            out[symbols[0]] = _last_decimal_close(close_series)
-            return out
+        # With group_by="ticker" the columns are a (sym, field) MultiIndex,
+        # for a single ticker too (``multi_level_index`` defaults to True).
+        # Flat columns are still read, for a yfinance that drops the level.
+        if not isinstance(df.columns, pd.MultiIndex):
+            if len(symbols) == 1 and "Close" in df.columns:
+                out[symbols[0]] = _last_decimal_close(df["Close"])
+            return out, rate_limited
 
         level0 = set(df.columns.get_level_values(0))
         for sym in symbols:
@@ -358,15 +579,15 @@ class YFinanceProvider(MarketPriceProvider):
                 continue
             close_series = sym_df.get("Close") if "Close" in getattr(sym_df, "columns", []) else None
             out[sym] = _last_decimal_close(close_series)
-        return out
+        return out, rate_limited
 
     @staticmethod
-    def _quote_sync(symbol: str) -> Optional[dict]:
+    def _price_sync(symbol: str) -> Optional[dict]:
+        """The price half of a quote, from ``fast_info`` (cached short)."""
         import yfinance as yf
 
         try:
-            ticker = yf.Ticker(symbol)
-            fast = ticker.fast_info
+            fast = yf.Ticker(symbol).fast_info
 
             # FastInfo's public API is camelCase (snake_case is tolerated but
             # not advertised). See yfinance/scrapers/quote.py FastInfo class.
@@ -375,34 +596,14 @@ class YFinanceProvider(MarketPriceProvider):
             # previous close so the UI still surfaces *something* sensible.
             if price is None:
                 price = _fast_info_value(fast, "previousClose")
+            quote_type = _fast_info_value(fast, "quoteType")
             currency = _fast_info_value(fast, "currency")
             exchange = _fast_info_value(fast, "exchange")
-            quote_type = _fast_info_value(fast, "quoteType")
-
-            # `info` is the slow path (full quoteSummary fetch) and the only
-            # place the display name lives. Swallow any failure — the caller
-            # only truly needs price + currency.
-            try:
-                info = ticker.info or {}
-            except Exception:
-                info = {}
-            name = info.get("longName") or info.get("shortName") or None
-            if not quote_type:
-                quote_type = (info.get("quoteType") or "").upper() or None
-            else:
-                quote_type = str(quote_type).upper()
-
             return {
-                "symbol": symbol,
-                "name": name,
-                "exchange": exchange,
-                "currency": currency,
+                "currency": str(currency) if currency else None,
+                "exchange": str(exchange) if exchange else None,
                 "price": float(price) if price is not None else None,
-                "quote_type": quote_type,
-                # Yahoo's `info["website"]` is the source of truth for the
-                # company domain, from which we build the logo URL. Missing
-                # for most crypto/indices — caller will just skip the logo.
-                "website": info.get("website") or None,
+                "quote_type": str(quote_type).upper() if quote_type else None,
             }
         except _rate_limit_exception_types():
             raise MarketPriceRateLimitedError(
@@ -412,18 +613,75 @@ class YFinanceProvider(MarketPriceProvider):
             logger.warning("yfinance quote failed for %s: %s", symbol, e)
             return None
 
+    @staticmethod
+    def _info_sync(symbol: str) -> Optional[dict]:
+        """The display half of a quote, from ``info`` (cached long).
+
+        ``info`` is the slow path (full quoteSummary fetch) and the only
+        place the display name lives. A failure returns None, which the
+        caller treats as "no name" and does not cache.
+        """
+        import yfinance as yf
+
+        try:
+            info = yf.Ticker(symbol).info or {}
+            # Everything below reads a third-party payload, so it stays inside
+            # the handler: a malformed field must not fail a quote whose price
+            # is already in hand.
+            # First *usable* name wins: a wrongly typed `longName` must not
+            # keep a valid `shortName` out, or the day-long cache keeps a
+            # missing name for a symbol that did answer.
+            name = next(
+                (
+                    value
+                    for value in (info.get("longName"), info.get("shortName"))
+                    if isinstance(value, str) and value
+                ),
+                None,
+            )
+            quote_type = info.get("quoteType")
+            website = info.get("website") or None
+            metadata = {
+                "name": name,
+                "quote_type": (
+                    quote_type.upper()
+                    if isinstance(quote_type, str) and quote_type
+                    else None
+                ),
+                # Yahoo's `info["website"]` is the source of truth for the
+                # company domain, from which we build the logo URL. Missing
+                # for most crypto/indices — caller will just skip the logo.
+                "website": website if isinstance(website, str) else None,
+            }
+        except _rate_limit_exception_types():
+            raise MarketPriceRateLimitedError(
+                f"Yahoo Finance rate-limited while reading {symbol}"
+            )
+        except Exception as e:
+            logger.warning("yfinance info failed for %s: %s", symbol, e)
+            return None
+        if not any(metadata.values()):
+            # yfinance hides a failed quoteSummary by returning an `info` with
+            # nothing usable (e.g. {"trailingPegRatio": None}). That is a
+            # failure, not metadata: return None so the day-long cache stays
+            # out of it and the next request tries again.
+            logger.warning("yfinance info for %s had no usable fields", symbol)
+            return None
+        return metadata
+
 
 # Asset logos reuse the shared favicon helper. Kept as a module-local alias so
 # existing call sites stay untouched.
 _logo_url_for = favicon_url_for
 
 
-def _last_decimal_close(series) -> Optional[Decimal]:
+def _last_decimal_close(series) -> Optional[LatestClose]:
     """Return the most recent non-NaN Close price from a pandas Series.
 
     Weekends and holidays are NaN; drop them and grab the tail. If the
     whole series is empty or all-NaN we return None so the caller can
-    skip the asset instead of writing garbage.
+    skip the asset instead of writing garbage. The row's index is the
+    trading day; a row without a readable date comes back with ``on=None``.
     """
     if series is None:
         return None
@@ -440,9 +698,20 @@ def _last_decimal_close(series) -> Optional[Decimal]:
     if pd.isna(val):
         return None
     try:
-        return Decimal(str(float(val)))
+        price = Decimal(str(float(val)))
     except (TypeError, ValueError):
         return None
+    return LatestClose(price, _trading_day(cleaned.index[-1]))
+
+
+def _trading_day(label) -> Optional[date]:
+    """The calendar day of a ``yf.download`` row label (a pandas Timestamp)."""
+    if isinstance(label, datetime):
+        # A Timestamp is a datetime; its .date() is the exchange-local day.
+        return label.date()
+    if isinstance(label, date):
+        return label
+    return None
 
 
 def _fast_info_value(fast_info, key: str):
@@ -461,6 +730,40 @@ def _fast_info_value(fast_info, key: str):
         return value
     # Attribute fallback covers versions where FastInfo was attribute-only.
     return getattr(fast_info, key, None)
+
+
+_RATE_LIMIT_LOG_MARKERS = (
+    "too many requests",
+    "rate limited",
+    "yfratelimiterror",
+)
+
+
+class _BatchRateLimitCapture(logging.Handler):
+    """Hear the failures ``yf.download`` records instead of raising.
+
+    yfinance 1.8.0 keeps each ticker's failure inside the download call's own
+    context (``multi._DownloadCtx.errors``), which the caller cannot reach, and
+    only writes them to the ``yfinance`` logger at ERROR ("N Failed downloads:").
+    A 429 it swallowed for one ticker is therefore invisible in the returned
+    frame, and it can sit next to tickers that answered. Its log is the only
+    surface saying the batch was refused, whatever a later probe finds.
+
+    Another call's failure can land here too, since the logger is shared; an
+    unrelated 429 means the cooldown should start for everyone anyway.
+    """
+
+    def __init__(self) -> None:
+        super().__init__(level=logging.ERROR)
+        self.rate_limited = False
+
+    def emit(self, record: logging.LogRecord) -> None:
+        try:
+            message = record.getMessage().lower()
+        except Exception:  # pragma: no cover (a record we can't read isn't ours)
+            return
+        if any(marker in message for marker in _RATE_LIMIT_LOG_MARKERS):
+            self.rate_limited = True
 
 
 def _rate_limit_exception_types() -> tuple[type[BaseException], ...]:
@@ -529,6 +832,17 @@ class CompositeMarketPriceProvider(MarketPriceProvider):
             out.update(await self.default_provider.get_latest_prices(regular))
         if tesouro:
             out.update(await self._tesouro_latest_prices(tesouro))
+        return out
+
+    async def get_latest_closes(self, symbols: list[str]) -> dict[str, Optional[LatestClose]]:
+        tesouro = [s for s in symbols if _is_tesouro_symbol(s)]
+        regular = [s for s in symbols if not _is_tesouro_symbol(s)]
+        out: dict[str, Optional[LatestClose]] = {}
+        if regular:
+            out.update(await self.default_provider.get_latest_closes(regular))
+        if tesouro:
+            prices = await self._tesouro_latest_prices(tesouro)
+            out.update({s: LatestClose(p, None) if p is not None else None for s, p in prices.items()})
         return out
 
     async def _search_tesouro(self, query: str, limit: int) -> list[MarketSymbolMatch]:

@@ -290,6 +290,25 @@ async def test_ledger_kind_casing_does_not_widen_the_filter(
         assert [t["kind"] for t in r["items"]] == ["sell"], spelling
 
 
+async def test_ledger_lists_a_split_with_its_ratio(
+    session: AsyncSession, ctx: CallContext, test_workspace, holding: Asset
+):
+    """A split row has no quantity or price, so without its ratio an agent
+    would read it as an empty order."""
+    await _buy(session, test_workspace, holding, "3", "480", date(2026, 1, 1))
+    await asset_transaction_service.add_transaction(
+        session, holding.id, test_workspace.id,
+        AssetTransactionCreate(kind="split", date=date(2026, 3, 1), old_units=1, new_units=100),
+    )
+    handler = REGISTRY["list_asset_transactions"].handler
+
+    r = await handler(session=session, ctx=ctx, kind="split")
+    assert [(t["kind"], t["old_units"], t["new_units"]) for t in r["items"]] == [("split", 1, 100)]
+    everything = await handler(session=session, ctx=ctx)
+    buy = next(t for t in everything["items"] if t["kind"] == "buy")
+    assert (buy["old_units"], buy["new_units"]) == (None, None)
+
+
 async def test_ledger_rejects_a_kind_outside_buy_and_sell(
     session: AsyncSession, ctx: CallContext, test_workspace, holding: Asset
 ):
@@ -299,7 +318,7 @@ async def test_ledger_rejects_a_kind_outside_buy_and_sell(
     handler = REGISTRY["list_asset_transactions"].handler
 
     for kind in ("dividend", "Staking", "transfer", ""):
-        with pytest.raises(ValueError, match="'buy' or 'sell'"):
+        with pytest.raises(ValueError, match="'buy', 'sell' or 'split'"):
             await handler(session=session, ctx=ctx, kind=kind)
 
 

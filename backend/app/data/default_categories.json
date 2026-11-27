@@ -18,7 +18,8 @@
         "cs": "Bydlení",
         "el": "Στέγαση",
         "hi": "आवास",
-        "ja": "住居"
+        "ja": "住居",
+        "he": "דיור"
       },
       "aliases": ["Alojamiento"],
       "icon": "house",
@@ -43,7 +44,8 @@
         "cs": "Jídlo a restaurace",
         "el": "Φαγητό & Εστίαση",
         "hi": "भोजन और रेस्तरां",
-        "ja": "食費・外食"
+        "ja": "食費・外食",
+        "he": "אוכל ומסעדות"
       },
       "aliases": ["Comida y Cena"],
       "icon": "utensils-crossed",
@@ -68,7 +70,8 @@
         "cs": "Doprava",
         "el": "Μεταφορές",
         "hi": "परिवहन",
-        "ja": "交通"
+        "ja": "交通",
+        "he": "תחבורה"
       },
       "icon": "car",
       "color": "#3B82F6",
@@ -92,7 +95,8 @@
         "cs": "Životní styl",
         "el": "Τρόπος ζωής",
         "hi": "जीवनशैली",
-        "ja": "ライフスタイル"
+        "ja": "ライフスタイル",
+        "he": "אורח חיים"
       },
       "icon": "sparkles",
       "color": "#EC4899",
@@ -116,7 +120,8 @@
         "cs": "Příjmy",
         "el": "Εισόδημα",
         "hi": "आय",
-        "ja": "収入"
+        "ja": "収入",
+        "he": "הכנסות"
       },
       "icon": "trending-up",
       "color": "#16A34A",
@@ -140,7 +145,8 @@
         "cs": "Ostatní",
         "el": "Άλλα",
         "hi": "अन्य",
-        "ja": "その他"
+        "ja": "その他",
+        "he": "אחר"
       },
       "icon": "circle-help",
       "color": "#64748B",
@@ -166,7 +172,8 @@
         "cs": "Bydlení",
         "el": "Στέγαση",
         "hi": "आवास",
-        "ja": "住居"
+        "ja": "住居",
+        "he": "דיור"
       },
       "group": "housing",
       "icon": "house",
@@ -190,7 +197,8 @@
         "cs": "Jídlo a restaurace",
         "el": "Φαγητό & Εστίαση",
         "hi": "भोजन और रेस्तरां",
-        "ja": "食費・外食"
+        "ja": "食費・外食",
+        "he": "אוכל ומסעדות"
       },
       "group": "food",
       "icon": "utensils-crossed",
@@ -214,7 +222,8 @@
         "cs": "Doprava",
         "el": "Μεταφορές",
         "hi": "परिवहन",
-        "ja": "交通"
+        "ja": "交通",
+        "he": "תחבורה"
       },
       "group": "transport",
       "icon": "car",
@@ -238,7 +247,8 @@
         "cs": "Potraviny",
         "el": "Σούπερ μάρκετ",
         "hi": "किराना",
-        "ja": "食料品"
+        "ja": "食料品",
+        "he": "מכולת וסופר"
       },
       "group": "food",
       "icon": "shopping-cart",
@@ -262,7 +272,8 @@
         "cs": "Zdraví",
         "el": "Υγεία",
         "hi": "स्वास्थ्य",
-        "ja": "健康・医療"
+        "ja": "健康・医療",
+        "he": "בריאות"
       },
       "group": "lifestyle",
       "icon": "pill",
@@ -286,7 +297,8 @@
         "cs": "Volný čas",
         "el": "Ψυχαγωγία",
         "hi": "मनोरंजन",
-        "ja": "娯楽"
+        "ja": "娯楽",
+        "he": "פנאי"
       },
       "group": "lifestyle",
       "icon": "gamepad-2",
@@ -310,7 +322,8 @@
         "cs": "Předplatné",
         "el": "Συνδρομές",
         "hi": "सदस्यता",
-        "ja": "サブスクリプション"
+        "ja": "サブスクリプション",
+        "he": "מנויים"
       },
       "group": "other",
       "icon": "smartphone",
@@ -334,7 +347,8 @@
         "cs": "Vzdělávání",
         "el": "Εκπαίδευση",
         "hi": "शिक्षा",
-        "ja": "教育"
+        "ja": "教育",
+        "he": "חינוך"
       },
       "group": "lifestyle",
       "icon": "book-open",
@@ -358,7 +372,8 @@
         "cs": "Převody",
         "el": "Μεταφορά κεφαλαίων",
         "hi": "स्थानांतरण",
-        "ja": "振替"
+        "ja": "振替",
+        "he": "העברות"
       },
       "group": "other",
       "icon": "arrow-left-right",
@@ -383,7 +398,8 @@
         "cs": "Investice",
         "el": "Επενδύσεις",
         "hi": "निवेश",
-        "ja": "投資"
+        "ja": "投資",
+        "he": "השקעות"
       },
       "group": "other",
       "icon": "trending-up",
@@ -408,7 +424,8 @@
         "cs": "Mzda a příjmy",
         "el": "Μισθός & Εισοδήματα",
         "hi": "वेतन और आय",
-        "ja": "給与・収入"
+        "ja": "給与・収入",
+        "he": "משכורת והכנסות"
       },
       "group": "income",
       "icon": "banknote",
@@ -432,7 +449,8 @@
         "cs": "Nákupy",
         "el": "Αγορές",
         "hi": "खरीदारी",
-        "ja": "ショッピング"
+        "ja": "ショッピング",
+        "he": "קניות"
       },
       "group": "other",
       "icon": "shopping-bag",
@@ -456,7 +474,8 @@
         "cs": "Dary",
         "el": "Δωρεές",
         "hi": "दान",
-        "ja": "寄付"
+        "ja": "寄付",
+        "he": "תרומות"
       },
       "group": "other",
       "icon": "heart-handshake",
@@ -480,7 +499,8 @@
         "cs": "Osobní péče",
         "el": "Προσωπική φροντίδα",
         "hi": "व्यक्तिगत देखभाल",
-        "ja": "美容・ケア"
+        "ja": "美容・ケア",
+        "he": "טיפוח אישי"
       },
       "group": "lifestyle",
       "icon": "scissors",
@@ -504,7 +524,8 @@
         "cs": "Daně a poplatky",
         "el": "Φόροι & Τέλη",
         "hi": "कर और शुल्क",
-        "ja": "税金・手数料"
+        "ja": "税金・手数料",
+        "he": "מסים ועמלות"
       },
       "group": "other",
       "icon": "landmark",
@@ -528,7 +549,8 @@
         "cs": "Ostatní",
         "el": "Άλλα",
         "hi": "अन्य",
-        "ja": "その他"
+        "ja": "その他",
+        "he": "אחר"
       },
       "group": "other",
       "icon": "circle-help",

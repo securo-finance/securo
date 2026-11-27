@@ -52,21 +52,32 @@ index, and it is the standard figure brokers report.
 
 ### When money in and out counts
 
-- **Contributions (buys)** are made at the price the day is valued at, so
-  the day's move up to that price belongs to what was already held. The
-  interval is measured on the earlier holdings, and the new money joins the
-  base only after it. A buy's commission bought nothing: it is a loss on the
-  whole portfolio at the moment of the buy, `value / (value + fee)`.
-  Otherwise 10 shares that gain 10%, a large buy at the new price and
-  another +10% would show about 11% instead of 21%.
-- **Buys sold again the same day** (a day trade, matched per holding by
-  share count) were held through part of the day, so that share of the buys
-  counts from the start of the day instead.
+- **Trades in market-priced holdings** split their day at each trade's own
+  price, in ledger order. What was held is marked to the trade's price, the
+  trade then joins or leaves the base at that price, and the rest of the day
+  up to the close is measured on what is left. A commission bought nothing:
+  it is a loss on the whole portfolio at the moment of the trade,
+  `value / (value + fee)`. With one holding and no fees the day therefore
+  reads its price move, whatever was traded in it: holding ten shares at
+  100, buying ten at 105 and selling ten at 110 with the close at 110 is
+  100 → 105 on ten shares, 105 → 110 on twenty and 110 → 110 on ten, +10%.
+  Taking that buy at the open reads 7.3%, at the close 15%. Other holdings
+  have no price between closes, so they stay at their last valuation until
+  the day's close. Trades saved together (an import) share a timestamp and
+  have no order of their own: sales of other holdings go first, as they
+  fund the buys, and a holding's buys precede its own sales.
+- **Contributions** from holdings without trade prices (a manual asset's
+  first value, a synced purchase seen in the share count) are made at the
+  price the day is valued at, so the day's move up to that price belongs to
+  what was already held. The interval is measured on the earlier holdings,
+  and the new money joins the base only after it.
 - **A synced purchase only the next snapshot shows** was made at the earlier
   snapshot's price, so it is exposed to the move between the two and also
   counts from the start.
-- **Withdrawals (sales)** count at the end of the day. Sale proceeds are the
-  *result* of that day's price move, so they belong in the outcome.
+- **Withdrawals** without a trade price (a redemption seen in a balance, a
+  manual asset's sale) count at the end of the day. Sale proceeds are the
+  *result* of that day's price move, so they belong in the outcome. A sale
+  with a price gets the same result from its own sub-period.
 
 Same-day buys and sales are kept apart rather than netted, so a day trade is
 measured on what was put in, not on the net difference.
@@ -145,11 +156,11 @@ telling *money moved* apart from *market moved*:
 | Manual assets (property, private funds…) | user-entered values | first appearance is a contribution; a sale returns `sell_price` the day after `sell_date`, or the last value when no price was entered (an explicit 0 writes it off) |
 
 **Gross values.** Performance uses pre-tax values: income tax withheld on a
-redemption is not an investment loss. Migration `106` stores the provider's
+redemption is not an investment loss. Migration `134` stores the provider's
 gross value next to the net (withdrawable) one. Holdings totals keep using net.
 
 **Exact trade cash.** Synced fixed-income trades carry unit prices such as
-`0.01007794` on quantities in the hundreds of thousands. Migration `107`
+`0.01007794` on quantities in the hundreds of thousands. Migration `135`
 widens `asset_transactions.price` so `quantity × price` reproduces the cash
 the broker reported.
 
@@ -161,7 +172,8 @@ the broker reported.
   tried in order, so one outage does not break it: BCB SGS SOAP
   (`www3.bcb.gov.br`), the BCB SGS JSON API, then Ipeadata's mirror of the same
   series. A source returning fewer than two observations falls through to the
-  next.
+  next. When none has two and one of them failed, the failure is reported
+  (`unavailable`), since that source may have had the history.
 - Histories are cached for an hour, searches for fifteen minutes. Failed
   requests and histories too short to compare are never cached.
 - Each benchmark reports `source_error` (`unavailable`, `rate_limited`,
@@ -172,6 +184,15 @@ The benchmark line is the index's own change since the period start: a
 time-weighted portfolio return is independent of cash flows, so it is compared
 with the index itself rather than with a shadow portfolio. The money-weighted
 method uses a shadow portfolio instead (see above).
+
+A benchmark never moves the portfolio's own period. The portfolio is measured
+from the period start (or its first valuation, if later); a benchmark whose
+history begins after that is compared from its own first close, reported as
+that benchmark's `start_date`. Its line starts there at 0, its return covers
+that date to the end, and its excess is the portfolio's time-weighted return
+over the same dates minus the benchmark's. A benchmark with no close after its
+start (only look-back closes before the period, say) reports `no_data`
+rather than a flat 0%.
 
 An index quoted in another currency (Yahoo reports each symbol's; the Índice
 DI is in reais) is converted to the portfolio's currency at each day's stored
@@ -195,6 +216,9 @@ with the expected return worked out by hand:
 | Half the wallet goes bankrupt (close → 0), the rest gains 10% | −45% |
 | Delisted holding written off by selling at 0 | −50% |
 | Day trade with fees next to a flat holding | +2.40% |
+| Ten held at 100, ten bought at 100 or 105, ten sold at 110, close 110 | +10% |
+| Sold at 110 then bought back at 105 in ledger order, close 105 | +10% |
+| Ten held at 100, ten bought at 105, close 110 | +10% |
 | 2:1 split recorded as free shares (buy at price 0) | +10% |
 | Manual asset sold above / at its purchase value | +30% / 0% |
 | Manual asset sold without a price, last valued 20% up | +20% |
@@ -205,18 +229,54 @@ with the expected return worked out by hand:
 - **Dividends are not counted** (see below). On the ex-date the price drop
   shows as a loss and the cash paid out never appears, so dividend payers
   look worse than they did.
-- **Splits** have no transaction kind. Recording the new shares as a buy at
-  price 0 gives the right result, as tested above.
+- **Splits** recorded as a `split` transaction change the shares held
+  without moving money. Older ledgers that recorded the new shares as a buy
+  at price 0 give the same result, as tested above.
+- **Manual assets without trades.** Only an asset's first value counts as
+  money put in. A later value raised because money was added reads as a
+  gain; recording that money as a buy on the asset avoids it.
 - **Delisted tickers** keep their last price until written off with a sale at 0.
 - **Total wipeout.** Once the whole scope reaches zero, the time-weighted
   return stays at −100% even if new money arrives later. That is the
   definition of a compounded return, not a bug, but the UI could explain it.
+- **Other holdings during a trading day.** Only daily closes are stored,
+  and a trade carries a date but no time, so a holding not traded that day
+  has no price at the moment of a trade. It stays at its last valuation
+  until the close, as if the day's trades came before its move. The traded
+  holding itself is exact. The error comes from the money the day brings in
+  or takes out, not from how much was traded: a same-size switch from one
+  holding to another, or a day trade, leaves the base unchanged and is close
+  to exact. With `g = |net flow| / (portfolio value + net flow)`, `r` the
+  other holdings' move that day and `τ` the share of that move that came
+  before the trade, the day is off by about `r × τ × g`:
+
+  | Day | Worst case (`τ = 1`) | Expected (`τ` unknown, ½ on average) |
+  |---|---|---|
+  | Buy 10% of the portfolio, the rest moves 2% | 0.18 points | 0.09 points |
+  | Buy 4%, the rest moves 1.5% | 0.06 points | 0.03 points |
+
+  Over a year each day's error follows the market's direction that day, so
+  they mostly cancel out. With daily volatility `σ` and `N` such days, their
+  spread is about `σ × g × √(N / 3)`, assuming the other holdings are most
+  of the portfolio. Monthly purchases of 4% with 1.5% daily volatility come
+  to about 0.1 points a year. Adding or withdrawing 10% of the portfolio on
+  50 days a year comes to about 0.6 points.
+
+  Removing it needs two things. The trade's time, which the provider
+  interface does not carry (`HoldingTradeData` has a date only; IBKR Flex
+  reports execution times). And prices during the day for the other
+  holdings at that time: Yahoo keeps hourly bars for about two years and
+  finer ones for weeks, with patchier coverage than daily closes. That is
+  a new column and a new outbound call under ADR 0025, for an error of this
+  size. Worth revisiting in its own change once trades carry a time.
 - **Money-weighted return with no money in.** A scope that only shows money
   taken out (a sale whose purchase is outside the data) has no rate; the line
   repeats its last value.
 - **Benchmark fairness.** The Ibovespa is a total-return index (dividends
-  reinvested), so comparing it with a price-only portfolio is unfair to the
-  portfolio until dividends land. `^GSPC` is price-only.
+  reinvested), and the Índice DI compounds all of its income, so comparing
+  either with a price-only portfolio is unfair to the portfolio until
+  dividends land. `^GSPC` is price-only. For a portfolio of FIIs paying
+  about 0.7–1% a month, the gap is roughly 8–12 points a year.
 
 ## Future work: dividends and other income
 
@@ -344,7 +404,7 @@ a reinvested dividend") so the owner can see it and undo it.
 
 | Migration | Change |
 |---|---|
-| `109_asset_value_gross_amount` | nullable `asset_values.gross_amount`; backfills exact anchors for Pluggy holdings |
-| `110_asset_transaction_price_precision` | `asset_transactions.price` from `Numeric(18,6)` to `Numeric(28,12)` |
+| `134_asset_value_gross_amount` | nullable `asset_values.gross_amount`; backfills exact anchors for Pluggy holdings |
+| `135_asset_transaction_price_precision` | `asset_transactions.price` from `Numeric(18,6)` to `Numeric(28,12)` |
 
 Both are additive. `downgrade()` reverses each.

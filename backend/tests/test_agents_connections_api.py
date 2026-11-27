@@ -54,6 +54,60 @@ async def test_create_connection_400_for_openai_compat_without_base_url(client, 
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "base_url",
+    [
+        "http://host.docker.internal:11434.",  # trailing period copied from text
+        "http://localhost:99999",
+        "ftp://example.com",
+        "localhost:11434",
+        "http://",
+        "http://exa mple.com",
+    ],
+)
+async def test_create_connection_400_for_invalid_base_url(client, auth_headers, test_user, base_url):
+    r = await client.post(
+        "/api/agents/connections",
+        json={"name": "x", "kind": "ollama", "base_url": base_url},
+        headers=auth_headers,
+    )
+    assert r.status_code == 400, r.text
+    assert r.json()["detail"] == "Enter a valid http or https endpoint URL"
+
+
+@pytest.mark.asyncio
+async def test_create_connection_strips_base_url(client, auth_headers, test_user):
+    r = await client.post(
+        "/api/agents/connections",
+        json={"name": "x", "kind": "ollama", "base_url": "  http://host.docker.internal:11434 "},
+        headers=auth_headers,
+    )
+    assert r.status_code == 201, r.text
+    assert r.json()["base_url"] == "http://host.docker.internal:11434"
+
+
+@pytest.mark.asyncio
+async def test_update_connection_400_for_invalid_base_url_keeps_old_value(client, auth_headers, test_user):
+    r = await client.post(
+        "/api/agents/connections",
+        json={"name": "x", "kind": "ollama", "base_url": "http://ollama:11434"},
+        headers=auth_headers,
+    )
+    cid = r.json()["id"]
+
+    r = await client.patch(
+        f"/api/agents/connections/{cid}",
+        json={"base_url": "http://ollama:11434."},
+        headers=auth_headers,
+    )
+    assert r.status_code == 400, r.text
+    assert r.json()["detail"] == "Enter a valid http or https endpoint URL"
+
+    r = await client.get(f"/api/agents/connections/{cid}", headers=auth_headers)
+    assert r.json()["base_url"] == "http://ollama:11434"
+
+
+@pytest.mark.asyncio
 async def test_get_update_delete_connection(client, auth_headers, test_user):
     r = await client.post(
         "/api/agents/connections",
@@ -99,6 +153,16 @@ async def test_update_connection_404(client, auth_headers, test_user):
     r = await client.patch(
         f"/api/agents/connections/{uuid.uuid4()}",
         json={"name": "x"},
+        headers=auth_headers,
+    )
+    assert r.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_update_connection_404_for_unknown_id_with_invalid_base_url(client, auth_headers, test_user):
+    r = await client.patch(
+        f"/api/agents/connections/{uuid.uuid4()}",
+        json={"base_url": "http://ollama:11434."},
         headers=auth_headers,
     )
     assert r.status_code == 404

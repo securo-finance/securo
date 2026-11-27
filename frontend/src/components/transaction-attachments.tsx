@@ -80,7 +80,7 @@ export function TransactionAttachments({
     staleTime: 5 * 60 * 1000,
   })
 
-  const allowedExtensions = useMemo(() => attachmentSettings?.allowed_extensions ?? ['jpg', 'jpeg', 'png', 'webp', 'gif', 'heic', 'pdf'], [attachmentSettings?.allowed_extensions])
+  const allowedExtensions = useMemo(() => attachmentSettings?.allowed_extensions ?? ['jpg', 'jpeg', 'png', 'webp', 'gif', 'heic', 'pdf', 'xml'], [attachmentSettings?.allowed_extensions])
   const maxFileSize = (attachmentSettings?.max_file_size_mb ?? 10) * 1024 * 1024
   const maxAttachments = attachmentSettings?.max_attachments_per_transaction ?? 10
 
@@ -274,7 +274,7 @@ export function TransactionAttachments({
       }
       const ext = getFileExtension(file.name)
       if (!allowedExtensions.includes(ext)) {
-        toast.error(t('transactions.attachmentTypeNotAllowed'))
+        toast.error(t('transactions.attachmentTypeNotAllowed', { types: allowedExtensions.join(', ') }))
         continue
       }
       if (file.size > maxFileSize) {
@@ -420,7 +420,7 @@ export function TransactionAttachments({
 
                 {/* Hover action bar — floats over bottom of thumbnail */}
                 {!isUploading && (
-                <div className={`absolute left-0 right-0 bottom-[44px] flex items-center justify-center gap-1 px-2 py-1.5 transition-all duration-200 ${
+                <div className={`absolute start-0 end-0 bottom-[44px] flex items-center justify-center gap-1 px-2 py-1.5 transition-all duration-200 ${
                   isConfirming
                     ? 'opacity-100 translate-y-0'
                     : 'opacity-0 translate-y-1 group-hover:opacity-100 group-hover:translate-y-0'

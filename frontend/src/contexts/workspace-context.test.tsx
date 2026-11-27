@@ -85,6 +85,145 @@ describe('loading', () => {
 
     expect(result.current.workspaces).toEqual([])
   })
+
+  it('flags a failed fetch as unreachable, not as "no workspaces"', async () => {
+    // Issue #292: an empty list made hasModule() false and sent module routes
+    // home. The flag tells the shell the workspace is unknown, not empty.
+    workspacesApi.list.mockRejectedValue(new Error('network'))
+
+    const { result } = await renderWorkspace()
+
+    expect(result.current.loadFailed).toBe(true)
+    expect(result.current.current).toBeNull()
+  })
+
+  it('does not flag a successful fetch', async () => {
+    workspacesApi.list.mockResolvedValue([makeWorkspace()])
+
+    const { result } = await renderWorkspace()
+
+    expect(result.current.loadFailed).toBe(false)
+  })
+
+  it('stays loading when the session comes back until its list is fetched', async () => {
+    // Issue #292: offline, auth keeps the token with no user, so the provider
+    // settles as "no workspaces". When the user returns, the render before
+    // the fetch starts must not report "loaded, every module off", or
+    // ModuleRoute sends /transactions home.
+    useAuth.mockReturnValue({ user: null, token: 'jwt', isLoading: false })
+    let resolveList: (ws: Workspace[]) => void = () => {}
+    workspacesApi.list.mockReturnValue(
+      new Promise<Workspace[]>((resolve) => { resolveList = resolve }),
+    )
+    const seen: { isLoading: boolean; hasTransactions: boolean }[] = []
+    const { result, rerender } = renderHook(() => {
+      const ws = useWorkspace()
+      seen.push({ isLoading: ws.isLoading, hasTransactions: ws.hasModule('transactions') })
+      return ws
+    }, { wrapper })
+    await waitFor(() => expect(result.current.isLoading).toBe(false))
+
+    seen.length = 0
+    signedIn()
+    rerender()
+    await act(async () => { resolveList([makeWorkspace()]) })
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false))
+    expect(result.current.hasModule('transactions')).toBe(true)
+    expect(seen.filter((s) => !s.isLoading && !s.hasTransactions)).toEqual([])
+  })
+
+  it('loads the workspaces once the connection is back', async () => {
+    workspacesApi.list
+      .mockRejectedValueOnce(new Error('network'))
+      .mockResolvedValue([makeWorkspace({ id: 'ws-a' })])
+
+    const { result } = await renderWorkspace()
+    expect(result.current.loadFailed).toBe(true)
+
+    act(() => { window.dispatchEvent(new Event('online')) })
+
+    await waitFor(() => expect(result.current.loadFailed).toBe(false))
+    expect(result.current.current?.id).toBe('ws-a')
+    expect(workspacesApi.list).toHaveBeenCalledTimes(2)
+  })
+
+  it('loads again by itself when the server returns with no browser event', async () => {
+    // Issue #292: a server restart while the browser stays online and the tab
+    // visible fires no event, so a timer asks again: 2 s, then 4 s.
+    vi.useFakeTimers()
+    const advance = async (ms: number) => {
+      await act(async () => { await vi.advanceTimersByTimeAsync(ms) })
+    }
+    try {
+      workspacesApi.list
+        .mockRejectedValueOnce(new Error('503'))
+        .mockRejectedValueOnce(new Error('503'))
+        .mockResolvedValue([makeWorkspace({ id: 'ws-a' })])
+
+      const { result } = renderHook(() => useWorkspace(), { wrapper })
+      await advance(0)
+      expect(result.current.loadFailed).toBe(true)
+      expect(workspacesApi.list).toHaveBeenCalledTimes(1)
+
+      await advance(1_999)
+      expect(workspacesApi.list).toHaveBeenCalledTimes(1)
+      await advance(1)
+      expect(workspacesApi.list).toHaveBeenCalledTimes(2)
+      expect(result.current.loadFailed).toBe(true)
+
+      await advance(3_999)
+      expect(workspacesApi.list).toHaveBeenCalledTimes(2)
+      await advance(1)
+      expect(result.current.loadFailed).toBe(false)
+      expect(result.current.current?.id).toBe('ws-a')
+
+      await advance(60_000)
+      expect(workspacesApi.list).toHaveBeenCalledTimes(3)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('stops the automatic loads when the provider unmounts', async () => {
+    vi.useFakeTimers()
+    try {
+      workspacesApi.list.mockRejectedValue(new Error('503'))
+
+      const { result, unmount } = renderHook(() => useWorkspace(), { wrapper })
+      await act(async () => { await vi.advanceTimersByTimeAsync(0) })
+      expect(result.current.loadFailed).toBe(true)
+
+      unmount()
+      await act(async () => { await vi.advanceTimersByTimeAsync(120_000) })
+      expect(workspacesApi.list).toHaveBeenCalledTimes(1)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('does not let an older failed load undo a newer successful one', async () => {
+    // The online event starts load A, then Retry starts load B. B brings the
+    // list back; A failing afterwards must not flag it or clear it.
+    workspacesApi.list.mockRejectedValueOnce(new Error('network'))
+    const { result } = await renderWorkspace()
+    expect(result.current.loadFailed).toBe(true)
+
+    let rejectOlder: (error: unknown) => void = () => {}
+    workspacesApi.list
+      .mockReturnValueOnce(new Promise((_, reject) => { rejectOlder = reject }))
+      .mockResolvedValueOnce([makeWorkspace({ id: 'ws-a' })])
+
+    act(() => { window.dispatchEvent(new Event('online')) })
+    await act(async () => { await result.current.refresh() })
+    expect(result.current.loadFailed).toBe(false)
+
+    await act(async () => { rejectOlder(new Error('network')) })
+
+    expect(result.current.loadFailed).toBe(false)
+    expect(result.current.current?.id).toBe('ws-a')
+    expect(result.current.isLoading).toBe(false)
+  })
 })
 
 describe('selection', () => {

@@ -53,12 +53,46 @@ class ToolCall:
     arguments: dict[str, Any]
     # Opaque Gemini signature; replay unchanged, never pass to the tool itself.
     thought_signature: Optional[str] = None
+    # The raw argument text when it was not a JSON object. `arguments` is then
+    # empty and the tool must not run: the model gets an error back instead.
+    invalid_arguments: Optional[str] = None
+
+
+def parse_tool_arguments(buf: str) -> tuple[dict[str, Any], Optional[str]]:
+    """Parse a streamed argument buffer into (arguments, invalid_raw_text).
+
+    An empty buffer is a call with no arguments. Anything that is not one
+    JSON object (bad JSON, two objects glued together, a list) comes back
+    as ({}, buf) so the caller can refuse the call rather than run the tool
+    with made-up arguments.
+    """
+    if not buf:
+        return {}, None
+    import json
+    try:
+        parsed = json.loads(buf)
+    except json.JSONDecodeError:
+        return {}, buf
+    if not isinstance(parsed, dict):
+        return {}, buf
+    return parsed, None
+
+
+@dataclass
+class ImagePart:
+    """An image sent along with a message, base64 encoded (no data: prefix)."""
+    media_type: str  # image/png, image/jpeg, image/webp
+    data: str
 
 
 @dataclass
 class ChatMessage:
     role: Role
     content: Optional[str] = None
+    # Images for a model that reads them (user messages only). A provider
+    # that cannot send them raises LLMNotSupportedError rather than
+    # silently dropping them.
+    images: list[ImagePart] = field(default_factory=list)
     tool_calls: list[ToolCall] = field(default_factory=list)
     # For role="tool":
     tool_call_id: Optional[str] = None
@@ -160,16 +194,13 @@ class LLMProvider(ABC):
                 finish = chunk.finish_reason
             elif chunk.type == "usage" and chunk.usage:
                 usage = chunk.usage
-        import json
         parsed_calls = []
         for tc in tool_calls.values():
-            try:
-                args = json.loads(tc["args_buf"]) if tc["args_buf"] else {}
-            except json.JSONDecodeError:
-                args = {"_raw": tc["args_buf"]}
+            args, invalid = parse_tool_arguments(tc["args_buf"])
             parsed_calls.append(ToolCall(
                 id=tc["id"], name=tc["name"], arguments=args,
                 thought_signature=tc.get("thought_signature"),
+                invalid_arguments=invalid,
             ))
         return ChatResponse(content="".join(text_parts), tool_calls=parsed_calls, finish_reason=finish, usage=usage)
 

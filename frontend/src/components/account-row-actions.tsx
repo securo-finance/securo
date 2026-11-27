@@ -79,7 +79,7 @@ function DesktopAccountActions({ actions, deletePending }: {
     // Always visible, like the row actions on payees, categories and rules.
     // Hiding them until hover made them undiscoverable and unreachable by
     // keyboard-only navigation.
-    <div className="ml-2 hidden items-center gap-1 sm:flex">
+    <div className="ms-2 hidden items-center gap-1 sm:flex">
       {actions.map((action) => (
         <DesktopActionButton key={action.label} action={action} deletePending={deletePending} />
       ))}
@@ -112,7 +112,7 @@ function MobileAccountActions({ accountName, actions, deletePending }: {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <button type="button" className="ml-1 rounded-md p-2 text-muted-foreground hover:bg-muted hover:text-foreground sm:hidden" aria-label={`${t('common.more')}: ${accountName}`}>
+        <button type="button" className="ms-1 rounded-md p-2 text-muted-foreground hover:bg-muted hover:text-foreground sm:hidden" aria-label={`${t('common.more')}: ${accountName}`}>
           <MoreHorizontal size={16} />
         </button>
       </DropdownMenuTrigger>

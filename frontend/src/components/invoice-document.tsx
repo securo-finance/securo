@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next'
 import { useDateLocale, useDisplayLocale } from '@/hooks/use-display-locale'
-import { formatCurrency } from '@/lib/format'
+import { formatCurrency, ltrAmount } from '@/lib/format'
 import type { InvoiceDocumentPayload } from '@/types'
 
 /**
@@ -134,7 +134,7 @@ export function InvoiceDocumentView({ document }: { document: InvoiceDocumentPay
     totals.push({ label: L.subtotal, value: money(document.subtotal) })
   }
   if (Number(document.discount) > 0) {
-    totals.push({ label: L.discount, value: `-${money(document.discount)}` })
+    totals.push({ label: L.discount, value: ltrAmount(`-${money(document.discount)}`) })
   }
   if (Number(document.tax_total) > 0) {
     totals.push({ label: L.tax, value: money(document.tax_total) })
@@ -242,9 +242,9 @@ export function InvoiceDocumentView({ document }: { document: InvoiceDocumentPay
               <tbody>
                 {document.installments.map((row, index) => (
                   <tr key={index} style={{ borderBottom: `1px solid ${RULE}` }}>
-                    <td className="py-1.5 pr-4">{row.label ?? `${index + 1}/${document.installments.length}`}</td>
-                    <td className="py-1.5 pr-4 tabular-nums" style={{ color: MUTED }}>{showDate(row.due_date)}</td>
-                    <td className="py-1.5 text-right tabular-nums">{money(row.amount)}</td>
+                    <td className="py-1.5 pe-4">{row.label ?? `${index + 1}/${document.installments.length}`}</td>
+                    <td className="py-1.5 pe-4 tabular-nums" style={{ color: MUTED }}>{showDate(row.due_date)}</td>
+                    <td className="py-1.5 text-end tabular-nums">{money(row.amount)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -257,25 +257,25 @@ export function InvoiceDocumentView({ document }: { document: InvoiceDocumentPay
             <thead>
               <tr style={{ borderBottom: `1px solid ${RULE}` }}>
                 <th
-                  className="pb-2 text-left text-[10px] font-semibold uppercase tracking-[0.14em]"
+                  className="pb-2 text-start text-[10px] font-semibold uppercase tracking-[0.14em]"
                   style={{ color: MUTED }}
                 >
                   {L.description}
                 </th>
                 <th
-                  className="pb-2 text-right text-[10px] font-semibold uppercase tracking-[0.14em] w-20"
+                  className="pb-2 text-end text-[10px] font-semibold uppercase tracking-[0.14em] w-20"
                   style={{ color: MUTED }}
                 >
                   {L.quantity}
                 </th>
                 <th
-                  className="pb-2 text-right text-[10px] font-semibold uppercase tracking-[0.14em] w-28"
+                  className="pb-2 text-end text-[10px] font-semibold uppercase tracking-[0.14em] w-28"
                   style={{ color: MUTED }}
                 >
                   {L.unitPrice}
                 </th>
                 <th
-                  className="pb-2 text-right text-[10px] font-semibold uppercase tracking-[0.14em] w-28"
+                  className="pb-2 text-end text-[10px] font-semibold uppercase tracking-[0.14em] w-28"
                   style={{ color: MUTED }}
                 >
                   {L.amount}
@@ -285,17 +285,17 @@ export function InvoiceDocumentView({ document }: { document: InvoiceDocumentPay
             <tbody>
               {document.lines.map((line, index) => (
                 <tr key={index} style={{ borderBottom: `1px solid ${RULE}` }}>
-                  <td className="py-3 pr-4 text-[13.5px] leading-snug">{line.description}</td>
-                  <td className="py-3 text-right text-[13.5px] tabular-nums">
+                  <td className="py-3 pe-4 text-[13.5px] leading-snug">{line.description}</td>
+                  <td className="py-3 text-end text-[13.5px] tabular-nums">
                     {/* "12 hours", not "12": the unit is what lets the
                         reader check the sum against what was agreed. */}
                     {Number(line.quantity)}
                     {line.unit ? ` ${line.unit}` : ''}
                   </td>
-                  <td className="py-3 text-right text-[13.5px] tabular-nums">
+                  <td className="py-3 text-end text-[13.5px] tabular-nums">
                     {money(line.unit_price)}
                   </td>
-                  <td className="py-3 text-right text-[13.5px] tabular-nums">
+                  <td className="py-3 text-end text-[13.5px] tabular-nums">
                     {money(line.total)}
                   </td>
                 </tr>

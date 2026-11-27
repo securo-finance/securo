@@ -8,10 +8,12 @@ from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.account import Account
+from app.models.account_card import AccountCard
 from app.models.transaction import Transaction
 from app.models.category import Category
 from app.models.payee import Payee
 from app.models.user import User
+from app.models.workspace import Workspace
 
 
 @pytest.mark.asyncio
@@ -52,6 +54,149 @@ async def test_list_transactions_filter_by_account(
     assert response.status_code == 200
     data = response.json()
     assert data["total"] == 5  # all belong to same account
+
+
+@pytest.mark.asyncio
+async def test_list_transactions_filter_by_linked_card(
+    client: AsyncClient, auth_headers, session: AsyncSession, test_user, test_workspace
+):
+    account = Account(
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        name="Cartão",
+        type="credit_card",
+        balance=Decimal("0"),
+        currency="BRL",
+    )
+    session.add(account)
+    await session.flush()
+    personal_card = AccountCard(
+        workspace_id=test_workspace.id,
+        account_id=account.id,
+        masked_number="5062",
+        label="Pessoal",
+    )
+    virtual_card = AccountCard(
+        workspace_id=test_workspace.id,
+        account_id=account.id,
+        masked_number="7266",
+    )
+    same_ending_account = Account(
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        name="Second card account",
+        type="credit_card",
+        balance=Decimal("0"),
+        currency="BRL",
+    )
+    other_workspace = Workspace(name="Other workspace", created_by_user_id=test_user.id)
+    session.add_all([personal_card, virtual_card, same_ending_account, other_workspace])
+    await session.flush()
+    same_ending_card = AccountCard(
+        workspace_id=test_workspace.id,
+        account_id=same_ending_account.id,
+        masked_number="5062",
+    )
+    other_workspace_account = Account(
+        user_id=test_user.id,
+        workspace_id=other_workspace.id,
+        name="Other workspace card account",
+        type="credit_card",
+        balance=Decimal("0"),
+        currency="BRL",
+    )
+    session.add(other_workspace_account)
+    await session.flush()
+    other_workspace_card = AccountCard(
+        workspace_id=other_workspace.id,
+        account_id=other_workspace_account.id,
+        masked_number="5062",
+    )
+    session.add_all([same_ending_card, other_workspace_card])
+    session.add_all([
+        Transaction(
+            user_id=test_user.id,
+            workspace_id=test_workspace.id,
+            account_id=account.id,
+            description="Personal purchase",
+            amount=Decimal("10"),
+            currency="BRL",
+            date=date.today(),
+            type="debit",
+            source="sync",
+            card_masked_number="5062",
+        ),
+        Transaction(
+            user_id=test_user.id,
+            workspace_id=test_workspace.id,
+            account_id=account.id,
+            description="Virtual purchase",
+            amount=Decimal("20"),
+            currency="BRL",
+            date=date.today(),
+            type="debit",
+            source="sync",
+            card_masked_number="7266",
+        ),
+        Transaction(
+            user_id=test_user.id,
+            workspace_id=test_workspace.id,
+            account_id=same_ending_account.id,
+            description="Same ending, other account",
+            amount=Decimal("30"),
+            currency="BRL",
+            date=date.today(),
+            type="debit",
+            source="sync",
+            card_masked_number="5062",
+        ),
+        Transaction(
+            user_id=test_user.id,
+            workspace_id=other_workspace.id,
+            account_id=other_workspace_account.id,
+            description="Same ending, other workspace",
+            amount=Decimal("40"),
+            currency="BRL",
+            date=date.today(),
+            type="debit",
+            source="sync",
+            card_masked_number="5062",
+        ),
+    ])
+    await session.commit()
+
+    response = await client.get(
+        f"/api/transactions?linked_card_ids={personal_card.id}",
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    assert response.json()["total"] == 1
+    assert response.json()["items"][0]["description"] == "Personal purchase"
+
+    exported = await client.get(
+        f"/api/transactions/export?linked_card_ids={personal_card.id}",
+        headers=auth_headers,
+    )
+    assert exported.status_code == 200
+    assert "Personal purchase" in exported.text
+    assert "Virtual purchase" not in exported.text
+    assert "Same ending, other account" not in exported.text
+    assert "Same ending, other workspace" not in exported.text
+
+    foreign_card_response = await client.get(
+        f"/api/transactions?linked_card_ids={other_workspace_card.id}",
+        headers=auth_headers,
+    )
+    assert foreign_card_response.status_code == 200
+    assert foreign_card_response.json()["total"] == 0
+
+    foreign_card_export = await client.get(
+        f"/api/transactions/export?linked_card_ids={other_workspace_card.id}",
+        headers=auth_headers,
+    )
+    assert foreign_card_export.status_code == 200
+    assert "Personal purchase" not in foreign_card_export.text
+    assert "Same ending, other workspace" not in foreign_card_export.text
 
 
 @pytest.mark.asyncio
@@ -471,6 +616,61 @@ async def test_update_transaction(
     assert data["category"]["id"] == str(test_categories[0].id)
     assert data["payee_id"] == str(payee.id)
     assert data["payee_name"] == "Netflix"
+
+
+@pytest.mark.asyncio
+async def test_update_synced_transaction_rejects_amount_and_date_atomically(
+    client: AsyncClient,
+    auth_headers,
+    session: AsyncSession,
+    test_workspace,
+    test_user: User,
+    test_transactions: list[Transaction],
+):
+    synced = Transaction(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        account_id=test_transactions[0].account_id,
+        description="Provider description",
+        amount=Decimal("123.45"),
+        currency="BRL",
+        date=date(2025, 1, 15),
+        effective_date=date(2025, 2, 20),
+        type="debit",
+        source="sync",
+        amount_primary=Decimal("678.90"),
+        fx_rate_used=Decimal("5.5"),
+    )
+    session.add(synced)
+    await session.commit()
+
+    response = await client.patch(
+        f"/api/transactions/{synced.id}",
+        headers=auth_headers,
+        json={
+            "amount": "999.99",
+            "date": "2025-03-10",
+            "description": "Must not land",
+        },
+    )
+    assert response.status_code == 400
+    assert response.json()["detail"] == (
+        "Cannot change amount or date on a synchronized transaction"
+    )
+
+    response = await client.get(
+        f"/api/transactions/{synced.id}", headers=auth_headers
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert Decimal(str(body["amount"])) == Decimal("123.45")
+    assert body["date"] == "2025-01-15"
+    assert body["description"] == "Provider description"
+    assert Decimal(str(body["amount_primary"])) == Decimal("678.9")
+    assert Decimal(str(body["fx_rate_used"])) == Decimal("5.5")
+    await session.refresh(synced)
+    assert synced.effective_date == date(2025, 2, 20)
 
 
 @pytest.mark.asyncio

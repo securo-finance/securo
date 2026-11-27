@@ -1,12 +1,37 @@
-import { useState, useMemo, useEffect, useRef } from 'react'
+import { useState, useMemo, useEffect, useRef, useId, type ButtonHTMLAttributes, type ReactNode } from 'react'
+import {
+  closestCenter,
+  DndContext,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from '@dnd-kit/core'
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
 import { useTranslation } from 'react-i18next'
 import { useDisplayLocale, useDateLocale } from '@/hooks/use-display-locale'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useRegisterPageChatContext } from '@/lib/page-chat-context'
 import { accounts as accountsApi, assets, assetGroups, currencies as currenciesApi } from '@/lib/api'
-import { localDateString } from '@/lib/date-utils'
+import { dateTickFormatter, localDateString, todayInTimezone } from '@/lib/date-utils'
+import { useEffectiveTimezone } from '@/hooks/use-timezone'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
@@ -17,6 +42,7 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog'
 import { Badge } from '@/components/ui/badge'
+import { AssetRowContextMenu, AssetRowMenuButton, type AssetRowAction } from '@/components/asset-row-actions'
 import { Skeleton } from '@/components/ui/skeleton'
 import { DatePickerInput } from '@/components/ui/date-picker-input'
 import type { Asset, AssetGroup, AssetTransaction, AssetValue, MarketSymbolMatch, MarketSymbolQuote } from '@/types'
@@ -32,6 +58,8 @@ import {
   ChevronDown,
   ChevronUp,
   ChevronRight,
+  EllipsisVertical,
+  GripVertical,
   RefreshCw,
   Wallet,
   FolderInput,
@@ -55,6 +83,8 @@ import {
 import { useNavigate } from 'react-router-dom'
 import { PageHeader } from '@/components/page-header'
 import { PortfolioPerformance } from '@/components/portfolio-performance'
+import { ExchangeRateSetupAction, ExchangeRateSetupIcon } from '@/components/exchange-rate-setup-notice'
+import { needsConversion, useExchangeRatesNeedSetup } from '@/hooks/use-exchange-rates-need-setup'
 import { PropertyEquitySummary } from '@/components/property-equity-summary'
 import { LOAN_COLLATERAL_TYPES } from '@/lib/property-equity'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
@@ -62,9 +92,12 @@ import { useAuth } from '@/contexts/auth-context'
 import { useWorkspace } from '@/contexts/workspace-context'
 import { useCollectionFilter } from '@/contexts/collection-filter-context'
 import { getAssetProfit } from '@/lib/asset-profit'
+import { getStaleProviderValueDate } from '@/lib/asset-provider-freshness'
 import { getAssetValuePrimary, getPortfolioShare, getPortfolioTotalPrimary } from '@/lib/asset-portfolio-share'
 import { formatTransactionTotal, getTransactionTotalCurrency } from '@/lib/asset-transaction-total'
+import { MAX_SPLIT_UNITS, canRecordSplit, formatSplitRatio, parseSplitUnits } from '@/lib/asset-split'
 import { formatCurrency } from '@/lib/format'
+import { applyWalletOrder } from '@/lib/wallet-order'
 
 // Renders a logo image when one is available, falling back to the asset's
 // type-based Lucide icon on missing URL or broken image. Uses the type's
@@ -174,9 +207,49 @@ const VALUATION_METHODS = ['manual', 'growth_rule', 'market_price'] as const
 const GROWTH_TYPES = ['percentage', 'absolute'] as const
 const GROWTH_FREQUENCIES = ['daily', 'weekly', 'monthly', 'yearly'] as const
 
+type DragHandleProps = ButtonHTMLAttributes<HTMLButtonElement> & {
+  ref: (element: HTMLElement | null) => void
+}
+
+function SortableWalletSection({
+  id,
+  disabled,
+  children,
+}: {
+  id: string
+  disabled: boolean
+  children: (dragHandle: DragHandleProps) => ReactNode
+}) {
+  const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } = useSortable({
+    id,
+    disabled,
+  })
+
+  return (
+    <div
+      ref={setNodeRef}
+      // Translate only: scaling would squash a wallet into its neighbour's height.
+      style={{ transform: CSS.Translate.toString(transform), transition }}
+      className={`space-y-2 rounded-xl ${
+        isDragging ? 'relative z-20 bg-background/90 opacity-75 shadow-xl ring-2 ring-primary/30' : ''
+      }`}
+    >
+      {children({ ...attributes, ...listeners, ref: setActivatorNodeRef })}
+    </div>
+  )
+}
+
 // Column template shared by the holdings table header + rows so they align:
 // Ativo · Quant. · Preço Médio · Preço Atual · Rentab. · Saldo · % · actions.
 const HOLDINGS_GRID = 'minmax(0,2.4fr) 0.7fr 1.1fr 1fr 0.9fr 1.3fr 0.6fr 4.5rem'
+
+/** Whether archived holdings are shown, kept across visits (issue #1046). */
+const SHOW_ARCHIVED_KEY = 'securo:assets:showArchived'
+
+// Sold section: Ativo · Período · P. médio compra · P. médio venda · Investido · Recuperado · Resultado · actions.
+const SOLD_GRID = 'minmax(0,2fr) 1.4fr 1fr 1fr 1fr 1fr 1fr 4.5rem'
+/** Whether the sold section is open; it starts collapsed. */
+const SHOW_SOLD_KEY = 'securo:assets:showSold'
 
 // Surface the backend's actual error message (FastAPI puts it in
 // response.data.detail) instead of a generic toast. Makes failures
@@ -209,6 +282,45 @@ function assetErrorMessage(e: unknown, fallback: string): string {
   return resp?.status ? `${fallback} (${resp.status})` : fallback
 }
 
+/** What a rate-limited portfolio refresh already wrote before it stopped. */
+interface RateLimitedRefresh {
+  refreshed: number
+  skipped: number
+  rate_limited: number
+}
+
+/**
+ * The refresh counters carried by a 429, or null when the request failed for
+ * another reason. The service commits the prices it got before the provider
+ * refused, so these counts are what the page must show and refetch.
+ */
+function rateLimitedRefresh(e: unknown): RateLimitedRefresh | null {
+  const resp = (e as { response?: { data?: { detail?: unknown }; status?: number } })?.response
+  if (resp?.status !== 429) return null
+  const detail = resp.data?.detail
+  const summary = (detail && typeof detail === 'object' ? detail : {}) as Partial<RateLimitedRefresh>
+  return {
+    refreshed: Number(summary.refreshed ?? 0),
+    skipped: Number(summary.skipped ?? 0),
+    rate_limited: Number(summary.rate_limited ?? 1),
+  }
+}
+
+// Badge label and color per ledger kind. A split takes the indigo the value
+// chart already uses for its mixed markers.
+const TX_KIND_CONFIG: Record<AssetTransaction['kind'], { labelKey: string; tone: string }> = {
+  buy: { labelKey: 'assets.txBuy', tone: 'text-emerald-600 border-emerald-200' },
+  sell: { labelKey: 'assets.txSell', tone: 'text-rose-600 border-rose-200' },
+  split: { labelKey: 'assets.txSplit', tone: 'text-indigo-600 border-indigo-200 dark:text-indigo-400' },
+}
+
+// "1 → 100" for a split entry; the ledger stores both numbers on every split.
+// Unlike a trade's size, the ratio says nothing about the position, so the
+// lists show it without the privacy mask.
+function splitRatio(tx: AssetTransaction, locale: string): string {
+  return formatSplitRatio(tx.old_units ?? 0, tx.new_units ?? 0, locale)
+}
+
 type AssetsTab = 'holdings' | 'transactions' | 'performance'
 const ASSETS_TABS: AssetsTab[] = ['holdings', 'transactions', 'performance']
 const ASSETS_TAB_STORAGE_KEY = 'securo.assetsTab'
@@ -232,7 +344,13 @@ export default function AssetsPage() {
   const dateLocale = useDateLocale()
   const { mask } = usePrivacyMode()
   const { user } = useAuth()
-  const { canWrite, canManage, current: currentWorkspace } = useWorkspace()
+  const { canWrite, canManage, current: workspace } = useWorkspace()
+  // The day the server keeps the books in, so the staleness badge agrees with
+  // the dates it writes, not the browser's clock. Until that timezone is known
+  // there is no day to compare against, so the badge waits for it instead of
+  // guessing with the browser's.
+  const effectiveTimezone = useEffectiveTimezone()
+  const today = effectiveTimezone ? todayInTimezone(effectiveTimezone) : null
   const userCurrency = user?.preferences?.currency_display ?? 'USD'
   const queryClient = useQueryClient()
 
@@ -244,7 +362,11 @@ export default function AssetsPage() {
 
   // Reopen on the tab used last; `?tab=performance` links straight to one.
   const [activeTab, setActiveTabState] = useState<AssetsTab>(readInitialAssetsTab)
+  // When Performance was last opened: an inventory read before that is not
+  // trusted to prune a selection (see performanceInventory).
+  const [performanceOpenedAt, setPerformanceOpenedAt] = useState(() => Date.now())
   const setActiveTab = (tab: AssetsTab) => {
+    if (tab === 'performance' && activeTab !== 'performance') setPerformanceOpenedAt(Date.now())
     setActiveTabState(tab)
     try {
       localStorage.setItem(ASSETS_TAB_STORAGE_KEY, tab)
@@ -304,10 +426,32 @@ export default function AssetsPage() {
   const [formUnitPrice, setFormUnitPrice] = useState('')
   const [quoteLoading, setQuoteLoading] = useState(false)
 
-  const { data: rawAssetsList, isLoading } = useQuery({
+  // Archived holdings are fetched only when the toggle asks for them (issue
+  // #1046): an archived asset is off the page by default but never lost.
+  const [showArchived, setShowArchived] = useState(() => localStorage.getItem(SHOW_ARCHIVED_KEY) === '1')
+  const toggleArchived = (checked: boolean) => {
+    setShowArchived(checked)
+    localStorage.setItem(SHOW_ARCHIVED_KEY, checked ? '1' : '0')
+  }
+  const [showSold, setShowSold] = useState(() => {
+    try { return localStorage.getItem(SHOW_SOLD_KEY) === '1' } catch { return false }
+  })
+  const toggleSold = (open: boolean) => {
+    setShowSold(open)
+    try { localStorage.setItem(SHOW_SOLD_KEY, open ? '1' : '0') } catch { /* storage unavailable */ }
+  }
+  // The default list stays loaded underneath the archived one, so a failed
+  // archived request leaves the page as it was instead of emptying it.
+  const { data: defaultAssets, isLoading } = useQuery({
     queryKey: ['assets'],
     queryFn: () => assets.list(false),
   })
+  const withArchived = useQuery({
+    queryKey: ['assets', 'archived'],
+    queryFn: () => assets.list(true),
+    enabled: showArchived,
+  })
+  const rawAssetsList = showArchived && withArchived.data ? withArchived.data : defaultAssets
 
   // Active Collection filter (issue #105): when a collection is active, scope
   // the Assets page to the assets in its wallets (asset_groups). A collection
@@ -318,6 +462,8 @@ export default function AssetsPage() {
     const allowed = new Set(activeWalletIds)
     return (rawAssetsList ?? []).filter((a) => a.group_id && allowed.has(a.group_id))
   }, [rawAssetsList, activeWalletIds])
+
+  const exchangeRatesNeedSetup = useExchangeRatesNeedSetup(assetsList, userCurrency)
 
   const { data: rawPortfolioData } = useQuery({
     queryKey: ['portfolio-trend'],
@@ -356,27 +502,39 @@ export default function AssetsPage() {
   // Publish a snapshot of what's on the Assets page so the global chat
   // (⌘J) can answer "what does this chart mean / what are these
   // wallets?" without needing the user to spell it out.
-  const totalValue = (assetsList ?? []).reduce(
+  // Archived holdings are on the page only to be found again; they stay out of
+  // every total, like the wallets and the chart (issue #1046).
+  const countedAssets = (assetsList ?? []).filter((a) => !a.is_archived)
+  // Only what the toggle asked for: a response that lands after it is turned
+  // back off cannot flash archived rows into the page or this summary.
+  const archivedAssets = showArchived ? (assetsList ?? []).filter((a) => a.is_archived) : []
+  // A failed archived request keeps the default list on screen; say so instead
+  // of letting the page look like an empty portfolio.
+  const archivedFailed = showArchived && withArchived.isError
+  const totalValue = countedAssets.reduce(
     (acc: number, a: { current_value?: number | null }) => acc + Number(a.current_value || 0),
     0,
   )
   const byType: Record<string, number> = {}
-  for (const a of (assetsList ?? []) as Array<{ type?: string; current_value?: number | null }>) {
+  for (const a of countedAssets as Array<{ type?: string; current_value?: number | null }>) {
     if (!a.type) continue
     byType[a.type] = (byType[a.type] || 0) + Number(a.current_value || 0)
   }
   const portfolioTotal = (portfolioData as { total?: number } | undefined)?.total
-  const assetsCtxKey = `${assetsList?.length ?? 0}:${totalValue.toFixed(2)}:${portfolioTotal ?? ''}`
+  const assetsCtxKey = `${countedAssets.length}:${totalValue.toFixed(2)}:${portfolioTotal ?? ''}:${archivedAssets.length}`
   useRegisterPageChatContext(
     {
       path: '/assets',
       label: 'Assets',
       summary:
-        `Portfolio overview page. ${assetsList?.length ?? 0} assets totaling ` +
+        `Portfolio overview page. ${countedAssets.length} assets totaling ` +
         `~${totalValue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} ` +
-        `(by current_value). The portfolio chart shows value over time grouped by wallet or asset.`,
+        `(by current_value). The portfolio chart shows value over time grouped by wallet or asset.` +
+        (archivedAssets.length > 0
+          ? ` ${archivedAssets.length} archived holdings are listed apart and left out of every total.`
+          : ''),
       totals_by_type: byType,
-      asset_count: assetsList?.length ?? 0,
+      asset_count: countedAssets.length,
       total_value: Number(totalValue.toFixed(2)),
       hint: 'For exact per-asset numbers, use the get_net_worth or list_assets tools.',
     },
@@ -390,6 +548,7 @@ export default function AssetsPage() {
   function refetchAssetViews() {
     queryClient.refetchQueries({ queryKey: ['assets'] })
     queryClient.refetchQueries({ queryKey: ['portfolio-trend'] })
+    queryClient.refetchQueries({ queryKey: ['asset-trend'] })
     queryClient.refetchQueries({ queryKey: ['dashboard'] })
     queryClient.invalidateQueries({ queryKey: ['asset-performance'] })
   }
@@ -431,21 +590,66 @@ export default function AssetsPage() {
     mutationFn: (id: string) => assets.refreshPrice(id),
     onSuccess: (updated) => {
       // Sync the dialog's preview to the fresh quote so the user sees the
-      // new price without closing the dialog. The list + chart refetch
-      // via our standard helper.
-      setSelectedQuote({
-        symbol: updated.ticker || '',
-        name: updated.name,
-        exchange: updated.ticker_exchange,
-        currency: updated.currency,
-        price: updated.last_price ?? 0,
-        quote_type: null,
-      })
-      setEditingAsset(updated)
+      // new price without closing the dialog (a refresh from a row's menu
+      // leaves it alone). The list + chart refetch via our standard helper.
+      if (dialogOpen && editingAsset?.id === updated.id) {
+        setSelectedQuote({
+          symbol: updated.ticker || '',
+          name: updated.name,
+          exchange: updated.ticker_exchange,
+          currency: updated.currency,
+          price: updated.last_price ?? 0,
+          quote_type: null,
+        })
+        setEditingAsset(updated)
+      }
       refetchAssetViews()
       toast.success(t('assets.priceRefreshed'))
     },
     onError: (e) => toast.error(assetErrorMessage(e, t('common.error'))),
+  })
+
+  // Portfolio-wide refresh (issue #778): one provider call for every
+  // market-priced holding instead of opening each asset and refreshing it.
+  const refreshAllPricesMutation = useMutation({
+    // The workspace comes from the click, not from the context when the
+    // request finally runs: a mutation paused while offline resumes later,
+    // and the interceptor would then stamp whichever workspace is selected
+    // by then (the app does not pin the mutation to online).
+    mutationFn: (workspaceId: string | null) => assets.refreshPrices(workspaceId),
+    onSuccess: (summary, requestedWorkspaceId) => {
+      // The answer belongs to the workspace that asked. If the user moved to
+      // another one while the provider was working, the counts are not this
+      // page's to show, and its data is not what the refetch would touch.
+      if (requestedWorkspaceId !== (workspace?.id ?? null)) return
+      refetchAssetViews()
+      if (summary.refreshed === 0 && summary.skipped === 0) {
+        toast.info(t('assets.refreshAllPricesNone'))
+        return
+      }
+      // Each count gets its own plural form, then the two halves are joined.
+      toast.success(
+        t('assets.refreshAllPricesDone', {
+          updated: t('assets.refreshAllPricesUpdated', { count: summary.refreshed }),
+          skipped: t('assets.refreshAllPricesNoQuote', { count: summary.skipped }),
+        }),
+      )
+    },
+    onError: (e, requestedWorkspaceId) => {
+      const limited = rateLimitedRefresh(e)
+      if (requestedWorkspaceId !== (workspace?.id ?? null)) return
+      // A 429 here can come after some prices were written and committed, so
+      // the list and the charts are refetched on this path too.
+      if (limited) refetchAssetViews()
+      toast.error(
+        limited
+          ? t('assets.refreshAllPricesRateLimited', {
+              updated: t('assets.refreshAllPricesUpdated', { count: limited.refreshed }),
+              skipped: t('assets.refreshAllPricesLeftOut', { count: limited.skipped }),
+            })
+          : assetErrorMessage(e, t('common.error')),
+      )
+    },
   })
 
   const { data: rawWalletsList } = useQuery({
@@ -499,6 +703,29 @@ export default function AssetsPage() {
     onError: (e) => toast.error(assetErrorMessage(e, t('common.error'))),
   })
 
+  const reorderWalletsMutation = useMutation({
+    mutationFn: (groupIds: string[]) => assetGroups.reorder(groupIds),
+    onMutate: async (groupIds) => {
+      await queryClient.cancelQueries({ queryKey: ['asset-groups'], exact: true })
+      const previous = queryClient.getQueryData<AssetGroup[]>(['asset-groups'])
+      if (previous) {
+        queryClient.setQueryData(['asset-groups'], applyWalletOrder(previous, groupIds))
+      }
+      return { previous }
+    },
+    onError: (error, _groupIds, context) => {
+      if (context?.previous) queryClient.setQueryData(['asset-groups'], context.previous)
+      toast.error(assetErrorMessage(error, t('common.error')))
+    },
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ['asset-groups'] }),
+  })
+
+  const walletSensors = useSensors(
+    // A few pixels of travel before a drag starts, so a click on the handle stays a click.
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  )
+
   const moveAssetMutation = useMutation({
     mutationFn: ({ id, groupId }: { id: string; groupId: string | null }) =>
       assets.update(id, { group_id: groupId } as Partial<Asset>),
@@ -551,7 +778,19 @@ export default function AssetsPage() {
   }, [formMethod, formPurchasePrice, formGrowthRate, formGrowthType, formGrowthFrequency, formGrowthStartDate, formPurchaseDate])
 
   const activeAssets = useMemo(() => assetsList?.filter(a => !a.sell_date && !a.is_archived) ?? [], [assetsList])
-  const soldAssets = assetsList?.filter(a => a.sell_date) ?? []
+  const soldAssets = assetsList?.filter(a => a.sell_date && !a.is_archived) ?? []
+  // Realized result per currency, never converted; primary currency first.
+  const soldTotals = (() => {
+    const sums = new Map<string, number>()
+    for (const a of soldAssets) {
+      const amount = getAssetProfit(a)?.amount
+      // In cents, so results that cancel out read +0.00 rather than -0.00.
+      if (amount != null) sums.set(a.currency, (sums.get(a.currency) ?? 0) + Math.round(amount * 100))
+    }
+    return [...sums.entries()]
+      .map(([currency, cents]): [string, number] => [currency, cents / 100])
+      .sort(([a], [b]) => a === userCurrency ? -1 : b === userCurrency ? 1 : a.localeCompare(b))
+  })()
   // Performance can measure a holding after it is sold, over the time it was held.
   const performanceHoldings = useMemo(() => assetsList?.filter(a => !a.is_archived) ?? [], [assetsList])
   // Denominator for the "% of portfolio" column: current holdings only, in the
@@ -576,28 +815,47 @@ export default function AssetsPage() {
   // selected and the query is non-trivial — keeps the autocomplete snappy
   // without flooding the yfinance-backed endpoint.
   useEffect(() => {
-    if (formMethod !== 'market_price') return
+    // Every path that leaves without issuing a request has to clear the
+    // spinner: a search already on the wire had its `ignored` set by the
+    // cleanup, so its `finally` never resets it. Clearing the input in the
+    // middle of a search used to leave the loading label up forever.
+    if (formMethod !== 'market_price') {
+      setTickerSearchLoading(false)
+      return
+    }
     const q = formTickerQuery.trim()
     // Don't search if the field matches the already-selected quote — the
     // user just picked it and we'd spam the endpoint for no reason.
-    if (selectedQuote && q === selectedQuote.symbol) return
-    if (q.length < 1) {
-      setTickerMatches([])
+    if (selectedQuote && q === selectedQuote.symbol) {
+      setTickerSearchLoading(false)
       return
     }
+    if (q.length < 1) {
+      setTickerMatches([])
+      setTickerSearchLoading(false)
+      return
+    }
+    // A request already on the wire when the query or the currency changes
+    // must not answer for the new one: clearTimeout only stops the timer.
+    let ignored = false
     setTickerSearchLoading(true)
     const handle = window.setTimeout(async () => {
       try {
-        const results = await assets.marketSearch(q, 10)
-        setTickerMatches(results)
+        // The display currency lets the backend list the coin's pair in the
+        // user's own currency first (issue #621).
+        const results = await assets.marketSearch(q, 10, userCurrency)
+        if (!ignored) setTickerMatches(results)
       } catch {
-        setTickerMatches([])
+        if (!ignored) setTickerMatches([])
       } finally {
-        setTickerSearchLoading(false)
+        if (!ignored) setTickerSearchLoading(false)
       }
     }, 300)
-    return () => window.clearTimeout(handle)
-  }, [formMethod, formTickerQuery, selectedQuote])
+    return () => {
+      ignored = true
+      window.clearTimeout(handle)
+    }
+  }, [formMethod, formTickerQuery, selectedQuote, userCurrency])
 
   async function pickTickerMatch(match: MarketSymbolMatch) {
     setTickerMatches([])
@@ -713,7 +971,11 @@ export default function AssetsPage() {
       type: formType,
       currency: formCurrency,
       group_id: formGroupId || null,
-      valuation_method: formMethod,
+      // Only a create picks how the value is kept: an edit cannot change it
+      // (the buttons are disabled and the service drops the field), so sending
+      // the stored value back would only let a row outside the accepted set
+      // fail every later edit with a 422.
+      ...(editingAsset ? {} : { valuation_method: formMethod }),
     }
 
     // A ledger-backed holding derives its buy date, quantity and cost basis
@@ -799,18 +1061,51 @@ export default function AssetsPage() {
     setPendingGrowthSave(null)
   }
 
+  // The row's actions, shared by its "⋯" button and its right-click menu.
+  function holdingActions(asset: Asset): AssetRowAction[] {
+    if (!canWrite) return []
+    const isMarketPriced = asset.valuation_method === 'market_price'
+    const isProviderOwned = asset.source !== 'manual' && !isMarketPriced
+    const actions: AssetRowAction[] = [
+      {
+        key: 'edit',
+        label: t('common.edit'),
+        icon: Pencil,
+        onSelect: () => openEdit(asset),
+        disabled: isProviderOwned,
+        hint: isProviderOwned ? t('assets.syncedReadOnly') : undefined,
+      },
+    ]
+    if (isMarketPriced) {
+      actions.push({ key: 'add-transaction', label: t('assets.addTransaction'), icon: Plus, onSelect: () => openAddTransaction(asset.id) })
+      if (asset.ticker && !asset.sell_date) {
+        actions.push({
+          key: 'refresh-price',
+          label: t('assets.refreshPrice'),
+          icon: RefreshCw,
+          onSelect: () => refreshPriceMutation.mutate(asset.id),
+          disabled: refreshPriceMutation.isPending,
+        })
+      }
+    }
+    actions.push(
+      { key: 'move', label: t('assets.moveToWallet'), icon: FolderInput, onSelect: () => setMovingAsset(asset) },
+      { key: 'delete', label: t('common.delete'), icon: Trash2, onSelect: () => setDeletingId(asset.id), destructive: true },
+    )
+    return actions
+  }
+
   // Consolidated holdings table (issue #235). One row per holding (ticker),
   // Investidor10/Status Invest style: Ativo · Quant. · Preço Médio ·
   // Preço Atual · Rentabilidade · Saldo · % da carteira. Market-priced rows
   // are fully populated; holdings with no recorded cost show "—" for the
   // cost-based columns and offer a one-tap way to add their buys.
-  function renderHoldingRow(asset: Asset) {
+  function renderHoldingRow(asset: Asset, variant: 'holding' | 'sold' = 'holding') {
     const config = getTypeConfig(asset.type)
     const Icon = config.icon
     const isExpanded = expandedId === asset.id
     const isSynced = asset.source !== 'manual'
     const isMarketPriced = asset.valuation_method === 'market_price'
-    const isProviderOwned = isSynced && !isMarketPriced
     const hasCost = asset.average_price != null && asset.total_invested != null
     const profit = getAssetProfit(asset)
     // Foreign-currency asset the backend could not convert (no FX rate):
@@ -820,22 +1115,33 @@ export default function AssetsPage() {
       asset.current_value != null &&
       asset.currency !== userCurrency &&
       asset.current_value_primary == null
-    const pctOfPortfolio = asset.sell_date ? null : getPortfolioShare(asset, portfolioTotalPrimary, userCurrency)
+    // Archived holdings sit outside the portfolio total, so a share of it
+    // would be meaningless (issue #1046).
+    const pctOfPortfolio = asset.sell_date || asset.is_archived ? null : getPortfolioShare(asset, portfolioTotalPrimary, userCurrency)
     const needsBuys = isMarketPriced && !hasCost && !asset.sell_date
+    const needsExchangeRate = exchangeRatesNeedSetup && needsConversion(asset, userCurrency)
+    // The API only fills the date while the provider's own figure is on
+    // screen, so the row just asks how old it is.
+    const staleValueDate =
+      isSynced && today ? getStaleProviderValueDate(asset, today) : null
+
+    const displayName = asset.ticker && !asset.ticker.startsWith('TD:') ? asset.ticker : asset.name
+    const actions = holdingActions(asset)
 
     return (
       <div key={asset.id} className="border-b border-border last:border-b-0">
+        <AssetRowContextMenu actions={actions}>
         <div
           className="grid items-center gap-2 px-3 py-3 cursor-pointer hover:bg-muted/20 transition-colors text-sm"
-          style={{ gridTemplateColumns: HOLDINGS_GRID }}
+          style={{ gridTemplateColumns: variant === 'sold' ? SOLD_GRID : HOLDINGS_GRID }}
           onClick={() => setExpandedId(isExpanded ? null : asset.id)}
         >
           {/* Ativo */}
           <div className="flex items-center gap-2.5 min-w-0">
             <AssetIcon logoUrl={asset.logo_url} Icon={Icon} colorClass={config.color} bgClass={config.bg} size={16} tile="w-8 h-8" />
             <div className="min-w-0">
-              <div className="flex items-center gap-1.5">
-                <span className="font-semibold text-foreground truncate">{asset.ticker && !asset.ticker.startsWith('TD:') ? asset.ticker : asset.name}</span>
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className="font-semibold text-foreground truncate">{displayName}</span>
                 {needsBuys && (
                   <Badge
                     variant="outline"
@@ -856,7 +1162,19 @@ export default function AssetsPage() {
                     {t('assets.noFxRate')}
                   </Badge>
                 )}
-                {asset.sell_date && (
+                {staleValueDate && (
+                  <Badge
+                    variant="outline"
+                    className="text-[9px] px-1 py-0 text-amber-600 border-amber-300 bg-amber-50 dark:bg-amber-950/30 gap-0.5 shrink-0"
+                    title={t('assets.providerValueStaleTitle')}
+                  >
+                    <AlertTriangle size={9} />
+                    {t('assets.providerValueStale', {
+                      date: new Date(staleValueDate + 'T00:00:00').toLocaleDateString(dateLocale),
+                    })}
+                  </Badge>
+                )}
+                {asset.sell_date && variant !== 'sold' && (
                   <Badge variant="outline" className="text-[9px] px-1 py-0 text-rose-600 border-rose-200">{t('assets.sold')}</Badge>
                 )}
                 {isSynced && !isMarketPriced && (
@@ -866,12 +1184,44 @@ export default function AssetsPage() {
               <span className="text-[11px] text-muted-foreground truncate block">{asset.ticker && !asset.ticker.startsWith('TD:') ? asset.name : (asset.ticker?.startsWith('TD:') ? 'Tesouro Direto' : t(`assets.type${asset.type.replace(/_([a-z])/g, (_, c: string) => c.toUpperCase()).replace(/^./, c => c.toUpperCase())}`))}</span>
             </div>
           </div>
+          {variant === 'sold' ? (
+            <>
+              {/* Período */}
+              <div className="tabular-nums">
+                {asset.purchase_date ? <span className="block">{new Date(asset.purchase_date + 'T00:00:00').toLocaleDateString(dateLocale)}</span> : <span className="block text-muted-foreground">—</span>}
+                {asset.sell_date && (
+                  <span className="block text-[11px] text-muted-foreground">→ {new Date(asset.sell_date + 'T00:00:00').toLocaleDateString(dateLocale)}</span>
+                )}
+              </div>
+              {[asset.average_buy_price, asset.average_sell_price, asset.sold_cost, asset.sale_proceeds].map((value, i) => (
+                <div key={i} className="text-end tabular-nums">
+                  {value != null ? mask(formatCurrency(value, asset.currency, locale)) : <span className="text-muted-foreground">—</span>}
+                </div>
+              ))}
+              {/* Resultado */}
+              <div className="text-end tabular-nums">
+                {profit ? (
+                  <span className={profit.amount >= 0 ? 'text-emerald-600' : 'text-rose-500'}>
+                    <span className="block">
+                      <span dir="ltr">{profit.amount >= 0 ? '+' : ''}{mask(formatCurrency(profit.amount, asset.currency, locale))}</span>
+                    </span>
+                    {profit.percentage != null && (
+                      <span className="block text-[10px]">
+                        {profit.percentage >= 0 ? '+' : ''}{profit.percentage.toFixed(1)}%
+                      </span>
+                    )}
+                  </span>
+                ) : <span className="text-muted-foreground">—</span>}
+              </div>
+            </>
+          ) : (
+            <>
           {/* Quant. */}
-          <div className="text-right tabular-nums text-muted-foreground">
+          <div className="text-end tabular-nums text-muted-foreground">
             {asset.units != null ? mask(`${asset.units}`) : '—'}
           </div>
           {/* Preço Médio */}
-          <div className="text-right tabular-nums">
+          <div className="text-end tabular-nums">
             {asset.average_price != null ? mask(formatCurrency(asset.average_price, asset.currency, locale)) : (
               needsBuys && canWrite ? (
                 <button
@@ -884,15 +1234,15 @@ export default function AssetsPage() {
             )}
           </div>
           {/* Preço Atual */}
-          <div className="text-right tabular-nums text-muted-foreground">
+          <div className="text-end tabular-nums text-muted-foreground">
             {asset.last_price != null ? mask(formatCurrency(asset.last_price, asset.currency, locale)) : '—'}
           </div>
           {/* Rentabilidade */}
-          <div className="text-right tabular-nums">
+          <div className="text-end tabular-nums">
             {profit ? (
               <span className={profit.amount >= 0 ? 'text-emerald-600' : 'text-rose-500'}>
                 <span className="block">
-                  {profit.amount >= 0 ? '+' : ''}{mask(formatCurrency(profit.amount, asset.currency, locale))}
+                  <span dir="ltr">{profit.amount >= 0 ? '+' : ''}{mask(formatCurrency(profit.amount, asset.currency, locale))}</span>
                 </span>
                 {profit.percentage != null && (
                   <span className="block text-[10px]">
@@ -903,10 +1253,13 @@ export default function AssetsPage() {
             ) : <span className="text-muted-foreground">—</span>}
           </div>
           {/* Saldo */}
-          <div className="text-right tabular-nums">
+          <div className="text-end tabular-nums">
             {asset.current_value != null ? (
               <>
-                <span className="font-semibold text-foreground">{mask(formatCurrency(asset.current_value, asset.currency, locale))}</span>
+                <span className="inline-flex items-center justify-end gap-1">
+                  <span className="font-semibold text-foreground">{mask(formatCurrency(asset.current_value, asset.currency, locale))}</span>
+                  {needsExchangeRate && <ExchangeRateSetupIcon from={asset.currency} to={userCurrency} isAdmin={Boolean(user?.is_superuser)} />}
+                </span>
                 {asset.current_value_primary != null && asset.currency !== userCurrency && (
                   <span className="block text-[10px] text-muted-foreground">{mask(formatCurrency(asset.current_value_primary, userCurrency, locale))}</span>
                 )}
@@ -917,27 +1270,18 @@ export default function AssetsPage() {
             ) : <span className="text-muted-foreground">—</span>}
           </div>
           {/* % carteira */}
-          <div className="text-right tabular-nums text-muted-foreground">
+          <div className="text-end tabular-nums text-muted-foreground">
             {pctOfPortfolio != null ? `${pctOfPortfolio.toFixed(1)}%` : '—'}
           </div>
+            </>
+          )}
           {/* actions */}
           <div className="flex items-center justify-end gap-0.5">
-            {canWrite && (
-              <>
-                <button onClick={(e) => { e.stopPropagation(); setMovingAsset(asset) }} title={t('assets.moveToWallet')} className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors">
-                  <FolderInput size={13} />
-                </button>
-                <button onClick={(e) => { e.stopPropagation(); if (!isProviderOwned) openEdit(asset) }} disabled={isProviderOwned} title={isProviderOwned ? t('assets.syncedReadOnly') : t('common.edit')} className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors disabled:opacity-30 disabled:cursor-not-allowed">
-                  <Pencil size={13} />
-                </button>
-                <button onClick={(e) => { e.stopPropagation(); if (!isProviderOwned) setDeletingId(asset.id) }} disabled={isProviderOwned} title={isProviderOwned ? t('assets.syncedReadOnly') : t('common.delete')} className="p-1 rounded text-muted-foreground hover:text-rose-600 hover:bg-rose-50 transition-colors disabled:opacity-30 disabled:cursor-not-allowed">
-                  <Trash2 size={13} />
-                </button>
-              </>
-            )}
+            {actions.length > 0 && <AssetRowMenuButton label={`${t('common.more')}: ${displayName}`} actions={actions} />}
             {isExpanded ? <ChevronUp size={15} className="text-muted-foreground" /> : <ChevronDown size={15} className="text-muted-foreground" />}
           </div>
         </div>
+        </AssetRowContextMenu>
 
         {isExpanded && (
           <>
@@ -974,19 +1318,36 @@ export default function AssetsPage() {
   }
 
   // Column header for a holdings section — same grid template as the rows.
-  function renderHoldingsHeader() {
+  function renderHoldingsHeader(variant: 'holding' | 'sold' = 'holding') {
+    if (variant === 'sold') {
+      return (
+        <div
+          className="grid items-center gap-2 px-3 py-2 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider border-b border-border"
+          style={{ gridTemplateColumns: SOLD_GRID }}
+        >
+          <div>{t('assets.colAsset')}</div>
+          <div>{t('assets.colDates')}</div>
+          <div className="text-end">{t('assets.colAvgBuyPrice')}</div>
+          <div className="text-end">{t('assets.colAvgSellPrice')}</div>
+          <div className="text-end">{t('assets.colInvested')}</div>
+          <div className="text-end">{t('assets.colProceeds')}</div>
+          <div className="text-end">{t('assets.colResult')}</div>
+          <div />
+        </div>
+      )
+    }
     return (
       <div
         className="grid items-center gap-2 px-3 py-2 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider border-b border-border"
         style={{ gridTemplateColumns: HOLDINGS_GRID }}
       >
         <div>{t('assets.colAsset')}</div>
-        <div className="text-right">{t('assets.colQuantity')}</div>
-        <div className="text-right">{t('assets.colAvgPrice')}</div>
-        <div className="text-right">{t('assets.colCurrentPrice')}</div>
-        <div className="text-right">{t('assets.colReturn')}</div>
-        <div className="text-right">{t('assets.colBalance')}</div>
-        <div className="text-right">{t('assets.colPortfolioPct')}</div>
+        <div className="text-end">{t('assets.colQuantity')}</div>
+        <div className="text-end">{t('assets.colAvgPrice')}</div>
+        <div className="text-end">{t('assets.colCurrentPrice')}</div>
+        <div className="text-end">{t('assets.colReturn')}</div>
+        <div className="text-end">{t('assets.colBalance')}</div>
+        <div className="text-end">{t('assets.colPortfolioPct')}</div>
         <div />
       </div>
     )
@@ -994,12 +1355,12 @@ export default function AssetsPage() {
 
   // Wrap a set of holding rows in a horizontally-scrollable table shell so the
   // columns stay aligned (and usable on narrow screens).
-  function renderHoldingsTable(rows: Asset[]) {
+  function renderHoldingsTable(rows: Asset[], variant: 'holding' | 'sold' = 'holding') {
     return (
       <div className="rounded-xl border border-border bg-card shadow-sm overflow-x-auto">
         <div className="min-w-[720px]">
-          {renderHoldingsHeader()}
-          {rows.map(renderHoldingRow)}
+          {renderHoldingsHeader(variant)}
+          {rows.map((row) => renderHoldingRow(row, variant))}
         </div>
       </div>
     )
@@ -1021,6 +1382,44 @@ export default function AssetsPage() {
   const sortedWallets = useMemo(() => {
     return (walletsList ?? []).slice().sort((a, b) => a.position - b.position || a.name.localeCompare(b.name))
   }, [walletsList])
+
+  // Performance tells a deleted wallet or holding (dropped from a saved or
+  // remembered selection) from one the collection hides or that is archived
+  // (kept), so it needs the whole workspace, archived holdings included.
+  // Both reads name the workspace, in the key and on the request: another tab
+  // switching workspace changes the shared default, and an inventory from the
+  // wrong workspace would prune this one's remembered selection. Each opening
+  // of Performance is its own read (the opening time is in the key): a copy
+  // cached earlier, or a request still running from the last visit, can miss
+  // a wallet or holding created meanwhile and would drop it from the selection.
+  const inventoryWorkspaceId = workspace?.id ?? null
+  const inventoryAssetsQuery = useQuery({
+    queryKey: ['assets', 'including-archived', inventoryWorkspaceId, performanceOpenedAt],
+    queryFn: () => assets.list(true, inventoryWorkspaceId),
+    enabled: activeTab === 'performance' && !!inventoryWorkspaceId,
+  })
+  const inventoryWalletsQuery = useQuery({
+    queryKey: ['asset-groups', 'inventory', inventoryWorkspaceId, performanceOpenedAt],
+    queryFn: () => assetGroups.list(inventoryWorkspaceId),
+    enabled: activeTab === 'performance' && !!inventoryWorkspaceId,
+  })
+  const inventoryAssets = inventoryAssetsQuery.data
+  const inventoryWallets = inventoryWalletsQuery.data
+  const performanceInventory = useMemo(
+    () =>
+      inventoryAssets && inventoryWallets
+        ? {
+            walletIds: inventoryWallets.map((wallet) => wallet.id),
+            assetIds: inventoryAssets.map((asset) => asset.id),
+          }
+        : null,
+    [inventoryAssets, inventoryWallets],
+  )
+  const inventoryError = inventoryAssetsQuery.isError || inventoryWalletsQuery.isError
+  const retryInventory = () => {
+    if (inventoryAssetsQuery.isError) void inventoryAssetsQuery.refetch()
+    if (inventoryWalletsQuery.isError) void inventoryWalletsQuery.refetch()
+  }
 
   const ungroupedAssets = assetsByGroup.get(null) ?? []
 
@@ -1057,7 +1456,25 @@ export default function AssetsPage() {
     }
   }
 
-  function renderWalletSection(wallet: AssetGroup, walletAssets: Asset[]) {
+  function moveWallet(from: number, to: number) {
+    if (from === to || from < 0 || to < 0 || to >= sortedWallets.length) return
+    reorderWalletsMutation.mutate(arrayMove(sortedWallets.map(wallet => wallet.id), from, to))
+  }
+
+  function handleWalletDragEnd({ active, over }: DragEndEvent) {
+    if (!over || reorderWalletsMutation.isPending) return
+    moveWallet(
+      sortedWallets.findIndex(wallet => wallet.id === active.id),
+      sortedWallets.findIndex(wallet => wallet.id === over.id),
+    )
+  }
+
+  function renderWalletSection(
+    wallet: AssetGroup,
+    walletAssets: Asset[],
+    walletIndex: number,
+    dragHandle: DragHandleProps,
+  ) {
     const isCollapsed = collapsedWallets.has(wallet.id)
     const isSynced = wallet.source !== 'manual'
     // Sum in the user's primary currency. Fall back to the wallet's own
@@ -1086,8 +1503,21 @@ export default function AssetsPage() {
       !!wallet.institution_name && wallet.institution_name !== wallet.name
 
     return (
-      <div key={wallet.id} className="space-y-2">
+      <>
         <div className="flex items-center gap-3 px-1">
+          {canWrite && sortedWallets.length > 1 && (
+            <button
+              {...dragHandle}
+              // Marked aria-disabled by the sortable while saving, never `disabled`:
+              // that would drop keyboard focus right after a drop.
+              type="button"
+              className="-me-1 touch-none cursor-grab rounded-md p-1 text-muted-foreground/60 transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:cursor-grabbing aria-disabled:cursor-default aria-disabled:opacity-30"
+              aria-label={t('assets.reorderWallet', { name: wallet.name })}
+              title={t('assets.reorderWallet', { name: wallet.name })}
+            >
+              <GripVertical size={15} />
+            </button>
+          )}
           <button
             onClick={() => toggleWalletCollapse(wallet.id)}
             className="flex items-center gap-2 flex-1 min-w-0 group"
@@ -1129,37 +1559,62 @@ export default function AssetsPage() {
             ))}
           </div>
           {canWrite && (
-            <>
-              <button
-                onClick={() => openEditWallet(wallet)}
-                className="p-1 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
-                title={t('assets.editWallet')}
-              >
-                <Pencil size={12} />
-              </button>
-              {!isSynced && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
                 <button
-                  onClick={() => setDeletingWalletId(wallet.id)}
-                  className="p-1 rounded-lg text-muted-foreground hover:text-rose-600 hover:bg-rose-50 transition-colors"
-                  title={t('assets.deleteWallet')}
+                  type="button"
+                  className="rounded-lg p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                  aria-label={`${t('common.more')}: ${wallet.name}`}
+                  title={t('common.more')}
                 >
-                  <Trash2 size={12} />
+                  <EllipsisVertical size={14} />
                 </button>
-              )}
-            </>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-44">
+                {sortedWallets.length > 1 && (
+                  <>
+                    <DropdownMenuItem
+                      disabled={walletIndex === 0 || reorderWalletsMutation.isPending}
+                      onSelect={() => moveWallet(walletIndex, walletIndex - 1)}
+                    >
+                      <ChevronUp />
+                      {t('assets.moveWalletUp')}
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      disabled={walletIndex === sortedWallets.length - 1 || reorderWalletsMutation.isPending}
+                      onSelect={() => moveWallet(walletIndex, walletIndex + 1)}
+                    >
+                      <ChevronDown />
+                      {t('assets.moveWalletDown')}
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                  </>
+                )}
+                <DropdownMenuItem onSelect={() => openEditWallet(wallet)}>
+                  <Pencil />
+                  {t('assets.editWallet')}
+                </DropdownMenuItem>
+                {!isSynced && (
+                  <DropdownMenuItem variant="destructive" onSelect={() => setDeletingWalletId(wallet.id)}>
+                    <Trash2 />
+                    {t('assets.deleteWallet')}
+                  </DropdownMenuItem>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
           )}
         </div>
         {!isCollapsed && walletAssets.length > 0 && (
-          <div className="pl-4">
+          <div className="ps-4">
             {renderHoldingsTable(walletAssets)}
           </div>
         )}
         {!isCollapsed && walletAssets.length === 0 && (
-          <div className="pl-4 py-3 text-xs text-muted-foreground italic">
+          <div className="ps-4 py-3 text-xs text-muted-foreground italic">
             {t('assets.emptyWallet')}
           </div>
         )}
-      </div>
+      </>
     )
   }
 
@@ -1170,7 +1625,20 @@ export default function AssetsPage() {
         title={t('assets.title')}
         action={
           canWrite ? (
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                onClick={() => refreshAllPricesMutation.mutate(workspace?.id ?? null)}
+                variant="outline"
+                className="gap-1.5"
+                disabled={refreshAllPricesMutation.isPending}
+                title={t('assets.refreshAllPrices')}
+              >
+                <RefreshCw
+                  size={16}
+                  className={refreshAllPricesMutation.isPending ? 'animate-spin' : ''}
+                />
+                {t('assets.refreshAllPrices')}
+              </Button>
               <Button onClick={() => navigate('/import?tab=investments')} variant="outline" className="gap-1.5">
                 <Upload size={16} />
                 {t('assetImport.action')}
@@ -1189,29 +1657,43 @@ export default function AssetsPage() {
       />
 
       {/* Holdings (consolidated by ticker) vs. the buy/sell ledger (#235) */}
-      <div className="inline-flex max-w-full flex-wrap items-center gap-1 rounded-lg border border-border p-0.5 bg-muted/40">
-        <button
-          onClick={() => setActiveTab('holdings')}
-          aria-pressed={activeTab === 'holdings'}
-          className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${activeTab === 'holdings' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
-        >
-          {t('assets.tabHoldings')}
-        </button>
-        <button
-          onClick={() => setActiveTab('transactions')}
-          aria-pressed={activeTab === 'transactions'}
-          className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${activeTab === 'transactions' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
-        >
-          {t('assets.tabTransactions')}
-        </button>
-        <button
-          onClick={() => setActiveTab('performance')}
-          aria-pressed={activeTab === 'performance'}
-          className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors inline-flex items-center gap-1.5 ${activeTab === 'performance' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
-        >
-          <Activity size={14} />
-          {t('assets.tabPerformance')}
-        </button>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="inline-flex max-w-full flex-wrap items-center gap-1 rounded-lg border border-border p-0.5 bg-muted/40">
+          <button
+            onClick={() => setActiveTab('holdings')}
+            aria-pressed={activeTab === 'holdings'}
+            className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${activeTab === 'holdings' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+          >
+            {t('assets.tabHoldings')}
+          </button>
+          <button
+            onClick={() => setActiveTab('transactions')}
+            aria-pressed={activeTab === 'transactions'}
+            className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${activeTab === 'transactions' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+          >
+            {t('assets.tabTransactions')}
+          </button>
+          <button
+            onClick={() => setActiveTab('performance')}
+            aria-pressed={activeTab === 'performance'}
+            className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors inline-flex items-center gap-1.5 ${activeTab === 'performance' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+          >
+            <Activity size={14} />
+            {t('assets.tabPerformance')}
+          </button>
+        </div>
+        {/* Archived holdings never enter performance, so the toggle is moot there. */}
+        {activeTab !== 'performance' && (
+          <label className="flex items-center gap-2 text-xs text-muted-foreground">
+            <input
+              type="checkbox"
+              checked={showArchived}
+              onChange={(e) => toggleArchived(e.target.checked)}
+              className="h-3.5 w-3.5 rounded border-border accent-primary"
+            />
+            {t('assets.showArchived')}
+          </label>
+        )}
       </div>
 
       {activeTab === 'transactions' ? (
@@ -1224,13 +1706,16 @@ export default function AssetsPage() {
           canWrite={canWrite}
           onChanged={refetchAssetViews}
         />
-      ) : activeTab === 'performance' && currentWorkspace ? (
+      ) : activeTab === 'performance' && workspace ? (
         <PortfolioPerformance
-          key={currentWorkspace.id}
-          workspaceId={currentWorkspace.id}
+          key={workspace.id}
+          workspaceId={workspace.id}
           assetGroupIds={activeWalletIds}
           holdings={performanceHoldings}
           wallets={sortedWallets}
+          inventory={performanceInventory}
+          inventoryError={inventoryError}
+          onRetryInventory={retryInventory}
           locale={locale}
           dateLocale={dateLocale}
           mask={mask}
@@ -1239,11 +1724,20 @@ export default function AssetsPage() {
       ) : (
       <>
       {/* Assets that have no resolvable FX rate are left out of the totals
-          below; explain that so the numbers do not look wrong (issue #574). */}
-      {unconvertedCurrencies.length > 0 && (
-        <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-200">
-          <AlertTriangle size={14} className="mt-0.5 shrink-0" />
-          <span>{t('assets.fxRateMissing', { currencies: unconvertedCurrencies.join(', ') })}</span>
+          below; explain that so the numbers do not look wrong (issue #574).
+          One warning only: when no rate provider is configured, the same
+          box says so and offers the way to set it up. */}
+      {(unconvertedCurrencies.length > 0 || exchangeRatesNeedSetup) && (
+        <div role="status" className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-200">
+          <AlertTriangle size={14} className="mt-0.5 shrink-0" aria-hidden="true" />
+          <div className="flex min-w-0 flex-1 flex-col gap-1 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
+            <span>
+              {unconvertedCurrencies.length > 0
+                ? t('assets.fxRateMissing', { currencies: unconvertedCurrencies.join(', ') })
+                : t('assets.exchangeRateSetupWarning')}
+            </span>
+            {exchangeRatesNeedSetup && <ExchangeRateSetupAction isAdmin={Boolean(user?.is_superuser)} />}
+          </div>
         </div>
       )}
 
@@ -1268,7 +1762,19 @@ export default function AssetsPage() {
           {/* Wallets (active assets grouped) */}
           {(sortedWallets.length > 0 || ungroupedAssets.length > 0) && (
             <div className="space-y-4">
-              {sortedWallets.map(w => renderWalletSection(w, assetsByGroup.get(w.id) ?? []))}
+              <DndContext sensors={walletSensors} collisionDetection={closestCenter} onDragEnd={handleWalletDragEnd}>
+                <SortableContext items={sortedWallets.map(w => w.id)} strategy={verticalListSortingStrategy}>
+                  {sortedWallets.map((w, index) => (
+                    <SortableWalletSection
+                      key={w.id}
+                      id={w.id}
+                      disabled={!canWrite || sortedWallets.length < 2 || reorderWalletsMutation.isPending}
+                    >
+                      {(dragHandle) => renderWalletSection(w, assetsByGroup.get(w.id) ?? [], index, dragHandle)}
+                    </SortableWalletSection>
+                  ))}
+                </SortableContext>
+              </DndContext>
 
               {ungroupedAssets.length > 0 && (
                 <div className="space-y-2">
@@ -1284,17 +1790,73 @@ export default function AssetsPage() {
           {/* Sold Assets */}
           {soldAssets.length > 0 && (
             <div className="space-y-2">
-              <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider px-1">
-                {t('assets.soldAssets')}
+              <h3>
+              <button
+                type="button"
+                onClick={() => toggleSold(!showSold)}
+                aria-expanded={showSold}
+                className="flex w-full items-center gap-2 px-1 text-start"
+              >
+                {showSold ? <ChevronDown size={14} className="text-muted-foreground" /> : <ChevronRight size={14} className="text-muted-foreground" />}
+                <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                  {t('assets.soldAssets')}
+                </span>
+                <span className="text-xs text-muted-foreground">· {soldAssets.length} {t('assets.itemsCount')}</span>
+                {soldTotals.length > 0 && (
+                  <span className="ms-auto flex flex-wrap justify-end gap-x-2 text-xs tabular-nums" title={t('assets.soldTotalsTitle')}>
+                    <span className="text-muted-foreground">{t('assets.soldRealized')}</span>
+                    {soldTotals.map(([currency, amount]) => (
+                      <span key={currency} dir="ltr" className={amount >= 0 ? 'text-emerald-600' : 'text-rose-500'}>
+                        {amount >= 0 ? '+' : ''}{mask(formatCurrency(amount, currency, locale))}
+                      </span>
+                    ))}
+                  </span>
+                )}
+              </button>
               </h3>
-              {renderHoldingsTable(soldAssets)}
+              {showSold && renderHoldingsTable(soldAssets, 'sold')}
             </div>
           )}
 
-          {activeAssets.length === 0 && soldAssets.length === 0 && (
+          {archivedFailed && (
+            <div role="status" className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-200">
+              <AlertTriangle size={14} className="shrink-0" aria-hidden="true" />
+              <span className="flex-1">{t('assets.archivedLoadFailed')}</span>
+              <button
+                onClick={() => void withArchived.refetch()}
+                className="rounded-md border border-current px-2.5 py-1 font-medium"
+              >
+                {t('common.retry')}
+              </button>
+            </div>
+          )}
+
+          {/* Archived holdings: kept apart from wallets, totals and the
+              portfolio share, and dimmed so they read as inactive. */}
+          {archivedAssets.length > 0 && (
+            <div className="space-y-2 opacity-60">
+              <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider px-1">
+                {t('assets.archivedAssets')}
+              </h3>
+              <p className="px-1 text-xs text-muted-foreground">{t('assets.archivedNotCounted')}</p>
+              {renderHoldingsTable(archivedAssets)}
+            </div>
+          )}
+
+          {activeAssets.length === 0 && soldAssets.length === 0 && archivedAssets.length === 0 && !archivedFailed && (
             <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden text-center py-16 text-muted-foreground">
               <Package size={32} className="mx-auto mb-2 opacity-50" />
               <p>{t('assets.noAssets')}</p>
+              {/* A portfolio that is entirely archived reads as empty here
+                  (issue #1046), so the way to it starts from this box. */}
+              {!showArchived && (
+                <button
+                  onClick={() => toggleArchived(true)}
+                  className="mt-3 rounded-md border border-border px-3 py-1.5 text-xs font-medium text-foreground hover:bg-muted"
+                >
+                  {t('assets.showArchived')}
+                </button>
+              )}
             </div>
           )}
         </div>
@@ -1433,7 +1995,7 @@ export default function AssetsPage() {
                             key={`${match.symbol}-${match.exchange ?? ''}`}
                             type="button"
                             onClick={() => pickTickerMatch(match)}
-                            className="flex flex-col w-full text-left px-3 py-2 hover:bg-muted transition-colors"
+                            className="flex flex-col w-full text-start px-3 py-2 hover:bg-muted transition-colors"
                           >
                             <div className="flex items-center justify-between gap-2">
                               <span className="font-semibold text-sm truncate">{isBond ? (match.name ?? match.symbol) : match.symbol}</span>
@@ -1450,7 +2012,7 @@ export default function AssetsPage() {
                       </div>
                     )}
                     {tickerSearchLoading && (
-                      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground pointer-events-none">
+                      <span className="absolute end-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground pointer-events-none">
                         {t('common.loading')}
                       </span>
                     )}
@@ -1475,7 +2037,7 @@ export default function AssetsPage() {
                         )}
                       </div>
                       <div className="flex items-center gap-2 shrink-0">
-                        <div className="text-right">
+                        <div className="text-end">
                           <div className="text-base font-bold tabular-nums">
                             {formatCurrency(selectedQuote.price, selectedQuote.currency, locale)}
                           </div>
@@ -1582,9 +2144,9 @@ export default function AssetsPage() {
                   <div className="space-y-2">
                     <Label>{t('assets.growthRate')}</Label>
                     <div className="relative">
-                      <Input type="number" step="any" value={formGrowthRate} onChange={e => setFormGrowthRate(e.target.value)} className={formGrowthType === 'percentage' ? 'pr-8' : ''} />
+                      <Input type="number" step="any" value={formGrowthRate} onChange={e => setFormGrowthRate(e.target.value)} className={formGrowthType === 'percentage' ? 'pe-8' : ''} />
                       {formGrowthType === 'percentage' && (
-                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground pointer-events-none">%</span>
+                        <span className="absolute end-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground pointer-events-none">%</span>
                       )}
                     </div>
                   </div>
@@ -1665,7 +2227,7 @@ export default function AssetsPage() {
                     <span className="text-xs font-medium text-muted-foreground">{t('assets.currentValue')}</span>
                     {base > 0 && (
                       <p className={`text-[11px] tabular-nums font-medium mt-0.5 ${isLoss ? 'text-rose-500' : 'text-emerald-600'}`}>
-                        {diff >= 0 ? '+' : ''}{formatCurrency(diff, formCurrency, locale)}
+                        <span dir="ltr">{diff >= 0 ? '+' : ''}{formatCurrency(diff, formCurrency, locale)}</span>
                       </p>
                     )}
                   </div>
@@ -1726,6 +2288,9 @@ export default function AssetsPage() {
             <DialogTitle>{t('assets.confirmDeleteTitle')}</DialogTitle>
           </DialogHeader>
           <p className="text-sm text-muted-foreground">{t('assets.confirmDelete')}</p>
+          {assetsList?.find(a => a.id === deletingId)?.connection_id && (
+            <p className="text-sm text-amber-600 dark:text-amber-400">{t('assets.confirmDeleteSynced')}</p>
+          )}
           <DialogFooter>
             <Button variant="outline" onClick={() => setDeletingId(null)}>
               {t('common.cancel')}
@@ -1821,7 +2386,7 @@ export default function AssetsPage() {
             <button
               onClick={() => movingAsset && moveAssetMutation.mutate({ id: movingAsset.id, groupId: null })}
               disabled={!movingAsset?.group_id || moveAssetMutation.isPending}
-              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-left"
+              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-start"
             >
               <div className="w-6 h-6 rounded-md flex items-center justify-center bg-muted">
                 <Package size={13} className="text-muted-foreground" />
@@ -1833,7 +2398,7 @@ export default function AssetsPage() {
                 key={w.id}
                 onClick={() => movingAsset && moveAssetMutation.mutate({ id: movingAsset.id, groupId: w.id })}
                 disabled={movingAsset?.group_id === w.id || moveAssetMutation.isPending}
-                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-left"
+                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-start"
               >
                 <div
                   className="w-6 h-6 rounded-md flex items-center justify-center"
@@ -1868,7 +2433,8 @@ export default function AssetsPage() {
   )
 }
 
-const PORTFOLIO_COLORS = ['#6366F1', '#F43F5E', '#F59E0B', '#10B981', '#8B5CF6', '#EC4899', '#06B6D4', '#84CC16']
+// The theme's series colors, as every chart uses them.
+const PORTFOLIO_COLORS = Array.from({ length: 12 }, (_, i) => `var(--chart-${i + 1})`)
 
 function PortfolioChart({ data, wallets, currency, locale: loc, dateLocale: dateLoc, mask }: {
   data: { assets: { id: string; name: string; type: string; group_id: string | null }[]; trend: Record<string, unknown>[]; total: number }
@@ -2022,7 +2588,7 @@ function PortfolioChart({ data, wallets, currency, locale: loc, dateLocale: date
             </div>
           </div>
         </div>
-        <div className="text-left sm:text-right">
+        <div className="text-start sm:text-end">
           <span className="text-xs text-muted-foreground">{t('assets.total')}</span>
           <p className="text-lg font-bold tabular-nums text-foreground">
             {mask(formatCurrency(data.total, currency, loc))}
@@ -2046,7 +2612,7 @@ function PortfolioChart({ data, wallets, currency, locale: loc, dateLocale: date
               tick={{ fontSize: 10, fill: 'var(--muted-foreground)' }}
               axisLine={false}
               tickLine={false}
-              tickFormatter={(v: string) => new Date(v + 'T00:00:00').toLocaleDateString(dateLoc, { month: 'short', year: '2-digit' })}
+              tickFormatter={dateTickFormatter(displayTrend.map(row => String(row.date)), dateLoc)}
             />
             <YAxis
               tick={{ fontSize: 10, fill: 'var(--muted-foreground)' }}
@@ -2124,7 +2690,8 @@ function PortfolioChart({ data, wallets, currency, locale: loc, dateLocale: date
 }
 
 // Marker drawn on the value chart where a buy (green) or sell (red) happened.
-// Recharts calls this per data point; non-trade points render an empty group.
+// A day with both, or with only a split, gets the mixed indigo. Recharts calls
+// this per data point; non-trade points render an empty group.
 function renderAssetTradeDot(props: {
   cx?: number; cy?: number; index?: number; payload?: { trades?: AssetTransaction[] }
 }) {
@@ -2284,7 +2851,7 @@ function AssetDetail({ assetId, currency, locale: loc, dateLocale: dateLoc, purc
                   tick={{ fontSize: 10, fill: 'var(--muted-foreground)' }}
                   axisLine={false}
                   tickLine={false}
-                  tickFormatter={(v: string) => new Date(v + 'T00:00:00').toLocaleDateString(dateLoc, { month: 'short', year: '2-digit' })}
+                  tickFormatter={dateTickFormatter(chartData.map(p => String(p.date)), dateLoc)}
                 />
                 <YAxis
                   tick={{ fontSize: 10, fill: 'var(--muted-foreground)' }}
@@ -2311,7 +2878,11 @@ function AssetDetail({ assetId, currency, locale: loc, dateLocale: dateLoc, purc
                           {new Date(String(label) + 'T00:00:00').toLocaleDateString(dateLoc, { day: 'numeric', month: 'long', year: 'numeric' })}
                         </p>
                         <div style={{ fontVariantNumeric: 'tabular-nums' }}>{mask(formatCurrency(pt.amount ?? 0, currency, loc))}</div>
-                        {pt.trades?.map((tx) => (
+                        {pt.trades?.map((tx) => tx.kind === 'split' ? (
+                          <div key={tx.id} style={{ marginTop: 3, fontSize: 11, fontWeight: 500, color: '#6366F1' }}>
+                            {t('assets.txSplit')} {splitRatio(tx, loc)}
+                          </div>
+                        ) : (
                           <div key={tx.id} style={{ marginTop: 3, fontSize: 11, fontWeight: 500, color: tx.kind === 'buy' ? '#10B981' : '#F43F5E' }}>
                             {tx.kind === 'buy' ? t('assets.txBuy') : t('assets.txSell')} {mask(`${tx.quantity}`)} × {mask(formatCurrency(tx.price, currency, loc))}
                           </div>
@@ -2366,7 +2937,7 @@ function AssetDetail({ assetId, currency, locale: loc, dateLocale: dateLoc, purc
             }
           }}
         >
-          <Plus size={14} className="mr-1" />
+          <Plus size={14} className="me-1" />
           {t('assets.addValue')}
         </Button>
       </div>}
@@ -2393,7 +2964,7 @@ function AssetDetail({ assetId, currency, locale: loc, dateLocale: dateLoc, purc
                     </span>
                     {change != null && (
                       <span className={`text-[11px] tabular-nums font-medium ${change >= 0 ? 'text-emerald-600' : 'text-rose-500'}`}>
-                        {change >= 0 ? '+' : ''}{mask(formatCurrency(change, currency, loc))}
+                        <span dir="ltr">{change >= 0 ? '+' : ''}{mask(formatCurrency(change, currency, loc))}</span>
                         {changePct != null && ` (${changePct >= 0 ? '+' : ''}${changePct.toFixed(2)}%)`}
                       </span>
                     )}
@@ -2473,13 +3044,15 @@ function AssetTransactionsTab({
   const [deletingId, setDeletingId] = useState<string | null>(null)
 
   // Form state
-  const [formKind, setFormKind] = useState<'buy' | 'sell'>('buy')
+  const [formKind, setFormKind] = useState<'buy' | 'sell' | 'split'>('buy')
   const [formHolding, setFormHolding] = useState<string>('__new__')
   const [formTicker, setFormTicker] = useState('')
   const [formGroupId, setFormGroupId] = useState<string>('')
   const [formQuantity, setFormQuantity] = useState('')
   const [formPrice, setFormPrice] = useState('')
   const [formFee, setFormFee] = useState('')
+  const [formOldUnits, setFormOldUnits] = useState('')
+  const [formNewUnits, setFormNewUnits] = useState('')
   const [formDate, setFormDate] = useState<string>(localDateString)
 
   function afterChange() {
@@ -2489,6 +3062,14 @@ function AssetTransactionsTab({
 
   const saveMutation = useMutation({
     mutationFn: async () => {
+      if (formKind === 'split') {
+        // The save button stays disabled until the ratio parses.
+        const ratio = parseSplitUnits(formOldUnits, formNewUnits)!
+        const split = { old_units: ratio.oldUnits, new_units: ratio.newUnits, date: formDate }
+        return editingTx
+          ? assets.updateTransaction(editingTx.id, split)
+          : assets.addTransaction(formHolding, { kind: 'split', ...split })
+      }
       const quantity = parseFloat(formQuantity)
       const price = parseFloat(formPrice)
       const fee = formFee ? parseFloat(formFee) : 0
@@ -2541,6 +3122,8 @@ function AssetTransactionsTab({
     setFormQuantity('')
     setFormPrice('')
     setFormFee('')
+    setFormOldUnits('')
+    setFormNewUnits('')
     setFormDate(localDateString())
     setDialogOpen(true)
   }
@@ -2552,6 +3135,8 @@ function AssetTransactionsTab({
     setFormQuantity(`${tx.quantity}`)
     setFormPrice(`${tx.price}`)
     setFormFee(tx.fee ? `${tx.fee}` : '')
+    setFormOldUnits(`${tx.old_units ?? ''}`)
+    setFormNewUnits(`${tx.new_units ?? ''}`)
     setFormDate(tx.date)
     setDialogOpen(true)
   }
@@ -2565,6 +3150,8 @@ function AssetTransactionsTab({
     setFormQuantity('')
     setFormPrice('')
     setFormFee('')
+    setFormOldUnits('')
+    setFormNewUnits('')
     setFormDate(localDateString())
     setDialogOpen(true)
   }
@@ -2572,16 +3159,22 @@ function AssetTransactionsTab({
   const isNewTicker = !editingTx && formHolding === '__new__'
   // Warn before a sell that exceeds the held quantity (no shorting). Only on a
   // fresh sell into an existing holding; edits are validated server-side.
-  const selectedHeldUnits = marketHoldings.find((h) => h.id === formHolding)?.units ?? 0
+  const selectedHolding = marketHoldings.find((h) => h.id === formHolding)
+  const selectedHeldUnits = selectedHolding?.units ?? 0
   const oversell =
     !editingTx && !isNewTicker && formKind === 'sell' && !!formQuantity && parseFloat(formQuantity) > selectedHeldUnits
+  // A split can only be added to a holding that can take one. Editing keeps the
+  // kind the entry was saved with.
+  const splitAllowed = !editingTx && !isNewTicker && !!selectedHolding && canRecordSplit(selectedHolding)
   const canSave =
-    !!formQuantity &&
-    parseFloat(formQuantity) > 0 &&
-    !!formPrice &&
-    (isNewTicker ? !!formTicker.trim() : true) &&
-    !oversell &&
-    !saveMutation.isPending
+    formKind === 'split'
+      ? parseSplitUnits(formOldUnits, formNewUnits) !== null && !saveMutation.isPending
+      : !!formQuantity &&
+        parseFloat(formQuantity) > 0 &&
+        !!formPrice &&
+        (isNewTicker ? !!formTicker.trim() : true) &&
+        !oversell &&
+        !saveMutation.isPending
 
   return (
     <div className="space-y-4">
@@ -2648,9 +3241,9 @@ function AssetTransactionsTab({
               <div key={tx.id} className="flex items-center gap-3 px-4 py-3 hover:bg-muted/20 transition-colors">
                 <Badge
                   variant="outline"
-                  className={`text-[10px] px-1.5 py-0 shrink-0 ${tx.kind === 'buy' ? 'text-emerald-600 border-emerald-200' : 'text-rose-600 border-rose-200'}`}
+                  className={`text-[10px] px-1.5 py-0 shrink-0 ${TX_KIND_CONFIG[tx.kind].tone}`}
                 >
-                  {tx.kind === 'buy' ? t('assets.txBuy') : t('assets.txSell')}
+                  {t(TX_KIND_CONFIG[tx.kind].labelKey)}
                 </Badge>
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium text-foreground truncate">
@@ -2658,19 +3251,23 @@ function AssetTransactionsTab({
                   </p>
                   <p className="text-[11px] text-muted-foreground tabular-nums">
                     {new Date(tx.date + 'T00:00:00').toLocaleDateString(dateLocale)} ·{' '}
-                    {mask(`${tx.quantity}`)} × {mask(formatCurrency(tx.price, cur, locale))}
+                    {tx.kind === 'split'
+                      ? splitRatio(tx, locale)
+                      : <>{mask(`${tx.quantity}`)} × {mask(formatCurrency(tx.price, cur, locale))}</>}
                   </p>
                 </div>
-                <div className="text-right shrink-0">
-                  <p className="text-sm font-semibold tabular-nums text-foreground">
-                    {mask(formatCurrency(total, cur, locale))}
-                  </p>
-                  {tx.fee > 0 && (
-                    <p className="text-[10px] text-muted-foreground tabular-nums">
-                      {t('assets.txFee')} {mask(formatCurrency(tx.fee, cur, locale))}
+                {tx.kind !== 'split' && (
+                  <div className="text-end shrink-0">
+                    <p className="text-sm font-semibold tabular-nums text-foreground">
+                      {mask(formatCurrency(total, cur, locale))}
                     </p>
-                  )}
-                </div>
+                    {tx.fee > 0 && (
+                      <p className="text-[10px] text-muted-foreground tabular-nums">
+                        {t('assets.txFee')} {mask(formatCurrency(tx.fee, cur, locale))}
+                      </p>
+                    )}
+                  </div>
+                )}
                 {isSyncedTransaction(tx) && <SyncedTransactionBadge />}
                 {canWrite && !isSyncedTransaction(tx) && (
                   <div className="flex items-center gap-1 shrink-0">
@@ -2712,7 +3309,11 @@ function AssetTransactionsTab({
                   value={formHolding}
                   onChange={(e) => {
                     setFormHolding(e.target.value)
-                    if (e.target.value === '__new__') setFormKind('buy')
+                    // A split only fits a holding that can take one.
+                    const next = marketHoldings.find((h) => h.id === e.target.value)
+                    if (e.target.value === '__new__' || (formKind === 'split' && !(next && canRecordSplit(next)))) {
+                      setFormKind('buy')
+                    }
                   }}
                 >
                   <option value="__new__">{t('assets.newTicker')}</option>
@@ -2751,64 +3352,83 @@ function AssetTransactionsTab({
               </div>
             )}
 
-            {/* Buy/Sell toggle — only for existing holdings (can't sell a new ticker) */}
-            {!isNewTicker && (
+            {/* Buy/Sell toggle — only for existing holdings (can't sell a new ticker).
+                Split joins it when the holding can take one; an existing split
+                keeps its type, since it can't become a trade. */}
+            {!isNewTicker && editingTx?.kind !== 'split' && (
               <div className="space-y-2">
                 <Label>{t('assets.txType')}</Label>
-                <div className="grid grid-cols-2 gap-2">
-                  {(['buy', 'sell'] as const).map((k) => (
+                <div className={`grid gap-2 ${splitAllowed ? 'grid-cols-3' : 'grid-cols-2'}`}>
+                  {(['buy', 'sell', 'split'] as const).filter((k) => k !== 'split' || splitAllowed).map((k) => (
                     <button
                       key={k}
                       type="button"
                       className={`px-3 py-2 rounded-lg text-sm font-medium border transition-all ${formKind === k ? 'border-primary bg-primary/10 text-primary' : 'border-border text-muted-foreground hover:border-primary/50'}`}
                       onClick={() => setFormKind(k)}
                     >
-                      {k === 'buy' ? t('assets.txBuy') : t('assets.txSell')}
+                      {t(TX_KIND_CONFIG[k].labelKey)}
                     </button>
                   ))}
                 </div>
               </div>
             )}
 
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>{t('assets.quantity')}</Label>
-                <Input type="number" step="any" min="0" value={formQuantity} onChange={(e) => setFormQuantity(e.target.value)} />
-              </div>
-              <div className="space-y-2">
-                <Label>{t('assets.unitPrice')}</Label>
-                <Input type="number" step="any" min="0" value={formPrice} onChange={(e) => setFormPrice(e.target.value)} />
-              </div>
-            </div>
+            {formKind === 'split' ? (
+              <>
+                <SplitFields
+                  oldUnits={formOldUnits}
+                  newUnits={formNewUnits}
+                  onOldUnitsChange={setFormOldUnits}
+                  onNewUnitsChange={setFormNewUnits}
+                />
+                <div className="space-y-2">
+                  <Label>{t('assets.date')}</Label>
+                  <DatePickerInput value={formDate} onChange={setFormDate} />
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>{t('assets.quantity')}</Label>
+                    <Input type="number" step="any" min="0" value={formQuantity} onChange={(e) => setFormQuantity(e.target.value)} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>{t('assets.unitPrice')}</Label>
+                    <Input type="number" step="any" min="0" value={formPrice} onChange={(e) => setFormPrice(e.target.value)} />
+                  </div>
+                </div>
 
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>{t('assets.fee')}</Label>
-                <Input type="number" step="any" min="0" value={formFee} onChange={(e) => setFormFee(e.target.value)} placeholder="0" />
-              </div>
-              <div className="space-y-2">
-                <Label>{t('assets.date')}</Label>
-                <DatePickerInput value={formDate} onChange={setFormDate} />
-              </div>
-            </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>{t('assets.fee')}</Label>
+                    <Input type="number" step="any" min="0" value={formFee} onChange={(e) => setFormFee(e.target.value)} placeholder="0" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>{t('assets.date')}</Label>
+                    <DatePickerInput value={formDate} onChange={setFormDate} />
+                  </div>
+                </div>
 
-            {oversell && (
-              <p className="flex items-center gap-1.5 text-xs text-amber-600 dark:text-amber-400">
-                <AlertTriangle size={13} className="shrink-0" />
-                {t('assets.oversellWarning', { available: selectedHeldUnits })}
-              </p>
-            )}
-            {formQuantity && formPrice && parseFloat(formQuantity) > 0 && (
-              <div className="flex items-center justify-between p-3 rounded-lg border border-border bg-muted/30">
-                <span className="text-xs font-medium text-muted-foreground">{t('assets.txTotal')}</span>
-                <span className="text-sm font-bold tabular-nums text-foreground">
-                  {formatTransactionTotal(
-                    parseFloat(formQuantity) * parseFloat(formPrice) + (formFee ? parseFloat(formFee) : 0) * (formKind === 'buy' ? 1 : -1),
-                    getTransactionTotalCurrency(holdings, formHolding, editingTx),
-                    locale,
-                  )}
-                </span>
-              </div>
+                {oversell && (
+                  <p className="flex items-center gap-1.5 text-xs text-amber-600 dark:text-amber-400">
+                    <AlertTriangle size={13} className="shrink-0" />
+                    {t('assets.oversellWarning', { available: selectedHeldUnits })}
+                  </p>
+                )}
+                {formQuantity && formPrice && parseFloat(formQuantity) > 0 && (
+                  <div className="flex items-center justify-between p-3 rounded-lg border border-border bg-muted/30">
+                    <span className="text-xs font-medium text-muted-foreground">{t('assets.txTotal')}</span>
+                    <span className="text-sm font-bold tabular-nums text-foreground">
+                      {formatTransactionTotal(
+                        parseFloat(formQuantity) * parseFloat(formPrice) + (formFee ? parseFloat(formFee) : 0) * (formKind === 'buy' ? 1 : -1),
+                        getTransactionTotalCurrency(holdings, formHolding, editingTx),
+                        locale,
+                      )}
+                    </span>
+                  </div>
+                )}
+              </>
             )}
           </div>
           <DialogFooter>
@@ -2840,7 +3460,7 @@ function AssetTransactionsTab({
 // Inline buy/sell ledger shown when a holding row is expanded (the
 // "Lançamentos" of the reference). Lists the holding's transactions and
 // offers a one-tap add — the consolidated row above is recomputed server-side.
-function HoldingLedger({
+export function HoldingLedger({
   asset,
   locale,
   dateLocale,
@@ -2898,17 +3518,21 @@ function HoldingLedger({
             <div key={tx.id} className="flex items-center gap-3 px-3 py-2">
               <Badge
                 variant="outline"
-                className={`text-[9px] px-1 py-0 shrink-0 ${tx.kind === 'buy' ? 'text-emerald-600 border-emerald-200' : 'text-rose-600 border-rose-200'}`}
+                className={`text-[9px] px-1 py-0 shrink-0 ${TX_KIND_CONFIG[tx.kind].tone}`}
               >
-                {tx.kind === 'buy' ? t('assets.txBuy') : t('assets.txSell')}
+                {t(TX_KIND_CONFIG[tx.kind].labelKey)}
               </Badge>
               <span className="text-[11px] text-muted-foreground tabular-nums flex-1">
                 {new Date(tx.date + 'T00:00:00').toLocaleDateString(dateLocale)} ·{' '}
-                {mask(`${tx.quantity}`)} × {mask(formatCurrency(tx.price, asset.currency, locale))}
+                {tx.kind === 'split'
+                  ? splitRatio(tx, locale)
+                  : <>{mask(`${tx.quantity}`)} × {mask(formatCurrency(tx.price, asset.currency, locale))}</>}
               </span>
-              <span className="text-xs font-semibold tabular-nums text-foreground">
-                {mask(formatCurrency(tx.quantity * tx.price, asset.currency, locale))}
-              </span>
+              {tx.kind !== 'split' && (
+                <span className="text-xs font-semibold tabular-nums text-foreground">
+                  {mask(formatCurrency(tx.quantity * tx.price, asset.currency, locale))}
+                </span>
+              )}
               {isSyncedTransaction(tx) && <SyncedTransactionBadge />}
               {canWrite && !isSyncedTransaction(tx) && (
                 <button
@@ -2928,9 +3552,69 @@ function HoldingLedger({
   )
 }
 
-// Lightweight dialog to add a buy/sell to an already-existing holding. Used by
-// the holdings table ("+ add buys") and the inline ledger.
-function AddHoldingTransactionDialog({
+// Units-before → units-after inputs for a split, shared by both transaction
+// dialogs.
+function SplitFields({
+  oldUnits,
+  newUnits,
+  onOldUnitsChange,
+  onNewUnitsChange,
+}: {
+  oldUnits: string
+  newUnits: string
+  onOldUnitsChange: (value: string) => void
+  onNewUnitsChange: (value: string) => void
+}) {
+  const { t } = useTranslation()
+  const id = useId()
+  const ratio = parseSplitUnits(oldUnits, newUnits)
+
+  return (
+    <>
+      <div className="space-y-2">
+        <div className="grid grid-cols-2 gap-4">
+          <div className="space-y-2">
+            <Label htmlFor={`${id}-old`}>{t('assets.splitOldUnits')}</Label>
+            <Input
+              id={`${id}-old`}
+              type="number"
+              inputMode="numeric"
+              step="1"
+              min="1"
+              max={MAX_SPLIT_UNITS}
+              value={oldUnits}
+              onChange={(e) => onOldUnitsChange(e.target.value)}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor={`${id}-new`}>{t('assets.splitNewUnits')}</Label>
+            <Input
+              id={`${id}-new`}
+              type="number"
+              inputMode="numeric"
+              step="1"
+              min="1"
+              max={MAX_SPLIT_UNITS}
+              value={newUnits}
+              onChange={(e) => onNewUnitsChange(e.target.value)}
+            />
+          </div>
+        </div>
+        <p className="text-xs text-muted-foreground">{t('assets.splitHint')}</p>
+      </div>
+      {oldUnits && newUnits && !ratio && (
+        <p className="flex items-center gap-1.5 text-xs text-amber-600 dark:text-amber-400">
+          <AlertTriangle size={13} className="shrink-0" />
+          {t('assets.splitInvalid')}
+        </p>
+      )}
+    </>
+  )
+}
+
+// Lightweight dialog to add a buy/sell/split to an already-existing holding.
+// Used by the holdings table ("+ add buys") and the inline ledger.
+export function AddHoldingTransactionDialog({
   assetId,
   holding,
   locale,
@@ -2945,10 +3629,12 @@ function AddHoldingTransactionDialog({
 }) {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
-  const [kind, setKind] = useState<'buy' | 'sell'>('buy')
+  const [kind, setKind] = useState<'buy' | 'sell' | 'split'>('buy')
   const [quantity, setQuantity] = useState('')
   const [price, setPrice] = useState('')
   const [fee, setFee] = useState('')
+  const [oldUnits, setOldUnits] = useState('')
+  const [newUnits, setNewUnits] = useState('')
   const [date, setDate] = useState(localDateString)
 
   const [formSource, setFormSource] = useState<{ assetId: typeof assetId } | null>(null)
@@ -2959,19 +3645,32 @@ function AddHoldingTransactionDialog({
       setQuantity('')
       setPrice('')
       setFee('')
+      setOldUnits('')
+      setNewUnits('')
       setDate(localDateString())
     }
   }
 
   const saveMutation = useMutation({
-    mutationFn: () =>
-      assets.addTransaction(assetId!, {
+    mutationFn: () => {
+      if (kind === 'split') {
+        // The save button stays disabled until the ratio parses.
+        const ratio = parseSplitUnits(oldUnits, newUnits)!
+        return assets.addTransaction(assetId!, {
+          kind: 'split',
+          old_units: ratio.oldUnits,
+          new_units: ratio.newUnits,
+          date,
+        })
+      }
+      return assets.addTransaction(assetId!, {
         kind,
         quantity: parseFloat(quantity),
         price: parseFloat(price),
         fee: fee ? parseFloat(fee) : 0,
         date,
-      }),
+      })
+    },
     onSuccess: () => {
       queryClient.refetchQueries({ queryKey: ['asset-transactions'] })
       if (assetId) queryClient.refetchQueries({ queryKey: ['asset-transactions', assetId] })
@@ -2985,7 +3684,11 @@ function AddHoldingTransactionDialog({
   const cur = holding?.currency ?? 'USD'
   const heldUnits = holding?.units ?? 0
   const oversell = kind === 'sell' && !!quantity && parseFloat(quantity) > heldUnits
-  const canSave = !!quantity && parseFloat(quantity) > 0 && !!price && !oversell && !saveMutation.isPending
+  const splitAllowed = !!holding && canRecordSplit(holding)
+  const canSave =
+    kind === 'split'
+      ? parseSplitUnits(oldUnits, newUnits) !== null && !saveMutation.isPending
+      : !!quantity && parseFloat(quantity) > 0 && !!price && !oversell && !saveMutation.isPending
 
   return (
     <Dialog open={!!assetId} onOpenChange={(o) => { if (!o) onClose() }}>
@@ -2998,52 +3701,69 @@ function AddHoldingTransactionDialog({
         <div className="space-y-4">
           <div className="space-y-2">
             <Label>{t('assets.txType')}</Label>
-            <div className="grid grid-cols-2 gap-2">
-              {(['buy', 'sell'] as const).map((k) => (
+            <div className={`grid gap-2 ${splitAllowed ? 'grid-cols-3' : 'grid-cols-2'}`}>
+              {(['buy', 'sell', 'split'] as const).filter((k) => k !== 'split' || splitAllowed).map((k) => (
                 <button
                   key={k}
                   type="button"
                   className={`px-3 py-2 rounded-lg text-sm font-medium border transition-all ${kind === k ? 'border-primary bg-primary/10 text-primary' : 'border-border text-muted-foreground hover:border-primary/50'}`}
                   onClick={() => setKind(k)}
                 >
-                  {k === 'buy' ? t('assets.txBuy') : t('assets.txSell')}
+                  {t(TX_KIND_CONFIG[k].labelKey)}
                 </button>
               ))}
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label>{t('assets.quantity')}</Label>
-              <Input type="number" step="any" min="0" value={quantity} onChange={(e) => setQuantity(e.target.value)} />
-            </div>
-            <div className="space-y-2">
-              <Label>{t('assets.unitPrice')}</Label>
-              <Input type="number" step="any" min="0" value={price} onChange={(e) => setPrice(e.target.value)} />
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label>{t('assets.fee')}</Label>
-              <Input type="number" step="any" min="0" value={fee} onChange={(e) => setFee(e.target.value)} placeholder="0" />
-            </div>
-            <div className="space-y-2">
-              <Label>{t('assets.date')}</Label>
-              <DatePickerInput value={date} onChange={setDate} />
-            </div>
-          </div>
-          {oversell && (
-            <p className="flex items-center gap-1.5 text-xs text-amber-600 dark:text-amber-400">
-              <AlertTriangle size={13} className="shrink-0" />
-              {t('assets.oversellWarning', { available: heldUnits })}
-            </p>
-          )}
-          {quantity && price && parseFloat(quantity) > 0 && (
-            <div className="flex items-center justify-between p-3 rounded-lg border border-border bg-muted/30">
-              <span className="text-xs font-medium text-muted-foreground">{t('assets.txTotal')}</span>
-              <span className="text-sm font-bold tabular-nums text-foreground">
-                {formatCurrency(parseFloat(quantity) * parseFloat(price) + (fee ? parseFloat(fee) : 0) * (kind === 'buy' ? 1 : -1), cur, locale)}
-              </span>
-            </div>
+          {kind === 'split' ? (
+            <>
+              <SplitFields
+                oldUnits={oldUnits}
+                newUnits={newUnits}
+                onOldUnitsChange={setOldUnits}
+                onNewUnitsChange={setNewUnits}
+              />
+              <div className="space-y-2">
+                <Label>{t('assets.date')}</Label>
+                <DatePickerInput value={date} onChange={setDate} />
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>{t('assets.quantity')}</Label>
+                  <Input type="number" step="any" min="0" value={quantity} onChange={(e) => setQuantity(e.target.value)} />
+                </div>
+                <div className="space-y-2">
+                  <Label>{t('assets.unitPrice')}</Label>
+                  <Input type="number" step="any" min="0" value={price} onChange={(e) => setPrice(e.target.value)} />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>{t('assets.fee')}</Label>
+                  <Input type="number" step="any" min="0" value={fee} onChange={(e) => setFee(e.target.value)} placeholder="0" />
+                </div>
+                <div className="space-y-2">
+                  <Label>{t('assets.date')}</Label>
+                  <DatePickerInput value={date} onChange={setDate} />
+                </div>
+              </div>
+              {oversell && (
+                <p className="flex items-center gap-1.5 text-xs text-amber-600 dark:text-amber-400">
+                  <AlertTriangle size={13} className="shrink-0" />
+                  {t('assets.oversellWarning', { available: heldUnits })}
+                </p>
+              )}
+              {quantity && price && parseFloat(quantity) > 0 && (
+                <div className="flex items-center justify-between p-3 rounded-lg border border-border bg-muted/30">
+                  <span className="text-xs font-medium text-muted-foreground">{t('assets.txTotal')}</span>
+                  <span className="text-sm font-bold tabular-nums text-foreground">
+                    {formatCurrency(parseFloat(quantity) * parseFloat(price) + (fee ? parseFloat(fee) : 0) * (kind === 'buy' ? 1 : -1), cur, locale)}
+                  </span>
+                </div>
+              )}
+            </>
           )}
         </div>
         <DialogFooter>

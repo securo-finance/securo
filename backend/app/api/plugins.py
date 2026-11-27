@@ -1,21 +1,35 @@
-"""Data plugins from the catalog, installed per workspace.
+"""Plugins from the catalog, installed per workspace, and their connections.
 
 All of it answers 404 while PLUGINS_ENABLED is off. Reading the catalog
-or a plan only needs to see the workspace; applying needs write access.
+or a plan only needs to see the workspace; applying needs write access,
+and for a plugin with code, the owner or a manager. Connections need write
+access.
 Access tokens can't reach these routes.
 """
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+import re
+import uuid
+
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_async_session
 from app.core.feature_flags import feature_flag
 from app.core.workspace_context import WorkspaceContext, current_workspace, current_writable_workspace
-from app.plugins import service
+from app.plugins import connections, index, logos, runner, service
 from app.plugins.index import PluginIndexError
+from app.plugins.manifest import parse_manifest
+from app.services.access_token_service import AccessTokenError
 from app.plugins.sync import SyncPlanChanged
 from app.schemas.plugin import (
     InstalledPluginRead,
     PluginApplyRequest,
+    PluginAuthorizeRead,
+    PluginConnectionCreate,
+    PluginConnectionCreated,
+    PluginConnectionUpdate,
+    PluginConnectionRead,
+    PluginConnectionRoutineRead,
+    PluginOAuthCallback,
     PluginCatalogRead,
     PluginDetailRead,
     PluginItemRead,
@@ -36,13 +50,26 @@ def _lang(ctx: WorkspaceContext) -> str:
     return (ctx.user.preferences or {}).get("language") or ctx.workspace.locale or "en"
 
 
+#: Where a plugin's icon is served, by its file name in the catalog.
+_ICONS = "/api/plugins/icons/"
+#: What the library needs of a plugin's dashboard widget (ADR 0034).
+WIDGET_FIELDS = {"key", "name", "description", "code", "inputs", "measure", "group_by", "chart", "width", "period"}
+
+
 def _catalog_read(item: service.CatalogItem) -> PluginCatalogRead:
     entry = item.entry
     return PluginCatalogRead(
-        **entry.model_dump(exclude={"manifest", "manifest_sha256", "readme", "readme_sha256"}),
+        **entry.model_dump(
+            exclude={
+                "manifest", "manifest_sha256", "readme", "readme_sha256", "archive", "archive_sha256",
+                "icon",
+            }
+        ),
         owner=entry.owner,
+        icon_url=f"{_ICONS}{entry.icon_name}" if entry.icon_name else None,
         compatible=entry.compatible,
         supported=entry.supported,
+        fits_workspace=item.fits_workspace,
         installed_version=item.installed.version if item.installed else None,
         update_available=item.update_available,
     )
@@ -59,6 +86,8 @@ def _plan_read(plan: service.PluginPlan) -> PluginPlanRead:
         commit=plan.commit,
         token=plan.sync.token,
         default_categories=list(plan.sync.default_categories),
+        code=plan.code.__dict__ if plan.code else None,
+        themes=plan.themes,
         **{b: items(b) for b in ("create", "update", "delete", "keep", "release", "existing", "unresolved")},
     )
 
@@ -68,6 +97,11 @@ async def _guarded(call):
         return await call
     except service.PluginNotFound:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Plugin not found")
+    except service.PluginForbidden:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only the workspace owner or a manager can add, update or remove a plugin with code",
+        )
     except service.PluginUnavailable as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"Plugin unavailable: {exc}")
     except (service.PluginChanged, SyncPlanChanged):
@@ -86,7 +120,277 @@ async def list_installed(
 ):
     """Plugins installed in this workspace. Reads only the database, never the catalog."""
     installed = await service.installed_plugins(session, ctx.workspace.id)
-    return sorted(installed.values(), key=lambda p: p.plugin_id)
+    return [_installed_read(p) for p in sorted(installed.values(), key=lambda p: p.plugin_id)]
+
+
+def _installed_read(record) -> InstalledPluginRead:
+    manifest = parse_manifest(record.manifest) if record.manifest else None
+    return InstalledPluginRead(
+        plugin_id=record.plugin_id,
+        name=record.name,
+        version=record.version,
+        commit=record.commit,
+        installed_at=record.installed_at,
+        integrations=[i.model_dump() for i in manifest.contributes.integrations] if manifest else [],
+        network=[h.model_dump() for h in manifest.network] if manifest else [],
+        api_scopes=[a.model_dump() for a in manifest.api_scopes] if manifest else [],
+        redirect_uri=connections.redirect_uri()
+        if manifest and any(i.auth == "oauth" for i in manifest.contributes.integrations)
+        else None,
+        themes=[t.model_dump() for t in manifest.contributes.themes] if manifest else [],
+        reports=[
+            r.model_dump(include={"key", "name", "description", "code", "inputs", "measure", "group_by", "chart"})
+            for r in manifest.contributes.reports
+        ]
+        if manifest
+        else [],
+        widgets=[
+            r.model_dump(include=WIDGET_FIELDS)
+            for r in manifest.contributes.widgets
+        ]
+        if manifest
+        else [],
+    )
+
+
+# Connections ---------------------------------------------------------------
+
+
+def _connection_read(connection, routines: list | None = None) -> PluginConnectionRead:
+    try:
+        secret_fields = sorted(k for k in connections.vault.unseal(connection.secrets) if not k.startswith("__securo_"))
+    except connections.vault.SealBroken:
+        secret_fields = []
+    return PluginConnectionRead.model_validate(connection).model_copy(
+        update={
+            "secret_fields": secret_fields,
+            # A file field shows its name and size; its content goes only to the plugin.
+            "config": {k: connections.file_summary(v) for k, v in (connection.config or {}).items()},
+            "routines": [PluginConnectionRoutineRead.model_validate(r) for r in routines or []],
+        }
+    )
+
+
+async def _read(session: AsyncSession, connection) -> PluginConnectionRead:
+    return _connection_read(connection, await connections.list_routines(session, [connection.id]))
+
+
+async def _connection_guarded(call):
+    try:
+        return await call
+    except connections.ConnectionNotFound:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Connection not found")
+    except (connections.PluginConnectionError, AccessTokenError) as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc))
+    except runner.PluginCallFailed as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"The plugin failed: {exc.message}")
+    except (runner.RunnerUnavailable, runner.RunnerRefused) as exc:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=f"Plugin runner: {exc}")
+
+
+@router.get("/connections", response_model=list[PluginConnectionRead])
+async def list_connections(
+    ctx: WorkspaceContext = Depends(current_workspace),
+    session: AsyncSession = Depends(get_async_session),
+):
+    rows = await connections.list_connections(session, ctx.workspace.id)
+    routines: dict[uuid.UUID, list] = {}
+    for routine in await connections.list_routines(session, [c.id for c in rows]):
+        routines.setdefault(routine.connection_id, []).append(routine)
+    return [_connection_read(c, routines.get(c.id)) for c in rows]
+
+
+@router.post("/connections", response_model=PluginConnectionCreated, status_code=status.HTTP_201_CREATED)
+async def create_connection(
+    body: PluginConnectionCreate,
+    ctx: WorkspaceContext = Depends(current_writable_workspace),
+    session: AsyncSession = Depends(get_async_session),
+):
+    """Set up a connection. Sign-in integrations come back with the link to open."""
+    connection, link = await _connection_guarded(
+        connections.create(
+            session,
+            workspace_id=ctx.workspace.id,
+            user_id=ctx.user_id,
+            can_write=ctx.can_write,
+            plugin_id=body.plugin_id,
+            integration_key=body.integration,
+            name=body.name,
+            values=body.values,
+            lang=_lang(ctx),
+        )
+    )
+    if link is None:
+        await _start(session, connection)
+    return PluginConnectionCreated(connection=await _read(session, connection), authorize_url=link)
+
+
+@router.put("/connections/{connection_id}/values", response_model=PluginConnectionRead)
+async def update_connection_values(
+    connection_id: uuid.UUID,
+    body: PluginConnectionUpdate,
+    ctx: WorkspaceContext = Depends(current_writable_workspace),
+    session: AsyncSession = Depends(get_async_session),
+):
+    """New form values (to reconnect after changing a password, say); then it syncs afresh."""
+    connection = await _connection_guarded(connections.get_connection(session, ctx.workspace.id, connection_id))
+    connection, changed = await _connection_guarded(
+        connections.update_values(session, connection, name=body.name, values=body.values)
+    )
+    # Only new values have anything to prove: a rename never queues a run, even
+    # on a connection still pending. An OAuth connection proves itself by signing in.
+    if changed and connection.status == "pending":
+        await _start(session, connection, new_values=True)
+    return await _read(session, connection)
+
+
+@router.post("/connections/{connection_id}/authorize", response_model=PluginAuthorizeRead)
+async def authorize_connection(
+    connection_id: uuid.UUID,
+    ctx: WorkspaceContext = Depends(current_writable_workspace),
+    session: AsyncSession = Depends(get_async_session),
+):
+    """A fresh sign-in link, to finish or redo the sign-in."""
+    connection = await _connection_guarded(connections.get_connection(session, ctx.workspace.id, connection_id))
+    link = await _connection_guarded(connections.authorize_url(session, connection, user_id=ctx.user_id))
+    return PluginAuthorizeRead(authorize_url=link, redirect_uri=connections.redirect_uri())
+
+
+@router.post("/oauth/callback", response_model=PluginConnectionRead)
+async def oauth_callback(
+    body: PluginOAuthCallback,
+    ctx: WorkspaceContext = Depends(current_writable_workspace),
+    session: AsyncSession = Depends(get_async_session),
+):
+    """The service sent the browser back: the plugin trades the code for a token."""
+    connection = await _connection_guarded(
+        connections.finish_oauth(session, workspace_id=ctx.workspace.id, user_id=ctx.user_id, code=body.code, state=body.state)
+    )
+    await _start(session, connection)
+    return await _read(session, connection)
+
+
+@router.post("/connections/{connection_id}/sync", response_model=PluginConnectionRead)
+async def sync_connection(
+    connection_id: uuid.UUID,
+    ctx: WorkspaceContext = Depends(current_writable_workspace),
+    session: AsyncSession = Depends(get_async_session),
+):
+    """Sync now, and wait for it (the plugin's timeout bounds the wait). 409 for one that only runs routines."""
+    connection = await _connection_guarded(connections.get_connection(session, ctx.workspace.id, connection_id))
+    integration = await connections.integration_of(session, connection)
+    if integration is not None and not integration.syncs:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="This connection doesn't sync; it runs its routines")
+    return await _read(session, await connections.sync(session, connection))
+
+
+@router.post("/connections/{connection_id}/routines/{routine}/run", response_model=PluginConnectionRead)
+async def run_connection_routine(
+    connection_id: uuid.UUID,
+    routine: str,
+    ctx: WorkspaceContext = Depends(current_writable_workspace),
+    session: AsyncSession = Depends(get_async_session),
+):
+    """Run one routine now, and wait for it (its timeout bounds the wait). 409 while the connection is busy."""
+    connection = await _connection_guarded(connections.get_connection(session, ctx.workspace.id, connection_id))
+    row = await _connection_guarded(connections.get_routine(session, connection, routine))
+    outcome = await connections.run_routine(session, connection, row)
+    if outcome == "needs_auth":
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="The connection needs signing in again")
+    if outcome == "busy":
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="The connection is busy; try again in a moment")
+    return await _read(session, connection)
+
+
+@router.delete("/connections/{connection_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_connection(
+    connection_id: uuid.UUID,
+    ctx: WorkspaceContext = Depends(current_writable_workspace),
+    session: AsyncSession = Depends(get_async_session),
+):
+    """Remove the connection, its secrets and its access token."""
+    connection = await _connection_guarded(connections.get_connection(session, ctx.workspace.id, connection_id))
+    await connections.delete(session, connection)
+
+
+def _queue_sync(connection_id: uuid.UUID) -> None:
+    from app.tasks.plugin_tasks import sync_plugin_connection
+
+    try:
+        sync_plugin_connection.delay(str(connection_id))
+    except Exception:  # noqa: BLE001 - the schedule picks it up anyway
+        pass
+
+
+def _queue_routines(connection_id: uuid.UUID, *, force: bool = False) -> None:
+    from app.tasks.plugin_tasks import run_plugin_routines
+
+    try:
+        run_plugin_routines.delay(str(connection_id), force)
+    except Exception:  # noqa: BLE001 - the schedule picks them up anyway
+        pass
+
+
+async def _start(session: AsyncSession, connection, *, new_values: bool = False) -> None:
+    """A connection's first run: its sync, when the integration syncs, and its routines.
+
+    With `new_values` the person just saved the form again. A connection that
+    only runs routines has no sync to prove the new values, so it runs them all
+    once, right away, instead of waiting for each routine's next window (up to
+    a week). A connection that syncs is proved by that sync, and its routines
+    keep their own schedules.
+    """
+    integration = await connections.integration_of(session, connection)
+    syncs = integration is None or integration.syncs
+    if syncs:
+        _queue_sync(connection.id)
+    if integration is not None and integration.routines:
+        _queue_routines(connection.id, force=new_values and not syncs)
+
+
+def _image(data: bytes, content_type: str) -> Response:
+    """An image, sent so a browser shows it as one and nothing else, and keeps it: its address is its checksum."""
+    return Response(
+        content=data,
+        media_type=content_type,
+        headers={
+            "Cache-Control": "public, max-age=31536000, immutable",
+            "X-Content-Type-Options": "nosniff",
+            "Content-Security-Policy": "default-src 'none'; sandbox",
+        },
+    )
+
+
+@router.get("/logos/{sha256}", include_in_schema=False)
+async def plugin_logo(sha256: str, session: AsyncSession = Depends(get_async_session)) -> Response:
+    """A logo from a plugin's package, by its checksum.
+
+    No sign-in: it's an `<img>` source, and a checksum only finds a file
+    that a public plugin release ships.
+    """
+    if not re.fullmatch(r"[0-9a-f]{64}", sha256):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Logo not found")
+    logo = await logos.get(session, sha256)
+    if logo is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Logo not found")
+    return _image(logo.data, logo.content_type)
+
+
+@router.get("/icons/{name}", include_in_schema=False)
+async def plugin_icon(name: str) -> Response:
+    """A plugin's icon from the catalog, by its name there: `<sha256>.png` or `.webp`.
+
+    No sign-in, like logos: it's an `<img>` source. Securo fetches it from
+    the catalog's host and serves it only if it hashes to that name, so the
+    browser never reaches the catalog.
+    """
+    icon = await service.icon(name) if index.ICON_NAME.fullmatch(name) else None
+    if icon is None:
+        # Not cached: the catalog may only be out of reach for now.
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Icon not found", headers={"Cache-Control": "no-store"}
+        )
+    return _image(icon.data, icon.content_type)
 
 
 @router.get("/catalog", response_model=list[PluginCatalogRead])
@@ -136,7 +440,7 @@ async def apply_plan(
     plan = await _guarded(
         service.apply(
             session, ctx.workspace.id, ctx.user_id, f"{owner}/{name}", body.action,
-            commit=body.commit, token=body.token, lang=_lang(ctx),
+            commit=body.commit, token=body.token, lang=_lang(ctx), is_owner=ctx.is_owner,
         )
     )
     return _plan_read(plan)

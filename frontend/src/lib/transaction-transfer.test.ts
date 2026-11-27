@@ -52,6 +52,7 @@ function makeTx(overrides: Partial<Transaction> = {}): Transaction {
     splits: [],
     is_ignored: false,
     ...overrides,
+    reporting_date_override: overrides.reporting_date_override ?? null,
   }
 }
 
@@ -76,5 +77,65 @@ describe('isTransferTransaction', () => {
 
   it('does not read an uncategorized row without a pair as a transfer', () => {
     expect(isTransferTransaction(makeTx())).toBe(false)
+  })
+
+  it('does not read an unlinked source transfer row as a transfer (#993)', () => {
+    expect(isTransferTransaction(makeTx({ source: 'transfer' }))).toBe(false)
+  })
+
+  it('reads a split whose lines are all transfer categories as a transfer (#993)', () => {
+    const category = makeCategory({ treat_as_transfer: true })
+    const tx = makeTx({
+      has_category_lines: true,
+      category_lines: [
+        {
+          id: 'line-1', category_id: category.id, amount: 30,
+          share_type: 'exact', share_pct: null, position: 0, notes: null,
+          category,
+        },
+        {
+          id: 'line-2', category_id: category.id, amount: 12,
+          share_type: 'exact', share_pct: null, position: 1, notes: null,
+          category,
+        },
+      ],
+    })
+    expect(isTransferTransaction(tx)).toBe(true)
+  })
+
+  it('does not read a split with one expense line as a transfer (#993)', () => {
+    const transfer = makeCategory({ id: 'cat-t', treat_as_transfer: true })
+    const expense = makeCategory({ id: 'cat-e', treat_as_transfer: false })
+    const tx = makeTx({
+      has_category_lines: true,
+      category_lines: [
+        {
+          id: 'line-1', category_id: transfer.id, amount: 30,
+          share_type: 'exact', share_pct: null, position: 0, notes: null,
+          category: transfer,
+        },
+        {
+          id: 'line-2', category_id: expense.id, amount: 12,
+          share_type: 'exact', share_pct: null, position: 1, notes: null,
+          category: expense,
+        },
+      ],
+    })
+    expect(isTransferTransaction(tx)).toBe(false)
+  })
+
+  it('does not read a split whose lines are all ignored as a transfer (#993)', () => {
+    const hidden = makeCategory({ treat_as_transfer: true, is_ignored: true })
+    const tx = makeTx({
+      has_category_lines: true,
+      category_lines: [
+        {
+          id: 'line-1', category_id: hidden.id, amount: 30,
+          share_type: 'exact', share_pct: null, position: 0, notes: null,
+          category: hidden,
+        },
+      ],
+    })
+    expect(isTransferTransaction(tx)).toBe(false)
   })
 })

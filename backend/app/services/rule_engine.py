@@ -10,6 +10,9 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from app.models.transaction import Transaction
 
+#: Length of `Transaction.notes`; an `append_notes` past it is skipped.
+NOTES_MAX_LENGTH = 1000
+
 
 def _strip_accents(text: str) -> str:
     """Remove diacritics (accents), preserving case."""
@@ -76,6 +79,11 @@ def _match_condition(condition: dict, tx: "Transaction") -> bool:
     value = condition.get("value")
 
     tx_val = getattr(tx, field, None)
+
+    # A row the provider never labelled cannot satisfy a condition on its
+    # label, and negated ops would otherwise match every such row.
+    if field == "provider_category" and not tx_val:
+        return False
 
     # A blank value matches everything: "" is a substring of any string, every
     # string starts/ends with it, an empty regex always matches, and numeric
@@ -208,17 +216,22 @@ def merge_notes(existing: str | None, incoming: str | None) -> str | None:
 
     Used when an incoming charge is folded into a row that already has notes:
     the existing text is never dropped, the incoming one is only appended when
-    it is not already in there.
+    it is not already in there. The incoming part is cut to what still fits
+    `Transaction.notes` (`NOTES_MAX_LENGTH`): a longer note would fail the
+    write and the batch with it.
     """
     incoming = (incoming or "").strip()
     if not incoming:
         return existing
     existing = (existing or "").strip()
     if not existing:
-        return incoming
+        return incoming[:NOTES_MAX_LENGTH]
     if incoming in existing:
         return existing
-    return f"{existing} {incoming}"
+    room = NOTES_MAX_LENGTH - len(existing) - 1
+    if room <= 0:
+        return existing
+    return f"{existing} {incoming[:room]}"
 
 
 def apply_rule_actions(
@@ -227,7 +240,10 @@ def apply_rule_actions(
     category_already_set: bool,
     *,
     skip_description: bool = False,
+    skip_payee: bool = False,
     assignable_category_ids: Collection[uuid.UUID] | None = None,
+    existing_payee_ids: Collection[uuid.UUID] | None = None,
+    ignored_category_ids: Collection[uuid.UUID] = (),
 ) -> bool:
     """Apply actions in-place and return the updated category-set flag.
 
@@ -242,7 +258,18 @@ def apply_rule_actions(
     and take the whole import or sync batch with it.
 
     Passing nothing skips the check, for callers with no workspace at hand.
+
+    `set_payee` keeps its payee id the same way and can outlive the payee, so
+    it only writes an id in `existing_payee_ids`. Passing nothing skips that
+    check too.
+
+    A leg of a transfer (any row with a `transfer_pair_id`) has to keep
+    counting in its account's balance, or money would arrive on one side
+    without leaving the other. So on a leg `ignore` is skipped, and so is a
+    `set_category` naming one of `ignored_category_ids`; the rule's other
+    actions still apply, and a later rule may still categorize the leg.
     """
+    is_transfer_leg = getattr(tx, "transfer_pair_id", None) is not None
     for action in actions:
         op = action.get("op")
         value = action.get("value")
@@ -253,6 +280,8 @@ def apply_rule_actions(
             except (ValueError, AttributeError):
                 continue
             if assignable_category_ids is not None and category_id not in assignable_category_ids:
+                continue
+            if is_transfer_leg and category_id in ignored_category_ids:
                 continue
             tx.category_id = category_id
             category_already_set = True
@@ -269,10 +298,15 @@ def apply_rule_actions(
             tx.description_is_rule_managed = True
 
         elif op == "set_payee":
+            if skip_payee:
+                continue
             try:
-                tx.payee_id = uuid.UUID(str(value))
+                payee_id = uuid.UUID(str(value))
             except (ValueError, AttributeError):
-                pass
+                continue
+            if existing_payee_ids is not None and payee_id not in existing_payee_ids:
+                continue
+            tx.payee_id = payee_id
 
         elif op == "append_notes":
             new_tags = str(value or "").strip()
@@ -280,9 +314,12 @@ def apply_rule_actions(
                 continue
             existing = tx.notes or ""
             if new_tags not in existing:
-                tx.notes = (existing + " " + new_tags).strip() if existing else new_tags
+                notes = (existing + " " + new_tags).strip() if existing else new_tags
+                # A note past the column would fail the write and the batch with it.
+                if len(notes) <= NOTES_MAX_LENGTH:
+                    tx.notes = notes
 
-        elif op == "ignore":
+        elif op == "ignore" and not is_transfer_leg:
             tx.is_ignored = True
 
     return category_already_set

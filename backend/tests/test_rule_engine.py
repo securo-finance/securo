@@ -7,7 +7,7 @@ from datetime import date
 import pytest
 
 from app.models import Transaction
-from app.services.rule_engine import evaluate_conditions, apply_rule_actions
+from app.services.rule_engine import NOTES_MAX_LENGTH, apply_rule_actions, evaluate_conditions, merge_notes
 
 
 def make_tx(**kwargs) -> Transaction:
@@ -261,6 +261,61 @@ def test_ignore_action_sets_flag():
     apply_rule_actions(actions, tx, category_already_set=False)
     assert tx.is_ignored is True
 
+
+@pytest.mark.parametrize("paired", [False, True])
+def test_ignore_skips_only_transfer_legs_and_keeps_other_actions(paired):
+    category_id = uuid.uuid4()
+    payee_id = uuid.uuid4()
+    tx = make_tx(transfer_pair_id=uuid.uuid4() if paired else None, is_ignored=False)
+
+    category_set = apply_rule_actions(
+        [
+            {"op": "ignore"},
+            {"op": "set_description", "value": "Card payment"},
+            {"op": "set_payee", "value": str(payee_id)},
+            {"op": "append_notes", "value": "#reviewed"},
+            {"op": "set_category", "value": str(category_id)},
+        ],
+        tx,
+        category_already_set=False,
+    )
+
+    assert tx.is_ignored is (not paired)
+    assert tx.description == "Card payment"
+    assert tx.payee_id == payee_id
+    assert tx.notes == "#reviewed"
+    assert tx.category_id == category_id
+    assert category_set is True
+
+
+@pytest.mark.parametrize("paired", [False, True])
+def test_ignored_category_skips_only_transfer_legs_and_a_later_one_still_applies(paired):
+    ignored_category_id = uuid.uuid4()
+    safe_category_id = uuid.uuid4()
+    tx = make_tx(transfer_pair_id=uuid.uuid4() if paired else None)
+
+    category_set = apply_rule_actions(
+        [
+            {"op": "set_category", "value": str(ignored_category_id)},
+            {"op": "set_category", "value": str(safe_category_id)},
+        ],
+        tx,
+        category_already_set=False,
+        ignored_category_ids={ignored_category_id},
+    )
+
+    assert tx.category_id == (safe_category_id if paired else ignored_category_id)
+    assert category_set is True
+
+
+def test_skipping_ignore_on_a_transfer_leg_leaves_an_existing_flag_alone():
+    tx = make_tx(transfer_pair_id=uuid.uuid4(), is_ignored=True)
+
+    apply_rule_actions([{"op": "ignore"}], tx, category_already_set=False)
+
+    assert tx.is_ignored is True
+
+
 def test_set_description_preserves_first_original_and_is_idempotent():
     tx = make_tx(description="|fd*f|ood Club", original_description=None)
 
@@ -300,6 +355,76 @@ def test_payee_id_condition_remains_compatible():
     ]
 
     assert evaluate_conditions("and", conditions, tx) is True
+
+
+def test_provider_category_condition_matches_raw_data():
+    tx = make_tx(raw_data={"category": "Eating out"})
+    conditions = [
+        {"field": "provider_category", "op": "equals", "value": "Eating out"}
+    ]
+
+    assert evaluate_conditions("and", conditions, tx) is True
+
+
+def test_provider_category_condition_is_case_and_accent_insensitive():
+    tx = make_tx(raw_data={"category": "Alimentação"})
+    conditions = [
+        {"field": "provider_category", "op": "contains", "value": "alimentacao"}
+    ]
+
+    assert evaluate_conditions("and", conditions, tx) is True
+
+
+def test_provider_category_condition_matches_a_numeric_code_as_text():
+    """A code the engine already matched as text keeps matching (#353).
+
+    `_match_condition` compares the text form of both sides, so a saved rule on
+    `"5411"` matched `{"category": 5411}` before this change and must go on
+    matching it now that the property turns the code into a string.
+    """
+    tx = make_tx(raw_data={"category": 5411})
+    for op in ("equals", "contains", "starts_with"):
+        conditions = [{"field": "provider_category", "op": op, "value": "5411"}]
+        assert evaluate_conditions("and", conditions, tx) is True
+
+
+def test_provider_category_condition_does_not_match_a_non_label_value():
+    """A list, an object, a bool and blank text are no label for a rule.
+
+    The negated operators are the reason the "never labelled" short-circuit
+    exists: without it, `not_equals` and `not_contains` would match every one
+    of these rows and recategorise the whole ledger.
+    """
+    for raw_data in (
+        {"category": [1, 2]},
+        {"category": {"id": 42}},
+        {"category": True},
+        {"category": ""},
+        {"category": "   "},
+    ):
+        for op in ("equals", "not_equals", "contains", "not_contains"):
+            conditions = [{"field": "provider_category", "op": op, "value": "42"}]
+            assert evaluate_conditions("and", conditions, make_tx(raw_data=raw_data)) is False
+
+
+def test_provider_category_condition_without_category_does_not_match():
+    tx = make_tx(raw_data={"id": "tx-1"})
+    conditions = [
+        {"field": "provider_category", "op": "equals", "value": "Eating out"}
+    ]
+
+    assert evaluate_conditions("and", conditions, tx) is False
+
+
+def test_provider_category_negated_conditions_do_not_match_without_category():
+    tx = make_tx(source="manual", raw_data=None)
+    conditions = [
+        {"field": "provider_category", "op": "not_equals", "value": "Eating out"},
+        {"field": "provider_category", "op": "not_contains", "value": "eating"},
+    ]
+
+    for condition in conditions:
+        assert evaluate_conditions("and", [condition], tx) is False
 
 
 # --- Edge-case: evaluate_conditions ---
@@ -805,6 +930,36 @@ def test_an_empty_list_of_assignable_categories_blocks_every_categorization():
     assert tx.category_id is None
 
 
+def test_set_payee_skips_a_payee_that_no_longer_exists():
+    """A rule keeps its payee id inside a JSON action too, so it can outlive
+    the payee. Writing that id would fail the flush of the whole import or
+    sync batch (#1018)."""
+    gone = uuid.uuid4()
+    kept = uuid.uuid4()
+    actions = [
+        {"op": "set_payee", "value": str(gone)},
+        {"op": "append_notes", "value": "still applied"},
+    ]
+    tx = make_tx(payee_id=kept)
+
+    apply_rule_actions(
+        actions, tx, category_already_set=False, existing_payee_ids={uuid.uuid4()}
+    )
+
+    assert tx.payee_id == kept
+    assert tx.notes == "still applied"
+
+
+def test_set_payee_writes_a_payee_that_exists():
+    existing = uuid.uuid4()
+    actions = [{"op": "set_payee", "value": str(existing)}]
+    tx = make_tx()
+
+    apply_rule_actions(actions, tx, category_already_set=False, existing_payee_ids={existing})
+
+    assert tx.payee_id == existing
+
+
 # --- equals / not_equals on amounts (issue #850) ---
 #
 # Amounts are stored at a fixed scale (100.00) while the rule form submits
@@ -850,3 +1005,12 @@ def test_equals_amount_non_numeric_falls_back_to_text():
     conditions = [{"field": "amount", "op": "equals", "value": "abc"}]
     tx = make_tx(type="credit", amount=Decimal("100.00"))
     assert evaluate_conditions("and", conditions, tx) is False
+
+
+def test_merge_notes_cuts_the_incoming_part_to_the_column():
+    """A note merged past `Transaction.notes` would fail the write."""
+    existing = "x" * 990
+    assert merge_notes(existing, "purpose text from the bank") == f"{existing} purpose t"
+    assert len(merge_notes(existing, "y" * 50) or "") == NOTES_MAX_LENGTH
+    assert merge_notes("x" * NOTES_MAX_LENGTH, "more") == "x" * NOTES_MAX_LENGTH
+    assert merge_notes(None, "y" * 1500) == "y" * NOTES_MAX_LENGTH

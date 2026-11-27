@@ -21,5 +21,8 @@ async def get_app_info():
             # set only in backend/.env reaches the frontend too.
             "performance_benchmarks": get_settings().performance_benchmarks_enabled,
             "plugins": feature_flag("PLUGINS_ENABLED"),
+            # Document reading rides on the agents module (ADR 0037); each
+            # workspace turns it on by picking one of its LLM connections.
+            "document_ai": feature_flag("AGENTS_ENABLED"),
         },
     }

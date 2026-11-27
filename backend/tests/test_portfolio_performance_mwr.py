@@ -200,6 +200,47 @@ async def test_money_weighted_performance_compares_shadow_benchmarks(
 
 
 @pytest.mark.asyncio
+async def test_money_weighted_benchmark_starting_late_buys_in_on_its_start(
+    session: AsyncSession, test_user: User, test_workspace
+):
+    start, mid, end = await _dip_and_top_up(session, test_user, test_workspace)
+    # No close on or before the portfolio's start: compared from its own first.
+    provider = MultiHistoryProvider(
+        {"^LATE": [BenchmarkHistoryPoint(mid, 50.0), BenchmarkHistoryPoint(end, 100.0)]}
+    )
+
+    mwr = await get_portfolio_performance_multi(
+        session,
+        test_workspace.id,
+        test_user.id,
+        "BRL",
+        [("yahoo", "^LATE")],
+        "3m",
+        end_date=end,
+        provider=provider,  # type: ignore[arg-type]
+        method="mwr",
+    )
+
+    (late,) = mwr.benchmarks
+    assert late.start_date == mid
+    # It buys what the portfolio held on that day (50 + the 100 top-up) and
+    # doubles; so does the portfolio from then on, with no money moved after.
+    assert late.benchmark_return == pytest.approx(100.0, abs=1e-5)
+    assert late.excess_return == pytest.approx(0.0, abs=1e-5)
+    series = mwr.money_weighted
+    assert series is not None
+    dates = [point.date for point in mwr.points]
+    values = series.benchmark_values["yahoo:^LATE"]
+    flows = series.benchmark_flows["yahoo:^LATE"]
+    assert values[dates.index(start)] == 0.0
+    assert values[dates.index(mid)] == 150.0 and values[-1] == 300.0
+    # Its first value counts as money in, so a range from before it re-solves
+    # to the same return instead of growing from nothing.
+    assert flows[dates.index(mid)] == 150.0
+    assert sum(flows) == 150.0
+
+
+@pytest.mark.asyncio
 async def test_performance_endpoint_switches_method(
     client: AsyncClient,
     auth_headers: dict,

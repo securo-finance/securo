@@ -71,3 +71,71 @@ describe('GlobalChatPanel stored conversation', () => {
     expect(stored().conversationByAgent?.['agent-1']).toBe('conv-gone')
   })
 })
+
+describe('GlobalChatPanel message from elsewhere', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    localStorage.clear()
+    api.list.mockResolvedValue([agent])
+    api.getDefault.mockResolvedValue(agent)
+    api.conversations.mockResolvedValue([])
+    api.messages.mockResolvedValue([])
+    api.streamChat.mockResolvedValue(undefined)
+  })
+
+  it('sends a message typed in the dashboard to the default agent, once', async () => {
+    const sent = vi.fn()
+    const { rerender } = renderWithProviders(
+      <GlobalChatPanel open onOpenChange={() => {}} initialMessage="How am I doing?" onInitialMessageSent={sent} />,
+    )
+    await waitFor(() => expect(api.streamChat).toHaveBeenCalledTimes(1))
+    expect(api.streamChat.mock.calls[0][0]).toMatchObject({ agentId: 'agent-1', content: 'How am I doing?' })
+    expect(sent).toHaveBeenCalledTimes(1)
+
+    rerender(<GlobalChatPanel open onOpenChange={() => {}} initialMessage="How am I doing?" onInitialMessageSent={sent} />)
+    expect(api.streamChat).toHaveBeenCalledTimes(1)
+
+    // Taken (cleared by the parent), then a new question while the panel is still open.
+    rerender(<GlobalChatPanel open onOpenChange={() => {}} initialMessage={null} onInitialMessageSent={sent} />)
+    rerender(<GlobalChatPanel open onOpenChange={() => {}} initialMessage="And next month?" onInitialMessageSent={sent} />)
+    await waitFor(() => expect(api.streamChat).toHaveBeenCalledTimes(2))
+    expect(api.streamChat.mock.calls[1][0]).toMatchObject({ content: 'And next month?' })
+  })
+})
+
+describe('GlobalChatPanel message waiting for the default agent', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    localStorage.clear()
+    api.conversations.mockResolvedValue([])
+    api.messages.mockResolvedValue([])
+    api.streamChat.mockResolvedValue(undefined)
+  })
+
+  it('goes to the default agent, not the first one listed, once the default is known', async () => {
+    let answer: (value: unknown) => void = () => {}
+    api.list.mockResolvedValue([{ id: 'first', name: 'First' }, { id: 'chosen', name: 'Chosen' }])
+    api.getDefault.mockReturnValue(new Promise((done) => { answer = done }))
+    renderWithProviders(<GlobalChatPanel open onOpenChange={() => {}} initialMessage="Hi" onInitialMessageSent={() => {}} />)
+
+    await new Promise((done) => setTimeout(done, 50))
+    expect(api.streamChat).not.toHaveBeenCalled()
+    answer({ id: 'chosen', name: 'Chosen' })
+    await waitFor(() => expect(api.streamChat).toHaveBeenCalledTimes(1))
+    expect(api.streamChat.mock.calls[0][0]).toMatchObject({ agentId: 'chosen', content: 'Hi' })
+  })
+
+  it('looks up the default when the saved agent no longer exists', async () => {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ agentId: 'deleted' }))
+    let answer: (value: unknown) => void = () => {}
+    api.list.mockResolvedValue([{ id: 'first', name: 'First' }, { id: 'chosen', name: 'Chosen' }])
+    api.getDefault.mockReturnValue(new Promise((done) => { answer = done }))
+    renderWithProviders(<GlobalChatPanel open onOpenChange={() => {}} initialMessage="Hi" onInitialMessageSent={() => {}} />)
+
+    await waitFor(() => expect(api.getDefault).toHaveBeenCalled())
+    expect(api.streamChat).not.toHaveBeenCalled()
+    answer({ id: 'chosen', name: 'Chosen' })
+    await waitFor(() => expect(api.streamChat).toHaveBeenCalledTimes(1))
+    expect(api.streamChat.mock.calls[0][0]).toMatchObject({ agentId: 'chosen' })
+  })
+})

@@ -1,9 +1,11 @@
 """The plugin manifest, `securo-plugin.json`, in its v1 form.
 
-Only what a data plugin needs: identity, a minimum Securo version and what it
-contributes. A plugin that declares code (`runtime`, `network`, `api_scopes`)
-or a contribution this version can't apply is rejected rather than half
-installed.
+Every plugin: identity, a minimum Securo version and what it contributes. A
+plugin with code adds `runtime` (its entrypoint and hashed lockfile),
+`network` (each host it may reach, and why) and, if it reads or writes the
+workspace, `api_scopes` (each scope, and why). Those three are what the
+person installing it consents to. A contribution this version can't apply
+is rejected rather than half installed.
 
 References between items are plain keys: a key names an item of the same
 plugin first, and a built-in default otherwise. A plugin can't point at
@@ -13,10 +15,12 @@ from __future__ import annotations
 
 import copy
 import re
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, ClassVar, Literal, cast
 
 from pydantic import AfterValidator, BaseModel, BeforeValidator, ConfigDict, Field, model_validator
 
+from app.core.access_token_scopes import ALL_SCOPES
+from app.models.workspace import WORKSPACE_KINDS, WorkspaceKind
 from app.services.category_defaults import DEFAULT_CATEGORIES, DEFAULT_GROUPS
 from app.services.rule_engine import compile_rule_regex
 
@@ -28,8 +32,49 @@ REPOSITORY_PATTERN = r"^https://github\.com/[A-Za-z0-9-]+/[A-Za-z0-9._-]+$"
 COLOR_PATTERN = r"^#[0-9A-Fa-f]{6}$"
 #: The longest name a category or group column holds.
 NAME_MAX = 100
-#: Contributions this version can apply.
+#: Contributions applied as data: nothing of the plugin runs.
 DATA_KINDS = frozenset({"category_groups", "categories", "rules"})
+#: Contributions that run the plugin's code, in the plugin runner.
+CODE_KINDS = frozenset({"integrations"})
+#: Contributions to the interface, drawn by Securo's own components (a code report computes its view in the runner).
+UI_KINDS = frozenset({"themes", "reports", "widgets"})
+ALL_KINDS = DATA_KINDS | CODE_KINDS | UI_KINDS
+#: Design tokens a theme may color; the same list as the frontend's THEME_TOKENS.
+THEME_TOKENS = frozenset(
+    {"background", "foreground", "card", "primary", "primary-foreground", "muted", "muted-foreground", "border"}
+    | {f"chart-{n}" for n in range(1, 13)}
+    | {"chart-muted", "chart-income", "chart-expense"}
+)
+#: Text pairs a theme must keep readable (WCAG AA, 4.5:1), when it sets both colors.
+READABLE_PAIRS = (
+    ("foreground", "background"),
+    ("foreground", "card"),
+    ("muted-foreground", "background"),
+    ("muted-foreground", "card"),
+    ("primary-foreground", "primary"),
+)
+MIN_CONTRAST = 4.5
+#: Securo's own colors (frontend SECURO_COLORS and index.css), which a
+#: theme's unset tokens keep: contrast is checked against these too.
+DEFAULT_THEME_COLORS = {
+    "light": {"background": "#F8F9FB", "foreground": "#0F172A", "card": "#FFFFFF", "primary": "#6366F1",
+              "primary-foreground": "#FFFFFF", "muted-foreground": "#64748B"},
+    "dark": {"background": "#0C0D12", "foreground": "#F0F0F5", "card": "#16171F", "primary": "#818CF8",
+             "primary-foreground": "#FFFFFF", "muted-foreground": "#8A8F9E"},
+}
+#: A plain host name, optionally with a port; never a wildcard or an address.
+HOST_PATTERN = r"^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}(:[0-9]{1,5})?$"
+ENTRYPOINT_PATTERN = r"^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*:[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*$"
+PATH_PATTERN = r"^[A-Za-z0-9._-][A-Za-z0-9._/-]{0,199}$"
+#: A logo in the plugin's package: a PNG or WebP file.
+LOGO_PATH_PATTERN = r"^[A-Za-z0-9._-][A-Za-z0-9._/-]{0,199}\.(png|webp)$"
+MAX_LOGOS = 50
+
+#: Records an integration can return from `sync` for the core to write
+#: through the bank sync pipeline, under a bank connection of its own.
+ProvidedKind = Literal["accounts", "transactions", "bills", "holdings", "trades"]
+#: What each kind needs alongside it.
+PROVIDES_NEEDS: dict[str, str] = {"transactions": "accounts", "bills": "accounts", "trades": "holdings"}
 
 #: Condition fields a plugin rule may use. Account and payee ids are a
 #: workspace's own data, so a plugin can't know them.
@@ -169,16 +214,346 @@ class Category(_Model):
     treat_as_transfer: bool = False
 
 
+#: A file extension a file field accepts, lowercase with its dot: `.pdf`.
+FILE_EXTENSION_PATTERN = r"^\.[a-z0-9]{1,10}$"
+#: The largest file a connection form takes, in KB.
+MAX_FILE_KB = 2048
+#: What a file field takes when the plugin doesn't say.
+DEFAULT_FILE_KB = 512
+
+
+class FormField(_Model):
+    """One field of an integration's connection form.
+
+    A `file` field takes a file the person picks (ADR 0035). The plugin gets it
+    as `{"name": ..., "content": <base64>}`, in `context.secrets` when the field
+    is secret and in `context.config` otherwise.
+    """
+
+    key: str = Field(pattern=KEY_PATTERN)
+    label: Text
+    secret: bool = False
+    """Kept in the encrypted store and never shown again."""
+    required: bool = True
+    type: Literal["text", "file"] = "text"
+    accept: list[Annotated[str, Field(pattern=FILE_EXTENSION_PATTERN)]] = Field(default=[], max_length=10)
+    """For a file: the extensions it takes. None means any."""
+    max_kb: int = Field(default=DEFAULT_FILE_KB, ge=1, le=MAX_FILE_KB)
+    """For a file: the largest it takes, in KB."""
+
+    @model_validator(mode="after")
+    def _file_options_for_files(self) -> FormField:
+        # By value, not by what was written: a stored manifest reads back with every default filled in.
+        if self.type != "file" and (self.accept or self.max_kb != DEFAULT_FILE_KB):
+            raise ValueError(f"field {self.key}: accept and max_kb are for a file field")
+        return self
+
+
+#: The longest a routine may ask to run. The runner's own limit (PLUGINS_CALL_TIMEOUT) still applies.
+MAX_ROUTINE_SECONDS = 600
+
+
+class Routine(_Model):
+    """Work an integration runs on a schedule of its own, apart from `sync` (ADR 0035).
+
+    Every `every_minutes`, Securo calls the plugin's `routine(params, context)`
+    with `params["routine"]` naming this one, on each connection made with
+    the integration. Each routine keeps its own `state` and backs off on its
+    own failures; `timeout_seconds` asks for a longer (or shorter) run than
+    the runner's default.
+    """
+
+    key: str = Field(pattern=KEY_PATTERN)
+    name: Text
+    description: Text | None = None
+    every_minutes: int = Field(ge=15, le=7 * 24 * 60)
+    timeout_seconds: int | None = Field(default=None, ge=5, le=MAX_ROUTINE_SECONDS)
+
+
+class Integration(_Model):
+    """A connection to an outside service, run by the plugin's code.
+
+    `credentials`: the person fills in `fields` (an API key, say).
+    `oauth`: the person signs in at the service; the plugin builds the sign-in
+    link and trades the code for a token. `none`: nothing to fill in.
+    With `sync_minutes`, Securo calls the plugin's `sync` on that schedule;
+    each of `routines` runs on its own.
+    With `provides`, `sync` returns those records as data and Securo writes
+    them as it does for a connected bank (see `app.plugins.contract`).
+    """
+
+    key: str = Field(pattern=KEY_PATTERN)
+    name: Text
+    description: Text | None = None
+    auth: Literal["credentials", "oauth", "none"] = "credentials"
+    fields: list[FormField] = Field(default=[], max_length=20)
+    sync_minutes: int | None = Field(default=None, ge=15, le=7 * 24 * 60)
+    routines: list[Routine] = Field(default=[], max_length=10)
+    provides: list[ProvidedKind] | None = None
+    complete_feed: bool = False
+    """The plugin returns every entry, pending ones included, from `since` on.
+
+    Then a pending row it stops returning was cancelled, and Securo expires it
+    as it does Enable Banking's (`_expire_cancelled_holds`). Only for an
+    integration that provides transactions.
+    """
+
+    @model_validator(mode="after")
+    def _unique_fields(self) -> Integration:
+        keys = [f.key for f in self.fields]
+        if len(keys) != len(set(keys)):
+            raise ValueError(f"integration {self.key}: field keys must be unique")
+        routines = [r.key for r in self.routines]
+        if len(routines) != len(set(routines)):
+            raise ValueError(f"integration {self.key}: routine keys must be unique")
+        return self
+
+    @model_validator(mode="after")
+    def _provides_what_it_needs(self) -> Integration:
+        if self.complete_feed and "transactions" not in (self.provides or []):
+            raise ValueError(f"integration {self.key}: complete_feed needs provides to include transactions")
+        if self.provides is None:
+            return self
+        if not self.provides:
+            raise ValueError(f"integration {self.key}: provides can't be empty")
+        if len(self.provides) != len(set(self.provides)):
+            raise ValueError(f"integration {self.key}: provides must be unique")
+        for kind in self.provides:
+            needed = PROVIDES_NEEDS.get(kind)
+            if needed and needed not in self.provides:
+                raise ValueError(f"integration {self.key}: {kind} needs {needed}")
+        return self
+
+    @property
+    def is_provider(self) -> bool:
+        """Its records go through the bank sync pipeline."""
+        return bool(self.provides)
+
+    @property
+    def syncs(self) -> bool:
+        """Whether the plugin implements `sync` for it.
+
+        An integration with routines and no `sync_minutes` (nor records to
+        provide) only runs its routines: nothing calls `sync`, not even once
+        after connecting.
+        """
+        return self.sync_minutes is not None or self.is_provider or not self.routines
+
+
+class Runtime(_Model):
+    entrypoint: str = Field(pattern=ENTRYPOINT_PATTERN, max_length=200)
+    lockfile: str | None = Field(default=None, pattern=PATH_PATTERN)
+    """A requirements file with a hash for every package (`uv export` writes one)."""
+
+    @model_validator(mode="after")
+    def _inside(self) -> Runtime:
+        if self.lockfile is not None and ".." in self.lockfile.split("/"):
+            raise ValueError("the lockfile must be a path inside the plugin")
+        return self
+
+
+class NetworkHost(_Model):
+    host: str = Field(pattern=HOST_PATTERN, max_length=260)
+    purpose: Text
+
+
+class ApiScope(_Model):
+    scope: str
+    purpose: Text
+
+    @model_validator(mode="after")
+    def _known(self) -> ApiScope:
+        if self.scope not in ALL_SCOPES:
+            raise ValueError(f"unknown scope: {self.scope}")
+        return self
+
+
+def _luminance(hex_color: str) -> float:
+    def channel(value: int) -> float:
+        c = value / 255
+        return c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4
+
+    n = int(hex_color[1:], 16)
+    return 0.2126 * channel((n >> 16) & 255) + 0.7152 * channel((n >> 8) & 255) + 0.0722 * channel(n & 255)
+
+
+def contrast_ratio(a: str, b: str) -> float:
+    hi, lo = sorted((_luminance(a), _luminance(b)), reverse=True)
+    return (hi + 0.05) / (lo + 0.05)
+
+
+def _theme_colors(colors: dict[str, str]) -> dict[str, str]:
+    unknown = set(colors) - THEME_TOKENS
+    if unknown:
+        raise ValueError(f"unknown theme tokens: {', '.join(sorted(unknown))}")
+    for token, value in colors.items():
+        # Colors only: anything else (`url(...)`, `var(...)`) could make the
+        # browser fetch from elsewhere or reach past the theme's tokens.
+        if not isinstance(value, str) or not re.fullmatch(COLOR_PATTERN, value):
+            raise ValueError(f"{token} must be a #RRGGBB color")
+    return {token: value.upper() for token, value in colors.items()}
+
+
+ThemeColors = Annotated[dict[str, str], AfterValidator(_theme_colors)]
+
+
+class Theme(_Model):
+    """A look for Securo: colors for its tokens in light and dark, drawn by Securo itself.
+
+    No CSS, no images and no fonts to download: `font` picks one of the
+    device's own families.
+    """
+
+    key: str = Field(pattern=KEY_PATTERN)
+    name: Name
+    light: ThemeColors = {}
+    dark: ThemeColors = {}
+    radius: float | None = Field(default=None, ge=0, le=1)
+    """Corner radius in rem; Securo's own is 0.625."""
+    font: Literal["sans", "mono", "serif"] | None = None
+
+    @model_validator(mode="after")
+    def _readable(self) -> Theme:
+        if not (self.light or self.dark):
+            raise ValueError(f"theme {self.key}: colors nothing")
+        for mode, own in (("light", self.light), ("dark", self.dark)):
+            if not own:
+                continue  # that mode keeps Securo's look
+            colors = {**DEFAULT_THEME_COLORS[mode], **own}
+            for text, background in READABLE_PAIRS:
+                # A pair the theme leaves alone is Securo's own, already readable.
+                if text in own or background in own:
+                    ratio = contrast_ratio(colors[text], colors[background])
+                    if ratio < MIN_CONTRAST:
+                        raise ValueError(
+                            f"theme {self.key}: {text} on {background} ({mode}) is hard to read "
+                            f"(contrast {ratio:.1f}, needs {MIN_CONTRAST})"
+                        )
+        return self
+
+
+#: What a report adds up, from the transactions in the period.
+ReportMeasure = Literal["expenses", "income", "net"]
+#: How a report splits that total.
+ReportGroup = Literal["category", "category_group", "payee", "account", "month"]
+#: How Securo draws it.
+ReportChart = Literal["bar", "line", "area", "pie", "table"]
+#: Charts that read along time, so only for a report split by month.
+TIME_CHARTS = frozenset({"line", "area"})
+
+
+#: Data a code report can ask for, and the read scope each one needs in `api_scopes`.
+REPORT_INPUTS: dict[str, str] = {
+    "transactions": "transactions:read",
+    "accounts": "accounts:read",
+    "categories": "categories:read",
+}
+ReportInput = Literal["transactions", "accounts", "categories"]
+
+
+class Report(_Model):
+    """A report for the reports page.
+
+    Either a query Securo runs (`measure`, `group_by`...), or, with `code`, the
+    plugin's own: Securo hands its `report` method the `inputs` it asked for,
+    read for whoever is looking, and draws the view it returns (ADR 0028).
+    """
+
+    #: What it's called in validation errors.
+    NOUN: ClassVar[str] = "report"
+    #: The plugin method that computes it, with `code`.
+    METHOD: ClassVar[str] = "report"
+
+    key: str = Field(pattern=KEY_PATTERN)
+    name: Name
+    description: Text | None = None
+    code: bool = False
+    """Computed by the plugin's code in the runner; needs a runtime."""
+    inputs: list[ReportInput] = Field(default=[], max_length=len(REPORT_INPUTS))
+    """For a code report: the workspace data it gets, each covered by a read scope in `api_scopes`."""
+    measure: ReportMeasure = "expenses"
+    group_by: ReportGroup | None = None
+    categories: list[Annotated[str, Field(pattern=KEY_PATTERN)]] = Field(default=[], max_length=50)
+    """Only these categories: keys of the plugin's own, or of Securo's defaults. None means all."""
+    chart: ReportChart = "bar"
+    limit: int = Field(default=10, ge=3, le=20)
+    """The largest groups shown; the rest add up as one. Not for a report by month."""
+
+    @model_validator(mode="after")
+    def _drawable(self) -> Report:
+        it = f"{self.NOUN} {self.key}"
+        if len(self.inputs) != len(set(self.inputs)):
+            raise ValueError(f"{it}: inputs must be unique")
+        if self.code:
+            if self.group_by is not None or self.categories:
+                raise ValueError(f"{it}: a code {self.NOUN} computes its own view; leave out group_by and categories")
+            return self
+        if self.inputs:
+            raise ValueError(f"{it}: inputs are for a code {self.NOUN}")
+        if self.group_by is None:
+            raise ValueError(f"{it}: needs group_by, or code: true")
+        if self.chart in TIME_CHARTS and self.group_by != "month":
+            raise ValueError(f"{it}: a {self.chart} chart reads along time, so it needs group_by month")
+        if self.chart == "pie" and (self.group_by == "month" or self.measure == "net"):
+            raise ValueError(f"{it}: a pie shows the parts of a total, not months or a net that can go negative")
+        if len(self.categories) != len(set(self.categories)):
+            raise ValueError(f"{it}: categories must be unique")
+        return self
+
+
+#: How wide a widget starts on the dashboard's 12-column grid, until someone resizes it.
+WidgetWidth = Literal["third", "half", "two_thirds", "full"]
+#: What a widget reads, counted back from the month the dashboard shows: that
+#: month, the year up to it, or the twelve months ending with it.
+WidgetPeriod = Literal["month", "year_to_date", "last_12_months"]
+
+
+class Widget(Report):
+    """A widget for the dashboard: a report sized for a card (ADR 0034).
+
+    The same query or code as a report, read over `period` (counted back from
+    the month the dashboard shows) and the accounts in view. With `code`, the
+    plugin's `widget` method computes it.
+    """
+
+    NOUN: ClassVar[str] = "widget"
+    METHOD: ClassVar[str] = "widget"
+
+    width: WidgetWidth = "half"
+    period: WidgetPeriod = "month"
+
+    @model_validator(mode="after")
+    def _has_months_to_chart(self) -> Widget:
+        if self.group_by == "month" and self.period == "month":
+            raise ValueError(
+                f"widget {self.key}: one month has nothing to split by month; "
+                "set period to year_to_date or last_12_months"
+            )
+        return self
+
+
 class Contributes(_Model):
     category_groups: list[CategoryGroup] = []
     categories: list[Category] = []
     rules: list[Rule] = []
+    integrations: list[Integration] = []
+    themes: list[Theme] = Field(default=[], max_length=50)
+    reports: list[Report] = Field(default=[], max_length=20)
+    widgets: list[Widget] = Field(default=[], max_length=20)
 
     @model_validator(mode="after")
     def _well_formed(self) -> Contributes:
-        if not (self.category_groups or self.categories or self.rules):
+        if not (
+            self.category_groups
+            or self.categories
+            or self.rules
+            or self.integrations
+            or self.themes
+            or self.reports
+            or self.widgets
+        ):
             raise ValueError("contributes nothing")
-        for kind in ("category_groups", "categories", "rules"):
+        for kind in ("category_groups", "categories", "rules", "integrations", "themes", "reports", "widgets"):
             keys = [item.key for item in getattr(self, kind)]
             if len(keys) != len(set(keys)):
                 raise ValueError(f"{kind}: keys must be unique")
@@ -195,7 +570,15 @@ class Contributes(_Model):
             missing = rule.category_keys() - categories
             if missing:
                 raise ValueError(f"rule {rule.key}: unknown category {', '.join(sorted(missing))}")
+        for report in [*self.reports, *self.widgets]:
+            missing = set(report.categories) - categories
+            if missing:
+                raise ValueError(f"{report.NOUN} {report.key}: unknown category {', '.join(sorted(missing))}")
         return self
+
+
+def _every_workspace_kind() -> list[WorkspaceKind]:
+    return [cast(WorkspaceKind, kind) for kind in WORKSPACE_KINDS]
 
 
 class Manifest(_Model):
@@ -207,20 +590,59 @@ class Manifest(_Model):
     license: str = Field(min_length=2, max_length=64)
     min_securo_version: str = Field(pattern=VERSION_PATTERN)
     contributes: Contributes
+    runtime: Runtime | None = None
+    network: list[NetworkHost] = Field(default=[], max_length=100)
+    api_scopes: list[ApiScope] = Field(default=[], max_length=len(ALL_SCOPES))
+    #: The workspace types it's meant for: personal, business, or both when left out.
+    workspaces: list[WorkspaceKind] = Field(default_factory=lambda: _every_workspace_kind(), min_length=1)
+    #: Logos shipped in the package, by key, for a provider's accounts to name
+    #: as their institution's. Securo serves them itself, so showing one never
+    #: reaches a host the plugin didn't declare.
+    logos: dict[
+        Annotated[str, Field(pattern=KEY_PATTERN)], Annotated[str, Field(pattern=LOGO_PATH_PATTERN)]
+    ] = Field(default={}, max_length=MAX_LOGOS)
+
+    @property
+    def has_code(self) -> bool:
+        return self.runtime is not None
+
+    @model_validator(mode="after")
+    def _code_is_declared(self) -> Manifest:
+        if self.contributes.integrations and self.runtime is None:
+            raise ValueError("integrations need a runtime")
+        if self.runtime is None and (self.network or self.api_scopes or self.logos):
+            raise ValueError("network, api_scopes and logos are only for plugins with a runtime")
+        if any(".." in path.split("/") for path in self.logos.values()):
+            raise ValueError("logos must be paths inside the package")
+        code_reports = [r for r in [*self.contributes.reports, *self.contributes.widgets] if r.code]
+        if code_reports and self.runtime is None:
+            raise ValueError("code reports and widgets need a runtime")
+        if self.runtime is not None and not (self.contributes.integrations or code_reports):
+            raise ValueError("a runtime needs something to run: add an integration, or a code report or widget")
+        granted = {a.scope for a in self.api_scopes}
+        for report in code_reports:
+            for name in report.inputs:
+                read = REPORT_INPUTS[name]
+                if read not in granted and read.replace(":read", ":write") not in granted:
+                    raise ValueError(f"{report.NOUN} {report.key}: input {name} needs {read} in api_scopes")
+        if len(self.workspaces) != len(set(self.workspaces)):
+            raise ValueError("workspaces must be unique")
+        hosts = [h.host for h in self.network]
+        scopes = [s.scope for s in self.api_scopes]
+        if len(hosts) != len(set(hosts)) or len(scopes) != len(set(scopes)):
+            raise ValueError("network hosts and api_scopes must be unique")
+        return self
 
     @model_validator(mode="before")
     @classmethod
-    def _only_data(cls, data: Any) -> Any:
+    def _known_kinds(cls, data: Any) -> Any:
         if isinstance(data, dict):
-            code = [field for field in ("runtime", "network", "api_scopes") if field in data]
-            if code:
-                raise ValueError(f"plugins with code aren't supported yet ({', '.join(code)})")
             contributes = data.get("contributes")
             if isinstance(contributes, dict):
                 # An empty list of a kind this version doesn't know contributes
                 # nothing, as the index counts it: drop it rather than refuse.
-                kept = {k: v for k, v in contributes.items() if str(k) in DATA_KINDS or v not in ([], {}, None)}
-                unsupported = {str(kind) for kind in kept} - DATA_KINDS
+                kept = {k: v for k, v in contributes.items() if str(k) in ALL_KINDS or v not in ([], {}, None)}
+                unsupported = {str(kind) for kind in kept} - ALL_KINDS
                 if unsupported:
                     raise ValueError(
                         f"this Securo version can't apply: {', '.join(sorted(unsupported))}"

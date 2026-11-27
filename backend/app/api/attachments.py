@@ -34,7 +34,6 @@ async def upload_attachment(
             user_id=ctx.user_id,
             transaction_id=transaction_id,
             filename=file.filename or "unnamed",
-            content_type=file.content_type or "application/octet-stream",
             data=data,
         )
     except LookupError:
@@ -67,12 +66,20 @@ async def download_attachment(
         attachment, data = await attachment_service.download_attachment(
             session, attachment_id, ctx.workspace.id
         )
+    except FileNotFoundError:
+        # The row is there and the bytes are not: storage was cleared or
+        # migrated without this file. Different from a missing row, and a
+        # 500 would say we broke when the truth is the file is gone.
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Attachment file is missing from storage",
+        )
     except LookupError:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Attachment not found")
     return Response(
         content=data,
-        media_type=attachment.content_type,
-        headers={"Content-Disposition": f'inline; filename="{attachment.filename}"'},
+        media_type=attachment_service.served_content_type(attachment.filename),
+        headers=attachment_service.served_headers(attachment.filename),
     )
 
 

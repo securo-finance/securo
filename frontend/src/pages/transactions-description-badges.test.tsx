@@ -96,8 +96,8 @@ const crowded: Transaction = {
   amount_primary: null, fx_rate_used: null, fx_fallback: false,
   installment_number: 18, total_installments: 18, installment_total_amount: 3240,
   installment_purchase_date: '2025-05-08', installment_series_id: 'series-1',
-  bill_id: null, effective_bill_date: null, splits: [], is_ignored: false,
-  exclude_from_pnl: true,
+  bill_id: null, effective_bill_date: null, reporting_date_override: null,
+  splits: [], is_ignored: false, exclude_from_pnl: true,
 }
 
 beforeEach(() => {

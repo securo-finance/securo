@@ -16,8 +16,8 @@ from app.models.asset_transaction import AssetTransaction
 from app.models.bank_connection import BankConnection
 from app.models.user import User
 from app.providers.base import BankProvider, HoldingData, HoldingTradeData
-from app.providers.pluggy import _build_trade_data
-from app.services.connection_service import _reconciled_trades, _sync_holding_trades
+from app.providers.pluggy import _build_holding_trade_data
+from app.services.connection_service import _import_holding_trades, _reconciled_trades
 
 
 def _holding(quantity: str, *, withdrawn: bool = False, external_id: str = "h1") -> HoldingData:
@@ -69,7 +69,7 @@ def test_reconciled_trades_close_a_withdrawn_holding_at_zero():
 
 
 def test_pluggy_trade_keeps_cash_amount_exact_and_skips_income():
-    trade = _build_trade_data(
+    trade = _build_holding_trade_data(
         {
             "id": "t1",
             "type": "SELL",
@@ -86,7 +86,7 @@ def test_pluggy_trade_keeps_cash_amount_exact_and_skips_income():
     assert trade.quantity * trade.price == pytest.approx(Decimal("1984.96"))
     assert trade.fee == Decimal("1.5")
     assert (
-        _build_trade_data(
+        _build_holding_trade_data(
             {"id": "t2", "type": "INTEREST", "date": "2026-09-11", "quantity": 11, "amount": 1.49}
         )
         is None
@@ -180,7 +180,7 @@ async def test_sync_mirrors_reconciled_trades_and_leaves_manual_rows(
         [_trade("b", "buy", 2, "228", "109.69"), _trade("c", "buy", 28, "81", "110.78")]
     )
 
-    await _sync_holding_trades(
+    await _import_holding_trades(
         session, connection, cast(BankProvider, provider), {}, [_holding("309")], {"h1": asset}
     )
     await session.flush()
@@ -191,7 +191,7 @@ async def test_sync_mirrors_reconciled_trades_and_leaves_manual_rows(
     ]
 
     # The ledger now adds up to the position: the next sync asks for nothing.
-    await _sync_holding_trades(
+    await _import_holding_trades(
         session, connection, cast(BankProvider, provider), {}, [_holding("309")], {"h1": asset}
     )
     assert provider.requests == 1
@@ -218,8 +218,164 @@ async def test_sync_keeps_stored_history_the_provider_no_longer_returns(
     connection = await _connection(session, test_user, test_workspace)
     provider = _Provider([_trade("t2", "buy", 28, "39.969", "19.08")])
 
-    await _sync_holding_trades(
+    await _import_holding_trades(
         session, connection, cast(BankProvider, provider), {}, [_holding("70.8202")], {"h1": asset}
     )
     await session.flush()
     assert await _stored(session, asset) == [("pluggy", "t1", 30.8512), ("pluggy", "t2", 39.969)]
+
+
+@pytest.mark.asyncio
+async def test_same_day_trades_replay_in_the_order_they_were_recorded(
+    session: AsyncSession, test_user: User, test_workspace
+):
+    """A buy of 10 @ 10 then a sell of 5 @ 20 leaves 5 shares worth 100,
+    whatever order the database happens to return the rows in."""
+    from datetime import timedelta
+
+    from app.services.asset_service import _load_asset_native_values
+
+    asset = await _pluggy_holding(session, test_user, test_workspace, "Same day")
+    recorded = datetime(2026, 8, 3, 12, tzinfo=timezone.utc)
+    # Stored sell first, so an unordered read sees it before the buy.
+    for kind, quantity, price, created_at in (
+        ("sell", "5", "20", recorded + timedelta(seconds=1)),
+        ("buy", "10", "10", recorded),
+    ):
+        session.add(
+            AssetTransaction(
+                asset_id=asset.id,
+                workspace_id=test_workspace.id,
+                kind=kind,
+                quantity=Decimal(quantity),
+                price=Decimal(price),
+                date=date(2026, 8, 3),
+                source="pluggy",
+                external_id=kind,
+                created_at=created_at,
+            )
+        )
+        await session.flush()
+
+    values = await _load_asset_native_values(session, [asset])
+
+    assert values[str(asset.id)] == [(date(2026, 8, 3), 100.0)]
+
+
+@pytest.mark.asyncio
+async def test_an_as_of_load_before_the_first_snapshot_still_drops_the_purchase_seed(
+    session: AsyncSession, test_user: User, test_workspace
+):
+    """The sync's purchase-date seed (1000) is a placeholder whatever date the
+    load stops at: a buy of 20 @ 100 opens the position at 2000 both in the
+    full history and in an as-of load that ends before the provider's first
+    snapshot."""
+    from app.models.asset_value import AssetValue
+    from app.services.asset_service import _load_asset_native_values
+
+    asset = await _pluggy_holding(session, test_user, test_workspace, "Seeded")
+    asset.purchase_date = date(2026, 8, 1)
+    asset.purchase_price = Decimal("1000")
+    session.add_all(
+        [
+            AssetValue(
+                asset_id=asset.id, amount=Decimal("1000"), date=date(2026, 8, 1), source="sync"
+            ),
+            AssetValue(
+                asset_id=asset.id, amount=Decimal("2100"), date=date(2026, 8, 10), source="sync"
+            ),
+            AssetTransaction(
+                asset_id=asset.id,
+                workspace_id=test_workspace.id,
+                kind="buy",
+                quantity=Decimal("20"),
+                price=Decimal("100"),
+                date=date(2026, 8, 1),
+                source="pluggy",
+                external_id="buy",
+            ),
+        ]
+    )
+    await session.flush()
+
+    full = await _load_asset_native_values(session, [asset])
+    as_of = await _load_asset_native_values(session, [asset], up_to_date=date(2026, 8, 5))
+
+    assert full[str(asset.id)] == [(date(2026, 8, 1), 2000.0), (date(2026, 8, 10), 2100.0)]
+    assert as_of[str(asset.id)] == [(date(2026, 8, 1), 2000.0)]
+
+
+@pytest.mark.asyncio
+async def test_fetched_trades_keep_an_older_round_trip_the_provider_dropped(
+    session: AsyncSession, test_user: User, test_workspace
+):
+    """Stored buy 10 + sell 10 closed before the provider's window; it now
+    returns only the new buy of 15. The old round trip stays in the ledger."""
+    asset = await _pluggy_holding(session, test_user, test_workspace, "Round trip")
+    for trade_id, kind, day in (("old-buy", "buy", 1), ("old-sell", "sell", 2)):
+        session.add(
+            AssetTransaction(
+                asset_id=asset.id,
+                workspace_id=test_workspace.id,
+                kind=kind,
+                quantity=Decimal("10"),
+                price=Decimal("1"),
+                date=date(2026, 7, day),
+                source="pluggy",
+                external_id=trade_id,
+            )
+        )
+    connection = await _connection(session, test_user, test_workspace)
+    provider = _Provider([_trade("new-buy", "buy", 5, "15")])
+
+    await _import_holding_trades(
+        session, connection, cast(BankProvider, provider), {}, [_holding("15")], {"h1": asset}
+    )
+    await session.flush()
+
+    assert await _stored(session, asset) == [
+        ("pluggy", "new-buy", 15.0),
+        ("pluggy", "old-buy", 10.0),
+        ("pluggy", "old-sell", 10.0),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_reissued_ids_inside_the_fetched_window_are_not_counted_twice(
+    session: AsyncSession, test_user: User, test_workspace
+):
+    """The provider returns the same history under new ids: the stored rows
+    in its window are replaced, not added to it."""
+    asset = await _pluggy_holding(session, test_user, test_workspace, "Reissued")
+    for trade_id, kind, day in (("v1-buy", "buy", 1), ("v1-sell", "sell", 2)):
+        session.add(
+            AssetTransaction(
+                asset_id=asset.id,
+                workspace_id=test_workspace.id,
+                kind=kind,
+                quantity=Decimal("10"),
+                price=Decimal("1"),
+                date=date(2026, 8, day),
+                source="pluggy",
+                external_id=trade_id,
+            )
+        )
+    connection = await _connection(session, test_user, test_workspace)
+    provider = _Provider(
+        [
+            _trade("v2-buy", "buy", 1, "10"),
+            _trade("v2-sell", "sell", 2, "10"),
+            _trade("v2-buy-2", "buy", 5, "15"),
+        ]
+    )
+
+    await _import_holding_trades(
+        session, connection, cast(BankProvider, provider), {}, [_holding("15")], {"h1": asset}
+    )
+    await session.flush()
+
+    assert await _stored(session, asset) == [
+        ("pluggy", "v2-buy", 10.0),
+        ("pluggy", "v2-buy-2", 15.0),
+        ("pluggy", "v2-sell", 10.0),
+    ]

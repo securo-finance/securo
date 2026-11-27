@@ -18,6 +18,7 @@ handling it:
     4000px mark makes every PDF heavier for a picture drawn 40px tall.
 """
 import io
+import logging
 import uuid
 from typing import Optional
 
@@ -27,6 +28,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.invoice import InvoiceSettings
 from app.providers import get_storage_provider
+
+logger = logging.getLogger(__name__)
 
 #: Roughly twice the largest box any renderer draws it in, so a screen at
 #: two device pixels per CSS pixel still has real detail to show.
@@ -119,9 +122,18 @@ async def read(workspace_id: uuid.UUID, logo_id: uuid.UUID) -> Optional[bytes]:
     storage = get_storage_provider()
     try:
         return await storage.download(storage_key(workspace_id, logo_id))
-    except Exception:
+    except FileNotFoundError:
         # A missing logo is a document without a mark on it, never a
         # failed render.
+        return None
+    except Exception:
+        # Still render without the mark — a logo is never worth failing a
+        # document over — but an outage is not a missing file: leaving no
+        # trace would turn "the bucket is down" into "every invoice quietly
+        # lost its logo".
+        logger.warning(
+            "Could not read invoice logo %s; rendering without it", logo_id, exc_info=True
+        )
         return None
 
 

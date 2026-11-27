@@ -21,6 +21,10 @@ def _serialize_messages(messages: list[ChatMessage]) -> list[dict]:
         msg: dict = {"role": m.role}
         if m.content is not None:
             msg["content"] = m.content
+        if m.images:
+            # Ollama takes raw base64 images next to the text.
+            msg.setdefault("content", "")
+            msg["images"] = [img.data for img in m.images]
         if m.tool_calls:
             msg["tool_calls"] = [
                 {"function": {"name": tc.name, "arguments": tc.arguments}} for tc in m.tool_calls

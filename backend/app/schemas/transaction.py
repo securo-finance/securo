@@ -3,8 +3,17 @@ from datetime import date as _Date
 from decimal import Decimal
 from typing import Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    ValidationInfo,
+    field_validator,
+    model_validator,
+)
 
+from app.core.currency import clean_currency_input, normalize_currency_code
+from app.core.money import bounded_fx_rate, bounded_money, check_zero_rate
 from app.schemas.category import CategoryRead
 from app.schemas.transaction_category_line import (
     TransactionCategoryLineRead,
@@ -17,6 +26,27 @@ from app.schemas.transaction_split import (
 )
 
 
+def _bound_money_field(
+    value: Optional[Decimal], info: ValidationInfo
+) -> Optional[Decimal]:
+    """Bound one money input to what its column holds (ADR 0008).
+
+    The columns round to cents and hold 13 digits, so `0.001` was accepted and
+    stored as 0.00 and `1e15` failed at commit with a raw database error
+    (issues #270 and #321). `amount_primary` is a converted value and may be
+    0.00: 0.01 BRL at 0.2 is 0.002 USD, and the backend itself stores that
+    row as 0.00, so refusing it locked the row out of every edit (issue #330).
+    """
+    if value is None:
+        return None
+    field = info.field_name or "amount"
+    if field == "fx_rate_used":
+        return bounded_fx_rate(value, field, allow_zero=True)
+    return bounded_money(
+        value, field, allow_zero=field in ("amount_primary", "amount_primary_shown")
+    )
+
+
 class TransactionBase(BaseModel):
     description: str
     amount: Decimal
@@ -27,9 +57,23 @@ class TransactionBase(BaseModel):
     fx_rate: Optional[Decimal] = None
     payee_raw: Optional[str] = None  # raw payee string from import (OFX/QIF)
 
+    @field_validator("currency", mode="before")
+    @classmethod
+    def normalize_currency(cls, value: Optional[str]) -> Optional[str]:
+        return normalize_currency_code(value)
+
 
 class TransactionCreate(TransactionBase):
     account_id: uuid.UUID
+
+    # Null (or left out) means the account's currency; an empty code is a
+    # 422. Whether the code is supported is checked against the account in
+    # the service (#497).
+    @field_validator("currency", mode="before")
+    @classmethod
+    def check_currency(cls, value: object) -> object:
+        return clean_currency_input(value, allow_null=True)
+
     category_id: Optional[uuid.UUID] = None
     payee_id: Optional[uuid.UUID] = None
     currency: Optional[str] = None
@@ -46,6 +90,10 @@ class TransactionCreate(TransactionBase):
     # (not yet settled) to record an entry that isn't settled yet. Only
     # posted/pending are valid.
     status: Optional[Literal["posted", "pending"]] = None
+    # Whether the money has already moved (issue #15). Omitted, a manual entry
+    # starts unpaid; the caller may set it, and the dialog does when the user
+    # is recording something that already happened.
+    is_paid: Optional[bool] = None
     # Manual installment metadata. When present, this transaction is one
     # installment of a manually-created series (created via the regular
     # endpoint, e.g. a single installment, or via the series endpoint
@@ -55,6 +103,26 @@ class TransactionCreate(TransactionBase):
     total_installments: Optional[int] = Field(default=None, ge=1)
     installment_total_amount: Optional[Decimal] = None
     installment_purchase_date: Optional[_Date] = None
+
+    @field_validator("amount", "amount_primary", "fx_rate_used")
+    @classmethod
+    def check_amount_bounds(
+        cls, value: Optional[Decimal], info: ValidationInfo
+    ) -> Optional[Decimal]:
+        # The create path had no bound at all, so `1e15` was a 500 here while
+        # the same value on PATCH was a 422 (issue #321).
+        return _bound_money_field(value, info)
+
+    @model_validator(mode="after")
+    def check_derived_conversion(self):
+        check_zero_rate(self.amount, self.amount_primary, self.fx_rate_used)
+        # One of the pair is worked out from `amount` when the other is left
+        # out; bound that one too, so it is a 422 here and not a database error.
+        if self.amount_primary is not None and self.fx_rate_used is None:
+            bounded_fx_rate(self.amount_primary / self.amount, "fx_rate_used", allow_zero=True)
+        elif self.fx_rate_used is not None and self.amount_primary is None:
+            bounded_money(self.amount * self.fx_rate_used, "amount_primary", allow_zero=True)
+        return self
 
     @model_validator(mode="after")
     def validate_installment_fields(self):
@@ -94,6 +162,18 @@ class TransactionCreate(TransactionBase):
         return self
 
 
+class TransactionPaybackPayer(BaseModel):
+    member_id: uuid.UUID
+    amount: Decimal = Field(gt=0, decimal_places=2)
+
+
+class TransactionPaybackInput(BaseModel):
+    """Group members paying back an incoming transaction, one settlement each."""
+    group_id: Optional[uuid.UUID] = None
+    to_member_id: Optional[uuid.UUID] = None
+    payers: list[TransactionPaybackPayer] = []
+
+
 class TransactionUpdate(BaseModel):
     description: Optional[str] = None
     amount: Optional[Decimal] = None
@@ -106,19 +186,44 @@ class TransactionUpdate(BaseModel):
     notes: Optional[str] = None
     amount_primary: Optional[Decimal] = None
     fx_rate_used: Optional[Decimal] = None
+    # The converted amount the client was shown when it loaded the row (the
+    # `amount_primary` it read). A conversion sent back equal to it is an
+    # echo and keeps the owner's stamp, even after a rate sync moved the
+    # conversion the server would show now (#440). Never stored.
+    amount_primary_shown: Optional[Decimal] = None
     is_ignored: Optional[bool] = None
     exclude_from_pnl: Optional[bool] = None
+    # Not Optional: the column is NOT NULL, so an explicit null is a 422, not a
+    # 500 at commit. Updates use exclude_unset, so leaving it out changes nothing.
+    is_flagged: bool = False
+    # Optional reminder on a flag. Kept only while the row is flagged:
+    # unflagging clears both, and either one sent for an unflagged row is
+    # ignored. Null clears just that field.
+    flag_due_date: Optional[_Date] = None
+    flag_note: Optional[str] = Field(default=None, max_length=500)
     # Manual status override (posted=settled, pending=not yet settled). Lets the
     # user mark a manually-entered transaction as settled once it clears,
     # or flip a synced row back to pending before the next sync.
     status: Optional[Literal["posted", "pending"]] = None
+    # Paid or not (issue #15). Not Optional, for the same reason as
+    # `is_flagged`: the column is NOT NULL, so an explicit null is a 422 here
+    # instead of a 500 at commit. Updates use exclude_unset, so leaving it out
+    # changes nothing: the sync never sends it, and the user's mark survives a
+    # re-sync.
+    is_paid: bool = False
     apply_to_transfer_pair: bool = False
     # CC bucketing override (issue #92). Empty string / explicit null clears
     # it back to auto. Only meaningful for credit-card accounts.
     effective_bill_date: Optional[_Date] = None
+    # Optional period-attribution correction. This intentionally does not alter
+    # bank-date/credit-card-cycle behavior without mutating provider truth.
+    reporting_date_override: Optional[_Date] = None
     # When provided, replaces the transaction's splits wholesale. Pass
     # an object with an empty `splits` list to clear them.
     splits: Optional[TransactionSplitsInput] = None
+    # When provided, replaces the settlements this credit pays back, like
+    # `splits`; an empty `payers` list removes them.
+    payback: Optional[TransactionPaybackInput] = None
     # When provided, replaces the category split wholesale; an empty `lines`
     # list undoes it. Required alongside a new `amount` on a split row.
     category_lines: Optional[TransactionCategoryLinesInput] = None
@@ -127,6 +232,30 @@ class TransactionUpdate(BaseModel):
     # same series; "all" touches every row in the series. Ignored when the
     # transaction has no installment fingerprint.
     apply_to: Literal["this", "future", "all"] = "this"
+
+    # The column is NOT NULL: an explicit null or an empty code is a 422,
+    # not a 500 later on (#497). Leaving it out changes nothing.
+    @field_validator("currency", mode="before")
+    @classmethod
+    def normalize_currency(cls, value: object) -> object:
+        return clean_currency_input(value, allow_null=False)
+
+    @field_validator("amount", "amount_primary", "fx_rate_used", "amount_primary_shown")
+    @classmethod
+    def check_amount_bounds(
+        cls, value: Optional[Decimal], info: ValidationInfo
+    ) -> Optional[Decimal]:
+        # Sent as null, `amount` reached the NOT NULL column and failed at
+        # commit with a 500 (issue #321); left out, it changes nothing.
+        if value is None and info.field_name == "amount":
+            raise ValueError("amount cannot be null")
+        return _bound_money_field(value, info)
+
+    @model_validator(mode="after")
+    def check_zero_rate(self):
+        # Without `amount`, the service checks against the row's own amount.
+        check_zero_rate(self.amount, self.amount_primary, self.fx_rate_used)
+        return self
 
 
 class InstallmentSeriesCreate(BaseModel):
@@ -179,6 +308,15 @@ class TransactionTransferCounterpart(BaseModel):
     account_name: str
 
 
+class TransactionSettledBy(BaseModel):
+    id: uuid.UUID
+    group_id: uuid.UUID
+    from_member_id: uuid.UUID
+    amount: Decimal
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class TransactionRead(TransactionBase):
     id: uuid.UUID
     user_id: uuid.UUID
@@ -189,11 +327,18 @@ class TransactionRead(TransactionBase):
     #: payment can settle several — a payout net of fees is the
     #: ordinary case, not the exotic one.
     invoice_links: list[TransactionInvoiceLink] = []
-    currency: str = "USD"
+    # A stored transaction always has a currency, so the read model narrows
+    # the optional input field on purpose.
+    currency: str = "USD"  # ty: ignore[incompatible-mutable-override]
     source: str
     status: str = "posted"
     payee: Optional[str] = None
     original_description: Optional[str] = None
+    # The category the bank/provider reported for this row, in its own words
+    # (often an English label such as "Groceries"). Read-only: rules match
+    # against it, and showing it is how the rule editor can be filled with the
+    # exact value instead of a guessed translation (#280).
+    provider_category: Optional[str] = None
     payee_id: Optional[uuid.UUID] = None
     payee_name: Optional[str] = None
     notes: Optional[str] = None
@@ -205,6 +350,9 @@ class TransactionRead(TransactionBase):
     amount_primary: Optional[float] = None
     fx_rate_used: Optional[float] = None
     fx_fallback: bool = False
+    # The owner typed the conversion (ADR 0031). A derived one follows the
+    # date and the amount, so the dialog leaves it to the server (#483).
+    fx_typed: bool = False
     attachment_count: int = 0
     installment_number: Optional[int] = None
     total_installments: Optional[int] = None
@@ -212,7 +360,13 @@ class TransactionRead(TransactionBase):
     installment_purchase_date: Optional[_Date] = None
     installment_series_id: Optional[uuid.UUID] = None
     bill_id: Optional[uuid.UUID] = None
+    card_masked_number: Optional[str] = None
     effective_bill_date: Optional[_Date] = None
+    reporting_date_override: Optional[_Date] = None
+    # The date the list filtered and ordered this row by: the reporting
+    # override, a manual bill date or, in accrual mode, a card's bill due
+    # date, else `date` (#1386). Set by the list; null elsewhere.
+    reporting_date: Optional[_Date] = None
     recurring_transaction_id: Optional[uuid.UUID] = None
     splits: list[TransactionSplitRead] = []
     # Set when the amount is split across several categories; `category_id`
@@ -235,8 +389,18 @@ class TransactionRead(TransactionBase):
     # is_self member at request time. Helps the UI show who paid
     # instead of a generic "shared" badge.
     parent_owner_name: Optional[str] = None
+    # Settlements this credit pays back (it is their receiver transaction).
+    settled_by: list["TransactionSettledBy"] = []
     is_ignored: bool = False
     exclude_from_pnl: bool = False
+    is_flagged: bool = False
+    is_paid: bool = False
+    flag_due_date: Optional[_Date] = None
+    flag_note: Optional[str] = None
+    #: False until the person has seen this row: set for transactions that
+    #: sync or an import creates (issue #636), cleared when they open it or
+    #: mark everything as read.
+    is_read: bool = True
     # Account balance right after this row, set only when the list asked for
     # it on one non-credit-card account's unfiltered ledger (#1202). The
     # primary-currency value is null when the account is already in it, or
@@ -309,6 +473,23 @@ class BulkTagsRequest(BaseModel):
     tags: list[str]
 
 
+class BulkFlagRequest(BaseModel):
+    """Flag or unflag several rows at once. A reminder date given with
+    `is_flagged=True` is set on every row; unflagging clears the reminders."""
+
+    transaction_ids: list[uuid.UUID] = Field(min_length=1, max_length=1000)
+    is_flagged: bool
+    flag_due_date: Optional[_Date] = None
+
+
+class FlaggedSummary(BaseModel):
+    """How many flagged rows a workspace has, and how many are past their date."""
+
+    flagged: int
+    overdue: int
+    due_soon: int
+
+
 class DescriptionSuggestion(BaseModel):
     """A description typed before, with what was last filed under it."""
 
@@ -370,3 +551,6 @@ class TransactionImportRequest(BaseModel):
     filename: str = ""
     detected_format: str = ""
     detect_duplicates: bool = True
+    # Set when the rows came from a document read by a model (ADR 0037): the
+    # read is marked confirmed, with the rows as the person kept them.
+    document_extraction_id: Optional[uuid.UUID] = None

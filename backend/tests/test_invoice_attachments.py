@@ -267,6 +267,53 @@ async def test_a_download_returns_the_bytes_that_were_stored(
     assert resp.content == payload
 
 
+def _delete_stored_files(base):
+    for path in base.rglob("*"):
+        if path.is_file():
+            path.unlink()
+
+
+@pytest.mark.asyncio
+async def test_a_download_whose_file_vanished_is_a_404(
+    client: AsyncClient, biz_headers, monkeypatch, tmp_path
+):
+    """Row in the ledger, bytes gone from storage: 404, not 500."""
+    from app.core.config import get_settings
+
+    monkeypatch.setattr(get_settings(), "storage_local_path", str(tmp_path))
+    invoice = await make_invoice(client, biz_headers)
+    attachment = (await upload(client, biz_headers, invoice["id"])).json()
+    _delete_stored_files(tmp_path)
+
+    resp = await client.get(
+        f"/api/invoices/{invoice['id']}/attachments/{attachment['id']}",
+        headers=biz_headers,
+    )
+    assert resp.status_code == 404
+    assert resp.json()["detail"] == "Attachment file is missing from storage"
+
+
+@pytest.mark.asyncio
+async def test_a_filed_document_gone_from_storage_has_no_pdf_to_give(
+    client: AsyncClient, biz_headers, monkeypatch, tmp_path
+):
+    """The filed document is served when asked for the PDF. When its bytes
+    are gone, that is a 404, not a 500."""
+    from app.core.config import get_settings
+
+    monkeypatch.setattr(get_settings(), "storage_local_path", str(tmp_path))
+    invoice = await make_invoice(
+        client, biz_headers, direction="payable", origin="imported",
+        external_source="email", external_id="gone-from-storage",
+    )
+    await upload(client, biz_headers, invoice["id"], kind="bill")
+    _delete_stored_files(tmp_path)
+
+    resp = await client.get(f"/api/invoices/{invoice['id']}/pdf", headers=biz_headers)
+    assert resp.status_code == 404
+    assert resp.json()["detail"] == "Attachment file is missing from storage"
+
+
 @pytest.mark.asyncio
 async def test_an_import_with_nothing_filed_has_no_pdf_to_give(
     client: AsyncClient, biz_headers
@@ -362,3 +409,93 @@ async def test_a_resync_of_the_same_file_lands_on_the_row_it_wrote(
         f"/api/invoices/{invoice['id']}/attachments", headers=biz_headers
     )
     assert len(listing.json()) == 1
+
+
+# ---------------------------------------------------------------------------
+# Served type
+# ---------------------------------------------------------------------------
+HTML = b"<script>alert(localStorage.getItem('token'))</script>"
+
+
+async def upload_claiming(client, headers, invoice_id, filename, content_type):
+    resp = await client.post(
+        f"/api/invoices/{invoice_id}/attachments",
+        headers=headers,
+        files={"file": (filename, HTML, content_type)},
+    )
+    assert resp.status_code == 201, resp.text
+    return resp.json()
+
+
+@pytest.mark.asyncio
+async def test_a_file_is_served_as_its_extension_not_the_type_it_claims(
+    client: AsyncClient, biz_headers
+):
+    invoice = await make_invoice(client, biz_headers)
+    attachment = await upload_claiming(
+        client, biz_headers, invoice["id"], "invoice.pdf", "text/html"
+    )
+    assert attachment["content_type"] == "application/pdf"
+
+    resp = await client.get(
+        f"/api/invoices/{invoice['id']}/attachments/{attachment['id']}", headers=biz_headers
+    )
+    assert resp.headers["content-type"] == "application/pdf"
+
+
+@pytest.mark.asyncio
+async def test_a_file_already_stored_with_a_claimed_type_is_served_by_its_extension(
+    client: AsyncClient, biz_headers, session: AsyncSession
+):
+    from sqlalchemy import update
+
+    from app.models.invoice_attachment import InvoiceAttachment
+
+    invoice = await make_invoice(client, biz_headers)
+    attachment = await upload_claiming(
+        client, biz_headers, invoice["id"], "invoice.pdf", "application/pdf"
+    )
+    await session.execute(
+        update(InvoiceAttachment)
+        .where(InvoiceAttachment.id == uuid.UUID(attachment["id"]))
+        .values(content_type="text/html")
+    )
+    await session.commit()
+
+    resp = await client.get(
+        f"/api/invoices/{invoice['id']}/attachments/{attachment['id']}", headers=biz_headers
+    )
+    assert resp.headers["content-type"] == "application/pdf"
+
+
+@pytest.mark.asyncio
+async def test_an_extension_without_a_known_type_is_served_as_bytes(
+    client: AsyncClient, biz_headers, monkeypatch
+):
+    from app.core.config import get_settings
+
+    monkeypatch.setattr(get_settings(), "storage_allowed_extensions", "pdf,svg")
+    invoice = await make_invoice(client, biz_headers)
+    attachment = await upload_claiming(
+        client, biz_headers, invoice["id"], "logo.svg", "image/svg+xml"
+    )
+
+    resp = await client.get(
+        f"/api/invoices/{invoice['id']}/attachments/{attachment['id']}", headers=biz_headers
+    )
+    assert resp.headers["content-type"] == "application/octet-stream"
+
+
+@pytest.mark.asyncio
+async def test_an_xml_document_is_filed_and_handed_over_as_a_download(client: AsyncClient, biz_headers):
+    """A fiscal XML files like any document, and is downloaded, never shown as a page (ADR 0036)."""
+    invoice = await make_invoice(client, biz_headers)
+    attachment = await upload_claiming(client, biz_headers, invoice["id"], "nfe.xml", "application/xml")
+    assert attachment["content_type"] == "application/octet-stream"
+
+    resp = await client.get(
+        f"/api/invoices/{invoice['id']}/attachments/{attachment['id']}", headers=biz_headers
+    )
+    assert resp.headers["content-type"] == "application/octet-stream"
+    assert resp.headers["content-disposition"] == 'attachment; filename="nfe.xml"'
+    assert resp.headers["x-content-type-options"] == "nosniff"

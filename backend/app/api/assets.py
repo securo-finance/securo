@@ -1,6 +1,7 @@
 import json
 import logging
 import uuid
+from typing import Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 from fastapi.responses import Response
@@ -9,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.auth import current_active_user
 from app.core.config import get_settings
 from app.core.database import get_async_session
+from app.core.money import MoneyOutOfRange
 from app.core.workspace_context import (
     WorkspaceContext,
     current_workspace,
@@ -32,6 +34,7 @@ from app.schemas.asset_import import (
 from app.schemas.asset import (
     AssetBuyCreate,
     AssetCreate,
+    AssetPriceRefreshResult,
     AssetRead,
     AssetTransactionCreate,
     AssetTransactionRead,
@@ -40,6 +43,7 @@ from app.schemas.asset import (
     AssetValueCreate,
     AssetValueRead,
     BenchmarkMatch,
+    HoldingTradeImportIssueRead,
     HoldingTradeImportRead,
     MarketSymbolMatch,
     MarketSymbolQuote,
@@ -75,17 +79,24 @@ async def market_search(
     # Upper bound is generous so the Tesouro Direto dropdown can list every
     # open bond (~60 and growing); ticker autocomplete still requests ~15.
     limit: int = Query(15, ge=1, le=300),
-    _: User = Depends(current_active_user),
+    currency: Optional[str] = Query(
+        None,
+        min_length=3,
+        max_length=3,
+        description="Quote currency to prefer for cryptocurrency pairs",
+    ),
+    ctx: WorkspaceContext = Depends(current_workspace),
 ) -> list[MarketSymbolMatch]:
     """Autocomplete ticker symbols for the Add-Asset form.
 
-    Intentionally thin — just proxies to the configured market-price
-    provider. Upstream errors turn into an empty list so the UI degrades
+    Just proxies to the configured market-price provider and ranks what comes
+    back (exact matches first, a coin's pair in the workspace's own currency
+    first). Upstream errors turn into an empty list so the UI degrades
     gracefully (a user typing a query shouldn't ever see a 500).
     """
     provider = get_market_price_provider()
     try:
-        return await provider.search(q, limit=limit)
+        matches = await provider.search(q, limit=limit)
     except MarketPriceRateLimitedError:
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
@@ -94,6 +105,8 @@ async def market_search(
     except Exception:
         logger.exception("Market search failed for %r", q)
         return []
+    preferred = currency or ctx.workspace.default_currency
+    return asset_service.rank_symbol_matches(matches, q, preferred)
 
 
 @router.get("/market/quote", response_model=MarketSymbolQuote)
@@ -150,10 +163,14 @@ async def benchmark_search(
 
 
 async def _trade_import_read(session: AsyncSession, workspace_id: uuid.UUID) -> HoldingTradeImportRead:
-    available, enabled = await connection_service.holding_trade_import_status(
+    available, enabled, issues = await connection_service.holding_trade_import_status(
         session, workspace_id
     )
-    return HoldingTradeImportRead(available=available, enabled=enabled)
+    return HoldingTradeImportRead(
+        available=available,
+        enabled=enabled,
+        issues=[HoldingTradeImportIssueRead(**vars(issue)) for issue in issues],
+    )
 
 
 @router.get("/performance/trade-import", response_model=HoldingTradeImportRead)
@@ -198,11 +215,6 @@ async def portfolio_performance(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="provider and benchmark must contain the same number of values",
         )
-    if len(providers) > 5:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            detail="A maximum of five benchmarks can be compared",
-        )
     if any(item not in {"yahoo", "b3"} for item in providers):
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
@@ -213,7 +225,18 @@ async def portfolio_performance(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="Invalid benchmark symbol",
         )
-    comparisons = list(dict.fromkeys(zip(providers, symbols, strict=True)))
+    # Providers read symbols case-insensitively (history upper-cases them),
+    # so `spy` and `SPY` are one comparison. The first spelling is kept: the
+    # client keys each series by the provider and symbol it sent.
+    unique: dict[tuple[str, str], tuple[str, str]] = {}
+    for provider_name, symbol in zip(providers, symbols, strict=True):
+        unique.setdefault((provider_name, symbol.upper()), (provider_name, symbol))
+    comparisons = list(unique.values())
+    if len(comparisons) > 5:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="A maximum of five benchmarks can be compared",
+        )
     if not get_settings().performance_benchmarks_enabled:
         # The portfolio's own return needs no external data; a stale client
         # still asking for indices just gets it without them.
@@ -292,6 +315,35 @@ async def refresh_asset_price(
     return refreshed
 
 
+@router.post("/refresh-prices", response_model=AssetPriceRefreshResult)
+async def refresh_all_asset_prices(
+    ctx: WorkspaceContext = Depends(current_writable_workspace),
+    session: AsyncSession = Depends(get_async_session),
+) -> AssetPriceRefreshResult:
+    """Re-quote every market-priced asset of the current workspace (issue #778).
+
+    Same work the daily task does, on demand and narrowed to one workspace —
+    the scheduled sweep covers every tenant, so it must never be reused here
+    as-is. ``skipped`` counts holdings the provider had no price for (delisted
+    tickers, a failed per-symbol fallback); those keep their last known price.
+    """
+    summary = await asset_service.refresh_all_market_prices(
+        session, workspace_id=ctx.workspace.id
+    )
+    if summary["rate_limited"]:
+        # The service commits whatever it refreshed before the provider
+        # refused, so the counters are real: the caller refetches and can say
+        # how many prices already changed instead of losing that information.
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail={
+                "message": "Market data provider is currently rate-limiting. Try again in a minute.",
+                **AssetPriceRefreshResult(**summary).model_dump(),
+            },
+        )
+    return AssetPriceRefreshResult(**summary)
+
+
 @router.get("", response_model=list[AssetRead])
 async def list_assets(
     include_archived: bool = False,
@@ -332,12 +384,13 @@ async def portfolio_trend(
 @router.get("/transactions", response_model=list[AssetTransactionRead])
 async def list_workspace_transactions(
     ticker: str | None = Query(None, max_length=32),
-    kind: str | None = Query(None, pattern="^(buy|sell)$"),
+    kind: str | None = Query(None, pattern="^(buy|sell|split)$"),
     limit: int = Query(500, ge=1, le=2000),
     ctx: WorkspaceContext = Depends(current_workspace),
     session: AsyncSession = Depends(get_async_session),
 ):
-    """All buy/sell transactions in the workspace — powers the Transactions tab."""
+    """All ledger entries (buys, sells and splits) in the workspace — powers the
+    Transactions tab."""
     return await asset_transaction_service.list_workspace_transactions(
         session, ctx.workspace.id, ticker=ticker, kind=kind, limit=limit
     )
@@ -401,12 +454,12 @@ async def preview_asset_import(
             detail="Market data provider is currently rate-limiting. Try again in a minute.",
         )
 
-    # The dry run rejects rows the parser could not know about — an unknown
-    # ticker, a sell with nothing to sell. Drop those from the list too, so the
-    # table, the count and the button all describe the same import.
-    rejected = {e.row for e in summary["errors"]}
+    # The dry run leaves out the rows it rejects (an unknown ticker, a sell
+    # with nothing to sell) and the ones already in the ledger, and hands back
+    # what each kept row is worth in its own currency, so the table, the count
+    # and the button all describe the same import.
     return AssetImportPreview(
-        orders=[o for o in orders if o.row not in rejected],
+        orders=summary["orders"],
         errors=errors + summary["errors"],
         warnings=summary["warnings"],
         csv_columns=columns,
@@ -533,7 +586,10 @@ async def create_asset(
     ctx: WorkspaceContext = Depends(current_writable_workspace),
     session: AsyncSession = Depends(get_async_session),
 ):
-    return await asset_service.create_asset(session, ctx.workspace.id, ctx.user_id, data)
+    try:
+        return await asset_service.create_asset(session, ctx.workspace.id, ctx.user_id, data)
+    except MoneyOutOfRange as e:
+        raise HTTPException(status_code=422, detail=str(e))
 
 
 @router.patch("/{asset_id}", response_model=AssetRead)
@@ -544,9 +600,12 @@ async def update_asset(
     ctx: WorkspaceContext = Depends(current_writable_workspace),
     session: AsyncSession = Depends(get_async_session),
 ):
-    asset = await asset_service.update_asset(
-        session, asset_id, ctx.workspace.id, ctx.user_id, data, regenerate_growth=regenerate_growth
-    )
+    try:
+        asset = await asset_service.update_asset(
+            session, asset_id, ctx.workspace.id, ctx.user_id, data, regenerate_growth=regenerate_growth
+        )
+    except MoneyOutOfRange as e:
+        raise HTTPException(status_code=422, detail=str(e))
     if not asset:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Asset not found")
     return asset
@@ -595,7 +654,10 @@ async def add_asset_value(
     ctx: WorkspaceContext = Depends(current_writable_workspace),
     session: AsyncSession = Depends(get_async_session),
 ):
-    value = await asset_service.add_asset_value(session, asset_id, ctx.workspace.id, data)
+    try:
+        value = await asset_service.add_asset_value(session, asset_id, ctx.workspace.id, data)
+    except MoneyOutOfRange as e:
+        raise HTTPException(status_code=422, detail=str(e))
     if value is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Asset not found")
     return value

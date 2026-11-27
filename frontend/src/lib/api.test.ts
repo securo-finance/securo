@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { InternalAxiosRequestConfig } from 'axios'
-import { api, rules } from '@/lib/api'
+import { api, assets, notifications, rules } from '@/lib/api'
 import { DATA_CHANGED_KEY } from '@/lib/data-changed'
 
 // The interceptor under test only looks at method + success, so a fake
@@ -53,5 +53,59 @@ describe('api data-change signal (issue #763)', () => {
       )
     await expect(api.post('/transactions', {})).rejects.toThrow()
     expect(localStorage.getItem(DATA_CHANGED_KEY)).toBeNull()
+  })
+})
+
+describe('api data-change signal on a rate-limited price refresh (issue #778)', () => {
+  const reject429 = (detail: unknown) => {
+    api.defaults.adapter = (config: InternalAxiosRequestConfig) =>
+      Promise.reject(
+        Object.assign(new Error('rate limited'), {
+          config,
+          response: { status: 429, data: { detail } },
+        }),
+      )
+  }
+
+  beforeEach(() => {
+    localStorage.clear()
+    vi.restoreAllMocks()
+  })
+
+  it('bumps when the provider stopped after some prices were committed', async () => {
+    // The other tabs never see that partial write otherwise: the response
+    // interceptor only signals on success.
+    const detail = { message: 'slow down', refreshed: 2, skipped: 1, rate_limited: 1 }
+    reject429(detail)
+    // The caller still gets the real 429 and its counters: the page reads
+    // `detail.refreshed` to refetch and to say how many prices came in.
+    await expect(assets.refreshPrices('ws-1')).rejects.toMatchObject({
+      response: { status: 429, data: { detail } },
+    })
+    expect(localStorage.getItem(DATA_CHANGED_KEY)).toBeTruthy()
+  })
+
+  it('leaves the signal alone when nothing was written before the 429', async () => {
+    const detail = { message: 'slow down', refreshed: 0, skipped: 3, rate_limited: 1 }
+    reject429(detail)
+    await expect(assets.refreshPrices('ws-1')).rejects.toMatchObject({
+      response: { status: 429, data: { detail } },
+    })
+    expect(localStorage.getItem(DATA_CHANGED_KEY)).toBeNull()
+  })
+})
+
+describe('a notification preference that waited in line', () => {
+  it('goes to the workspace it was chosen in, whatever another tab made current', async () => {
+    const sent: unknown[] = []
+    api.defaults.adapter = (config: InternalAxiosRequestConfig) => {
+      sent.push(config.headers['X-Workspace-Id'])
+      return okAdapter(config)
+    }
+    localStorage.setItem('workspace_id', 'ws-2')
+    await notifications.list()
+    const change = { kind: 'backup_failed', channel: 'in_app', enabled: false } as const
+    await notifications.setPreference({ ...change, workspaceId: 'ws-1' })
+    expect(sent).toEqual(['ws-2', 'ws-1'])
   })
 })

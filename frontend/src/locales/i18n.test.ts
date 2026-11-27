@@ -202,6 +202,58 @@ describe('i18n locale files', () => {
     }
   })
 
+  it('contains every locale plural form used by backup count summaries', () => {
+    const entities = ['accounts', 'transactions', 'categories', 'rules', 'budgets', 'goals']
+
+    for (const locale of LOCALES) {
+      const data = JSON.parse(readRaw(locale)) as {
+        backup: { counts: Record<string, string> }
+      }
+      const categories = new Intl.PluralRules(locale).resolvedOptions().pluralCategories
+      const missing = entities.flatMap((entity) =>
+        categories
+          .map((category) => `${entity}_${category}`)
+          .filter((key) => !data.backup.counts[key]?.includes('{{count}}')),
+      )
+      expect(missing, `Backup count plural forms missing in ${locale}:`).toEqual([])
+    }
+  })
+
+  it('contains every locale plural form used by the price refresh toast', () => {
+    const counts = ['refreshAllPricesUpdated', 'refreshAllPricesNoQuote', 'refreshAllPricesLeftOut']
+
+    for (const locale of LOCALES) {
+      const data = JSON.parse(readRaw(locale)) as { assets: Record<string, string> }
+      const categories = new Intl.PluralRules(locale).resolvedOptions().pluralCategories
+      const missing = counts.flatMap((key) =>
+        categories
+          .map((category) => `${key}_${category}`)
+          .filter((k) => !data.assets[k]?.includes('{{count}}')),
+      )
+      expect(missing, `Price refresh plural forms missing in ${locale}:`).toEqual([])
+    }
+  })
+
+  // i18next v21+ reads _one/_other/_few/..., not the v3 `_plural` suffix. A
+  // key left on `_plural` is never looked up, so the calendar said "3 item".
+  it('uses no retired _plural suffix', () => {
+    for (const locale of LOCALES) {
+      const legacy = flattenKeys(JSON.parse(readRaw(locale))).filter((key) => key.endsWith('_plural'))
+      expect(legacy, `Legacy _plural keys in ${locale}:`).toEqual([])
+    }
+  })
+
+  it('contains every locale plural form used by the calendar day item count', () => {
+    for (const locale of LOCALES) {
+      const data = JSON.parse(readRaw(locale)) as { transactions: Record<string, string> }
+      const categories = new Intl.PluralRules(locale).resolvedOptions().pluralCategories
+      const missing = categories
+        .map((category) => `calendarItemCount_${category}`)
+        .filter((k) => !data.transactions[k]?.includes('{{count}}'))
+      expect(missing, `Calendar item count plural forms missing in ${locale}:`).toEqual([])
+    }
+  })
+
   // Every screen that offers a language picker reads SUPPORTED_LANGS, so a
   // translation that ships a bundle without landing in that list is offered
   // nowhere. Read the source rather than importing it: the module initialises
@@ -279,6 +331,32 @@ describe('i18n locale files', () => {
       expect(
         required.filter((key) => !keys.has(key)),
         `Portfolio performance labels missing in ${locale}:`,
+      ).toEqual([])
+    }
+  })
+
+  // The price-history surface keys are required by both row consumers, so
+  // assert them explicitly in addition to the en-driven parity checks above.
+  it('contains price-history labels in every locale', () => {
+    const required = [
+      'recurring.priceHistory',
+      'recurring.viewPriceHistory',
+      'recurring.priceChangesTitle',
+      'recurring.priceChangesEmpty',
+      'recurring.priceChangeBadge',
+      'recurring.priceChangeIncrease',
+      'recurring.priceChangeDecrease',
+      'recurring.priceChangeAmount',
+      'recurring.priceChangeDelta',
+      'recurring.priceChangeGap',
+      'recurring.priceChangeInsufficient',
+    ]
+
+    for (const locale of LOCALES) {
+      const keys = new Set(flattenKeys(JSON.parse(readRaw(locale))))
+      expect(
+        required.filter((key) => !keys.has(key)),
+        `Price-history labels missing in ${locale}:`,
       ).toEqual([])
     }
   })

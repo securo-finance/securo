@@ -7,26 +7,38 @@ from pydantic import BaseModel
 
 
 class AssetOrderImport(BaseModel):
-    """One buy or sell read from the file, before it reaches a holding."""
+    """One buy, sell or split read from the file, before it reaches a holding."""
 
     row: int  # 1-based line in the source file, so an error can point at it
     ticker: str
     date: date
-    kind: str  # buy | sell
-    quantity: Decimal
-    price: Decimal
+    kind: str  # buy | sell | split
+    quantity: Decimal  # 0 on a split
+    price: Decimal  # 0 on a split
     fee: Decimal = Decimal("0")
     currency: Optional[str] = None
     name: Optional[str] = None
     notes: Optional[str] = None
     external_id: Optional[str] = None
+    # Split only: `old_units` held before it became `new_units` after it.
+    old_units: Optional[int] = None
+    new_units: Optional[int] = None
+    # Preview only: the file paid in another currency, and this is what the
+    # price and the fee become at the row's own date's rate. They are shown,
+    # never read back: the import converts the file's own numbers again.
+    converted_price: Optional[Decimal] = None
+    converted_fee: Optional[Decimal] = None
+    converted_currency: Optional[str] = None
 
 
 class AssetImportRowError(BaseModel):
     """A row that will not be imported, and why, named by its line number."""
 
     row: int
-    reason: str  # missing_ticker | invalid_date | invalid_quantity | invalid_price | invalid_kind | unknown_ticker | oversell
+    # missing_ticker | invalid_date | invalid_quantity | invalid_price | invalid_fee | invalid_kind
+    # | invalid_split | unknown_ticker | oversell | split_not_allowed | split_in_future
+    # | nothing_held_before_split | too_large | no_fx_rate | possible_duplicate
+    reason: str
     ticker: Optional[str] = None
     detail: Optional[str] = None
 

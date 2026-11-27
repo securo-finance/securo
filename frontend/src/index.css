@@ -26,11 +26,24 @@
   --input: #E8ECF1;
   --ring: #6366F1;
   --radius: 0.625rem;
+  /* Series in charts, in order; a theme can replace them. */
   --chart-1: #6366F1;
-  --chart-2: #8B5CF6;
+  --chart-2: #F59E0B;
   --chart-3: #10B981;
-  --chart-4: #F59E0B;
-  --chart-5: #F43F5E;
+  --chart-4: #EC4899;
+  --chart-5: #0EA5E9;
+  --chart-6: #8B5CF6;
+  --chart-7: #F97316;
+  --chart-8: #14B8A6;
+  --chart-9: #84CC16;
+  --chart-10: #D946EF;
+  --chart-11: #F43F5E;
+  --chart-12: #06B6D4;
+  /* "Other", a comparison or a range: present but not the subject. */
+  --chart-muted: #94A3B8;
+  /* Money in and money out, wherever a chart draws them. */
+  --chart-income: #10B981;
+  --chart-expense: #F43F5E;
   --sidebar: #FFFFFF;
   --sidebar-foreground: #0F172A;
   --sidebar-primary: #6366F1;
@@ -104,6 +117,9 @@
   --color-chart-3: var(--chart-3);
   --color-chart-4: var(--chart-4);
   --color-chart-5: var(--chart-5);
+  --color-chart-muted: var(--chart-muted);
+  --color-chart-income: var(--chart-income);
+  --color-chart-expense: var(--chart-expense);
   --color-sidebar: var(--sidebar);
   --color-sidebar-foreground: var(--sidebar-foreground);
   --color-sidebar-primary: var(--sidebar-primary);
@@ -115,19 +131,54 @@
   --color-sidebar-muted: var(--sidebar-muted);
 }
 
+/*
+ * Directional icons and arrows point the other way in right-to-left layouts:
+ * "next", "forward" and "open" lead toward the left there. Lucide icons are
+ * matched by class; text arrows use .rtl-mirror. Opt an icon out with
+ * .rtl-no-flip when its direction is handled on its own.
+ */
+[dir='rtl']
+  :is(
+    .lucide-arrow-left,
+    .lucide-arrow-right,
+    .lucide-chevron-left,
+    .lucide-chevron-right,
+    .lucide-chevrons-left,
+    .lucide-chevrons-right,
+    .lucide-move-left,
+    .lucide-move-right,
+    .rtl-mirror
+  ):not(.rtl-no-flip) {
+  transform: scaleX(-1);
+}
+
+.rtl-mirror {
+  display: inline-block;
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;
   }
   body {
     @apply bg-background text-foreground;
-    font-family: 'Geist', 'Inter', system-ui, -apple-system, sans-serif;
+    font-family: var(--app-font, 'Geist', 'Inter', system-ui, -apple-system, sans-serif);
     font-feature-settings: "cv02","cv03","cv04","cv11";
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
   }
   h1, h2, h3 {
     letter-spacing: -0.035em;
+  }
+}
+
+/* Installed PWA: there is no browser chrome to refresh from, so a rubber-band
+   pull on the page itself only reads as a glitch. Browser tabs keep the
+   native pull-to-refresh. */
+@media (display-mode: standalone) {
+  html,
+  body {
+    overscroll-behavior-y: none;
   }
 }
 

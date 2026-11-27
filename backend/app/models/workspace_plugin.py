@@ -9,7 +9,7 @@ from app.core.database import Base
 
 
 class WorkspacePlugin(Base):
-    """A data plugin from the catalog installed in a workspace, and at which commit.
+    """A plugin from the catalog installed in a workspace, and at which commit.
 
     The items it created carry their own origin (`PluginOrigin`); this row is
     what tells an update apart and what the catalog shows as installed.
@@ -28,6 +28,9 @@ class WorkspacePlugin(Base):
     name: Mapped[dict[str, str]] = mapped_column(JSON, default=dict)
     version: Mapped[str] = mapped_column(String(32))
     commit: Mapped[str] = mapped_column(String(40))
+    # For a plugin with code: the manifest that was consented to (integrations,
+    # hosts, scopes), so connections can be set up without the catalog.
+    manifest: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     installed_by: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )

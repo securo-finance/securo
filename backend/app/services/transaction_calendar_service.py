@@ -1,4 +1,5 @@
 import uuid
+from collections.abc import Sequence
 from datetime import date, timedelta
 from decimal import Decimal
 from typing import Literal, Optional, cast
@@ -9,6 +10,7 @@ from sqlalchemy.orm import selectinload
 
 from app.core.app_clock import app_today
 from app.core.config import get_settings
+from app.core.currency import same_currency
 from app.models.account import Account
 from app.models.category import Category
 from app.models.recurring_transaction import RecurringTransaction
@@ -24,7 +26,10 @@ from app.services.dashboard_service import (
     _daily_balance_deltas_by_date,
     _get_forecast_transactions,
 )
+from app.services._query_filters import reporting_date_col, reporting_date_value
+from app.services.admin_service import get_credit_card_accounting_mode
 from app.services.fx_rate_service import convert as fx_convert
+from app.services.viewer_currency import ViewerCurrency, viewer_currency
 from app.services.recurring_transaction_service import (
     adjust_weekend_date,
     get_occurrences_in_range,
@@ -37,6 +42,7 @@ async def get_transaction_calendar(
     user_id: uuid.UUID,
     month: Optional[date] = None,
     account_ids: Optional[list[uuid.UUID]] = None,
+    date_basis: Literal["reporting", "bank"] = "reporting",
 ) -> TransactionCalendarResponse:
     """Build a read-only month-grid transaction calendar.
 
@@ -61,6 +67,19 @@ async def get_transaction_calendar(
 
     user = await session.get(User, user_id)
     primary_currency = user.primary_currency if user else get_settings().default_currency
+    # Another member's row is stamped in their display currency; the day
+    # panel shows it in the viewer's, like the list (#269, #440).
+    viewer = await viewer_currency(session, primary_currency)
+    accounting_mode = (
+        await get_credit_card_accounting_mode(session)
+        if date_basis == "reporting"
+        else "cash"
+    )
+    activity_date_col = (
+        reporting_date_col(accounting_mode)
+        if date_basis == "reporting"
+        else Transaction.date
+    )
 
     requested_account_ids = account_ids
     if requested_account_ids is not None and len(requested_account_ids) == 0:
@@ -102,7 +121,12 @@ async def get_transaction_calendar(
             )
 
     actual_rows = await _load_actual_transactions(
-        session, workspace_id, grid_start, grid_end, requested_account_ids
+        session,
+        workspace_id,
+        grid_start,
+        grid_end,
+        requested_account_ids,
+        activity_date_col,
     )
     balance_deltas = await _daily_balance_deltas_by_date(
         session,
@@ -113,12 +137,11 @@ async def get_transaction_calendar(
         account_ids=requested_account_ids,
     )
     for tx in actual_rows:
-        if tx.date not in days:
+        activity_date = _activity_date(tx, date_basis, accounting_mode)
+        if activity_date not in days:
             continue
-        day = days[tx.date]
-        amount_primary = await _positive_primary_amount(
-            session, tx.amount, tx.currency, primary_currency, tx.amount_primary
-        )
+        day = days[activity_date]
+        amount_primary = await _viewer_primary_amount(session, viewer, tx, primary_currency)
 
         parts = _category_parts(tx)
         is_transfer = _is_transfer_item(tx, parts)
@@ -146,19 +169,26 @@ async def get_transaction_calendar(
                         day.has_expense = True
 
         day.actual_count += 1
-        day.items.append(_actual_item(tx, amount_primary, is_transfer, ignored))
+        day.items.append(
+            _actual_item(tx, activity_date, amount_primary, is_transfer, ignored)
+        )
 
     forecast_rows = await _get_forecast_transactions(
-        session, workspace_id, grid_start, grid_end, requested_account_ids
+        session,
+        workspace_id,
+        grid_start,
+        grid_end,
+        requested_account_ids,
+        range_date_col=activity_date_col,
+        future_date_col=Transaction.date,
     )
     forecast_deltas: dict[date, float] = {}
     for tx in forecast_rows:
-        if tx.date not in days:
+        activity_date = _activity_date(tx, date_basis, accounting_mode)
+        if activity_date not in days:
             continue
-        day = days[tx.date]
-        amount_primary = await _positive_primary_amount(
-            session, tx.amount, tx.currency, primary_currency, tx.amount_primary
-        )
+        day = days[activity_date]
+        amount_primary = await _viewer_primary_amount(session, viewer, tx, primary_currency)
         parts = _category_parts(tx)
         is_transfer = _is_transfer_item(tx, parts)
         ignored = bool(tx.is_ignored or (tx.category and tx.category.is_ignored))
@@ -180,7 +210,9 @@ async def get_transaction_calendar(
                     day.projected_expense += amount_primary * ratio
                     day.has_expense = True
         day.projected_count += 1
-        day.items.append(_forecast_item(tx, amount_primary, is_transfer, ignored))
+        day.items.append(
+            _forecast_item(tx, activity_date, amount_primary, is_transfer, ignored)
+        )
 
         # Forecast rows are excluded from actual deltas but included in the
         # projected walk. The seed already contains forecast rows before the
@@ -297,14 +329,15 @@ async def _load_actual_transactions(
     start: date,
     end: date,
     account_ids: Optional[list[uuid.UUID]],
+    activity_date_col,
 ) -> list[Transaction]:
     stmt = (
         select(Transaction)
         .outerjoin(Category, Transaction.category_id == Category.id)
         .where(
             Transaction.workspace_id == workspace_id,
-            Transaction.date >= start,
-            Transaction.date < end,
+            activity_date_col >= start,
+            activity_date_col < end,
             Transaction.date <= app_today(),
             Transaction.status == "posted",
         )
@@ -313,7 +346,7 @@ async def _load_actual_transactions(
             selectinload(Transaction.category),
             selectinload(Transaction.payee_entity),
         )
-        .order_by(Transaction.date.asc(), Transaction.created_at.asc())
+        .order_by(activity_date_col.asc(), Transaction.created_at.asc())
     )
     if account_ids is not None:
         stmt = stmt.where(Transaction.account_id.in_(account_ids))
@@ -338,18 +371,52 @@ def _category_parts(tx: Transaction) -> list[tuple[Optional[Category], float]]:
 
 
 def _is_transfer_part(tx: Transaction, category: Optional[Category]) -> bool:
-    return (
-        bool(tx.transfer_pair_id)
-        or tx.source == "transfer"
-        or bool(category and category.treat_as_transfer)
+    """Whether one part of the row moves money between two accounts.
+
+    The same rule as `_query_filters.is_transfer`: a linked pair leg or a
+    transfer category. `source == "transfer"` alone is not one. A transfer is
+    always written as two legs, so a `source` row with no pair is a leg whose
+    pair was unlinked or whose other side was deleted, and the profit and loss
+    figures count it as income or expense. Badging it as a transfer here would
+    make the calendar disagree with the totals of the same screen.
+    """
+    return bool(tx.transfer_pair_id) or bool(category and category.treat_as_transfer)
+
+
+def _all_parts_are_transfers(
+    parts: Sequence[tuple[Optional[Category], float]],
+) -> bool:
+    """Every part left to count is transfer-like, and at least one is left.
+
+    The empty case is the point: `all([])` is True, so a split whose lines
+    were all dropped (their categories are ignored) used to read as a
+    transfer even though nothing of it counts as a transfer at all.
+    """
+    return bool(parts) and all(
+        bool(category and category.treat_as_transfer) for category, _ in parts
     )
 
 
 def _is_transfer_item(tx: Transaction, parts: list[tuple[Optional[Category], float]]) -> bool:
-    """The row reads as a transfer only when all of it is one."""
-    return bool(tx.transfer_pair_id) or all(
-        bool(category and category.treat_as_transfer) for category, _ in parts
-    )
+    """Whether the row itself is badged as a transfer.
+
+    A linked pair leg is a transfer on its own, and so is a split whose every
+    counted part sits in a transfer category. A row with a transfer part and
+    an expense part is not a transfer row: it simply lands part by part in the
+    day's buckets. `source == "transfer"` without a pair is not enough, since
+    the totals count that row as income or expense (issue #993).
+    """
+    return bool(tx.transfer_pair_id) or _all_parts_are_transfers(parts)
+
+
+def _activity_date(
+    tx: Transaction,
+    date_basis: Literal["reporting", "bank"],
+    accounting_mode: str,
+) -> date:
+    if date_basis == "bank":
+        return tx.date
+    return reporting_date_value(tx, accounting_mode)
 
 
 async def _positive_primary_amount(
@@ -367,16 +434,39 @@ async def _positive_primary_amount(
     return float(converted)
 
 
+async def _viewer_primary_amount(
+    session: AsyncSession, viewer: ViewerCurrency, tx: Transaction, primary_currency: str
+) -> float:
+    """A row's amount in the viewer's currency, as the list shows it.
+
+    Another member's stamp is converted from their currency (#269), and a
+    row already in the viewer's currency reads as its own amount (#463).
+    """
+    if viewer.stamp_currency(tx.user_id) != viewer.currency:
+        shown = await viewer.convert(
+            session, tx.user_id, tx.amount_primary, tx.date,
+            currency=tx.currency, amount=tx.amount,
+        )
+        if shown is not None:
+            return float(abs(shown))
+    return await _positive_primary_amount(
+        session, tx.amount, tx.currency, primary_currency, tx.amount_primary
+    )
+
+
 async def _signed_balance_delta_primary(
     session: AsyncSession,
     tx: Transaction,
     primary_currency: str,
 ) -> float:
     account_currency = tx.account.currency if tx.account else tx.currency
+    # A cross-currency row counts only once its account-currency amount was
+    # stamped; reading it 1:1 is how 700,000 CLP became 700,000 BRL (#353).
+    # The codes can differ by case, so compare them normalized.
     effective = (
         tx.amount
-        if tx.currency == account_currency
-        else Decimal(str(tx.amount_primary or tx.amount))
+        if same_currency(tx.currency, account_currency)
+        else Decimal(str(tx.amount_account or 0))
     )
     amount = abs(Decimal(str(effective)))
     if account_currency != primary_currency:
@@ -386,14 +476,18 @@ async def _signed_balance_delta_primary(
 
 
 def _actual_item(
-    tx: Transaction, amount_primary: float, is_transfer: bool, ignored: bool
+    tx: Transaction,
+    activity_date: date,
+    amount_primary: float,
+    is_transfer: bool,
+    ignored: bool,
 ) -> TransactionCalendarItem:
     category = tx.category
     account = tx.account
     return TransactionCalendarItem(
         kind="actual",
         id=tx.id,
-        date=tx.date,
+        date=activity_date,
         description=tx.description,
         amount=float(tx.amount),
         amount_primary=amount_primary,
@@ -416,14 +510,18 @@ def _actual_item(
 
 
 def _forecast_item(
-    tx: Transaction, amount_primary: float, is_transfer: bool, ignored: bool
+    tx: Transaction,
+    activity_date: date,
+    amount_primary: float,
+    is_transfer: bool,
+    ignored: bool,
 ) -> TransactionCalendarItem:
     category = tx.category
     account = tx.account
     return TransactionCalendarItem(
         kind="projected",
         id=tx.id,
-        date=tx.date,
+        date=activity_date,
         description=tx.description,
         amount=float(tx.amount),
         amount_primary=amount_primary,
@@ -459,24 +557,18 @@ def _count_occurrences_before(recurring: RecurringTransaction, end: date) -> int
         )
         range_end = min(range_end, final_effective + timedelta(days=1))
 
-    count = 0
-    while range_start < range_end:
-        # Weekly is the shortest supported cadence. Two hundred-week chunks
-        # stay within the occurrence helper's collection limit while allowing
-        # an arbitrarily long carry horizon.
-        chunk_end = min(range_start + timedelta(weeks=200), range_end)
-        occurrences = get_occurrences_in_range(
-            start=nominal_start,
-            frequency=recurring.frequency,
-            end_date=recurring.end_date,
-            range_start=range_start,
-            range_end=chunk_end,
-            intended_day=recurring.day_of_month or recurring.start_date.day,
-            weekend_adjustment=recurring.weekend_adjustment,
-        )
-        count += len(occurrences)
-        range_start = chunk_end
-    return count
+    # The helper stops at the requested range, so a long carry horizon is read
+    # in one pass; it used to stop at 201 occurrences, which this chunked loop
+    # worked around and which quietly undercounted anything longer (#1904).
+    return len(get_occurrences_in_range(
+        start=nominal_start,
+        frequency=recurring.frequency,
+        end_date=recurring.end_date,
+        range_start=range_start,
+        range_end=range_end,
+        intended_day=recurring.day_of_month or recurring.start_date.day,
+        weekend_adjustment=recurring.weekend_adjustment,
+    ))
 
 
 async def _project_recurring_items(
@@ -534,12 +626,18 @@ async def _project_recurring_items(
         is_ignored = bool(category and category.is_ignored)
         template_total = abs(float(rec.amount or 0))
         if rec.has_category_lines and rec.category_lines and template_total:
-            parts = [
-                (bool(line.category and line.category.treat_as_transfer), float(line.amount) / template_total)
+            part_categories = [
+                (line.category, float(line.amount) / template_total)
                 for line in rec.category_lines
                 if not (line.category and line.category.is_ignored)
             ]
-            is_transfer = all(part_is_transfer for part_is_transfer, _ in parts)
+            parts = [
+                (bool(category and category.treat_as_transfer), ratio)
+                for category, ratio in part_categories
+            ]
+            # Same rule as a posted split: nothing left to count is not a
+            # transfer (issue #993).
+            is_transfer = _all_parts_are_transfers(part_categories)
         else:
             parts = [(is_transfer, 1.0)]
         if not is_ignored:

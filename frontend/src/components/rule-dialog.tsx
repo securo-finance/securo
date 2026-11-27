@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { useInfiniteQuery } from '@tanstack/react-query'
+import { useInfiniteQuery, useQuery } from '@tanstack/react-query'
 import { getAccountName, sortAccountsByDisplayName } from '@/lib/account-utils'
 import { isInvalidDescriptionAction, parseRulePriority, previewableActions } from '@/lib/rule-form-utils'
 import { rules as rulesApi } from '@/lib/api'
@@ -41,6 +41,7 @@ const CONDITION_FIELDS = [
   { value: 'payee_id', label: 'rules.fieldPayee' },
   { value: 'date', label: 'rules.fieldDate' },
   { value: 'status', label: 'rules.fieldStatus' },
+  { value: 'provider_category', label: 'rules.fieldProviderCategory' },
 ] as const
 
 const STRING_OPS = [
@@ -131,7 +132,7 @@ function ConditionRow({
 }) {
   const { t } = useTranslation()
   return (
-    <div className="relative grid min-w-0 grid-cols-2 gap-2 pr-7 sm:flex sm:items-center sm:pr-0">
+    <div className="relative grid min-w-0 grid-cols-2 gap-2 pe-7 sm:flex sm:items-center sm:pe-0">
       <select
         className={`${SELECT_CLASS} w-full sm:w-32 sm:shrink-0`}
         value={condition.field}
@@ -197,11 +198,14 @@ function ConditionRow({
           onChange={(e) => onChange('value', e.target.value)}
           placeholder={condition.field === 'amount' ? '0.00' : condition.field === 'date' ? 'YYYY-MM-DD' : t('rules.valuePlaceholder')}
           type={condition.field === 'amount' ? 'number' : condition.field === 'date' ? 'date' : 'text'}
+          // The provider's label is not translated, so offer the exact values
+          // this workspace already received instead of making people type one.
+          list={condition.field === 'provider_category' ? 'provider-category-suggestions' : undefined}
         />
       )}
       <button
         type="button"
-        className="absolute right-0 top-1 shrink-0 p-1 text-muted-foreground transition-colors hover:text-rose-500 sm:static"
+        className="absolute end-0 top-1 shrink-0 p-1 text-muted-foreground transition-colors hover:text-rose-500 sm:static"
         onClick={onRemove}
       >
         <X size={13} />
@@ -345,24 +349,24 @@ function RulePreviewPanel({
               <div className="max-h-56 overflow-y-auto overflow-x-auto">
                 <table className="w-full text-xs">
                   <thead className="sticky top-0 bg-card text-muted-foreground">
-                    <tr className="border-b border-border text-left">
-                      <th className="py-1.5 pr-2 font-medium">{t('transactions.date')}</th>
-                      <th className="py-1.5 pr-2 font-medium">{t('transactions.description')}</th>
-                      <th className="py-1.5 pr-2 text-right font-medium">{t('transactions.amount')}</th>
+                    <tr className="border-b border-border text-start">
+                      <th className="py-1.5 pe-2 font-medium">{t('transactions.date')}</th>
+                      <th className="py-1.5 pe-2 font-medium">{t('transactions.description')}</th>
+                      <th className="py-1.5 pe-2 text-end font-medium">{t('transactions.amount')}</th>
                       <th className="py-1.5 font-medium">{t('transactions.category')}</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border">
                     {sample.map(item => (
                       <tr key={item.id} className={cn(!item.will_change && 'text-muted-foreground')}>
-                        <td className="whitespace-nowrap py-1.5 pr-2 tabular-nums">
+                        <td className="whitespace-nowrap py-1.5 pe-2 tabular-nums">
                           {new Date(item.date + 'T00:00:00').toLocaleDateString(dateLocale)}
                         </td>
-                        <td className="max-w-[22rem] truncate py-1.5 pr-2" title={item.description}>
+                        <td className="max-w-[22rem] truncate py-1.5 pe-2" title={item.description}>
                           {item.description}
                         </td>
                         <td className={cn(
-                          'whitespace-nowrap py-1.5 pr-2 text-right tabular-nums',
+                          'whitespace-nowrap py-1.5 pe-2 text-end tabular-nums',
                           item.will_change && (item.type === 'credit' ? 'text-emerald-600' : 'text-rose-500'),
                         )}>
                           {mask(formatSignedAmount(item.amount, item.type, item.currency, locale))}
@@ -476,6 +480,20 @@ export function RuleDialog({
     () => flattenConditions(conditions).some(c => c.field === 'amount'),
     [conditions],
   )
+  const hasProviderCategoryCondition = useMemo(
+    () => flattenConditions(conditions).some(c => c.field === 'provider_category'),
+    [conditions],
+  )
+
+  // Suggestions for the provider_category condition: the provider's own
+  // labels, which are not translated with the app (#280). Only fetched when a
+  // condition actually uses the field.
+  const { data: providerCategories = [] } = useQuery({
+    queryKey: ['rules', 'provider-categories'],
+    queryFn: () => rulesApi.providerCategories(),
+    enabled: open && hasProviderCategoryCondition,
+    staleTime: 60_000,
+  })
 
   function updateCondition(i: number, field: keyof RuleCondition, val: string | number) {
     setConditions(prev => prev.map((node, idx) => (
@@ -665,6 +683,16 @@ export function RuleDialog({
               {hasBlankCondition && (
                 <p className="text-xs text-rose-500">{t('rules.blankConditionValue')}</p>
               )}
+              {hasProviderCategoryCondition && (
+                <p className="text-xs text-muted-foreground">
+                  {t('rules.providerCategoryHint')}
+                </p>
+              )}
+              <datalist id="provider-category-suggestions">
+                {providerCategories.map(value => (
+                  <option key={value} value={value}>{value}</option>
+                ))}
+              </datalist>
               <div className="flex flex-wrap items-center gap-4">
                 <button
                   type="button"
@@ -696,7 +724,7 @@ export function RuleDialog({
                 const invalidDescription = isInvalidDescriptionAction(action)
                 return (
                   <div key={i} className="space-y-1">
-                    <div className="relative grid min-w-0 gap-2 pr-7 sm:flex sm:items-center sm:pr-0">
+                    <div className="relative grid min-w-0 gap-2 pe-7 sm:flex sm:items-center sm:pe-0">
                       <select
                         className={`${SELECT_CLASS} w-full sm:w-40 sm:shrink-0`}
                         value={action.op}
@@ -757,7 +785,7 @@ export function RuleDialog({
                       )}
                       <button
                         type="button"
-                        className="absolute right-0 top-1 shrink-0 p-1 text-muted-foreground transition-colors hover:text-rose-500 sm:static"
+                        className="absolute end-0 top-1 shrink-0 p-1 text-muted-foreground transition-colors hover:text-rose-500 sm:static"
                         onClick={() => removeAction(i)}
                       >
                         <X size={13} />
@@ -803,7 +831,7 @@ export function RuleDialog({
           </label>
 
           {applyToExisting && (
-            <label className="flex items-center gap-2 cursor-pointer pl-6">
+            <label className="flex items-center gap-2 cursor-pointer ps-6">
               <input
                 type="checkbox"
                 checked={overwriteExistingCategories}

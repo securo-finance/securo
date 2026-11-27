@@ -1,0 +1,555 @@
+import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { toast } from 'sonner'
+import axios from 'axios'
+import { Copy, FileUp, KeyRound, LogIn, Play, Plus, RefreshCw, Trash2 } from 'lucide-react'
+
+import { Button } from '@/components/ui/button'
+import { invalidateSyncedRecords } from '@/lib/invalidate-queries'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Skeleton } from '@/components/ui/skeleton'
+import { useWorkspace } from '@/contexts/workspace-context'
+import { plugins as pluginsApi } from '@/lib/api'
+import { localized } from '@/lib/localized-text'
+import { intervalLabel, relativeDate } from '@/lib/plugin-format'
+import { cn } from '@/lib/utils'
+import type { InstalledPlugin, PluginConnection, PluginField, PluginFileValue, PluginIntegration } from '@/types'
+
+const STATUS_STYLE: Record<PluginConnection['status'], string> = {
+  active: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300',
+  pending: 'bg-muted text-muted-foreground',
+  error: 'bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-300',
+  needs_auth: 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300',
+}
+
+function errorMessage(err: unknown, fallback: string): string {
+  if (axios.isAxiosError(err) && typeof err.response?.data?.detail === 'string') return err.response.data.detail
+  return fallback
+}
+
+/** A file's content in base64, as the API takes it. */
+function readFile(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(String(reader.result).split(',', 2)[1] ?? '')
+    reader.onerror = () => reject(reader.error)
+    reader.readAsDataURL(file)
+  })
+}
+
+/** The connections a workspace made through one installed plugin with code. */
+export function PluginConnections({ plugin }: { plugin: InstalledPlugin }) {
+  const { t, i18n } = useTranslation()
+  const lang = i18n.language
+  const { canWrite } = useWorkspace()
+  const queryClient = useQueryClient()
+  const [adding, setAdding] = useState(false)
+  const [editing, setEditing] = useState<PluginConnection | null>(null)
+  const [removing, setRemoving] = useState<PluginConnection | null>(null)
+
+  const { data, isLoading, isError, refetch } = useQuery({
+    queryKey: ['plugin-connections'],
+    queryFn: pluginsApi.connections,
+    // A new connection syncs in the background: follow it until it settles.
+    refetchInterval: (query) => (query.state.data?.some((c) => c.status === 'pending') ? 3000 : false),
+  })
+  const connections = (data ?? []).filter((c) => c.plugin_id === plugin.plugin_id)
+  const integrations = new Map(plugin.integrations.map((i) => [i.key, i]))
+
+  const refresh = () => queryClient.invalidateQueries({ queryKey: ['plugin-connections'] })
+
+  const syncMutation = useMutation({
+    mutationFn: pluginsApi.sync,
+    onSuccess: (connection) => {
+      void refresh()
+      // Sync now answers once the sync settled: what it brought in shows right away.
+      if (integrations.get(connection.integration)?.provides?.length) invalidateSyncedRecords(queryClient)
+      if (connection.status === 'active') toast.success(t('plugins.connections.synced', { name: connection.name }))
+      else toast.error(connection.last_error || t('plugins.connections.syncFailed'))
+    },
+    onError: (err) => toast.error(errorMessage(err, t('plugins.connections.syncFailed'))),
+  })
+
+  const routineMutation = useMutation({
+    mutationFn: pluginsApi.runRoutine,
+    onSuccess: (connection, { routine }) => {
+      void refresh()
+      const ran = connection.routines?.find((r) => r.key === routine)
+      if (ran && !ran.last_error) toast.success(t('plugins.connections.routineRan', { name: routineName(connection.integration, routine) }))
+      else toast.error(ran?.last_error || t('plugins.connections.routineFailed'))
+    },
+    onError: (err) => toast.error(errorMessage(err, t('plugins.connections.routineFailed'))),
+  })
+
+  const routineName = (integrationKey: string, key: string) => {
+    const routine = integrations.get(integrationKey)?.routines?.find((r) => r.key === key)
+    return routine ? localized(routine.name, lang) : key
+  }
+
+  const authorizeMutation = useMutation({
+    mutationFn: pluginsApi.authorize,
+    onSuccess: ({ authorize_url }) => window.location.assign(authorize_url),
+    onError: (err) => toast.error(errorMessage(err, t('common.error'))),
+  })
+
+  return (
+    <section className="space-y-4">
+      <div className="flex items-start justify-between gap-4">
+        <div className="space-y-1">
+          <h2 className="text-sm font-semibold">{t('plugins.connections.title')}</h2>
+          <p className="max-w-[65ch] text-sm text-muted-foreground">{t('plugins.connections.hint')}</p>
+        </div>
+        {canWrite && (
+          <Button size="sm" onClick={() => setAdding(true)}>
+            <Plus size={14} className="me-1" />
+            {t('plugins.connections.add')}
+          </Button>
+        )}
+      </div>
+
+      {isLoading ? (
+        <Skeleton className="h-16 w-full rounded-xl" />
+      ) : isError ? (
+        <div className="flex items-center justify-between gap-3 rounded-xl border px-4 py-3 text-sm">
+          <span className="text-muted-foreground">{t('plugins.connections.loadFailed')}</span>
+          <Button variant="outline" size="sm" onClick={() => void refetch()}>
+            <RefreshCw size={14} className="me-1" />
+            {t('common.retry')}
+          </Button>
+        </div>
+      ) : connections.length === 0 ? (
+        <p className="rounded-xl border border-dashed px-6 py-8 text-center text-sm text-muted-foreground">
+          {t('plugins.connections.none')}
+        </p>
+      ) : (
+        <ul className="divide-y rounded-xl border bg-card">
+          {connections.map((connection) => {
+            const integration = integrations.get(connection.integration)
+            // An integration with routines and no schedule of its own only runs its routines.
+            const syncs =
+              !integration || integration.sync_minutes !== null || !!integration.provides?.length || !integration.routines?.length
+            // Sign-in integrations sign in again; for keys, "needs auth" means the key was refused.
+            const signIn = connection.status === 'needs_auth' && integration?.auth === 'oauth'
+            const statusKey =
+              connection.status === 'needs_auth' && integration?.auth !== 'oauth' ? 'keysRefused' : connection.status
+            const busy =
+              (syncMutation.isPending && syncMutation.variables === connection.id) ||
+              (authorizeMutation.isPending && authorizeMutation.variables === connection.id)
+            return (
+              <li key={connection.id} className="flex flex-wrap items-center gap-3 px-4 py-3">
+                <div className="min-w-0 flex-1 space-y-0.5">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="truncate text-sm font-medium">{connection.name}</p>
+                    <span className={cn('rounded-full px-2 py-0.5 text-[11px] font-medium', STATUS_STYLE[connection.status])}>
+                      {t(`plugins.connections.status.${statusKey}`)}
+                    </span>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    {integration ? localized(integration.name, lang) : connection.integration}
+                    {syncs && (
+                      <>
+                        {' · '}
+                        {connection.last_sync_at
+                          ? t('plugins.connections.lastSync', { when: relativeDate(connection.last_sync_at, lang) })
+                          : t('plugins.connections.neverSynced')}
+                      </>
+                    )}
+                  </p>
+                  {connection.last_error && connection.status !== 'active' && (
+                    <p className="text-xs text-rose-700 dark:text-rose-300">{connection.last_error}</p>
+                  )}
+                  {(connection.routines?.length ?? 0) > 0 && (
+                    <ul className="mt-2 space-y-1.5 border-s ps-3" aria-label={t('plugins.connections.routines')}>
+                      {connection.routines!.map((routine) => {
+                        const running =
+                          routineMutation.isPending &&
+                          routineMutation.variables?.connectionId === connection.id &&
+                          routineMutation.variables?.routine === routine.key
+                        return (
+                          <li key={routine.key} className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs">
+                            <span className="font-medium text-foreground">{routineName(connection.integration, routine.key)}</span>
+                            <span className="text-muted-foreground">
+                              {t('plugins.connections.routineEvery', { interval: intervalLabel(routine.every_minutes, lang) })}
+                              {' · '}
+                              {routine.last_run_at
+                                ? t('plugins.connections.routineLastRun', { when: relativeDate(routine.last_run_at, lang) })
+                                : t('plugins.connections.routineNeverRan')}
+                            </span>
+                            {canWrite && connection.status !== 'needs_auth' && (
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-6 px-1.5 text-xs"
+                                disabled={running}
+                                aria-label={t('plugins.connections.runRoutineAria', { name: routineName(connection.integration, routine.key) })}
+                                onClick={() => routineMutation.mutate({ connectionId: connection.id, routine: routine.key })}
+                              >
+                                <Play size={12} className={cn('me-1', running && 'animate-pulse')} />
+                                {t('plugins.connections.runRoutine')}
+                              </Button>
+                            )}
+                            {routine.last_error && (
+                              <span className="basis-full text-rose-700 dark:text-rose-300">{routine.last_error}</span>
+                            )}
+                          </li>
+                        )
+                      })}
+                    </ul>
+                  )}
+                </div>
+                {canWrite && (
+                  <div className="flex items-center gap-1">
+                    {signIn ? (
+                      <Button size="sm" variant="outline" disabled={busy} onClick={() => authorizeMutation.mutate(connection.id)}>
+                        <LogIn size={14} className="me-1" />
+                        {t('plugins.connections.signIn')}
+                      </Button>
+                    ) : syncs ? (
+                      <Button size="sm" variant="outline" disabled={busy} onClick={() => syncMutation.mutate(connection.id)}>
+                        <RefreshCw size={14} className={cn('me-1', busy && 'animate-spin')} />
+                        {t('plugins.connections.syncNow')}
+                      </Button>
+                    ) : null}
+                    {!signIn && integration?.auth !== 'oauth' && (
+                      // The same form that connected it: new keys, or a new name.
+                      <Button size="sm" variant="outline" onClick={() => setEditing(connection)}>
+                        <KeyRound size={14} className="me-1" />
+                        {connection.status === 'needs_auth'
+                          ? t('plugins.connections.updateKeys')
+                          : t('plugins.connections.edit')}
+                      </Button>
+                    )}
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive"
+                      aria-label={t('plugins.connections.removeAria', { name: connection.name })}
+                      title={t('plugins.connections.remove')}
+                      onClick={() => setRemoving(connection)}
+                    >
+                      <Trash2 size={14} />
+                    </Button>
+                  </div>
+                )}
+              </li>
+            )
+          })}
+        </ul>
+      )}
+
+      {adding && (
+        <PluginConnectionDialog plugin={plugin} onClose={() => setAdding(false)} onDone={() => void refresh()} />
+      )}
+      {editing && (
+        <PluginConnectionDialog
+          plugin={plugin}
+          connection={editing}
+          onClose={() => setEditing(null)}
+          onDone={() => void refresh()}
+        />
+      )}
+      {removing && (
+        <RemoveConnectionDialog
+          connection={removing}
+          syncsAsBank={Boolean(plugin.integrations.find((i) => i.key === removing.integration)?.provides?.length)}
+          onClose={() => setRemoving(null)}
+          onDone={() => void refresh()}
+        />
+      )}
+    </section>
+  )
+}
+
+/**
+ * The form of a plugin's integration: a new connection, or (with `connection`)
+ * new values for one, to reconnect after a password change. `integration`
+ * preselects one, as when it's picked from Connect Bank.
+ */
+export function PluginConnectionDialog({
+  plugin,
+  integration: preselected,
+  connection,
+  onClose,
+  onDone,
+}: {
+  plugin: InstalledPlugin
+  integration?: string
+  connection?: PluginConnection | null
+  onClose: () => void
+  /** Called with the saved connection, whose first sync may already be running. */
+  onDone: (connection: PluginConnection) => void
+}) {
+  const { t, i18n } = useTranslation()
+  const lang = i18n.language
+  const [key, setKey] = useState(connection?.integration ?? preselected ?? plugin.integrations[0]?.key ?? '')
+  const [name, setName] = useState(connection?.name ?? '')
+  const [values, setValues] = useState<Record<string, string | PluginFileValue>>({})
+  const integration: PluginIntegration | undefined = plugin.integrations.find((i) => i.key === key)
+  const redirectUri = plugin.redirect_uri ?? `${window.location.origin}/plugins/oauth/callback`
+  const choosing = !connection && !preselected && plugin.integrations.length > 1
+  // Reconnecting: a field already set can stay blank, it keeps its value.
+  const isSet = (field: string) =>
+    !!connection && (field in (connection.config ?? {}) || connection.secret_fields.includes(field))
+
+  const mutation = useMutation({
+    mutationFn: async (): Promise<{ connection: PluginConnection; authorize_url: string | null }> => {
+      if (!connection) {
+        return pluginsApi.connect({ plugin_id: plugin.plugin_id, integration: key, name, values })
+      }
+      const updated = await pluginsApi.updateValues(connection.id, { name, values })
+      if (integration?.auth !== 'oauth') return { connection: updated, authorize_url: null }
+      const { authorize_url } = await pluginsApi.authorize(connection.id)
+      return { connection: updated, authorize_url }
+    },
+    onSuccess: ({ connection: saved, authorize_url }) => {
+      onDone(saved)
+      if (authorize_url) {
+        window.location.assign(authorize_url)
+        return
+      }
+      toast.success(t(connection ? 'plugins.connections.updated' : 'plugins.connections.added', { name: saved.name }))
+      onClose()
+    },
+    onError: (err) => toast.error(errorMessage(err, t('common.error'))),
+  })
+
+  const filled = (field: PluginField) => {
+    const value = values[field.key]
+    return typeof value === 'string' ? value.trim() !== '' : value !== undefined
+  }
+  const missing = integration?.fields.some((f) => f.required && !filled(f) && !isSet(f.key)) ?? true
+
+  const pickFile = async (field: PluginField, file: File | undefined) => {
+    // A new pick replaces the last one at once: a refused file never leaves the previous one to be sent.
+    setValues((current) => {
+      const next = { ...current }
+      delete next[field.key]
+      return next
+    })
+    if (!file) return
+    const accept = field.accept ?? []
+    const maxKb = field.max_kb ?? 512
+    if (accept.length > 0 && !accept.some((ext) => file.name.toLowerCase().endsWith(ext))) {
+      toast.error(t('plugins.connections.fileWrongType', { name: file.name, types: accept.join(', ') }))
+      return
+    }
+    if (file.size > maxKb * 1024) {
+      toast.error(t('plugins.connections.fileTooBig', { name: file.name, size: maxKb }))
+      return
+    }
+    try {
+      const content = await readFile(file)
+      setValues((current) => ({ ...current, [field.key]: { name: file.name, content } }))
+    } catch {
+      toast.error(t('plugins.connections.fileReadFailed', { name: file.name }))
+    }
+  }
+
+  const currentFile = (field: PluginField): string | null => {
+    if (!isSet(field.key)) return null
+    const stored = connection?.config?.[field.key]
+    if (stored && typeof stored === 'object') return t('plugins.connections.currentFile', { name: stored.name })
+    return t('plugins.connections.fileSaved')
+  }
+
+  return (
+    <Dialog open onOpenChange={(open) => { if (!open && !mutation.isPending) onClose() }}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>
+            {connection
+              ? t('plugins.connections.editTitle', { name: connection.name })
+              : t('plugins.connections.addTitle', { name: localized(plugin.name, lang) })}
+          </DialogTitle>
+          <DialogDescription>
+            {connection ? t('plugins.connections.editHint') : t('plugins.connections.addHint')}
+          </DialogDescription>
+        </DialogHeader>
+
+        <form
+          id="plugin-connection-form"
+          className="space-y-4"
+          onSubmit={(event) => {
+            event.preventDefault()
+            if (!missing) mutation.mutate()
+          }}
+        >
+          {choosing && (
+            <div className="space-y-2">
+              <Label>{t('plugins.connections.integration')}</Label>
+              <div className="grid gap-2">
+                {plugin.integrations.map((option) => (
+                  <button
+                    key={option.key}
+                    type="button"
+                    onClick={() => { setKey(option.key); setValues({}) }}
+                    className={cn(
+                      'rounded-lg border px-3 py-2 text-start text-sm transition-colors',
+                      option.key === key ? 'border-primary bg-primary/5' : 'hover:bg-muted/50',
+                    )}
+                  >
+                    <span className="font-medium">{localized(option.name, lang)}</span>
+                    {option.description && (
+                      <span className="block text-xs text-muted-foreground">{localized(option.description, lang)}</span>
+                    )}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div className="space-y-2">
+            <Label htmlFor="plugin-connection-name">{t('plugins.connections.name')}</Label>
+            <Input
+              id="plugin-connection-name"
+              value={name}
+              maxLength={100}
+              placeholder={integration ? localized(integration.name, lang) : ''}
+              onChange={(event) => setName(event.target.value)}
+            />
+          </div>
+
+          {integration?.fields.map((field) => (
+            <div key={field.key} className="space-y-2">
+              <Label htmlFor={`plugin-field-${field.key}`}>
+                {localized(field.label, lang)}
+                {!field.required && <span className="ms-1 font-normal text-muted-foreground">({t('plugins.connections.optional')})</span>}
+              </Label>
+              {field.type === 'file' ? (
+                <>
+                  <Input
+                    id={`plugin-field-${field.key}`}
+                    type="file"
+                    accept={field.accept?.length ? field.accept.join(',') : undefined}
+                    className="cursor-pointer file:me-3 file:cursor-pointer"
+                    onChange={(event) => void pickFile(field, event.target.files?.[0])}
+                  />
+                  <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                    <FileUp size={12} className="shrink-0" />
+                    {field.accept?.length
+                      ? t('plugins.connections.fileAccepts', { types: field.accept.join(', '), size: field.max_kb ?? 512 })
+                      : t('plugins.connections.fileAny', { size: field.max_kb ?? 512 })}
+                    {currentFile(field) && <span>{' · '}{currentFile(field)}</span>}
+                  </p>
+                </>
+              ) : (
+                <Input
+                  id={`plugin-field-${field.key}`}
+                  type={field.secret ? 'password' : 'text'}
+                  autoComplete="off"
+                  placeholder={
+                    isSet(field.key)
+                      ? field.secret ? '••••••••' : String(connection?.config?.[field.key] ?? '')
+                      : undefined
+                  }
+                  value={(values[field.key] as string | undefined) ?? ''}
+                  onChange={(event) => setValues((current) => ({ ...current, [field.key]: event.target.value }))}
+                />
+              )}
+            </div>
+          ))}
+
+          {integration?.fields.some((f) => f.secret) && (
+            <p className="text-xs text-muted-foreground">
+              {connection ? t('plugins.connections.keepBlank') : t('plugins.connections.secretNote')}
+            </p>
+          )}
+
+          {integration?.auth === 'oauth' && (
+            <div className="space-y-1.5 rounded-lg border bg-muted/40 px-3 py-2.5 text-xs text-muted-foreground">
+              <p>{t('plugins.connections.redirectHint')}</p>
+              <div className="flex items-center gap-2">
+                <code className="min-w-0 flex-1 select-all break-all font-mono text-foreground">{redirectUri}</code>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  className="h-7 w-7 p-0"
+                  aria-label={t('plugins.connections.copy')}
+                  onClick={async () => {
+                    try {
+                      if (!navigator.clipboard) throw new Error('no clipboard')
+                      await navigator.clipboard.writeText(redirectUri)
+                      toast.success(t('plugins.connections.copied'))
+                    } catch {
+                      // Some browsers refuse (no HTTPS, no permission): the address stays selectable.
+                      toast.error(t('plugins.connections.copyFailed'))
+                    }
+                  }}
+                >
+                  <Copy size={13} />
+                </Button>
+              </div>
+            </div>
+          )}
+        </form>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose} disabled={mutation.isPending}>
+            {t('common.cancel')}
+          </Button>
+          <Button type="submit" form="plugin-connection-form" disabled={mutation.isPending || missing || !integration}>
+            {integration?.auth === 'oauth'
+              ? t('plugins.connections.continueSignIn')
+              : connection ? t('common.save') : t('plugins.connections.connect')}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function RemoveConnectionDialog({
+  connection,
+  syncsAsBank,
+  onClose,
+  onDone,
+}: {
+  connection: PluginConnection
+  /** It syncs as a connected bank: removing it disconnects that bank, accounts included. */
+  syncsAsBank: boolean
+  onClose: () => void
+  onDone: () => void
+}) {
+  const { t } = useTranslation()
+  const mutation = useMutation({
+    mutationFn: () => pluginsApi.disconnect(connection.id),
+    onSuccess: () => {
+      onDone()
+      toast.success(t('plugins.connections.removed', { name: connection.name }))
+      onClose()
+    },
+    onError: (err) => toast.error(errorMessage(err, t('common.error'))),
+  })
+  return (
+    <Dialog open onOpenChange={(open) => { if (!open && !mutation.isPending) onClose() }}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>{t('plugins.connections.removeTitle', { name: connection.name })}</DialogTitle>
+          <DialogDescription>
+            {t(syncsAsBank ? 'plugins.connections.removeBankHint' : 'plugins.connections.removeHint')}
+          </DialogDescription>
+        </DialogHeader>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose} disabled={mutation.isPending}>
+            {t('common.cancel')}
+          </Button>
+          <Button variant="destructive" onClick={() => mutation.mutate()} disabled={mutation.isPending}>
+            <Trash2 size={14} className="me-1" />
+            {t('plugins.connections.remove')}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}

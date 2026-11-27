@@ -3,6 +3,7 @@ from __future__ import annotations
 import uuid
 from datetime import date, timedelta
 from decimal import Decimal
+from typing import Optional
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -210,9 +211,14 @@ async def test_transaction_cash_flows_include_fees_and_historical_fx(
         start,
         start + timedelta(days=2),
     )
-    assert set(flows.contributions) == {transaction_date}
-    assert flows.contributions[transaction_date] == pytest.approx(202.0)
-    assert flows.fees == {transaction_date: pytest.approx(2.0)}
+    # A market-priced buy is recorded at its own price, split from its fee.
+    [trade] = flows.trades[transaction_date]
+    assert trade.asset_key == str(asset.id)
+    assert trade.mark == pytest.approx(0.0)
+    assert trade.amount == pytest.approx(200.0)
+    assert trade.fee == pytest.approx(2.0)
+    assert flows.contributions == {}
+    assert flows.fees == {}
     assert flows.withdrawals == {}
     assert flows.opening == {}
     assert flows.dates == {transaction_date}
@@ -277,6 +283,84 @@ async def test_performance_compares_manual_asset_with_benchmark(
     assert result.points[0].portfolio == result.points[0].benchmark == 0.0
 
 
+@pytest.mark.asyncio
+async def test_a_split_is_not_a_loss_when_the_price_drops_with_it(
+    session: AsyncSession, test_user: User, test_workspace
+):
+    """10 shares at 100 become 100 shares at 10: the holding is worth the same."""
+    end = date.today()
+    start = end - timedelta(days=30)
+    split_on = start + timedelta(days=10)
+    asset = Asset(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        name="Split stock",
+        type="stock",
+        currency="BRL",
+        valuation_method="market_price",
+    )
+    session.add(asset)
+    await session.flush()
+    session.add_all(
+        [
+            AssetTransaction(
+                asset_id=asset.id,
+                workspace_id=test_workspace.id,
+                kind="buy",
+                quantity=Decimal("10"),
+                price=Decimal("100"),
+                date=start,
+            ),
+            AssetTransaction(
+                asset_id=asset.id,
+                workspace_id=test_workspace.id,
+                kind="split",
+                quantity=Decimal("0"),
+                price=Decimal("0"),
+                old_units=1,
+                new_units=10,
+                date=split_on,
+            ),
+        ]
+    )
+    # Stored prices are never adjusted for a split: 100 before it, 10 after.
+    for when, price in (
+        (start, "100"),
+        (split_on - timedelta(days=1), "100"),
+        (split_on + timedelta(days=1), "10"),
+        (end, "10"),
+    ):
+        session.add(
+            AssetValue(
+                asset_id=asset.id,
+                workspace_id=test_workspace.id,
+                amount=Decimal("1000"),
+                price=Decimal(price),
+                date=when,
+                source="market",
+            )
+        )
+    await session.commit()
+
+    provider = FakeHistoryProvider(
+        [BenchmarkHistoryPoint(start, 200.0), BenchmarkHistoryPoint(end, 200.0)]
+    )
+    result = await get_portfolio_performance(
+        session,
+        test_workspace.id,
+        test_user.id,
+        "BRL",
+        "yahoo",
+        "^TEST",
+        "3m",
+        end_date=end,
+        provider=provider,  # type: ignore[arg-type]
+    )
+    assert result.portfolio_return == pytest.approx(0.0, abs=1e-6)
+    assert all(point.portfolio == pytest.approx(0.0, abs=1e-6) for point in result.points)
+
+
 async def _flat_brl_fund(session: AsyncSession, user: User, workspace, start: date, end: date):
     asset = Asset(
         id=uuid.uuid4(),
@@ -323,6 +407,101 @@ async def test_benchmark_in_another_currency_is_converted_at_each_days_rate(
         end_date=end, provider=provider,  # type: ignore[arg-type]
     )
     assert result.benchmark_return == pytest.approx(21.0)
+
+
+@pytest.mark.asyncio
+async def test_benchmark_converts_at_the_comparison_dates_rate_after_its_last_close(
+    session: AsyncSession, test_user: User, test_workspace
+):
+    """A flat USD index whose last close is Friday, compared on Monday after the
+    dollar rose 10%: the benchmark gains the 10% a USD holding would show."""
+    end = date.today()
+    start = end - timedelta(days=30)
+    await _flat_brl_fund(session, test_user, test_workspace, start, end)
+    session.add_all(
+        FxRate(base_currency="USD", quote_currency="BRL", date=when, rate=rate, source="test")
+        for when, rate in ((start - timedelta(days=3), Decimal("5")), (end, Decimal("5.5")))
+    )
+    await session.commit()
+
+    provider = FakeHistoryProvider(
+        [
+            BenchmarkHistoryPoint(start, 200.0, "USD"),
+            BenchmarkHistoryPoint(end - timedelta(days=3), 200.0, "USD"),
+        ]
+    )
+    result = await get_portfolio_performance(
+        session, test_workspace.id, test_user.id, "BRL", "yahoo", "^GSPC", "3m",
+        end_date=end, provider=provider,  # type: ignore[arg-type]
+    )
+    assert result.benchmark_return == pytest.approx(10.0)
+
+
+@pytest.mark.asyncio
+async def test_benchmark_converts_on_dates_only_another_benchmark_adds(
+    session: AsyncSession, test_user: User, test_workspace
+):
+    """A BRL portfolio valued on Monday and Friday, a flat USD index closing on
+    those days and a BRL index closing daily. The dollar rises 10% on
+    Wednesday: the USD index reads +10% from Wednesday on, not 0% until a
+    later portfolio date picks up the move."""
+    monday, wednesday, friday = date(2026, 6, 22), date(2026, 6, 24), date(2026, 6, 26)
+    start = friday - timedelta(days=90)
+    asset = Asset(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        name="Manual fund",
+        type="fund",
+        currency="BRL",
+        valuation_method="manual",
+    )
+    session.add(asset)
+    await session.flush()
+    session.add_all(
+        AssetValue(
+            asset_id=asset.id,
+            workspace_id=test_workspace.id,
+            amount=Decimal("100"),
+            date=when,
+            source="manual",
+        )
+        for when in (start, monday, friday)
+    )
+    session.add_all(
+        FxRate(
+            base_currency="USD",
+            quote_currency="BRL",
+            date=start + timedelta(days=offset),
+            rate=Decimal("5.5") if start + timedelta(days=offset) >= wednesday else Decimal("5"),
+            source="test",
+        )
+        for offset in range(-10, 91)
+    )
+    await session.commit()
+
+    provider = MultiHistoryProvider(
+        {
+            "^USD": [
+                BenchmarkHistoryPoint(when, 100.0, "USD") for when in (start, monday, friday)
+            ],
+            "^BRL": [
+                BenchmarkHistoryPoint(start + timedelta(days=offset), 100.0, "BRL")
+                for offset in range(91)
+            ],
+        }
+    )
+    result = await get_portfolio_performance_multi(
+        session, test_workspace.id, test_user.id, "BRL",
+        [("yahoo", "^USD"), ("yahoo", "^BRL")], "3m",
+        end_date=friday, provider=provider,  # type: ignore[arg-type]
+    )
+    by_date = {point.date: point.benchmarks for point in result.points}
+    assert by_date[monday]["yahoo:^USD"] == pytest.approx(0.0)
+    assert by_date[wednesday]["yahoo:^USD"] == pytest.approx(10.0)
+    assert by_date[friday]["yahoo:^USD"] == pytest.approx(10.0)
+    assert result.benchmarks[0].benchmark_return == pytest.approx(10.0)
+    assert result.portfolio_return == pytest.approx(0.0)
 
 
 @pytest.mark.asyncio
@@ -759,6 +938,182 @@ def test_ledger_flows_prefer_the_stored_share_count():
         ],
     )
     assert flows[-1] == (date(2026, 9, 29), Decimal("500"), date(2026, 9, 28))
+
+
+def test_ledger_flows_wait_past_a_snapshot_that_still_shows_the_old_count():
+    """A provider can take more than a day to show a buy (settlement)."""
+    flows = snapshot_ledger_flows(
+        [
+            (date(2026, 9, 1), Decimal("10"), Decimal("1000")),
+            (date(2026, 9, 28), Decimal("5"), Decimal("500")),
+        ],
+        [
+            (date(2026, 9, 1), 1000.0, 10.0),
+            (date(2026, 9, 28), 1000.0, 10.0),
+            (date(2026, 9, 29), 1000.0, 10.0),
+            (date(2026, 9, 30), 1500.0, 15.0),
+        ],
+    )
+    assert flows[-1] == (date(2026, 9, 30), Decimal("500"), date(2026, 9, 28))
+
+
+def test_ledger_flows_count_a_same_day_round_trip_on_its_own_day():
+    """Selling 10 at 110 and buying 10 back at 100 leaves the count at 10, so
+    no snapshot can show it; the 100 taken out belongs to that day."""
+    day = date(2026, 9, 10)
+    flows = snapshot_ledger_flows(
+        [
+            (date(2026, 9, 1), Decimal("10"), Decimal("1000")),
+            (day, Decimal("-10"), Decimal("-1100")),
+            (day, Decimal("10"), Decimal("1000")),
+        ],
+        [
+            (date(2026, 9, 1), 1000.0, 10.0),
+            (day, 1000.0, 10.0),
+            (date(2026, 9, 11), 1000.0, 10.0),
+        ],
+    )
+    assert flows[-1] == (day, Decimal("-100"), day)
+
+
+def test_ledger_flows_match_each_trade_when_two_are_in_flight():
+    """Buys on consecutive days, each shown the next day: a snapshot that shows
+    the first buy but not yet the second takes only the first."""
+    flows = snapshot_ledger_flows(
+        [
+            (date(2026, 9, 1), Decimal("100"), Decimal("1000")),
+            (date(2026, 9, 10), Decimal("10"), Decimal("100")),
+            (date(2026, 9, 11), Decimal("10"), Decimal("100")),
+        ],
+        [
+            (date(2026, 9, 1), 1000.0, 100.0),
+            (date(2026, 9, 10), 1000.0, 100.0),
+            (date(2026, 9, 11), 1100.0, 110.0),
+            (date(2026, 9, 12), 1200.0, 120.0),
+        ],
+    )
+    assert flows[1:] == [
+        (date(2026, 9, 11), Decimal("100"), date(2026, 9, 10)),
+        (date(2026, 9, 12), Decimal("100"), date(2026, 9, 11)),
+    ]
+
+
+def test_ledger_flows_count_shares_at_the_trade_price_only_on_the_trade_date():
+    """Without a stored count, a later snapshot's value at the trade's price
+    says more about the price since than about the shares: the trade lands
+    on the next snapshot instead of waiting for the price to come back."""
+    flows = snapshot_ledger_flows(
+        [
+            (date(2026, 9, 1), Decimal("100"), Decimal("1000")),
+            (date(2026, 9, 10), Decimal("3"), Decimal("30")),
+        ],
+        [
+            (date(2026, 9, 1), 1000.0, None),
+            (date(2026, 9, 10), 1009.4, None),  # 103 units at 9.80
+            (date(2026, 9, 11), 1009.4, None),
+            (date(2026, 9, 24), 1019.7, None),  # 103 units at 9.90
+        ],
+    )
+    assert flows[-1] == (date(2026, 9, 11), Decimal("30"), date(2026, 9, 10))
+
+
+@pytest.mark.parametrize("quantity", [Decimal("105"), Decimal("-90")])
+def test_ledger_flows_without_a_count_wait_for_the_value_to_show_the_trade(quantity):
+    """A Friday trade a provider shows on Monday, synced daily with no share
+    count: the weekend snapshots still hold the old value, so the cash waits
+    for the snapshot whose value moved by it."""
+    price = Decimal("110.78")
+    friday = date(2026, 9, 25)
+    snapshots = [
+        (
+            date(2026, 9, 21) + timedelta(days=offset),
+            float((300 + (quantity if offset >= 7 else 0)) * price),
+            None,
+        )
+        for offset in range(11)
+    ]
+    flows = snapshot_ledger_flows(
+        [
+            (date(2026, 9, 2), Decimal("300"), Decimal("300") * price),
+            (friday, quantity, quantity * price),
+        ],
+        snapshots,
+    )
+    assert flows[-1] == (date(2026, 9, 28), quantity * price, friday)
+
+
+def test_ledger_flows_wait_for_both_legs_of_a_round_trip_a_lagging_provider_shows():
+    """Bought on day 10 and sold on day 12 at a provider three days behind: the
+    day 12 count still equals the state after both trades, but the snapshots
+    after it show the buy first, so neither lands on day 12."""
+    start = date(2026, 9, 1)
+    trades = [(0, Decimal("500000")), (10, Decimal("155000")), (12, Decimal("-155000"))]
+    unit = Decimal("0.01007794")
+    snapshots: list[tuple[date, float, Optional[float]]] = []
+    for offset in range(5, 21):
+        shown = sum(quantity for day, quantity in trades if day <= offset - 3)
+        snapshots.append((start + timedelta(days=offset), float(shown * unit), float(shown)))
+    flows = snapshot_ledger_flows(
+        [(start + timedelta(days=day), quantity, quantity * unit) for day, quantity in trades],
+        snapshots,
+    )
+    assert flows[1:] == [
+        (date(2026, 9, 14), Decimal("155000") * unit, date(2026, 9, 11)),
+        (date(2026, 9, 16), Decimal("-155000") * unit, date(2026, 9, 13)),
+    ]
+
+
+def test_ledger_flows_leave_out_a_buy_the_share_counts_do_not_show_yet():
+    """Snapshots through the period's end still hold 10 units: the bought
+    shares are not in the valuation, so their cash is not counted either."""
+    flows = snapshot_ledger_flows(
+        [
+            (date(2026, 9, 1), Decimal("10"), Decimal("1000")),
+            (date(2026, 9, 28), Decimal("5"), Decimal("500")),
+        ],
+        [
+            (date(2026, 9, 1), 1000.0, 10.0),
+            (date(2026, 9, 28), 1000.0, 10.0),
+            (date(2026, 9, 29), 1000.0, 10.0),
+        ],
+    )
+    assert flows == [(date(2026, 9, 1), Decimal("1000"), date(2026, 9, 1))]
+
+
+def test_ledger_flows_without_a_count_do_not_take_a_trade_on_a_half_move():
+    """A buy of 1000 against a value up 500 is as far off as no trade at all:
+    it waits for the snapshot that moved by its cash."""
+    flows = snapshot_ledger_flows(
+        [
+            (date(2026, 9, 1), Decimal("10"), Decimal("1000")),
+            (date(2026, 9, 10), Decimal("10"), Decimal("1000")),
+        ],
+        [
+            (date(2026, 9, 9), 1000.0, None),
+            (date(2026, 9, 10), 1000.0, None),
+            (date(2026, 9, 11), 1500.0, None),
+            (date(2026, 9, 12), 3000.0, None),
+        ],
+    )
+    assert flows[-1] == (date(2026, 9, 12), Decimal("1000"), date(2026, 9, 10))
+
+
+def test_ledger_flows_never_drop_a_trade_a_later_one_offsets():
+    """A buy the provider never shows, sold the next day: both flows count."""
+    flows = snapshot_ledger_flows(
+        [
+            (date(2026, 9, 1), Decimal("10"), Decimal("1000")),
+            (date(2026, 9, 2), Decimal("5"), Decimal("500")),
+            (date(2026, 9, 3), Decimal("-5"), Decimal("-550")),
+        ],
+        [
+            (date(2026, 9, 1), 1000.0, 10.0),
+            (date(2026, 9, 2), 1000.0, 10.0),
+            (date(2026, 9, 3), 1000.0, 10.0),
+            (date(2026, 9, 4), 1000.0, 10.0),
+        ],
+    )
+    assert sum(flow for _, flow, _ in flows) == Decimal("950")
 
 
 def test_ledger_flows_survive_a_day_whose_trades_net_to_no_cash():
@@ -1280,3 +1635,169 @@ async def test_custom_scope_unites_whole_wallets_and_individual_assets(
     )
 
     assert result.portfolio_return == pytest.approx(20.0)
+
+
+@pytest.mark.asyncio
+async def test_selling_and_buying_back_the_same_day_keeps_the_days_move(
+    session: AsyncSession, test_user: User, test_workspace
+):
+    """A sale of shares held that morning is not a day trade of that day's buy."""
+    end = date.today()
+    day0 = end - timedelta(days=20)
+    day1 = day0 + timedelta(days=1)
+    asset = Asset(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        name="Round trip",
+        type="stock",
+        currency="BRL",
+        valuation_method="market_price",
+        ticker="RTRP3",
+    )
+    session.add(asset)
+    await session.flush()
+    for kind, when, price in (("buy", day0, "100"), ("sell", day1, "110"), ("buy", day1, "110")):
+        session.add(
+            AssetTransaction(
+                asset_id=asset.id,
+                workspace_id=test_workspace.id,
+                kind=kind,
+                quantity=Decimal("10"),
+                price=Decimal(price),
+                date=when,
+            )
+        )
+    for when, price in ((day0, "100"), (day1, "110")):
+        session.add(
+            AssetValue(
+                asset_id=asset.id,
+                workspace_id=test_workspace.id,
+                amount=Decimal(price) * 10,
+                price=Decimal(price),
+                date=when,
+                source="market",
+            )
+        )
+    await session.commit()
+
+    result = await get_portfolio_performance_multi(
+        session, test_workspace.id, test_user.id, "BRL", [], "3m", end_date=end
+    )
+    # The ten shares held overnight rose 10% before they were sold; the ten
+    # bought back at the close have not moved since.
+    assert result.portfolio_return == pytest.approx(10.0)
+
+
+async def _fund_up_in_january(session: AsyncSession, user: User, workspace) -> None:
+    asset = Asset(
+        id=uuid.uuid4(),
+        user_id=user.id,
+        workspace_id=workspace.id,
+        name="Manual fund",
+        type="fund",
+        currency="BRL",
+        valuation_method="manual",
+    )
+    session.add(asset)
+    await session.flush()
+    session.add_all(
+        AssetValue(
+            asset_id=asset.id,
+            workspace_id=workspace.id,
+            amount=Decimal(amount),
+            date=when,
+            source="manual",
+        )
+        for when, amount in (
+            (date(2026, 1, 1), "100"),
+            (date(2026, 1, 31), "120"),
+            (date(2026, 6, 30), "120"),
+        )
+    )
+    await session.commit()
+
+
+@pytest.mark.asyncio
+async def test_a_benchmark_with_a_later_history_does_not_move_the_portfolio_start(
+    session: AsyncSession, test_user: User, test_workspace
+):
+    await _fund_up_in_january(session, test_user, test_workspace)
+    end = date(2026, 6, 30)
+    late_start = date(2026, 2, 2)
+    provider = MultiHistoryProvider(
+        {
+            "^LATE": [
+                BenchmarkHistoryPoint(late_start, 100.0),
+                BenchmarkHistoryPoint(date(2026, 4, 1), 105.0),
+                BenchmarkHistoryPoint(end, 110.0),
+            ]
+        }
+    )
+
+    alone = await get_portfolio_performance_multi(
+        session, test_workspace.id, test_user.id, "BRL", [], "ytd", end_date=end
+    )
+    compared = await get_portfolio_performance_multi(
+        session,
+        test_workspace.id,
+        test_user.id,
+        "BRL",
+        [("yahoo", "^LATE")],
+        "ytd",
+        end_date=end,
+        provider=provider,
+    )
+
+    for result in (alone, compared):
+        assert result.start_date == date(2026, 1, 1)
+        assert result.portfolio_return == pytest.approx(20.0)
+        assert result.points[0].date == date(2026, 1, 1)
+    metric = compared.benchmarks[0]
+    assert metric.start_date == late_start
+    assert metric.source_error is None
+    assert metric.benchmark_return == pytest.approx(10.0)
+    # The portfolio was flat from Feb 2 to Jun 30, so it trails by the full 10%.
+    assert metric.excess_return == pytest.approx(-10.0)
+    assert compared.benchmark_return == pytest.approx(10.0)
+    assert compared.excess_return == pytest.approx(-10.0)
+    key = "yahoo:^LATE"
+    before = [point for point in compared.points if point.date < late_start]
+    assert before and all(key not in point.benchmarks for point in before)
+    assert all(point.benchmark is None for point in before)
+    on_start = next(point for point in compared.points if point.date == late_start)
+    assert on_start.benchmarks[key] == 0.0
+    assert on_start.benchmark == 0.0
+    assert compared.points[-1].benchmarks[key] == pytest.approx(10.0)
+
+
+@pytest.mark.asyncio
+async def test_a_benchmark_with_only_look_back_closes_has_no_data(
+    session: AsyncSession, test_user: User, test_workspace
+):
+    await _fund_up_in_january(session, test_user, test_workspace)
+    provider = MultiHistoryProvider(
+        {
+            "^GONE": [
+                BenchmarkHistoryPoint(date(2025, 12, 29), 100.0),
+                BenchmarkHistoryPoint(date(2025, 12, 30), 101.0),
+            ]
+        }
+    )
+    result = await get_portfolio_performance_multi(
+        session,
+        test_workspace.id,
+        test_user.id,
+        "BRL",
+        [("yahoo", "^GONE")],
+        "ytd",
+        end_date=date(2026, 6, 30),
+        provider=provider,
+    )
+    metric = result.benchmarks[0]
+    assert metric.source_error == "no_data"
+    assert metric.benchmark_return is None
+    assert metric.excess_return is None
+    assert metric.start_date is None
+    assert result.portfolio_return == pytest.approx(20.0)
+    assert all(point.benchmarks == {} for point in result.points)

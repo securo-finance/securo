@@ -1,5 +1,5 @@
 import uuid
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 from unittest.mock import AsyncMock, patch
 
@@ -18,6 +18,18 @@ from app.services.import_service import (
     parse_camt,
     import_transactions,
 )
+
+
+class _RateProviderFactoryStub:
+    """Keep import tests' rate stub while the service builds providers per call."""
+
+    def __init__(self):
+        self.name = "test"
+        self.fetch_latest = AsyncMock(return_value={})
+        self.fetch_historical = AsyncMock(return_value={})
+
+    def __call__(self, _settings):
+        return self
 
 
 class TestParseCsv:
@@ -73,6 +85,24 @@ class TestParseCsv:
         assert transactions[1].amount == Decimal("5000.00")
         assert transactions[1].date == date(2026, 2, 15)
         assert transactions[1].type == "credit"
+
+    def test_parse_csv_date_with_time(self):
+        """Bank exports such as Revolut's put a time after the date."""
+        csv_content = (
+            "date,description,amount\n"
+            "2024-01-16 09:12:40,Tesco,-23.45\n"
+            "2024-01-17T08:00:01,Top-Up,500.00\n"
+        )
+        transactions, failed = parse_csv(csv_content.encode("utf-8"))
+
+        assert failed == []
+        assert [t.date for t in transactions] == [date(2024, 1, 16), date(2024, 1, 17)]
+
+        csv_content = "date,description,amount\n01/15/2024 13:45,A,-1\n02/03/2024 09:00,B,-2\n"
+        transactions, failed = parse_csv(csv_content.encode("utf-8"))
+
+        assert failed == []
+        assert [t.date for t in transactions] == [date(2024, 1, 15), date(2024, 2, 3)]
 
     def test_parse_csv_invalid_columns(self):
         """CSV with unrecognized column names should raise ValueError with found and expected columns."""
@@ -208,6 +238,16 @@ class TestParseCsv:
         transactions, _ = parse_csv(csv_content.encode("utf-8"), date_format="DD/MM/YYYY")
         assert len(transactions) == 1
         assert transactions[0].date == date(2026, 4, 3)
+
+    def test_parse_csv_auto_date_order_from_whole_file(self):
+        """Auto mode reads every row month-first when one date can only be MM/DD."""
+        csv_content = (
+            "date,description,amount\n"
+            "11/03/2026,Coffee,-4.50\n"
+            "11/14/2026,Paycheck,2500.00\n"
+        )
+        transactions, _ = parse_csv(csv_content.encode("utf-8"))
+        assert [t.date for t in transactions] == [date(2026, 11, 3), date(2026, 11, 14)]
 
     def test_parse_csv_flip_amount(self):
         """Flip amount should negate amounts, swapping credit/debit."""
@@ -494,6 +534,10 @@ class TestDetectCsvColumns:
         csv_content = " date , description , amount \n2026-01-10,X,-1.00\n".encode("utf-8-sig")
         assert detect_csv_columns(csv_content) == ["date", "description", "amount"]
 
+    def test_detect_latin1(self):
+        csv_content = "Data;Histórico;Valor\n10/02/2026;PADARIA SÃO JOÃO;-25,50\n".encode("cp1252")
+        assert detect_csv_columns(csv_content) == ["Data", "Histórico", "Valor"]
+
     def test_detect_empty_file(self):
         assert detect_csv_columns(b"") == []
 
@@ -664,6 +708,34 @@ class TestParseQif:
         assert len(transactions) == 1
         assert transactions[0].amount == Decimal("1250.00")
 
+    def test_parse_qif_comma_grouped_and_comma_decimal_in_the_same_file(self):
+        """QIF has no column types: each amount's own shape decides the comma.
+
+        "1,250" and "1,250,000" keep importing as the grouped amounts they
+        were before, while "25,50" is a decimal — in one file.
+        """
+        qif_content = (
+            "D01/01/2026\n"
+            "T-1,250\n"
+            "PGrouped\n"
+            "^\n"
+            "D01/02/2026\n"
+            "T-1,250,000\n"
+            "PGrouped twice\n"
+            "^\n"
+            "D01/03/2026\n"
+            "T25,50\n"
+            "PDecimal\n"
+            "^\n"
+        )
+        transactions, failed_rows = parse_qif(qif_content.encode("utf-8"))
+        assert failed_rows == []
+        assert [(t.description, t.amount, t.type) for t in transactions] == [
+            ("Grouped", Decimal("1250"), "debit"),
+            ("Grouped twice", Decimal("1250000"), "debit"),
+            ("Decimal", Decimal("25.50"), "credit"),
+        ]
+
     def test_parse_qif_latin1_encoding(self):
         """QIF files from legacy software (e.g. Microsoft Money) using Latin-1 encoding."""
         qif_content = (
@@ -677,6 +749,20 @@ class TestParseQif:
         assert len(transactions) == 1
         assert transactions[0].description == "Caf\u00e9 Fran\u00e7ais"
         assert transactions[0].amount == Decimal("75.00")
+        assert transactions[0].type == "debit"
+
+    def test_parse_qif_reads_windows_1252_minus_and_euro(self):
+        """A legacy export writes the minus as 0x96 and the euro as 0x80.
+
+        Read as Latin-1 those bytes are C1 controls: the sign is lost, so the
+        debit is dropped instead of imported. cp1252 reads them as the en dash
+        and the euro sign the file meant.
+        """
+        qif_content = b"D01/15/2026\nT\x9625,50\nPCAFE 3\x80\n^\n"
+        transactions, failed_rows = parse_qif(qif_content)
+        assert failed_rows == []
+        assert transactions[0].description == "CAFE 3\u20ac"
+        assert transactions[0].amount == Decimal("25.50")
         assert transactions[0].type == "debit"
 
     def test_parse_qif_two_digit_year(self):
@@ -703,6 +789,18 @@ class TestParseQif:
         assert len(transactions) == 1
         assert transactions[0].date == date(2026, 1, 15)
 
+
+    def test_parse_qif_apostrophe_space_padded_year(self):
+        """Quicken writes 2000-2009 dates with a space-padded year."""
+        qif_content = (
+            "D3/ 1' 8\n"
+            "T-100.00\n"
+            "PTest\n"
+            "^\n"
+        )
+        transactions, failed_rows = parse_qif(qif_content.encode("utf-8"))
+        assert failed_rows == []
+        assert transactions[0].date == date(2008, 3, 1)
 
 class TestParseCamt:
     """Tests for the parse_camt function (ISO 20022 XML)."""
@@ -977,6 +1075,30 @@ class TestParseOfx:
         assert transactions[0].external_id == "TXN001ABC"
         assert transactions[0].amount == Decimal("985.50")
         assert transactions[0].type == "debit"
+
+    @pytest.mark.parametrize(
+        "dtposted",
+        [
+            "<DTPOSTED>20260115000000[+1:CET]",
+            "<DTPOSTED>20260115235900[-8:PST]",
+            "<DTPOSTED >20260115000000[+1:CET]",
+            "<DTPOSTED><![CDATA[20260115000000[+1:CET]]]></DTPOSTED>",
+        ],
+    )
+    def test_parse_ofx_keeps_the_bank_date_with_a_timezone_offset(self, dtposted):
+        """DTPOSTED with a [offset:TZ] suffix keeps the day the bank printed."""
+        ofx = self._make_ofx(
+            "<STMTTRN>\n"
+            "<TRNTYPE>DEBIT\n"
+            f"{dtposted}\n"
+            "<TRNAMT>-10.00\n"
+            "<FITID>TZ1\n"
+            "<MEMO>CARD PAYMENT\n"
+            "</STMTTRN>\n"
+        )
+        transactions = parse_ofx(ofx)
+
+        assert transactions[0].date == date(2026, 1, 15)
 
     def test_parse_ofx_keeps_duplicate_looking_transactions(self):
         """Transactions with same fields but different FITIDs are both kept."""
@@ -1432,7 +1554,58 @@ class TestImportTransactionsFx:
     """
 
     @pytest.mark.asyncio
-    @patch("app.services.fx_rate_service._provider")
+    async def test_two_years_of_usd_rows_cost_one_fetch_per_month(
+        self, session: AsyncSession, test_user: User, test_workspace, test_account: Account,
+    ):
+        """A two-year backfill of USD rows in a BRL workspace is O(months), not O(days).
+
+        Before issue #624 this was one provider call per distinct date (731);
+        now only the first date of each month fetches and the rest of the month
+        reads the closest stored rate.
+        """
+        from app.schemas.transaction import TransactionImport
+
+        usd_account = Account(
+            id=uuid.uuid4(),
+            user_id=test_user.id,
+            name="USD Card",
+            type="credit_card",
+            balance=Decimal("0.00"),
+            currency="USD",
+        )
+        session.add(usd_account)
+        await session.commit()
+
+        calls: list[date] = []
+
+        async def counting_sync(db: AsyncSession, target: date) -> int:
+            calls.append(target)
+            await _insert_fx_rate(db, "BRL", Decimal("5.0000000000"), target)
+            return 1
+
+        start = date(2024, 1, 1)
+        days = (date(2026, 1, 1) - start).days
+        txns = [
+            TransactionImport(
+                description=f"US purchase {offset}",
+                amount=Decimal("10.00"),
+                date=start + timedelta(days=offset),
+                type="debit",
+                currency="USD",
+            )
+            for offset in range(days)
+        ]
+
+        with patch("app.services.fx_rate_service.sync_rates", side_effect=counting_sync):
+            imported, _, _, _ = await import_transactions(
+                session, test_workspace.id, test_user.id, usd_account.id, txns, "csv",
+            )
+
+        assert imported == days
+        assert len(calls) == 24  # one per month, not one per day
+
+    @pytest.mark.asyncio
+    @patch("app.services.fx_rate_service.OpenExchangeRatesProvider", new_callable=_RateProviderFactoryStub)
     async def test_import_with_fx_rate_from_csv(self, mock_provider, session: AsyncSession, test_user: User, test_workspace, test_account: Account):
         """When CSV provides fx_rate, it should be used directly without calling FX service."""
         from app.schemas.transaction import TransactionImport
@@ -1528,7 +1701,7 @@ class TestImportTransactionsFx:
         assert tx.description_is_rule_managed is False
 
     @pytest.mark.asyncio
-    @patch("app.services.fx_rate_service._provider")
+    @patch("app.services.fx_rate_service.OpenExchangeRatesProvider", new_callable=_RateProviderFactoryStub)
     async def test_import_foreign_currency_without_fx_rate_auto_converts(
         self, mock_provider, session: AsyncSession, test_user: User, test_workspace, test_account: Account,
     ):
@@ -1572,7 +1745,7 @@ class TestImportTransactionsFx:
         assert float(tx.amount_primary) > 500  # 100 EUR * ~5.43 = ~543
 
     @pytest.mark.asyncio
-    @patch("app.services.fx_rate_service._provider")
+    @patch("app.services.fx_rate_service.OpenExchangeRatesProvider", new_callable=_RateProviderFactoryStub)
     async def test_import_uses_account_currency_as_default(
         self, mock_provider, session: AsyncSession, test_user: User, test_workspace,
     ):
@@ -1624,7 +1797,7 @@ class TestImportTransactionsFx:
         assert tx.currency == "USD"
 
     @pytest.mark.asyncio
-    @patch("app.services.fx_rate_service._provider")
+    @patch("app.services.fx_rate_service.OpenExchangeRatesProvider", new_callable=_RateProviderFactoryStub)
     async def test_import_brl_into_brl_account_no_fx(
         self, mock_provider, session: AsyncSession, test_user: User, test_workspace, test_account: Account,
     ):
@@ -1662,7 +1835,7 @@ class TestImportTransactionsFx:
         mock_provider.fetch_historical.assert_not_called()
 
     @pytest.mark.asyncio
-    @patch("app.services.fx_rate_service._provider")
+    @patch("app.services.fx_rate_service.OpenExchangeRatesProvider", new_callable=_RateProviderFactoryStub)
     async def test_import_csv_currency_overrides_account_currency(
         self, mock_provider, session: AsyncSession, test_user: User, test_workspace, test_account: Account,
     ):
@@ -1823,6 +1996,51 @@ class TestParseCsvCategoryColumn:
         assert transactions[0].category_name == "Alimentação"
 
 
+class TestParseCsvAccentedHeaders:
+    """Brazilian bank exports write the Portuguese headers with accents."""
+
+    @pytest.mark.parametrize("encoding", ["utf-8", "utf-8-sig", "cp1252", "latin-1"])
+    @pytest.mark.parametrize("desc_header", ["Descrição", "Histórico", "Lançamento"])
+    def test_accented_description_header_is_detected(self, encoding, desc_header):
+        csv_content = f"Data;{desc_header};Valor\n03/11/2026;Padaria São João;-25,50\n"
+        transactions, failed = parse_csv(csv_content.encode(encoding))
+
+        assert failed == []
+        assert len(transactions) == 1
+        assert transactions[0].description == "Padaria São João"
+        assert transactions[0].amount == Decimal("25.50")
+        assert transactions[0].type == "debit"
+
+    def test_accented_notes_and_payee_headers_are_detected(self):
+        csv_content = (
+            "Data;Descrição;Valor;Observação;Beneficiário\n"
+            "03/11/2026;Aluguel;-1500,00;Novembro;Imobiliária Sol\n"
+        )
+        transactions, _ = parse_csv(csv_content.encode("utf-8"))
+
+        assert transactions[0].notes == "Novembro"
+        assert transactions[0].payee_raw == "Imobiliária Sol"
+
+    def test_a_plain_header_wins_over_an_accented_one_next_to_it(self):
+        """A file holding both "Descrição" and "descricao" keeps reading the
+        plain column, as it did before the folded match was added."""
+        csv_content = (
+            "Data;Descrição;descricao;Valor\n"
+            "03/11/2026;Acentuada;Plana;-10,00\n"
+        )
+        transactions, _ = parse_csv(csv_content.encode("utf-8"))
+
+        assert transactions[0].description == "Plana"
+
+    def test_explicit_mapping_to_an_accented_header_still_works(self):
+        csv_content = "Data;Histórico;Valor\n03/11/2026;Mercado;-10,00\n"
+        transactions, _ = parse_csv(
+            csv_content.encode("utf-8"), column_mapping={"description": "Histórico"}
+        )
+
+        assert transactions[0].description == "Mercado"
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 # IMPORT TRANSACTIONS WITH CATEGORY RESOLUTION
 # ═══════════════════════════════════════════════════════════════════════════
@@ -1832,7 +2050,7 @@ class TestImportTransactionsWithCategory:
     """Tests for category_name → category_id resolution in import_transactions."""
 
     @pytest.mark.asyncio
-    @patch("app.services.fx_rate_service._provider")
+    @patch("app.services.fx_rate_service.OpenExchangeRatesProvider", new_callable=_RateProviderFactoryStub)
     async def test_known_category_name_resolved_to_id(
         self, mock_provider, session: AsyncSession, test_user: User, test_workspace, test_account: Account,
     ):
@@ -1870,7 +2088,7 @@ class TestImportTransactionsWithCategory:
         assert tx.category_id == category.id
 
     @pytest.mark.asyncio
-    @patch("app.services.fx_rate_service._provider")
+    @patch("app.services.fx_rate_service.OpenExchangeRatesProvider", new_callable=_RateProviderFactoryStub)
     async def test_unknown_category_name_leaves_uncategorized(
         self, mock_provider, session: AsyncSession, test_user: User, test_workspace, test_account: Account,
     ):
@@ -1899,7 +2117,7 @@ class TestImportTransactionsWithCategory:
         assert tx.category_id is None
 
     @pytest.mark.asyncio
-    @patch("app.services.fx_rate_service._provider")
+    @patch("app.services.fx_rate_service.OpenExchangeRatesProvider", new_callable=_RateProviderFactoryStub)
     async def test_hidden_category_name_leaves_uncategorized(
         self, mock_provider, session: AsyncSession, test_user: User, test_workspace, test_account: Account,
     ):
@@ -1941,7 +2159,7 @@ class TestImportTransactionsWithCategory:
         assert tx.category_id is None
 
     @pytest.mark.asyncio
-    @patch("app.services.fx_rate_service._provider")
+    @patch("app.services.fx_rate_service.OpenExchangeRatesProvider", new_callable=_RateProviderFactoryStub)
     async def test_category_name_matches_case_insensitively(
         self, mock_provider, session: AsyncSession, test_user: User, test_workspace, test_account: Account,
     ):
@@ -1977,7 +2195,7 @@ class TestImportTransactionsWithCategory:
         assert tx.category_id == category.id
 
     @pytest.mark.asyncio
-    @patch("app.services.fx_rate_service._provider")
+    @patch("app.services.fx_rate_service.OpenExchangeRatesProvider", new_callable=_RateProviderFactoryStub)
     async def test_no_category_name_leaves_uncategorized(
         self, mock_provider, session: AsyncSession, test_user: User, test_workspace, test_account: Account,
     ):
@@ -2005,7 +2223,7 @@ class TestImportTransactionsWithCategory:
         assert tx.category_id is None
 
     @pytest.mark.asyncio
-    @patch("app.services.fx_rate_service._provider")
+    @patch("app.services.fx_rate_service.OpenExchangeRatesProvider", new_callable=_RateProviderFactoryStub)
     async def test_multiple_categories_resolved_correctly(
         self, mock_provider, session: AsyncSession, test_user: User, test_workspace, test_account: Account,
     ):
@@ -2073,7 +2291,7 @@ class TestImportTransactionsWithCategory:
         assert unknown_tx.category_id is None
 
     @pytest.mark.asyncio
-    @patch("app.services.fx_rate_service._provider")
+    @patch("app.services.fx_rate_service.OpenExchangeRatesProvider", new_callable=_RateProviderFactoryStub)
     async def test_end_to_end_parse_and_import_with_type_and_category(
         self, mock_provider, session: AsyncSession, test_user: User, test_workspace, test_account: Account,
     ):
@@ -2124,6 +2342,37 @@ class TestImportTransactionsWithCategory:
         assert salary_tx.category_id == salary_cat.id
         assert housing_tx.type == "debit"
         assert housing_tx.category_id == housing_cat.id
+
+
+def _daily_fees(*days: int) -> list:
+    """One FEE row per day of January 2026, all under the same FITID."""
+    from app.schemas.transaction import TransactionImport
+
+    return [
+        TransactionImport(
+            description="FEE",
+            amount=Decimal("2.00"),
+            date=date(2026, 1, day),
+            type="debit",
+            external_id="FITID-FEE",
+        )
+        for day in days
+    ]
+
+
+async def _import_before_offset_fix(session, workspace, user, account, rows) -> None:
+    """Import rows as an OFX import from before #1671, whose dates were the
+    UTC day ofxparse gave (what migration 125 marks)."""
+    from sqlalchemy import update
+
+    from app.models.import_log import ImportLog
+
+    await import_transactions(session, workspace.id, user.id, account.id, rows, "ofx")
+    await session.execute(
+        update(ImportLog)
+        .where(ImportLog.account_id == account.id)
+        .values(ofx_utc_dates=True)
+    )
 
 
 class TestOfxInstallmentDedup:
@@ -2202,6 +2451,135 @@ class TestOfxInstallmentDedup:
         assert imported == 0
         assert skipped == 2
 
+    @pytest.mark.asyncio
+    async def test_same_external_id_one_day_apart_dedups(
+        self, session: AsyncSession, test_user: User, test_workspace, test_account: Account,
+    ):
+        """A row imported before OFX offsets were dropped can sit one day
+        earlier. Re-importing the statement must not duplicate it."""
+        from app.schemas.transaction import TransactionImport
+
+        txn = TransactionImport(
+            description="CARD PAYMENT",
+            amount=Decimal("10.00"),
+            date=date(2026, 1, 14),
+            type="debit",
+            external_id="FITID-TZ",
+        )
+        await _import_before_offset_fix(session, test_workspace, test_user, test_account, [txn])
+        imported, skipped, _, _ = await import_transactions(
+            session,
+            test_workspace.id,
+            test_user.id,
+            test_account.id,
+            [txn.model_copy(update={"date": date(2026, 1, 15)})],
+            "ofx",
+        )
+        assert imported == 0
+        assert skipped == 1
+
+    @pytest.mark.asyncio
+    async def test_same_external_id_one_day_apart_in_one_statement_both_imported(
+        self, session: AsyncSession, test_user: User, test_workspace, test_account: Account,
+    ):
+        """A recurring fee the bank reports under one FITID on consecutive days
+        is two charges. The one-day window only reaches earlier imports, so both
+        rows land, and re-importing the same statement skips both."""
+        from sqlalchemy import select
+
+        from app.models.transaction import Transaction
+        from app.schemas.transaction import TransactionImport
+
+        fees = [
+            TransactionImport(
+                description="FEE",
+                amount=Decimal("2.00"),
+                date=day,
+                type="debit",
+                external_id="FITID-FEE",
+            )
+            for day in (date(2026, 1, 14), date(2026, 1, 15))
+        ]
+        imported, skipped, _, _ = await import_transactions(
+            session, test_workspace.id, test_user.id, test_account.id, fees, "ofx"
+        )
+        assert imported == 2
+        assert skipped == 0
+
+        stored = await session.execute(
+            select(Transaction.date)
+            .where(
+                Transaction.account_id == test_account.id,
+                Transaction.external_id == "FITID-FEE",
+            )
+            .order_by(Transaction.date)
+        )
+        assert stored.scalars().all() == [date(2026, 1, 14), date(2026, 1, 15)]
+
+        imported, skipped, _, _ = await import_transactions(
+            session, test_workspace.id, test_user.id, test_account.id, fees, "ofx"
+        )
+        assert imported == 0
+        assert skipped == 2
+
+    @pytest.mark.asyncio
+    async def test_overlapping_statement_keeps_next_day_fee_under_same_fitid(
+        self, session: AsyncSession, test_user: User, test_workspace, test_account: Account,
+    ):
+        """#388: the next statement overlaps the previous one and repeats a
+        daily fee's FITID. The fee of the new day is a new charge, not the
+        previous day's row one day off."""
+        from sqlalchemy import select
+
+        from app.models.transaction import Transaction
+
+        first, _, _, _ = await import_transactions(
+            session, test_workspace.id, test_user.id, test_account.id,
+            _daily_fees(14, 15), "ofx",
+        )
+        assert first == 2
+
+        imported, skipped, _, _ = await import_transactions(
+            session, test_workspace.id, test_user.id, test_account.id,
+            _daily_fees(14, 15, 16), "ofx",
+        )
+        assert (imported, skipped) == (1, 2)
+
+        # A statement that starts the day after the last one ended.
+        imported, skipped, _, _ = await import_transactions(
+            session, test_workspace.id, test_user.id, test_account.id,
+            _daily_fees(17), "ofx",
+        )
+        assert (imported, skipped) == (1, 0)
+
+        stored = await session.execute(
+            select(Transaction.date)
+            .where(Transaction.account_id == test_account.id)
+            .order_by(Transaction.date)
+        )
+        assert [d.day for d in stored.scalars()] == [14, 15, 16, 17]
+
+    @pytest.mark.asyncio
+    async def test_legacy_row_one_day_off_still_dedups_next_to_new_imports(
+        self, session: AsyncSession, test_user: User, test_workspace, test_account: Account,
+    ):
+        """The one-day window keeps reaching rows of an import parsed before
+        the offset fix, even once newer imports sit on the same account."""
+        legacy = _daily_fees(14)[0].model_copy(update={"external_id": "FITID-OLD"})
+        await _import_before_offset_fix(
+            session, test_workspace, test_user, test_account, [legacy]
+        )
+        await import_transactions(
+            session, test_workspace.id, test_user.id, test_account.id,
+            _daily_fees(10, 11), "ofx",
+        )
+
+        imported, skipped, _, _ = await import_transactions(
+            session, test_workspace.id, test_user.id, test_account.id,
+            [legacy.model_copy(update={"date": date(2026, 1, 15)})] + _daily_fees(12),
+            "ofx",
+        )
+        assert (imported, skipped) == (1, 1)
 
     @pytest.mark.asyncio
     async def test_same_external_id_same_date_different_amounts_all_imported(
@@ -2774,7 +3152,7 @@ class TestForceUncategorized:
 
 
 @pytest.mark.asyncio
-@patch("app.services.fx_rate_service._provider")
+@patch("app.services.fx_rate_service.OpenExchangeRatesProvider", new_callable=_RateProviderFactoryStub)
 async def test_import_tolerates_duplicate_external_id_rows(
     mock_provider, session: AsyncSession, test_user: User, test_workspace, test_account: Account,
 ):
@@ -3002,6 +3380,18 @@ def test_normalize_amount_currency_and_separators():
     # Without a column hint the per-cell behaviour is unchanged.
     assert normalize_amount("0,125") == "0.125"
     assert normalize_amount("12,50") == "12.50"
+    # Two or more comma groups and no dot can only be a grouped number.
+    assert normalize_amount("1,125,000") == "1125000"
+    assert normalize_amount("-1,125,000") == "-1125000"
+    assert normalize_amount("1,2345,678") == "1.2345.678"
+
+
+def test_grouped_amount_beside_zero_comma_cell():
+    """A "0," cell leaves the column without a hint; "1,125,000" still reads as grouped."""
+    from app.services.import_service import infer_decimal_separator, normalize_amount
+    column = ["0,125", "1,125,000"]
+    separator = infer_decimal_separator(column)
+    assert [normalize_amount(cell, separator) for cell in column] == ["0.125", "1125000"]
 
 
 def test_infer_decimal_separator():
@@ -3010,6 +3400,8 @@ def test_infer_decimal_separator():
     assert infer_decimal_separator(["1.234,56", "12,50"]) == ","
     assert infer_decimal_separator(["25,000", "3,000"]) == "."
     assert infer_decimal_separator(["0,125"]) is None
+    # A "0," cell is not a grouped number, so "1,125" beside it is not one either.
+    assert infer_decimal_separator(["0,125", "1,125"]) is None
     assert infer_decimal_separator(["10", ""]) is None
 
 
@@ -3526,3 +3918,55 @@ class TestCsvFxRateValidation:
             ("Bad rate", "invalid_fx_rate"),
             ("Negative rate", "invalid_fx_rate"),
         ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("keep_marker", [True, False])
+async def test_restoring_an_old_backup_marks_its_ofx_imports_as_utc_dated(
+    client, session: AsyncSession, auth_headers, test_user: User, test_workspace,
+    test_account: Account, keep_marker: bool,
+):
+    """A backup written before migration 125 has no marker, so its OFX imports
+    come from the old parser and keep the one-day FITID window; a newer backup
+    keeps the marker it carries."""
+    import io
+    import json
+    import zipfile
+
+    from sqlalchemy import select
+
+    from app.models.import_log import ImportLog
+
+    await import_transactions(
+        session, test_workspace.id, test_user.id, test_account.id, _daily_fees(14), "ofx",
+        filename="fees.ofx", detected_format="ofx",
+    )
+    await session.commit()
+
+    archive = await client.get("/api/export/backup", headers=auth_headers)
+    assert archive.status_code == 200
+    edited = io.BytesIO()
+    with zipfile.ZipFile(io.BytesIO(archive.content)) as source, zipfile.ZipFile(edited, "w") as target:
+        for item in source.infolist():
+            data = source.read(item.filename)
+            if item.filename.rsplit("/", 1)[-1] == "import_logs.json":
+                rows = json.loads(data)
+                assert rows and all(row["ofx_utc_dates"] is False for row in rows)
+                if not keep_marker:
+                    for row in rows:
+                        del row["ofx_utc_dates"]
+                data = json.dumps(rows).encode()
+            target.writestr(item, data)
+
+    restored = await client.post(
+        "/api/backups/restore-upload",
+        files={"file": ("backup.zip", edited.getvalue(), "application/zip")},
+        data={"content": "both", "mode": "new_workspace"},
+        headers=auth_headers,
+    )
+    assert restored.status_code == 200, restored.text
+    workspace_id = uuid.UUID(restored.json()["workspace_id"])
+    marker = await session.scalar(
+        select(ImportLog.ofx_utc_dates).where(ImportLog.workspace_id == workspace_id)
+    )
+    assert marker is (not keep_marker)

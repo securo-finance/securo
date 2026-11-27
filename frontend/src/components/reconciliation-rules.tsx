@@ -371,7 +371,7 @@ function Step({
     <section className="rounded-lg border border-border">
       <header className="px-3 py-2 bg-muted/40 border-b border-border rounded-t-lg">
         <p className="text-sm font-semibold text-foreground">
-          <span className="text-muted-foreground mr-1.5">{index}.</span>
+          <span className="text-muted-foreground me-1.5">{index}.</span>
           {title}
         </p>
         {hint && <p className="text-xs text-muted-foreground mt-0.5">{hint}</p>}
@@ -1284,6 +1284,8 @@ export function ReconciliationRules({ canWrite }: { canWrite: boolean }) {
                 className="gap-1.5 h-8"
                 onClick={() => exporting.mutate(group.node)}
                 disabled={exporting.isPending}
+                aria-label={t('rules.export')}
+                title={t('rules.export')}
               >
                 <Download size={12} />
                 <span className="hidden sm:inline">{t('rules.export')}</span>
@@ -1298,6 +1300,8 @@ export function ReconciliationRules({ canWrite }: { canWrite: boolean }) {
                     fileInput.current?.click()
                   }}
                   disabled={importing.isPending}
+                  aria-label={t('rules.import')}
+                  title={t('rules.import')}
                 >
                   <Upload size={12} />
                   <span className="hidden sm:inline">{t('rules.import')}</span>
@@ -1310,6 +1314,8 @@ export function ReconciliationRules({ canWrite }: { canWrite: boolean }) {
                   size="sm"
                   className="gap-1.5 h-8"
                   onClick={() => setEditing({ node: group.node, rule: null })}
+                  aria-label={t('rules.add')}
+                  title={t('rules.add')}
                 >
                   <Plus size={13} />
                   <span className="hidden sm:inline">{t('rules.add')}</span>

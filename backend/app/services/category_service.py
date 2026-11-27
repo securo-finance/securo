@@ -1,6 +1,6 @@
 import uuid
 from dataclasses import dataclass, field
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 from itertools import groupby
 from typing import Optional
 
@@ -8,6 +8,7 @@ from sqlalchemy import func, or_, select, update as sa_update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.app_clock import app_today
 from app.models.account import Account
 from app.models.budget import Budget
 from app.models.category import Category
@@ -24,6 +25,7 @@ from app.services.category_defaults import (
     localized_name,
 )
 from app.services.category_group_service import create_default_groups
+from app.services.fx_rate_service import convert_or_none
 
 
 class CategoryVisibilityError(ValueError):
@@ -36,6 +38,10 @@ class CategoryInUseError(ValueError):
 
 class CategoryTransferError(ValueError):
     """Raised when the destination given for a deletion cannot take the references."""
+
+
+class CategoryGroupNotFoundError(ValueError):
+    """Raised when a category points at a group outside the workspace."""
 
 
 async def create_default_categories(
@@ -149,12 +155,35 @@ async def get_category(
     return result.scalar_one_or_none()
 
 
+async def _ensure_group_in_workspace(
+    session: AsyncSession,
+    workspace_id: uuid.UUID,
+    group_id: Optional[uuid.UUID],
+) -> None:
+    """Refuse a group that is missing or belongs to another workspace.
+
+    Both cases answer the same, so the response never tells a caller whether
+    an id exists somewhere else.
+    """
+    if group_id is None:
+        return
+    result = await session.execute(
+        select(CategoryGroup.id).where(
+            CategoryGroup.id == group_id,
+            CategoryGroup.workspace_id == workspace_id,
+        )
+    )
+    if result.scalar_one_or_none() is None:
+        raise CategoryGroupNotFoundError("Category group not found")
+
+
 async def create_category(
     session: AsyncSession,
     workspace_id: uuid.UUID,
     user_id: uuid.UUID,
     data: CategoryCreate,
 ) -> Category:
+    await _ensure_group_in_workspace(session, workspace_id, data.group_id)
     category = Category(user_id=user_id, workspace_id=workspace_id, **data.model_dump())
     session.add(category)
     await session.commit()
@@ -225,6 +254,8 @@ async def update_category(
         return None
 
     changes = data.model_dump(exclude_unset=True)
+    if "group_id" in changes:
+        await _ensure_group_in_workspace(session, workspace_id, changes["group_id"])
     if changes.get("is_hidden") is True and not category.is_system:
         raise CategoryVisibilityError("Only system categories can be hidden")
     if (
@@ -377,7 +408,13 @@ async def _used_in_card_credit_lines(
     return False
 
 
-_Limit = tuple[Decimal, Decimal | None]
+_MERGE_NEEDS_RATE = (
+    "These budgets are in different currencies and there is no exchange rate "
+    "for their month to combine them."
+)
+
+# (amount, amount_primary, currency) of one member's limit.
+_Limit = tuple[Decimal, Decimal | None, str | None]
 
 
 async def _merge_budgets(
@@ -426,12 +463,12 @@ async def _merge_budgets(
     # category's carried-over default) lands on a kept row, destination first.
     ordered = sorted([*moving, *existing], key=lambda b: (b.month, not b.is_recurring))
     recurring: dict[uuid.UUID, dict[uuid.UUID, _Limit]] = {}
-    for (_, is_recurring), slot in groupby(ordered, key=lambda b: (b.month, b.is_recurring)):
+    for (month, is_recurring), slot in groupby(ordered, key=lambda b: (b.month, b.is_recurring)):
         rows = list(slot)
         limits: dict[uuid.UUID, dict[uuid.UUID, _Limit]] = {}
         for budget in rows:
             limits.setdefault(budget.category_id, {})[budget.user_id] = (
-                budget.amount, budget.amount_primary,
+                budget.amount, budget.amount_primary, budget.currency,
             )
         if is_recurring:
             # Store immutable amounts before changing any ORM row. An
@@ -452,8 +489,31 @@ async def _merge_budgets(
 
         for user_id, target in kept.items():
             target.category_id = destination_id
-            target.amount = sum((amount for amount, _ in shares[user_id]), Decimal("0"))
-            primary = [value for _, value in shares[user_id] if value is not None]
+            # Limits keep the currency they were typed in, so each part is
+            # brought into the kept row's currency, at the slot's rate, before
+            # the sum: US$ 100 onto R$ 1,000 is R$ 1,500 at 5, not 1,100.
+            currency = target.currency or next(
+                (c for _, _, c in shares[user_id] if c), None
+            )
+            total = Decimal("0")
+            for amount, _, share_currency in shares[user_id]:
+                if not currency or not share_currency or share_currency == currency:
+                    total += amount
+                    continue
+                # A missing rate must stop the move: the 1:1 read fallback
+                # would store US$ 100 onto R$ 1,000 as 1,100. Stored rates
+                # only: the on-demand sync commits the session, which would
+                # keep the moves made so far even when the transfer is refused.
+                converted, _ = await convert_or_none(
+                    session, amount, share_currency, currency, min(month, app_today()),
+                    allow_fetch=False,
+                )
+                if converted is None:
+                    raise CategoryTransferError(_MERGE_NEEDS_RATE)
+                total += converted
+            target.amount = total.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+            target.currency = currency
+            primary = [value for _, value, _ in shares[user_id] if value is not None]
             target.amount_primary = (
                 sum(primary, Decimal("0")) if len(primary) == len(shares[user_id]) else None
             )

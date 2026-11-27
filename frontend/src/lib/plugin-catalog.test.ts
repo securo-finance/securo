@@ -4,6 +4,7 @@ import {
   NO_FILTERS,
   filterPlugins,
   newPlugins,
+  onlyFor,
   pluginTypes,
   sortPlugins,
   trendingPlugins,
@@ -33,6 +34,9 @@ function entry(overrides: Partial<PluginCatalogEntry>): PluginCatalogEntry {
     revoked_reason: null,
     compatible: true,
     supported: true,
+    workspaces: ['personal', 'business'],
+    fits_workspace: true,
+    icon_url: null,
     installed_version: null,
     update_available: false,
     ...overrides,
@@ -69,6 +73,17 @@ describe('plugin catalog', () => {
     expect(filterPlugins([data, english], { ...NO_FILTERS, locale: 'pt-BR' }).map((e) => e.id)).toEqual(['a/data'])
     expect(ids({ status: 'installed' })).toEqual(['b/code'])
     expect(ids({ status: 'updates' })).toEqual(['b/code'])
+  })
+
+  it('filters by workspace type and names the one type a plugin is limited to', () => {
+    const both = entry({ id: 'a/both' })
+    const business = entry({ id: 'a/business', workspaces: ['business'] })
+    const ids = (workspace: 'personal' | 'business') =>
+      filterPlugins([both, business], { ...NO_FILTERS, workspace }).map((e) => e.id)
+    expect(ids('personal')).toEqual(['a/both'])
+    expect(ids('business')).toEqual(['a/both', 'a/business'])
+    expect(onlyFor(both)).toBeNull()
+    expect(onlyFor(business)).toBe('business')
   })
 
   it('sorts by stars, recency and name', () => {

@@ -6,9 +6,12 @@ import i18n from 'i18next'
  * Backend messages the user can trigger from the UI, mapped to translation
  * keys. The API answers in English; without this the toast would too.
  * Matching is on the exact message, so a backend wording change falls back
- * to the English text instead of showing the wrong translation.
+ * to the English text instead of showing the wrong translation. Messages that
+ * spell a number into the sentence are matched by `MESSAGE_PATTERNS` instead.
  */
 const KNOWN_MESSAGES: Record<string, string> = {
+  'Enter a valid http or https endpoint URL': 'agents.connections.baseUrlInvalid',
+  'Cannot change amount or date on a synchronized transaction': 'transactions.syncedAmountDateError',
   'A category split needs at least two lines': 'categoryLines.errors.tooFewLines',
   'Each category can appear only once in a split': 'categoryLines.errors.duplicateCategory',
   'Each line needs an amount': 'categoryLines.errors.invalidLines',
@@ -36,13 +39,107 @@ const KNOWN_MESSAGES: Record<string, string> = {
   'Undo the split across categories before linking it as a transfer': 'categoryLines.errors.undoFirstTransfer',
   'Undo the split across categories before splitting among people': 'categoryLines.errors.undoFirstGroupSplit',
   'Undo the split across categories before adding a mortgage breakdown': 'categoryLines.errors.undoFirstMortgage',
+  'A recurring transaction with the same description, frequency and start date already exists':
+    'recurring.duplicate',
+  'This transaction already belongs to a recurring transaction':
+    'recurring.alreadyLinked',
   'This category is used in transactions split across categories. Change those splits first.':
     'categoryLines.errors.categoryInUse',
   'Transactions split across categories cannot move into an ignored or hidden category.':
     'categoryLines.errors.destinationInvalid',
+  'These budgets are in different currencies and there is no exchange rate for their month to combine them.':
+    'categoryLines.errors.mergeNeedsRate',
+  // Budget amount bounds, raised by the schema as a 422 for every create,
+  // update and batch call.
+  'The budget limit must be at least 0.01': 'budgets.amountTooSmall',
+  'The budget limit is too large': 'budgets.amountTooLarge',
+  'The budget limit cannot be negative': 'budgets.amountNegative',
+  // The bounds of app/core/money.py, on a typed or a derived value.
+  'amount must be greater than zero': 'transactions.amountErrors.notPositive',
+  'amount must be at least 0.01': 'transactions.amountErrors.tooSmall',
+  'amount must be at most 9999999999999.99': 'transactions.amountErrors.tooLarge',
+  'amount cannot be null': 'transactions.amountErrors.required',
+  'amount_primary must be greater than zero': 'transactions.amountErrors.convertedNegative',
+  'amount_primary must be at most 9999999999999.99': 'transactions.amountErrors.convertedTooLarge',
+  'fx_rate_used must be greater than zero': 'transactions.amountErrors.rateNotPositive',
+  'fx_rate_used must be at most 9999999999.9999999999': 'transactions.amountErrors.rateTooLarge',
+  // Linking a transaction to a group settlement, refused by the service.
+  'Settlements linked to this transaction would exceed its amount':
+    'splitGroups.errorExceedsAmount',
+  'Only the receiver can link their incoming transaction':
+    'splitGroups.errorOnlyReceiver',
+  "Linked transaction must be your own credit in the settlement's currency":
+    'splitGroups.errorReceiverCurrency',
+  // The instance has no free database connection right now (issue #600).
+  'The instance is at its database connection limit. Try again in a moment.':
+    'common.databaseBusy',
+}
+
+/**
+ * Messages whose English text spells a number into the sentence. An exact
+ * entry would stop translating the day the backend moves the limit, so the
+ * pattern matches the whole message with that value as a slot.
+ */
+const MESSAGE_PATTERNS: ReadonlyArray<{ pattern: RegExp; key: string }> = [
+  // The calendar refuses a month far from today (issue #598); the router's
+  // window (50 years) is interpolated into the message.
+  {
+    pattern: /^month must be within \d+ years of today$/,
+    key: 'transactions.calendarMonthOutOfRange',
+  },
+]
+
+function knownKey(message: string): string | undefined {
+  return (
+    KNOWN_MESSAGES[message] ??
+    MESSAGE_PATTERNS.find(({ pattern }) => pattern.test(message))?.key
+  )
+}
+
+/** Pydantic prefixes a validator's own message with this. */
+const PYDANTIC_VALUE_ERROR = 'Value error, '
+
+/**
+ * One entry of a 422 validation list, translated when its message is a known
+ * one, else null so the caller keeps the raw `field: message` form.
+ */
+export function translateValidationMessage(msg: string): string | null {
+  const text = msg.startsWith(PYDANTIC_VALUE_ERROR) ? msg.slice(PYDANTIC_VALUE_ERROR.length) : msg
+  const key = knownKey(text)
+  return key && i18n.isInitialized && i18n.exists(key) ? i18n.t(key) : null
+}
+
+/**
+ * Codes whose message carries values the user has to see (the units an entry
+ * sells, the units the holding left). The English `message` spells those
+ * numbers into a sentence, so matching its text would only ever translate one
+ * pair of numbers: the code picks the sentence and the values fill it in.
+ */
+const KNOWN_CODES: Record<string, string> = {
+  import_undo_oversell: 'import.undoOversell',
+  import_undo_too_large: 'import.undoTooLarge',
+  user_sole_owner: 'admin.users.soleOwner',
 }
 
 export function translateApiMessage(message: string): string {
-  const key = KNOWN_MESSAGES[message]
+  const key = knownKey(message)
   return key && i18n.isInitialized && i18n.exists(key) ? i18n.t(key) : message
 }
+
+/**
+ * The text to show for a `{ code, message }` detail: the translation of its
+ * code when there is one, else its message (translated when a known one).
+ */
+export function translateApiDetail(detail: Record<string, unknown>): string | null {
+  const key = typeof detail.code === 'string' ? KNOWN_CODES[detail.code] : undefined
+  if (key && i18n.isInitialized && i18n.exists(key)) {
+    const values: Record<string, string> = {}
+    for (const [name, value] of Object.entries(detail)) {
+      if (typeof value === 'string' || typeof value === 'number') values[name] = String(value)
+    }
+    return i18n.t(key, values)
+  }
+  const message = detail.message
+  return typeof message === 'string' && message.trim() ? translateApiMessage(message) : null
+}
+

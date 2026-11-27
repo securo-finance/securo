@@ -14,9 +14,12 @@ from app.core.app_clock import (
 )
 from app.worker import celery_app
 from app.core.config import get_settings
+from app.core.row_security import maker_for_row, workspace_makers
 from app.models.bank_connection import BankConnection
+from app.plugins.provider import PLUGIN_PROVIDER_PREFIX
 from app.providers.base import ProviderNotConfiguredError
 from app.services import connection_service
+from app.services.connection_service import SyncOutcome
 
 logger = logging.getLogger(__name__)
 
@@ -29,9 +32,10 @@ PROVIDER_REFRESH_THRESHOLD = timedelta(hours=20)
 # calls that keep failing. The state lives in BankConnection.settings under
 # SYNC_BACKOFF_KEY; any successful sync, manual or scheduled, clears it.
 SYNC_BACKOFF_KEY = connection_service.SYNC_BACKOFF_KEY
+RETRY_NOT_BEFORE_KEY = connection_service.RETRY_NOT_BEFORE_KEY
 SYNC_BACKOFF_MAX = timedelta(hours=24)
 # Enable Banking advises resuming no earlier than 6 hours after a 429.
-SYNC_BACKOFF_RATE_LIMITED_MIN = timedelta(hours=6)
+SYNC_BACKOFF_RATE_LIMITED_MIN = connection_service.RATE_LIMITED_RETRY_DEFAULT
 
 
 def _sync_backoff_delay(failures: int, rate_limited: bool, base: timedelta) -> timedelta:
@@ -65,9 +69,25 @@ def _sync_backoff_until(settings: dict | None, base: timedelta) -> datetime | No
         return None
     if last_attempt_at.tzinfo is None:
         return None
-    return last_attempt_at + _sync_backoff_delay(
+    retry_at = last_attempt_at + _sync_backoff_delay(
         failures, bool(state.get("rate_limited")), base
     )
+    # The provider's Retry-After, noted by sync_connection on a throttled run,
+    # is a floor: never earlier than the bank asked for.
+    not_before = _parse_aware(state.get(RETRY_NOT_BEFORE_KEY))
+    if not_before is not None and not_before > retry_at:
+        return not_before
+    return retry_at
+
+
+def _parse_aware(value: object) -> datetime | None:
+    if not isinstance(value, str):
+        return None
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo is not None else None
 
 
 async def _record_sync_failure(
@@ -103,11 +123,15 @@ async def _record_sync_failure(
         failures = previous.get("failures") if isinstance(previous, dict) else 0
         if not isinstance(failures, int) or failures < 0:
             failures = 0
-        current[SYNC_BACKOFF_KEY] = {
+        state = {
             "failures": failures + 1,
             "last_attempt_at": now.isoformat(),
             "rate_limited": rate_limited,
         }
+        not_before = previous.get(RETRY_NOT_BEFORE_KEY) if isinstance(previous, dict) else None
+        if isinstance(not_before, str):
+            state[RETRY_NOT_BEFORE_KEY] = not_before
+        current[SYNC_BACKOFF_KEY] = state
         conn.settings = current
         await session.commit()
 
@@ -151,92 +175,116 @@ def _make_session_maker():
     return engine, async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
 
-async def _sync_all() -> int:
+async def _sync_all() -> dict:
     """Find stale connections and sync each one."""
     engine, session_maker = _make_session_maker()
     try:
-        min_interval = timedelta(hours=get_settings().bank_sync_min_interval_hours)
-        now = datetime.now(timezone.utc)
-        cutoff = now - min_interval
-        synced = 0
-
-        async with session_maker() as session:
-            operation_timezone = await get_timezone(session, fresh=True)
-            result = await session.execute(
-                select(
-                    BankConnection.id,
-                    BankConnection.user_id,
-                    BankConnection.last_sync_at,
-                    BankConnection.settings,
-                ).where(
-                    BankConnection.status.in_(["active", "error"]),
-                    (BankConnection.last_sync_at < cutoff)
-                    | (BankConnection.last_sync_at.is_(None)),
-                )
-            )
-            stale = result.all()
-
-        connections = []
-        for row in stale:
-            retry_at = _sync_backoff_until(row.settings, min_interval)
-            if retry_at is not None and retry_at > now:
-                logger.info(
-                    "Skipping connection %s: backing off after failed syncs until %s",
-                    row.id,
-                    retry_at.isoformat(),
-                )
-                continue
-            connections.append(row)
-
-        logger.info(
-            "Sync check: found %d stale connections, %d backing off (cutoff=%s)",
-            len(connections),
-            len(stale) - len(connections),
-            cutoff.isoformat(),
-        )
-
-        with use_resolved_timezone(operation_timezone):
-            for conn_id, user_id, last_sync, settings in connections:
-                attempt_started_at = datetime.now(timezone.utc)
-                try:
-                    logger.info("Syncing connection %s (last_sync=%s)", conn_id, last_sync)
-                    outcome = await _sync_one(
-                        session_maker,
-                        conn_id,
-                        user_id,
-                        trigger_provider_refresh=_should_trigger_provider_refresh(
-                            settings, datetime.now(timezone.utc)
-                        ),
-                    )
-                except ProviderNotConfiguredError as exc:
-                    # Actionable one-liner instead of a buried traceback: this
-                    # means THIS process is missing the provider's configuration.
-                    # Not the connection's fault, so it does not count as a failure.
-                    logger.error("Skipping connection %s: %s", conn_id, exc)
-                    continue
-                except Exception:
-                    logger.exception("Background sync failed for connection %s", conn_id)
-                    await _record_sync_failure_safely(
-                        session_maker,
-                        conn_id,
-                        rate_limited=False,
-                        attempt_started_at=attempt_started_at,
-                    )
-                    continue
-                if outcome == "rate_limited":
-                    logger.warning("Background sync for connection %s was rate-limited", conn_id)
-                    await _record_sync_failure_safely(
-                        session_maker,
-                        conn_id,
-                        rate_limited=True,
-                        attempt_started_at=attempt_started_at,
-                    )
-                    continue
-                synced += 1
-
-        return synced
+        total = {"synced": 0, "rate_limited": 0, "backing_off": 0}
+        for maker in await workspace_makers(session_maker):
+            done = await _sync_stale(maker)
+            total = {key: total[key] + done[key] for key in total}
+        return total
     finally:
         await engine.dispose()
+
+
+async def _sync_stale(session_maker) -> dict:
+    min_interval = timedelta(hours=get_settings().bank_sync_min_interval_hours)
+    now = datetime.now(timezone.utc)
+    cutoff = now - min_interval
+    synced = 0
+    rate_limited = 0
+
+    async with session_maker() as session:
+        operation_timezone = await get_timezone(session, fresh=True)
+        result = await session.execute(
+            select(
+                BankConnection.id,
+                BankConnection.user_id,
+                BankConnection.last_sync_at,
+                BankConnection.settings,
+            ).where(
+                BankConnection.status.in_(["active", "error"]),
+                # A plugin's connection follows its plugin's schedule.
+                ~BankConnection.provider.startswith(PLUGIN_PROVIDER_PREFIX),
+                (BankConnection.last_sync_at < cutoff)
+                | (BankConnection.last_sync_at.is_(None)),
+            )
+        )
+        stale = result.all()
+
+    connections = []
+    for row in stale:
+        retry_at = _sync_backoff_until(row.settings, min_interval)
+        if retry_at is not None and retry_at > now:
+            logger.info(
+                "Skipping connection %s: backing off after failed syncs until %s",
+                row.id,
+                retry_at.isoformat(),
+            )
+            continue
+        connections.append(row)
+    backing_off = len(stale) - len(connections)
+
+    logger.info(
+        "Sync check: found %d stale connections, %d backing off (cutoff=%s)",
+        len(connections),
+        backing_off,
+        cutoff.isoformat(),
+    )
+
+    with use_resolved_timezone(operation_timezone):
+        for conn_id, user_id, last_sync, settings in connections:
+            attempt_started_at = datetime.now(timezone.utc)
+            try:
+                logger.info("Syncing connection %s (last_sync=%s)", conn_id, last_sync)
+                outcome = await _sync_one(
+                    session_maker,
+                    conn_id,
+                    user_id,
+                    trigger_provider_refresh=_should_trigger_provider_refresh(
+                        settings, datetime.now(timezone.utc)
+                    ),
+                )
+            except ProviderNotConfiguredError as exc:
+                # Actionable one-liner instead of a buried traceback: this
+                # means THIS process is missing the provider's configuration.
+                # Not the connection's fault, so it does not count as a failure.
+                logger.error("Skipping connection %s: %s", conn_id, exc)
+                continue
+            except Exception:
+                logger.exception("Background sync failed for connection %s", conn_id)
+                await _record_sync_failure_safely(
+                    session_maker,
+                    conn_id,
+                    rate_limited=False,
+                    attempt_started_at=attempt_started_at,
+                )
+                continue
+            if outcome in ("partial", "rate_limited"):
+                # The provider throttled this run, fully or for some
+                # accounts. Some accounts were never fetched, so it is not
+                # counted as synced: it backs off as a rate-limited failure.
+                rate_limited += 1
+                logger.warning(
+                    "Background sync for connection %s was rate-limited (outcome=%s)",
+                    conn_id,
+                    outcome,
+                )
+                await _record_sync_failure_safely(
+                    session_maker,
+                    conn_id,
+                    rate_limited=True,
+                    attempt_started_at=attempt_started_at,
+                )
+                continue
+            synced += 1
+
+    return {
+        "synced": synced,
+        "rate_limited": rate_limited,
+        "backing_off": backing_off,
+    }
 
 
 async def _sync_one(
@@ -245,7 +293,7 @@ async def _sync_one(
     user_id: uuid.UUID,
     *,
     trigger_provider_refresh: bool = False,
-) -> connection_service.SyncOutcome | None:
+) -> SyncOutcome | None:
     """Sync a single connection and return its outcome (None if skipped).
 
     Error status is set by sync_connection itself.
@@ -271,9 +319,15 @@ async def _sync_one(
 @celery_app.task(name="app.tasks.sync_tasks.sync_all_connections")
 def sync_all_connections() -> dict:
     """Celery task: sync all stale bank connections."""
-    synced = asyncio.run(_sync_all())
-    logger.info("Background sync complete: %d connections synced", synced)
-    return {"synced": synced}
+    result = asyncio.run(_sync_all())
+    logger.info(
+        "Background sync complete: %d connections synced, %d rate-limited, "
+        "%d backing off",
+        result["synced"],
+        result["rate_limited"],
+        result["backing_off"],
+    )
+    return result
 
 
 @celery_app.task(name="app.tasks.sync_tasks.sync_single_connection")
@@ -290,8 +344,9 @@ def sync_single_connection(connection_id: str, user_id: str) -> dict:
 async def _sync_one_celery(connection_id: str, user_id: str) -> None:
     engine, session_maker = _make_session_maker()
     try:
-        async with session_maker() as session:
-            conn_uuid = uuid.UUID(connection_id)
+        conn_uuid = uuid.UUID(connection_id)
+        maker = await maker_for_row(session_maker, "bank_connections", conn_uuid)
+        async with maker() as session:
             workspace_id = await session.scalar(
                 select(BankConnection.workspace_id).where(BankConnection.id == conn_uuid)
             )

@@ -28,6 +28,34 @@ async def test_preview_csv_import(client: AsyncClient, auth_headers, test_accoun
 
 
 @pytest.mark.asyncio
+async def test_preview_csv_import_latin1(client: AsyncClient, auth_headers, test_account):
+    """Excel's plain "CSV" and many bank exports are Windows-1252/Latin-1, not UTF-8."""
+    csv_content = "data,descricao,valor\n10/02/2026,PADARIA SÃO JOÃO,-25.50\n".encode("cp1252")
+    response = await client.post(
+        "/api/transactions/import/preview",
+        headers=auth_headers,
+        files={"file": ("extrato.csv", csv_content, "text/csv")},
+    )
+    assert response.status_code == 200
+    assert response.json()["transactions"][0]["description"] == "PADARIA SÃO JOÃO"
+
+
+@pytest.mark.asyncio
+async def test_preview_csv_import_cp1252_dash_and_euro(client: AsyncClient, auth_headers, test_account):
+    """Windows-1252 bytes 0x96 (en dash) and 0x80 (euro sign) keep their meaning."""
+    csv_content = b"data,descricao,valor\n10/02/2026,CAFE 3\x80,\x9625.50\n"
+    response = await client.post(
+        "/api/transactions/import/preview",
+        headers=auth_headers,
+        files={"file": ("extrato.csv", csv_content, "text/csv")},
+    )
+    assert response.status_code == 200
+    transaction = response.json()["transactions"][0]
+    assert transaction["description"] == "CAFE 3\u20ac"
+    assert transaction["type"] == "debit"
+
+
+@pytest.mark.asyncio
 async def test_preview_csv_returns_columns(client: AsyncClient, auth_headers, test_account):
     """The preview response exposes the CSV header columns for the mapping UI."""
     csv_content = b"Posted On,Memo Line,Movement\n2026-01-10,COFFEE,-12.50\n"

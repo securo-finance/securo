@@ -1,20 +1,48 @@
 import calendar
 import uuid
 from datetime import date, timedelta
+from decimal import Decimal
 from typing import Optional
 
 from sqlalchemy import and_, or_, select, true
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.core.app_clock import app_today, get_workspace_timezone, today_in
 from app.models.account import Account
 from app.models.bank_connection import BankConnection
+from app.models.category import Category
 from app.models.recurring_transaction import RecurringTransaction
 from app.models.transaction import Transaction
-from app.schemas.recurring_transaction import RecurringTransactionCreate, RecurringTransactionUpdate
-from app.services import category_line_service, recurring_match_service
+from app.models.user import User
+from app.schemas.recurring_transaction import (
+    RecurringMonthSummary,
+    RecurringTransactionCreate,
+    RecurringTransactionUpdate,
+)
+from app.services import category_line_service, category_service, recurring_match_service
 from app.services.credit_card_service import apply_effective_date
-from app.services.fx_rate_service import stamp_primary_amount
+from app.services.fx_rate_service import (
+    convert_or_none,
+    resolve_primary_stamp,
+    stamp_primary_amount,
+)
+from app.services.rule_service import apply_rules_to_transaction
+
+
+class RecurringConflictError(Exception):
+    """The bill already exists, or the source transaction already has one.
+
+    The router turns this into a 409 so the UI can say what happened instead
+    of showing a 500 from the unique constraint or a silent duplicate.
+    """
+
+
+DUPLICATE_RECURRING_MESSAGE = (
+    "A recurring transaction with the same description, frequency and start date already exists"
+)
+SOURCE_ALREADY_LINKED_MESSAGE = "This transaction already belongs to a recurring transaction"
 
 
 async def _verify_account_in_workspace(
@@ -36,6 +64,20 @@ async def _verify_account_in_workspace(
         raise ValueError("Account not found")
 
 
+async def _verify_category_in_workspace(
+    session: AsyncSession, workspace_id: uuid.UUID, category_id: Optional[uuid.UUID]
+) -> None:
+    """Raise ValueError unless the category is this workspace's own.
+
+    An unknown id and another workspace's id get the same answer, so the
+    response never tells whether a category exists elsewhere.
+    """
+    if category_id is not None and not await category_service.get_category(
+        session, category_id, workspace_id
+    ):
+        raise ValueError("Category not found")
+
+
 async def get_recurring_transactions(
     session: AsyncSession, workspace_id: uuid.UUID
 ) -> list[RecurringTransaction]:
@@ -48,13 +90,59 @@ async def get_recurring_transactions(
 
 
 async def get_recurring_transaction(
-    session: AsyncSession, recurring_id: uuid.UUID, workspace_id: uuid.UUID
+    session: AsyncSession,
+    recurring_id: uuid.UUID,
+    workspace_id: uuid.UUID,
+    *,
+    for_update: bool = False,
 ) -> Optional[RecurringTransaction]:
-    result = await session.execute(
-        select(RecurringTransaction)
-        .where(RecurringTransaction.id == recurring_id, RecurringTransaction.workspace_id == workspace_id)
+    query = select(RecurringTransaction).where(
+        RecurringTransaction.id == recurring_id,
+        RecurringTransaction.workspace_id == workspace_id,
     )
-    return result.scalar_one_or_none()
+    if for_update:
+        query = query.with_for_update().execution_options(populate_existing=True)
+    return (await session.execute(query)).scalar_one_or_none()
+
+
+async def _fetch_rate_and_check_bounds(
+    session: AsyncSession,
+    user_id: uuid.UUID,
+    amount: Decimal,
+    currency: str,
+    start_date: Optional[date],
+) -> None:
+    """Make the bill's rate available, and refuse a conversion past the column.
+
+    An on-demand rate fetch commits the session. Call this before the bill is
+    written or locked: run later, the fetch would save an edit that is about to
+    be refused and release the lock. The stamp then reads stored rates only.
+    """
+    user = await session.get(User, user_id)
+    if user is not None:
+        await resolve_primary_stamp(session, user.primary_currency, amount, currency, start_date)
+
+
+async def _find_duplicate_recurring(
+    session: AsyncSession,
+    workspace_id: uuid.UUID,
+    user_id: uuid.UUID,
+    description: str,
+    frequency: str,
+    start_date: date,
+) -> Optional[uuid.UUID]:
+    """The id of the bill the uq_recurring_tx constraint would collide with."""
+    return (
+        await session.execute(
+            select(RecurringTransaction.id).where(
+                RecurringTransaction.workspace_id == workspace_id,
+                RecurringTransaction.user_id == user_id,
+                RecurringTransaction.description == description,
+                RecurringTransaction.frequency == frequency,
+                RecurringTransaction.start_date == start_date,
+            )
+        )
+    ).scalar_one_or_none()
 
 
 async def create_recurring_transaction(
@@ -64,14 +152,47 @@ async def create_recurring_transaction(
     data: RecurringTransactionCreate,
 ) -> RecurringTransaction:
     await _verify_account_in_workspace(session, workspace_id, data.account_id)
+    await _verify_category_in_workspace(session, workspace_id, data.category_id)
+    if data.category_id and data.category_lines and data.category_lines.lines:
+        raise ValueError("Choose either a category or a split across categories")
+    await _fetch_rate_and_check_bounds(
+        session, user_id, data.amount, data.currency, data.start_date
+    )
+    source_transaction = None
+    if data.source_transaction_id is not None:
+        source_transaction = (
+            await session.execute(
+                select(Transaction).where(
+                    Transaction.id == data.source_transaction_id,
+                    Transaction.workspace_id == workspace_id,
+                )
+                # Two requests making a bill from the same charge wait for each
+                # other here, so the second one reads the committed link and
+                # answers 409 instead of building a second bill over it.
+                .with_for_update()
+            )
+        ).scalar_one_or_none()
+        if source_transaction is None:
+            raise ValueError("Source transaction not found")
+        if source_transaction.recurring_transaction_id is not None:
+            raise RecurringConflictError(SOURCE_ALREADY_LINKED_MESSAGE)
     next_occ = data.start_date
-    if data.skip_first:
+    # The first occurrence is already covered while skip_first says so, and
+    # while the source transaction itself sits on the start date: generating it
+    # would charge the user twice for the same bill.
+    if data.skip_first or (
+        source_transaction is not None and source_transaction.date == data.start_date
+    ):
         next_occ = _advance_date(
             data.start_date, data.frequency,
             intended_day=data.day_of_month or data.start_date.day,
         )
-    if data.category_id and data.category_lines and data.category_lines.lines:
-        raise ValueError("Choose either a category or a split across categories")
+    # The same check the uq_recurring_tx constraint makes, done first so the
+    # caller gets a readable message instead of an IntegrityError.
+    if await _find_duplicate_recurring(
+        session, workspace_id, user_id, data.description, data.frequency, data.start_date
+    ) is not None:
+        raise RecurringConflictError(DUPLICATE_RECURRING_MESSAGE)
     recurring = RecurringTransaction(
         user_id=user_id,
         workspace_id=workspace_id,
@@ -90,11 +211,23 @@ async def create_recurring_transaction(
         next_occurrence=next_occ,
     )
     session.add(recurring)
-    await session.flush()
+    try:
+        await session.flush()
+    except IntegrityError as exc:
+        # Two requests racing past the check above still end in the 409, never
+        # in a 500 from the constraint.
+        await session.rollback()
+        raise RecurringConflictError(DUPLICATE_RECURRING_MESSAGE) from exc
+    if source_transaction is not None:
+        # The transaction the bill was made from becomes its first occurrence,
+        # so the row stops offering "make recurring" and the series knows the
+        # charge it already covers.
+        source_transaction.recurring_transaction_id = recurring.id
     await category_line_service.replace_template_lines(session, recurring, data.category_lines)
     await stamp_primary_amount(
         session, user_id, recurring,
         date_field="start_date",
+        allow_fetch=False,
     )
     await session.commit()
     await session.refresh(recurring, ["category_lines"])
@@ -110,6 +243,20 @@ async def update_recurring_transaction(
         return None
 
     update_data = data.model_dump(exclude_unset=True)
+    new_amount = update_data.get("amount", recurring.amount)
+    new_currency = update_data.get("currency") or recurring.currency
+    if (new_amount, new_currency) != (recurring.amount, recurring.currency):
+        await _fetch_rate_and_check_bounds(
+            session, recurring.user_id, new_amount, new_currency,
+            update_data.get("start_date") or recurring.start_date,
+        )
+    # Two edits of one bill wait for each other here, so the second converts
+    # the amount and currency the first one committed.
+    recurring = await get_recurring_transaction(
+        session, recurring_id, workspace_id, for_update=True
+    )
+    if not recurring:
+        return None
     # Same payload rules as a transaction: absent keeps the parts, a list
     # replaces them, an empty list undoes the split.
     lines_payload = data.category_lines if "category_lines" in update_data else None
@@ -126,7 +273,9 @@ async def update_recurring_transaction(
         # The editor sends a null category alongside; the largest part's
         # category is what an undone split keeps.
         update_data.pop("category_id", None)
+    await _verify_category_in_workspace(session, workspace_id, update_data.get("category_id"))
     old_amount = recurring.amount
+    old_currency = recurring.currency
 
     for required in ("weekend_adjustment", "start_date", "frequency"):
         if required in update_data and update_data[required] is None:
@@ -169,6 +318,18 @@ async def update_recurring_transaction(
             recurring.frequency,
             intended_day=recurring.day_of_month or recurring.start_date.day,
             floor=previous_next_occurrence,
+        )
+
+    if (recurring.amount, recurring.currency) != (old_amount, old_currency):
+        # Converted again as on creation, so it follows the edit and one past
+        # the column is refused here instead of when an occurrence is written.
+        # Cleared first: without a rate, reads fall back to the native amount
+        # instead of the conversion of the old figure.
+        recurring.amount_primary = None
+        recurring.fx_rate_used = None
+        await stamp_primary_amount(
+            session, recurring.user_id, recurring, date_field="start_date",
+            allow_fetch=False,
         )
 
     await session.commit()
@@ -277,6 +438,11 @@ def get_occurrences_in_range(
     Schedule advancement and end-date checks use nominal dates. The two-day
     scan margin captures nominal weekend occurrences that move across a range
     boundary; filtering happens only after calculating each effective date.
+
+    The requested range is what ends the scan, not a count: a caller that
+    reads a whole multi-year window (the income-expenses report, #584) gets
+    every occurrence in it. The step budget below only stops a schedule that
+    refuses to advance, so a wide range is never silently truncated (#1904).
     """
     day = intended_day if intended_day else start.day
     nominal_range_start = range_start - timedelta(days=2)
@@ -287,6 +453,10 @@ def get_occurrences_in_range(
         if end_date and current > end_date:
             return occurrences
         current = _advance_date(current, frequency, intended_day=day)
+    # A step advances the schedule by at least a week, so the window cannot
+    # hold more occurrences than it has days: the budget is an upper bound on
+    # the loop itself and never cuts a date inside the range.
+    steps_left = (nominal_range_end - nominal_range_start).days + 1
     while current < nominal_range_end:
         if end_date and current > end_date:
             break
@@ -294,9 +464,205 @@ def get_occurrences_in_range(
         if range_start <= effective_date < range_end:
             occurrences.append(effective_date)
         current = _advance_date(current, frequency, intended_day=day)
-        if len(occurrences) > 200:
+        steps_left -= 1
+        if steps_left <= 0:
             break
     return occurrences
+
+
+async def _charged_occurrences(
+    session: AsyncSession,
+    workspace_id: uuid.UUID,
+    month_start: date,
+    month_end: date,
+) -> dict[uuid.UUID, set[date]]:
+    """The month's occurrences each stopped definition charged.
+
+    A linked charge belongs to the occurrence it fulfills, not to the month
+    of its own date: generation links a charge up to the policy's reach
+    before or after the occurrence, so a December 1 occurrence can be paid
+    by a November 30 charge and must still count in December.
+
+    Generation walks occurrences in order and stops at the pointer, so the
+    occurrences it reached are exactly those before ``next_occurrence``. The
+    hand-out walks them backwards from the pointer, each taking the nearest
+    charge in its reach that a later one did not take: a later occurrence
+    holds its own charge first, and an occurrence generation skipped, such as
+    a first one left out on creation, never takes a charge.
+    """
+    stopped = (await session.execute(
+        select(RecurringTransaction).where(
+            RecurringTransaction.workspace_id == workspace_id,
+            RecurringTransaction.is_active == False,
+        )
+    )).scalars().all()
+    if not stopped:
+        return {}
+    reach = {
+        frequency: await recurring_match_service.occurrence_reach(
+            session, workspace_id, frequency
+        )
+        for frequency in {rec.frequency for rec in stopped}
+    }
+    # A charge sits at most `before` days ahead of its occurrence or `after`
+    # days behind it. The walk covers one reach on each side of the month, so
+    # the occurrences around it take their own charges first.
+    widest = max(before + after for before, after in reach.values())
+    walk_start = month_start - timedelta(days=widest)
+    walk_end = month_end + timedelta(days=widest)
+    linked = (await session.execute(
+        select(Transaction.recurring_transaction_id, Transaction.date).where(
+            # An account moved to another workspace keeps its charges' links.
+            Transaction.workspace_id == workspace_id,
+            Transaction.recurring_transaction_id.in_([rec.id for rec in stopped]),
+            Transaction.date >= walk_start - timedelta(days=widest),
+            Transaction.date < walk_end + timedelta(days=widest),
+        )
+    )).all()
+    charges: dict[uuid.UUID, list[date]] = {}
+    for rec_id, charge_date in linked:
+        charges.setdefault(rec_id, []).append(charge_date)
+
+    charged: dict[uuid.UUID, set[date]] = {}
+    for rec in stopped:
+        pending = charges.get(rec.id, [])
+        if not pending:
+            continue
+        before, after = reach[rec.frequency]
+        # Nominal dates past the pointer were never generated.
+        reached_until = rec.next_occurrence - timedelta(days=1)
+        if rec.end_date and rec.end_date < reached_until:
+            reached_until = rec.end_date
+        for occurrence in reversed(get_occurrences_in_range(
+            start=rec.start_date,
+            frequency=rec.frequency,
+            end_date=reached_until,
+            range_start=walk_start,
+            range_end=walk_end,
+            intended_day=rec.day_of_month or rec.start_date.day,
+            weekend_adjustment=rec.weekend_adjustment,
+        )):
+            in_reach = [
+                day for day in pending
+                if occurrence - timedelta(days=before) <= day <= occurrence + timedelta(days=after)
+            ]
+            if not in_reach:
+                continue
+            taken = min(in_reach, key=lambda day: (abs((day - occurrence).days), day))
+            pending.remove(taken)
+            if month_start <= occurrence < month_end:
+                charged.setdefault(rec.id, set()).add(occurrence)
+    return charged
+
+
+async def get_month_summary(
+    session: AsyncSession,
+    workspace_id: uuid.UUID,
+    month: date,
+    primary_currency: str,
+) -> RecurringMonthSummary:
+    """Income, expenses and net the definitions expect in ``month``.
+
+    A stopped definition, paused or completed by generation, counts only the
+    occurrences it charged in the month, so a completed one keeps its last
+    month and a paused one adds nothing it never charged.
+
+    Each definition counts once per occurrence in the month, from its own
+    schedule (start date, frequency, day, end date, weekend adjustment), so a
+    weekly one counts four or five times and a yearly one only in its month.
+    Occurrences already generated count too: this is the month's plan, not
+    what is still to come. Ignored categories are left out, and so are
+    transfer-like ones, which are only counted. An amount in another
+    currency converts from its native amount at the month's first-day rate,
+    not from the stamped primary amount, which was taken in the currency of
+    whoever created the definition; without a rate, it is left out and
+    counted, never read 1:1.
+    """
+    month_start = month.replace(day=1)
+    month_end = _advance_months(month_start, 1, 1)
+    # Neither is_active nor the pointer tells a paused definition from one
+    # generation completed: an edit can move the pointer of a paused one past
+    # its end date. What a stopped definition really charged, through the
+    # occurrences linked to it, is what counts for it.
+    charged = await _charged_occurrences(session, workspace_id, month_start, month_end)
+    result = await session.execute(
+        select(RecurringTransaction)
+        .outerjoin(Account, RecurringTransaction.account_id == Account.id)
+        .where(
+            RecurringTransaction.workspace_id == workspace_id,
+            or_(
+                RecurringTransaction.is_active == True,
+                RecurringTransaction.id.in_(list(charged)),
+            ),
+            RecurringTransaction.start_date < month_end + timedelta(days=2),
+            or_(Account.id.is_(None), Account.is_closed == False),
+        )
+        .options(selectinload(RecurringTransaction.category))
+    )
+
+    income = expenses = Decimal("0")
+    transfer_count = unconverted_count = 0
+    rates: dict[str, Optional[Decimal]] = {}
+    for rec in result.scalars().all():
+        occurrences = get_occurrences_in_range(
+            start=rec.start_date,
+            frequency=rec.frequency,
+            end_date=rec.end_date,
+            range_start=month_start,
+            range_end=month_end,
+            intended_day=rec.day_of_month or rec.start_date.day,
+            weekend_adjustment=rec.weekend_adjustment,
+        )
+        if not rec.is_active:
+            occurrences = [day for day in occurrences if day in charged[rec.id]]
+        if not occurrences:
+            continue
+        template = abs(rec.amount)
+        if rec.has_category_lines and rec.category_lines:
+            parts = [(line.category, abs(line.amount)) for line in rec.category_lines]
+        else:
+            parts = [(rec.category, template)]
+        counted = sum(
+            (amount for category, amount in parts
+             if not (category and (category.is_ignored or category.treat_as_transfer))),
+            Decimal("0"),
+        )
+        if any(category and category.treat_as_transfer
+               and not category.is_ignored for category, _ in parts):
+            transfer_count += len(occurrences)
+        if not counted or not template:
+            continue
+
+        currency = (rec.currency or "").upper()
+        if currency == primary_currency.upper():
+            primary = template
+        else:
+            if currency not in rates:
+                # The unrounded rate: the total is rounded once, at the end.
+                rates[currency] = (await convert_or_none(
+                    session, Decimal("1"), currency, primary_currency.upper(),
+                    month_start,
+                ))[1]
+            rate = rates[currency]
+            if rate is None:
+                unconverted_count += len(occurrences)
+                continue
+            primary = template * rate
+        total = (primary * counted / template * len(occurrences)).quantize(Decimal("0.01"))
+        if rec.type == "credit":
+            income += total
+        else:
+            expenses += total
+
+    return RecurringMonthSummary(
+        month=month_start,
+        currency=primary_currency,
+        income=income,
+        expenses=expenses,
+        net=income - expenses,
+        transfer_count=transfer_count,
+        unconverted_count=unconverted_count,
+    )
 
 
 async def generate_pending(
@@ -372,6 +738,23 @@ async def generate_pending(
     )
     recurring_list = list(result.scalars().all())
 
+    # Paired with the workspace: a person may have bills in several, and a
+    # category of one of them is still foreign to a bill of another. The
+    # lookup asks only for the workspaces these bills belong to, so a legacy
+    # bill that still carries another workspace's category never reads that
+    # row, not even to discard it.
+    category_ids = {r.category_id for r in recurring_list if r.category_id is not None}
+    bill_workspaces = {r.workspace_id for r in recurring_list}
+    own_categories: set[tuple[uuid.UUID | None, uuid.UUID]] = set()
+    if category_ids:
+        rows = await session.execute(
+            select(Category.id, Category.workspace_id).where(
+                Category.id.in_(category_ids),
+                Category.workspace_id.in_(bill_workspaces),
+            )
+        )
+        own_categories = {(row.id, row.workspace_id) for row in rows}
+
     count = 0
     for recurring in recurring_list:
         # Legacy rows may exist with a null account_id from before account_id
@@ -379,6 +762,18 @@ async def generate_pending(
         # constraint — the user should edit the recurring to fix it.
         if recurring.account_id is None:
             continue
+        account = await session.get(Account, recurring.account_id)
+        # Sync can move the account to another workspace. Nothing this bill
+        # generates may land there, so it waits, pointer untouched, until the
+        # account is back or the user points the bill at another one. With row
+        # security on, the policy hides a moved account, so None means the same.
+        if account is None or account.workspace_id != recurring.workspace_id:
+            continue
+        # A bill stored with a category of another workspace generates
+        # uncategorized, so that category never reaches a transaction here.
+        category_id = recurring.category_id
+        if (category_id, recurring.workspace_id) not in own_categories:
+            category_id = None
         cutoff = up_to or cutoffs.get(recurring.workspace_id) or app_today()
         # Generate while the effective date is due. The nominal pointer remains
         # authoritative and is the only date used for schedule advancement and
@@ -406,7 +801,6 @@ async def generate_pending(
                 # A split bill hands its parts to an uncategorized charge.
                 await category_line_service.apply_template_split(session, existing_real, recurring)
             else:
-                account = await session.get(Account, recurring.account_id)
                 # Only occurrences that already came due reach this point, so
                 # the row is a charge that happened rather than a forecast.
                 # Whether to trust that depends on who else writes to the
@@ -429,7 +823,7 @@ async def generate_pending(
                     user_id=user_id,
                     workspace_id=recurring.workspace_id,
                     account_id=recurring.account_id,
-                    category_id=recurring.category_id,
+                    category_id=category_id,
                     description=recurring.description,
                     amount=recurring.amount,
                     currency=recurring.currency,
@@ -446,6 +840,16 @@ async def generate_pending(
                 session.add(transaction)
                 await session.flush()
                 await stamp_primary_amount(session, user_id, transaction)
+                # A new row reads the rules like any other (#568). The
+                # template's category is already set, so category rules
+                # leave it alone.
+                await apply_rules_to_transaction(session, user_id, transaction)
+                if transaction.status == "pending":
+                    # The matcher skips ignored placeholders, so an ignored
+                    # one would leave its bank charge to land beside it.
+                    # Sync and import carry the rule's ignore over when the
+                    # charge is folded in.
+                    transaction.is_ignored = False
                 count += 1
 
             # Advance to next occurrence

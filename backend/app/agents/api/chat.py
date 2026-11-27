@@ -20,6 +20,7 @@ from app.agents.runtime.executor import AgentExecutor, ExecutorEvent
 from app.agents.schemas.conversation import SendMessageRequest
 from app.agents.services import agent_service, conversation_service
 from app.core.database import get_async_session
+from app.core.rate_limit import agents_chat_rate_limit
 from app.core.workspace_context import WorkspaceContext, current_writable_workspace
 
 router = APIRouter(prefix="/api/agents", tags=["agents"])
@@ -30,7 +31,9 @@ def _format_event(event: ExecutorEvent) -> bytes:
     return f"event: {event.type}\ndata: {json.dumps(payload, default=str)}\n\n".encode()
 
 
-@router.post("/{agent_id}/chat")
+# The rate limit is a route dependency so it runs before the response starts
+# streaming: once bytes are flowing the status code can no longer be refused.
+@router.post("/{agent_id}/chat", dependencies=[Depends(agents_chat_rate_limit)])
 async def chat(
     agent_id: uuid.UUID,
     body: SendMessageRequest,

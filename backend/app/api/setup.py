@@ -60,7 +60,7 @@ async def create_admin(
         prefs["display_name"] = body.name
 
     # Use direct SQL update to avoid session expiry issues after user_manager.create() commits
-    db_session = user_manager.user_db.session
+    db_session = user_manager.db_session
     await db_session.execute(
         sql_update(User).where(User.id == user.id).values(preferences=prefs)
     )

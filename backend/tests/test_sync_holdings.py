@@ -23,7 +23,8 @@ import pytest_asyncio
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.asset import Asset
+from app.core.app_clock import app_today
+from app.models.asset import PROVIDER_VALUE_DATE_METADATA_KEY, Asset
 from app.models.asset_group import AssetGroup
 from app.models.asset_value import AssetValue
 from app.models.bank_connection import BankConnection
@@ -36,6 +37,8 @@ from app.providers.base import (
     HoldingData,
     TransactionData,
 )
+from app.schemas.asset import AssetValueCreate
+from app.services.asset_service import add_asset_value, get_asset
 from app.services.connection_service import _sync_holdings
 
 
@@ -125,6 +128,7 @@ def _holding(
     quantity: Optional[Decimal] = Decimal("1"),
     is_withdrawn: bool = False,
     metadata: Optional[dict] = None,
+    value_date: Optional[date] = None,
 ) -> HoldingData:
     return HoldingData(
         external_id=external_id,
@@ -134,6 +138,7 @@ def _holding(
         quantity=quantity,
         purchase_price=purchase_price,
         purchase_date=purchase_date,
+        value_date=value_date,
         is_withdrawn=is_withdrawn,
         metadata=(
             metadata
@@ -464,6 +469,30 @@ async def test_same_day_resync_updates_asset_value_in_place(
 
 
 @pytest.mark.asyncio
+async def test_a_sync_value_keeps_the_reported_unit_price(
+    session: AsyncSession, test_user: User, mock_connection: BankConnection
+):
+    """The day's value keeps the provider's price per unit, so a chart built
+    from the ledger can value each day's units at the provider's own price."""
+    holding = _holding(external_id="h-1", current_value=Decimal("125"), quantity=Decimal("10"))
+    holding.unit_price = Decimal("12.5")
+    _MockProvider._holdings = [holding]
+    assert mock_connection.credentials is not None
+    await _sync_holdings(session, test_user.id, mock_connection, mock_connection.credentials)
+    await session.commit()
+    [asset] = await _assets_for(session, test_user)
+
+    again = _holding(external_id="h-1", current_value=Decimal("130"), quantity=Decimal("10"))
+    again.unit_price = Decimal("13")
+    _MockProvider._holdings = [again]
+    await _sync_holdings(session, test_user.id, mock_connection, mock_connection.credentials)
+    await session.commit()
+
+    [today] = [v for v in await _values_for(session, asset.id) if v.date == date.today()]
+    assert (today.amount, today.price) == (Decimal("130"), Decimal("13"))
+
+
+@pytest.mark.asyncio
 async def test_sparse_fields_are_preserved_on_later_sync(
     session: AsyncSession, test_user: User, mock_connection: BankConnection
 ):
@@ -767,3 +796,193 @@ async def test_next_day_sync_appends_new_asset_value(
     assert len(rows) == 2
     assert rows[0].date == yesterday and rows[0].amount == Decimal("100")
     assert rows[1].date == date.today() and rows[1].amount == Decimal("105")
+
+
+@pytest.mark.asyncio
+async def test_provider_value_date_reaches_the_asset_and_follows_each_sync(
+    session: AsyncSession, test_user: User, mock_connection: BankConnection
+):
+    """A provider can keep serving a frozen balance while the sync writes a
+    fresh value row dated today. The provider's own value date is what exposes
+    that, so it must reach the API, move with each payload, and clear when the
+    provider stops reporting one.
+    """
+    assert mock_connection.credentials is not None
+    frozen = date(2026, 3, 17)
+    _MockProvider._holdings = [_holding(value_date=frozen)]
+    await _sync_holdings(
+        session, test_user.id, mock_connection, mock_connection.credentials
+    )
+    await session.commit()
+
+    (asset,) = await _assets_for(session, test_user)
+    read = await get_asset(session, asset.id, asset.workspace_id)
+    assert read is not None
+    assert read.provider_value_date == frozen
+    # The Securo marker sits next to the provider blob, not in place of it.
+    assert asset.external_metadata is not None
+    assert asset.external_metadata["status"] == "ACTIVE"
+
+    _MockProvider._holdings = [_holding(value_date=date(2026, 3, 18))]
+    await _sync_holdings(
+        session, test_user.id, mock_connection, mock_connection.credentials
+    )
+    await session.commit()
+    read = await get_asset(session, asset.id, asset.workspace_id)
+    assert read is not None
+    assert read.provider_value_date == date(2026, 3, 18)
+
+    _MockProvider._holdings = [_holding()]
+    await _sync_holdings(
+        session, test_user.id, mock_connection, mock_connection.credentials
+    )
+    await session.commit()
+    read = await get_asset(session, asset.id, asset.workspace_id)
+    assert read is not None
+    assert read.provider_value_date is None
+
+
+@pytest.mark.asyncio
+async def test_provider_cannot_write_the_reserved_value_date_marker(
+    session: AsyncSession, test_user: User, mock_connection: BankConnection
+):
+    """The marker belongs to Securo, so a payload that sends the reserved key
+    without reporting a value date is not taken at its word."""
+    assert mock_connection.credentials is not None
+    _MockProvider._holdings = [
+        _holding(
+            metadata={
+                "status": "ACTIVE",
+                PROVIDER_VALUE_DATE_METADATA_KEY: "2026-01-01",
+            }
+        )
+    ]
+    await _sync_holdings(
+        session, test_user.id, mock_connection, mock_connection.credentials
+    )
+    await session.commit()
+
+    (asset,) = await _assets_for(session, test_user)
+    read = await get_asset(session, asset.id, asset.workspace_id)
+    assert read is not None
+    assert read.provider_value_date is None
+    assert asset.external_metadata is not None
+    assert PROVIDER_VALUE_DATE_METADATA_KEY not in asset.external_metadata
+    # The rest of the provider blob is kept as it came.
+    assert asset.external_metadata["status"] == "ACTIVE"
+
+
+@pytest.mark.asyncio
+async def test_withdrawal_drops_the_reserved_value_date_from_the_payload(
+    session: AsyncSession, test_user: User, mock_connection: BankConnection
+):
+    """A closed position carries no provider date: the withdrawal payload goes
+    through the same strip as the active one, so a smuggled key cannot date the
+    last valuation of a holding the provider has just closed."""
+    assert mock_connection.credentials is not None
+    _MockProvider._holdings = [
+        _holding(external_id="h-1", value_date=date(2026, 3, 17))
+    ]
+    await _sync_holdings(
+        session, test_user.id, mock_connection, mock_connection.credentials
+    )
+    await session.commit()
+    (asset,) = await _assets_for(session, test_user)
+
+    _MockProvider._holdings = [
+        _holding(
+            external_id="h-1",
+            current_value=Decimal("0"),
+            is_withdrawn=True,
+            metadata={
+                "status": "TOTAL_WITHDRAWAL",
+                PROVIDER_VALUE_DATE_METADATA_KEY: "2026-01-01",
+            },
+        )
+    ]
+    await _sync_holdings(
+        session, test_user.id, mock_connection, mock_connection.credentials
+    )
+    await session.commit()
+    await session.refresh(asset)
+
+    assert asset.sell_date is not None
+    assert asset.external_metadata is not None
+    assert PROVIDER_VALUE_DATE_METADATA_KEY not in asset.external_metadata
+    assert asset.external_metadata["status"] == "TOTAL_WITHDRAWAL"
+    read = await get_asset(session, asset.id, asset.workspace_id)
+    assert read is not None
+    assert read.provider_value_date is None
+
+
+@pytest.mark.asyncio
+async def test_manual_valuation_on_a_synced_asset_hides_the_provider_date(
+    session: AsyncSession, test_user: User, mock_connection: BankConnection
+):
+    """The warning is about the provider's figure. Once a manual valuation is
+    the one on screen, pointing at the connection describes another number.
+    """
+    assert mock_connection.credentials is not None
+    frozen = date(2026, 3, 17)
+    _MockProvider._holdings = [_holding(value_date=frozen)]
+    await _sync_holdings(
+        session, test_user.id, mock_connection, mock_connection.credentials
+    )
+    await session.commit()
+
+    (asset,) = await _assets_for(session, test_user)
+    read = await get_asset(session, asset.id, asset.workspace_id)
+    assert read is not None
+    assert read.provider_value_date == frozen
+
+    # The sync ran yesterday; the user values the holding by hand today. A
+    # valuation dated after today would not be on screen yet (#646).
+    for value in await _values_for(session, asset.id):
+        if value.source == "sync":
+            value.date = app_today() - timedelta(days=1)
+    await session.commit()
+    await add_asset_value(
+        session,
+        asset.id,
+        asset.workspace_id,
+        AssetValueCreate(amount=Decimal("1200.00"), date=app_today()),
+    )
+
+    read = await get_asset(session, asset.id, asset.workspace_id)
+    assert read is not None
+    assert read.current_value == 1200.0
+    assert read.provider_value_date is None
+
+
+@pytest.mark.asyncio
+async def test_market_priced_holding_keeps_the_provider_date_until_it_has_a_quote(
+    session: AsyncSession, test_user: User, mock_connection: BankConnection
+):
+    """A market-priced holding shows units times its quote once there is one;
+    before that the sync's amount is what the row displays, so the date that
+    describes it stays.
+    """
+    assert mock_connection.credentials is not None
+    frozen = date(2026, 3, 17)
+    _MockProvider._holdings = [_holding(value_date=frozen)]
+    await _sync_holdings(
+        session, test_user.id, mock_connection, mock_connection.credentials
+    )
+    asset = (await _assets_for(session, test_user))[0]
+    asset.valuation_method = "market_price"
+    asset.units = Decimal("100")
+    await session.commit()
+
+    # No cached quote yet: the displayed value is still the provider's amount.
+    read = await get_asset(session, asset.id, asset.workspace_id)
+    assert read is not None
+    assert read.current_value == 1000.0
+    assert read.provider_value_date == frozen
+
+    # With a quote, the row shows units times that quote instead.
+    asset.last_price = Decimal("12")
+    await session.commit()
+    read = await get_asset(session, asset.id, asset.workspace_id)
+    assert read is not None
+    assert read.current_value == 1200.0
+    assert read.provider_value_date is None

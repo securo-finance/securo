@@ -8,8 +8,9 @@ the start value plus anything contributed.
 
 from __future__ import annotations
 
+import random
 import uuid
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 
 import pytest
@@ -196,6 +197,64 @@ async def test_writing_off_a_delisted_holding_by_selling_at_zero(
 
 
 @pytest.mark.asyncio
+async def test_writing_off_the_only_holding_is_a_total_loss(
+    session: AsyncSession, test_user: User, test_workspace
+):
+    gone = await stock(session, test_user, test_workspace, "ONLY3")
+    session.add_all(
+        [
+            trade(gone, "buy", day(0), "10", "100"),
+            close(gone, day(0), "100"),
+            trade(gone, "sell", day(5), "10", "0"),
+        ]
+    )
+    assert await portfolio_return(session, test_user, test_workspace) == pytest.approx(-100.0)
+
+
+@pytest.mark.asyncio
+async def test_writing_off_half_of_the_only_holding_is_half_a_loss(
+    session: AsyncSession, test_user: User, test_workspace
+):
+    held = await stock(session, test_user, test_workspace, "HALF3")
+    session.add_all(
+        [
+            trade(held, "buy", day(0), "10", "100"),
+            close(held, day(0), "100"),
+            trade(held, "sell", day(1), "5", "0"),
+            close(held, day(1), "100", quantity="5"),
+            close(held, day(2), "110", quantity="5"),
+        ]
+    )
+    # Half written off (-50%), then the rest gains 10%.
+    assert await portfolio_return(session, test_user, test_workspace) == pytest.approx(-45.0)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("seed", range(40))
+async def test_selling_everything_at_an_uneven_price_is_not_a_total_loss(
+    session: AsyncSession, test_user: User, test_workspace, seed
+):
+    """A full sale can leave float residue as the holding; that is not a
+    holding whose value went to zero."""
+    rnd = random.Random(seed)
+    quantity = rnd.randint(1, 500)
+    bought, last, sold = (Decimal(rnd.randint(1000, 9999)) / 100 for _ in range(3))
+    held = await stock(session, test_user, test_workspace, "DUST3")
+    session.add_all(
+        [
+            trade(held, "buy", day(0), str(quantity), str(bought)),
+            close(held, day(0), str(bought), str(quantity)),
+            close(held, day(1), str(last), str(quantity)),
+            trade(held, "sell", day(2), str(quantity), str(sold)),
+        ]
+    )
+    expected = float(sold / bought - 1) * 100
+    assert await portfolio_return(session, test_user, test_workspace) == pytest.approx(
+        expected, abs=1e-3
+    )
+
+
+@pytest.mark.asyncio
 async def test_a_big_buy_on_a_day_the_price_moves_does_not_dilute_that_day(
     session: AsyncSession, test_user: User, test_workspace
 ):
@@ -252,6 +311,71 @@ async def test_day_trade_profit_counts_even_when_netted_on_one_date(
     # 1001 in and 1049 out on the same day, alongside 1000 that did nothing.
     expected = ((1000 + 1049) / (1000 + 1001) - 1) * 100
     assert await portfolio_return(session, test_user, test_workspace) == pytest.approx(expected)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("buy_price", ["100", "105"])
+async def test_buying_and_selling_on_a_day_reads_the_price_move(
+    session: AsyncSession, test_user: User, test_workspace, buy_price
+):
+    """Ten held at 100, ten more bought, ten sold at 110, closed at 110: +10%.
+
+    The day is split at each trade's own price: 100 to the buy price on ten
+    shares, the buy price to 110 on twenty, and 110 to the close on ten.
+    Taking the buy at the open or at the close instead reads 7.3% or 15%
+    for a buy at 105.
+    """
+    held = await stock(session, test_user, test_workspace, "MIDB3")
+    session.add_all(
+        [
+            trade(held, "buy", day(0), "10", "100"),
+            close(held, day(0), "100"),
+            trade(held, "buy", day(1), "10", buy_price),
+            trade(held, "sell", day(1), "10", "110"),
+            close(held, day(1), "110"),
+        ]
+    )
+    assert await portfolio_return(session, test_user, test_workspace) == pytest.approx(10.0)
+
+
+@pytest.mark.asyncio
+async def test_a_sale_before_a_buy_in_ledger_order_is_not_a_day_trade(
+    session: AsyncSession, test_user: User, test_workspace
+):
+    """Sold at 110 first, then bought back at 105: the drop after the sale is not held."""
+    held = await stock(session, test_user, test_workspace, "SELL3")
+    sale = trade(held, "sell", day(1), "10", "110")
+    sale.created_at = datetime(2026, 1, 1, 10, 0)
+    buy_back = trade(held, "buy", day(1), "10", "105")
+    buy_back.created_at = datetime(2026, 1, 1, 15, 0)
+    session.add_all(
+        [
+            trade(held, "buy", day(0), "10", "100"),
+            close(held, day(0), "100"),
+            sale,
+            buy_back,
+            close(held, day(1), "105"),
+        ]
+    )
+    # 100 to 110 on ten shares, then the ten bought at 105 close at 105.
+    assert await portfolio_return(session, test_user, test_workspace) == pytest.approx(10.0)
+
+
+@pytest.mark.asyncio
+async def test_a_buy_between_closes_counts_from_its_own_price(
+    session: AsyncSession, test_user: User, test_workspace
+):
+    held = await stock(session, test_user, test_workspace, "BUYM3")
+    session.add_all(
+        [
+            trade(held, "buy", day(0), "10", "100"),
+            close(held, day(0), "100"),
+            trade(held, "buy", day(1), "10", "105"),
+            close(held, day(1), "110", quantity="20"),
+        ]
+    )
+    # One holding, no fees: the return is its price move, 100 to 110.
+    assert await portfolio_return(session, test_user, test_workspace) == pytest.approx(10.0)
 
 
 async def sold_manual_asset(

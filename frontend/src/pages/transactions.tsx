@@ -6,6 +6,7 @@ import { currentMonth, monthRange, monthFromRange } from '@/lib/month-utils'
 import { loadRange, saveRange } from '@/lib/remembered-range'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
+import { PaybackBadge } from '@/components/payback-badge'
 import { useDisplayLocale, useDateLocale } from '@/hooks/use-display-locale'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { transactions, categories as categoriesApi, categoryGroups as categoryGroupsApi, accounts as accountsApi, recurring, payees as payeesApi, admin, groups as groupsApi, rules as rulesApi, reconciliation as reconciliationApi } from '@/lib/api'
@@ -47,9 +48,11 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { Skeleton } from '@/components/ui/skeleton'
-import { AlertTriangle, ArrowLeftRight, ArrowUp, ArrowDown, Check, Clock, HelpCircle, Info, Paperclip, TagIcon, Trash2, Users, X, EyeClosed, ChartNoAxesColumn, SlidersHorizontal, Receipt } from 'lucide-react'
+import { AlertTriangle, ArrowLeftRight, ArrowUp, ArrowDown, Check, CheckCheck, CircleDashed, Clock, HelpCircle, Info, Paperclip, Repeat, TagIcon, Trash2, Users, X, EyeClosed, ChartNoAxesColumn, Flag, SlidersHorizontal, Receipt } from 'lucide-react'
 import type { Transaction, Rule, InstallmentSeriesInput, TransactionApplyScope, TransactionEditPayload, ReconciliationSuggestion } from '@/types'
 import { RuleDialog, type RuleDialogInitialData } from '@/components/rule-dialog'
+import { TransactionFlagMarker } from '@/components/transaction-flag-marker'
+import { flagFilterToParam, parseFlagFilter, type FlagFilter } from '@/lib/transaction-flag'
 import { PageHeader } from '@/components/page-header'
 import { calculateRangeSelection } from '@/lib/selection-utils'
 import { isManualInstallmentSeriesRow } from '@/lib/installment-series'
@@ -65,6 +68,9 @@ import { TransactionsPageActions } from '@/components/transactions-page-actions'
 import { MobileBulkSelectionActions } from '@/components/mobile-bulk-selection-actions'
 import { type ColumnDef, type ColumnId, useTransactionsGridState } from '@/components/transactions-grid-columns'
 import { TransferDialog } from '@/components/transfer-dialog'
+import { ReceiptScanDialog } from '@/components/receipt-scan-dialog'
+import { useDocumentAiStatus } from '@/hooks/use-document-extraction'
+import { MakeRecurringDialog } from '@/components/make-recurring-dialog'
 import { useSidebarState } from '@/contexts/sidebar-state-context'
 import { cn } from '@/lib/utils'
 import { LinkTransferDialog } from '@/components/link-transfer-dialog'
@@ -78,9 +84,12 @@ import { MobileTransactionRow } from '@/components/mobile-transaction-row'
 import { useAuth } from '@/contexts/auth-context'
 import { useWorkspace } from '@/contexts/workspace-context'
 import { useCollectionFilter } from '@/contexts/collection-filter-context'
-import { formatCurrency } from '@/lib/format'
+import { formatCurrency, ltrAmount } from '@/lib/format'
 import { shouldShowPendingBadge } from '@/lib/transaction-status'
 import { isTransferTransaction } from '@/lib/transaction-transfer'
+import { readCalendarDateBasis } from '@/lib/transaction-calendar'
+import { ReportingDateBadge } from '@/components/reporting-date-badge'
+import { listDate } from '@/lib/list-date'
 
 type TransactionUpdatePayload = TransactionEditPayload & {
   apply_to_transfer_pair?: boolean
@@ -111,7 +120,7 @@ export default function TransactionsPage() {
   const isMobile = useIsMobile()
   const { user } = useAuth()
   const { activeAccountIds } = useCollectionFilter()
-  const { canWrite, hasModule } = useWorkspace()
+  const { current: currentWorkspace, canWrite, hasModule } = useWorkspace()
   const userCurrency = user?.preferences?.currency_display ?? 'USD'
   const queryClient = useQueryClient()
   const [page, setPage] = useState(1)
@@ -127,11 +136,16 @@ export default function TransactionsPage() {
     const initial = searchParams.get('account_id')
     return initial ? initial.split(',') : []
   })
+  const [filterLinkedCardIds, setFilterLinkedCardIds] = useState<string[]>(() => {
+    const initial = searchParams.get('linked_card_id')
+    return initial ? initial.split(',') : []
+  })
   const [filterCategoryIds, setFilterCategoryIds] = useState<string[]>(() => {
     const initial = searchParams.get('category_id')
     return initial ? [initial] : []
   })
   const [filterUncategorized, setFilterUncategorized] = useState<boolean>(false)
+  const [filterFlag, setFilterFlag] = useState<FlagFilter>(() => parseFlagFilter(searchParams.get('flagged')))
   // Seed the date range from the URL, else the range last used on this page
   // (issue #1053), else the current month. Done in the initializer so it
   // survives effect re-runs (e.g. React StrictMode's double-invoke in
@@ -139,14 +153,29 @@ export default function TransactionsPage() {
   const [initialRange] = useState(() => {
     const f = searchParams.get('from')
     const t = searchParams.get('to')
-    if (f || t) return { from: f ?? '', to: t ?? '' }
-    return loadRange('transactions') ?? monthRange(currentMonth())
+    if (f || t) return { from: f ?? '', to: t ?? '', restore: null }
+    const usual = loadRange('transactions') ?? monthRange(currentMonth())
+    // A flag is something to come back to, often from months ago: the
+    // flagged views open on the whole history, not the current month.
+    // The review queue holds whatever arrived unread, and an import early in
+    // the month usually brings last month's rows: it opens on every date too.
+    if (
+      parseFlagFilter(searchParams.get('flagged')) ||
+      searchParams.get('unread_only') === 'true'
+    ) {
+      return { from: '', to: '', restore: usual }
+    }
+    return { ...usual, restore: null }
   })
   const [filterFrom, setFilterFrom] = useState<string>(initialRange.from)
   const [filterTo, setFilterTo] = useState<string>(initialRange.to)
-  useEffect(() => {
-    saveRange('transactions', filterFrom, filterTo)
-  }, [filterFrom, filterTo])
+  // The range in place before a whole-history view (flags, review queue)
+  // cleared it, to put back when the last of them is turned off.
+  // A link that opens straight on one of those views has no range of its own
+  // to put back: leaving it lands on the range the page opens with otherwise.
+  const rangeBeforeAllDatesRef = useRef<{ from: string; to: string } | null>(
+    initialRange.restore,
+  )
   // Month reflected by the stepper: the active range when it spans exactly one
   // full month, otherwise the current month (custom ranges still navigable).
   const steppedMonth = monthFromRange(filterFrom, filterTo) ?? currentMonth()
@@ -169,10 +198,16 @@ export default function TransactionsPage() {
     searchParams.get('view') === 'calendar' ? 'calendar' : 'list'
   ))
   const [calendarSelectedDate, setCalendarSelectedDate] = useState<string>(() => searchParams.get('day') ?? '')
+  const [calendarDateBasis, setCalendarDateBasis] = useState(readCalendarDateBasis)
   const [filterPayee, setFilterPayee] = useState<string>(searchParams.get('payee_id') ?? '')
   const [filterGroupId, setFilterGroupId] = useState<string>(searchParams.get('group_id') ?? '')
   const [filterType, setFilterType] = useState<string>(searchParams.get('type') ?? '')
   const [filterStatus, setFilterStatus] = useState<string>(searchParams.get('status') ?? '')
+  // "Only unpaid" narrows the ledger to the rows the user still has to settle
+  // (issue #15). Kept in the URL so a link shows the same list.
+  const [filterUnpaid, setFilterUnpaid] = useState<boolean>(
+    searchParams.get('unpaid') === '1',
+  )
   // Hiding ignored rows is a reading preference, not a query someone re-picks
   // every visit, so it outlives the page the way page size and columns do. The
   // URL still wins when present, so a shared link shows what its sender saw.
@@ -185,6 +220,18 @@ export default function TransactionsPage() {
       return false
     }
   })
+  // The review queue of issue #636: show only rows nobody has reviewed yet.
+  // It lives in the URL and not in localStorage because it is a work list
+  // someone turns on for a reconciliation pass and turns off after.
+  const [onlyUnread, setOnlyUnread] = useState<boolean>(
+    () => searchParams.get('unread_only') === 'true',
+  )
+  useEffect(() => {
+    // The flagged views and the review queue drop the range for their own
+    // sake; keep the one the user picked for the next visit.
+    if (filterFlag || onlyUnread) return
+    saveRange('transactions', filterFrom, filterTo)
+  }, [filterFrom, filterTo, filterFlag, onlyUnread])
   const [filterMinAmount, setFilterMinAmount] = useState<string>(searchParams.get('min_amount') ?? '')
   const [filterMaxAmount, setFilterMaxAmount] = useState<string>(searchParams.get('max_amount') ?? '')
   const [tagFilters, setTagFilters] = useState<string[]>([])
@@ -224,6 +271,8 @@ export default function TransactionsPage() {
   }
   const [exporting, setExporting] = useState(false)
   const [transferDialogOpen, setTransferDialogOpen] = useState(false)
+  const [receiptDialogOpen, setReceiptDialogOpen] = useState(false)
+  const { enabled: documentAiEnabled } = useDocumentAiStatus()
   const [linkTransferDialogOpen, setLinkTransferDialogOpen] = useState(false)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [lastSelectedId, setLastSelectedId] = useState<string | null>(null)
@@ -233,6 +282,8 @@ export default function TransactionsPage() {
   const [bulkTagInput, setBulkTagInput] = useState<string>('')
   const [createRuleOpen, setCreateRuleOpen] = useState(false)
   const [createRuleInitialData, setCreateRuleInitialData] = useState<RuleDialogInitialData | undefined>(undefined)
+  // The row a recurring bill is being created from (issue #429).
+  const [recurringSource, setRecurringSource] = useState<Transaction | null>(null)
   const [isBulkBarPulsing, setIsBulkBarPulsing] = useState(false)
   const [menuEpoch, setMenuEpoch] = useState(0)
   const bulkTagInputRef = useRef<HTMLInputElement>(null)
@@ -266,13 +317,18 @@ export default function TransactionsPage() {
     setFilterGroupId(searchParams.get('group_id') ?? '')
     setFilterType(searchParams.get('type') ?? '')
     setFilterStatus(searchParams.get('status') ?? '')
+    setFilterUnpaid(searchParams.get('unpaid') === '1')
+    setFilterFlag(parseFlagFilter(searchParams.get('flagged')))
     const urlHideIgnored = searchParams.get('hide_ignored')
     if (urlHideIgnored !== null) setHideIgnored(urlHideIgnored === 'true')
+    setOnlyUnread(searchParams.get('unread_only') === 'true')
     const categories = searchParams.get('category_id');
     setFilterCategoryIds(categories ? categories.split(',') : []);
     setFilterUncategorized(searchParams.get('uncategorized') === '1');
     const accounts = searchParams.get('account_id');
     setFilterAccountIds(accounts ? accounts.split(',') : []);
+    const linkedCards = searchParams.get('linked_card_id');
+    setFilterLinkedCardIds(linkedCards ? linkedCards.split(',') : []);
     const urlFrom = searchParams.get('from')
     const urlTo = searchParams.get('to')
     if (urlFrom || urlTo) {
@@ -303,14 +359,18 @@ export default function TransactionsPage() {
         ['group_id', filterGroupId],
         ['type', filterType],
         ['status', filterStatus],
+        ['unpaid', filterUnpaid ? '1' : ''],
+        ['flagged', flagFilterToParam(filterFlag)],
         ['category_id', filterCategoryIds.join(',')],
         ['uncategorized', filterUncategorized ? '1' : ''],
         ['account_id', filterAccountIds.join(',')],
+        ['linked_card_id', filterLinkedCardIds.join(',')],
         ['from', filterFrom],
         ['to', filterTo],
         ['min_amount', filterMinAmount],
         ['max_amount', filterMaxAmount],
         ['hide_ignored', hideIgnored ? 'true' : ''],
+        ['unread_only', onlyUnread ? 'true' : ''],
       ].filter(([, v]) => v.length),
     );
 
@@ -328,14 +388,18 @@ export default function TransactionsPage() {
     filterGroupId,
     filterType,
     filterStatus,
+    filterUnpaid,
+    filterFlag,
     filterCategoryIds,
     filterUncategorized,
     filterAccountIds,
+    filterLinkedCardIds,
     filterFrom,
     filterTo,
     filterMinAmount,
     filterMaxAmount,
     hideIgnored,
+    onlyUnread,
   ]);
 
   useEffect(() => {
@@ -352,16 +416,19 @@ export default function TransactionsPage() {
     setSelectedIds(new Set())
     setLastSelectedId(null)
     setBulkCategory('')
-  }, [page, filterAccountIds, filterCategoryIds, filterUncategorized, filterPayee, filterType, filterStatus, filterFrom, filterTo, filterMinAmount, filterMaxAmount, searchQuery])
+  }, [page, filterAccountIds, filterLinkedCardIds, filterCategoryIds, filterUncategorized, filterPayee, filterType, filterStatus, filterFlag, filterFrom, filterTo, filterMinAmount, filterMaxAmount, searchQuery, onlyUnread])
 
   useEffect(() => {
     if (viewMode === 'calendar') {
       setFilterAccountIds((prev) => prev.length > 1 ? [] : prev)
+      // The calendar ignores the card filter, so a card arriving from a link
+      // must not linger here and narrow the export.
+      setFilterLinkedCardIds((prev) => prev.length > 0 ? [] : prev)
       setSelectedIds(new Set())
       setLastSelectedId(null)
       setBulkCategory('')
     }
-  }, [viewMode, filterAccountIds.length])
+  }, [viewMode, filterAccountIds.length, filterLinkedCardIds.length])
 
   // Reset bulk category when selection changes so the same category can be re-applied
   useEffect(() => {
@@ -401,19 +468,21 @@ export default function TransactionsPage() {
   const noAccounts = filterAccountIds.length === 0
     && activeAccountIds !== null && activeAccountIds.length === 0
 
-  const { data, isLoading, isFetching, refetch } = useQuery({
-    queryKey: ['transactions', page, limit, effectiveAccountIds, filterCategoryIds, filterUncategorized, filterPayee, filterGroupId, filterType, filterStatus, filterFrom, filterTo, filterMinAmount, filterMaxAmount, hideIgnored, searchQuery, tagFilters, isMobile ? 'date' : grid.sortBy, isMobile ? 'desc' : grid.sortDir],
+  const { data, isLoading, isFetching, isSuccess, isFetchedAfterMount, fetchStatus, refetch } = useQuery({
+    queryKey: ['transactions', page, limit, effectiveAccountIds, filterLinkedCardIds, filterCategoryIds, filterUncategorized, filterPayee, filterGroupId, filterType, filterStatus, filterUnpaid, filterFlag, filterFrom, filterTo, filterMinAmount, filterMaxAmount, hideIgnored, onlyUnread, searchQuery, tagFilters, isMobile ? 'date' : grid.sortBy, isMobile ? 'desc' : grid.sortDir],
     enabled: !noAccounts,
     queryFn: () =>
       transactions.list({
         page,
         limit,
         account_ids: effectiveAccountIds.length > 0 ? effectiveAccountIds : undefined,
+        linked_card_ids: filterLinkedCardIds.length > 0 ? filterLinkedCardIds : undefined,
         category_ids: filterCategoryIds.length > 0 ? filterCategoryIds : undefined,
         payee_id: filterPayee || undefined,
         group_id: filterGroupId || undefined,
         type: filterType || undefined,
         status: filterStatus || undefined,
+        unpaid_only: filterUnpaid || undefined,
         uncategorized: filterUncategorized ? true : undefined,
         from: filterFrom || undefined,
         to: filterTo || undefined,
@@ -422,20 +491,67 @@ export default function TransactionsPage() {
         q: searchQuery || undefined,
         tags: tagFilters.length > 0 ? tagFilters : undefined,
         exclude_ignored: hideIgnored ? true : undefined,
+        flagged: filterFlag === 'all' ? true : undefined,
+        flag_due: filterFlag === 'overdue' || filterFlag === 'soon' ? filterFlag : undefined,
+        unread_only: onlyUnread ? true : undefined,
         // Mobile has no column headers to change sort; force date-desc so
         // the date grouping always works correctly.
         ...(isMobile ? { sort_by: 'date', sort_dir: 'desc' as const } : grid.apiSort),
       }),
   })
 
+  // "Mark all as read" clears every unread row of the workspace, whatever the
+  // filters show, so the review queue also counts those (issue #411). The key
+  // sits under ['transactions'], so every invalidation of the list refreshes it.
+  const { data: workspaceUnread } = useQuery({
+    queryKey: ['transactions', 'unread-total', currentWorkspace?.id],
+    enabled: onlyUnread && viewMode === 'list',
+    queryFn: () => transactions.list({ page: 1, limit: 1, unread_only: true }),
+    select: (result) => result.total,
+  })
+
+  // A fresh page can hold fewer pages than the one being shown: clearing the
+  // last rows of the review queue is the usual way it happens. Clamp only
+  // against a successful answer that arrived for the page on screen. A cached
+  // total, even a fresh one, is asked again first; a refetch still running,
+  // paused offline or failed leaves the page alone, so Refresh can retry it
+  // (issue #636).
+  useEffect(() => {
+    if (!data || !isSuccess || fetchStatus !== 'idle') return
+    const lastPage = Math.max(1, Math.ceil(data.total / limit))
+    if (page <= lastPage) return
+    if (!isFetchedAfterMount) {
+      void refetch()
+      return
+    }
+    setPage(lastPage)
+  }, [data, isSuccess, isFetchedAfterMount, fetchStatus, limit, page, refetch])
+
+  // A selected row can leave the visible page without the page or the filters
+  // changing: opening an unread row in the review queue clears its marker and
+  // the row drops out of the result. Reconcile the selection against the
+  // latest successful response, so a bulk action never touches a row the
+  // person can no longer see (issue #636).
+  useEffect(() => {
+    if (!data) return
+    const visible = new Set(data.items.map((tx) => tx.id))
+    setSelectedIds((prev) => {
+      if (prev.size === 0) return prev
+      const next = new Set([...prev].filter((id) => visible.has(id)))
+      return next.size === prev.size ? prev : next
+    })
+    setLastSelectedId((prev) => (prev && visible.has(prev) ? prev : null))
+  }, [data])
+
   const calendarMonth = steppedMonth
   const calendarAccountIds = filterAccountIds.length === 1 ? filterAccountIds : []
   const { data: calendarData, isLoading: calendarLoading, isFetching: calendarFetching, refetch: refetchCalendar } = useQuery({
-    queryKey: ['transactions', 'calendar', calendarMonth, calendarAccountIds],
+    queryKey: ['transactions', 'calendar', calendarMonth, calendarAccountIds, calendarDateBasis],
     enabled: viewMode === 'calendar',
     queryFn: () => transactions.calendar({
       month: `${calendarMonth}-01`,
       account_ids: calendarAccountIds.length === 1 ? calendarAccountIds : undefined,
+      date_basis: calendarDateBasis,
     }),
   })
 
@@ -446,11 +562,14 @@ export default function TransactionsPage() {
   const ctxFilters = {
     search: searchQuery || undefined,
     account_ids: effectiveAccountIds.length ? effectiveAccountIds : undefined,
+    linked_card_ids: filterLinkedCardIds.length ? filterLinkedCardIds : undefined,
     category_ids: filterCategoryIds.length ? filterCategoryIds : undefined,
     payee_id: filterPayee || undefined,
     group_id: filterGroupId || undefined,
     type: filterType || undefined,
     status: filterStatus || undefined,
+    unpaid_only: filterUnpaid || undefined,
+    flagged: filterFlag || undefined,
     uncategorized: filterUncategorized || undefined,
     from: filterFrom || undefined,
     to: filterTo || undefined,
@@ -496,6 +615,10 @@ export default function TransactionsPage() {
   const { data: accountsList } = useQuery({
     queryKey: ['accounts'],
     queryFn: () => accountsApi.list(),
+  })
+  const { data: linkedCardsList = [] } = useQuery({
+    queryKey: ['accounts', 'linked-cards'],
+    queryFn: () => accountsApi.linkedCards(),
   })
 
   const { data: payeesList } = useQuery({
@@ -593,6 +716,54 @@ export default function TransactionsPage() {
     },
   })
 
+  // The row's paid mark (issue #15): one click, no dialog, and no money moves.
+  const togglePaidMutation = useMutation({
+    mutationFn: (tx: Transaction) => transactions.update(tx.id, { is_paid: !tx.is_paid }),
+    onSuccess: (updated) => {
+      invalidateAfterTxMutation()
+      toast.success(updated.is_paid
+        ? t('transactions.paidSuccess')
+        : t('transactions.unpaidSuccess'))
+    },
+    onError: (error) => {
+      toast.error(extractApiError(error))
+    },
+  })
+
+  // Issue #636: opening a row is what clears its "new" marker. The badge is
+  // a review hint, so a failure here must not stop the dialog from opening:
+  // the row simply keeps the badge, and the toast says so.
+  const markReadMutation = useMutation({
+    mutationFn: ({ id, workspaceId }: { id: string; workspaceId?: string }) =>
+      transactions.markRead(id, workspaceId),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['transactions'] }),
+    onError: (error) => {
+      toast.error(extractApiError(error))
+    },
+  })
+
+  const markAllReadMutation = useMutation({
+    mutationFn: (workspaceId?: string) => transactions.markAllRead(workspaceId),
+    onSuccess: () => {
+      invalidateAfterTxMutation()
+      toast.success(t('transactions.markAllReadDone'))
+    },
+    onError: (error) => {
+      toast.error(extractApiError(error))
+    },
+  })
+
+  const openTransaction = (tx: Transaction) => {
+    // A viewer can open the row but cannot clear its marker, and a shared row
+    // belongs to another workspace: skip a write that is bound to fail and
+    // keep the dialog opening as before (issue #636).
+    if (tx.is_read === false && canWrite && !tx.is_shared) {
+      markReadMutation.mutate({ id: tx.id, workspaceId: currentWorkspace?.id })
+    }
+    setEditingTx(tx)
+    setDialogOpen(true)
+  }
+
   const bulkCategorizeMutation = useMutation({
     mutationFn: ({ ids, categoryId }: { ids: string[]; categoryId: string | null }) =>
       transactions.bulkCategorize(ids, categoryId),
@@ -606,6 +777,19 @@ export default function TransactionsPage() {
       toast.success(t('transactions.bulkSuccess', { count: result.updated }), {
         description: skipped > 0 ? t('categoryLines.bulkSkipped', { count: skipped }) : undefined,
       })
+    },
+    onError: (error) => {
+      toast.error(extractApiError(error))
+    },
+  })
+
+  const bulkFlagMutation = useMutation({
+    mutationFn: ({ ids, isFlagged }: { ids: string[]; isFlagged: boolean }) =>
+      transactions.bulkFlag(ids, isFlagged),
+    onSuccess: (result, { isFlagged }) => {
+      invalidateAfterTxMutation()
+      setSelectedIds(new Set())
+      toast.success(t(isFlagged ? 'transactions.bulkFlagSuccess' : 'transactions.bulkUnflagSuccess', { count: result.updated }))
     },
     onError: (error) => {
       toast.error(extractApiError(error))
@@ -797,10 +981,11 @@ export default function TransactionsPage() {
     const groups: { date: string; label: string; items: Transaction[] }[] = []
     let current: { date: string; label: string; items: Transaction[] } | null = null
     for (const tx of filteredItems) {
-      if (!current || current.date !== tx.date) {
+      const reportingDate = listDate(tx)
+      if (!current || current.date !== reportingDate) {
         current = {
-          date: tx.date,
-          label: new Date(tx.date + 'T00:00:00').toLocaleDateString(dateLocale, {
+          date: reportingDate,
+          label: new Date(reportingDate + 'T00:00:00').toLocaleDateString(dateLocale, {
             weekday: 'short',
             day: 'numeric',
             month: 'short',
@@ -963,12 +1148,36 @@ export default function TransactionsPage() {
   const handleOpenCalendarTransaction = async (id: string) => {
     try {
       const tx = await transactions.get(id)
-      setEditingTx(tx)
       setDuplicateDraft(null)
-      setDialogOpen(true)
+      openTransaction(tx)
     } catch {
       toast.error(t('common.error'))
     }
+  }
+
+  // Flags are something to come back to and the review queue holds whatever
+  // arrived unread, both often from earlier months: either one opens on the
+  // whole history, and the range comes back when neither is on.
+  const switchAllDatesView = (wasOn: boolean, isOn: boolean) => {
+    if (isOn && !wasOn) {
+      rangeBeforeAllDatesRef.current = { from: filterFrom, to: filterTo }
+      setFilterFrom('')
+      setFilterTo('')
+    } else if (!isOn && wasOn) {
+      const previous = rangeBeforeAllDatesRef.current
+      // Only when the user has not picked another range in the meantime.
+      if (previous && !filterFrom && !filterTo) {
+        setFilterFrom(previous.from)
+        setFilterTo(previous.to)
+      }
+      rangeBeforeAllDatesRef.current = null
+    }
+  }
+
+  const handleFlagFilterChange = (next: FlagFilter) => {
+    switchAllDatesView(Boolean(filterFlag) || onlyUnread, Boolean(next) || onlyUnread)
+    setFilterFlag(next)
+    setPage(1)
   }
 
   const handleHideIgnoredChange = (next: boolean) => {
@@ -981,6 +1190,12 @@ export default function TransactionsPage() {
     }
   }
 
+  const handleOnlyUnreadChange = (next: boolean) => {
+    switchAllDatesView(Boolean(filterFlag) || onlyUnread, Boolean(filterFlag) || next)
+    setOnlyUnread(next)
+    setPage(1)
+  }
+
   const handleExport = async () => {
     setExporting(true)
     try {
@@ -991,6 +1206,7 @@ export default function TransactionsPage() {
       } else {
         await transactions.export({
           account_ids: effectiveAccountIds.length > 0 ? effectiveAccountIds : undefined,
+          linked_card_ids: filterLinkedCardIds.length > 0 ? filterLinkedCardIds : undefined,
           category_ids: filterCategoryIds.length > 0 ? filterCategoryIds : undefined,
           payee_id: filterPayee || undefined,
           type: filterType || undefined,
@@ -1001,6 +1217,10 @@ export default function TransactionsPage() {
           q: searchQuery || undefined,
           tags: tagFilters.length > 0 ? tagFilters : undefined,
           exclude_ignored: hideIgnored ? true : undefined,
+          flagged: filterFlag === 'all' ? true : undefined,
+          flag_due: filterFlag === 'overdue' || filterFlag === 'soon' ? filterFlag : undefined,
+          unpaid_only: filterUnpaid ? true : undefined,
+          unread_only: onlyUnread ? true : undefined,
         })
       }
       toast.success(t('transactions.exportSuccess'))
@@ -1019,10 +1239,12 @@ export default function TransactionsPage() {
     e.preventDefault()
     e.stopPropagation()
     resizingRef.current = { id: col.id, startX: e.clientX, startWidth: grid.widthOf(col.id) }
+    // The handle is on the column's end edge: the left one in right-to-left layouts.
+    const towardEnd = getComputedStyle(e.currentTarget).direction === 'rtl' ? -1 : 1
     const onMove = (ev: PointerEvent) => {
       const r = resizingRef.current
       if (!r) return
-      grid.setWidth(r.id, r.startWidth + (ev.clientX - r.startX))
+      grid.setWidth(r.id, r.startWidth + towardEnd * (ev.clientX - r.startX))
     }
     const onUp = () => {
       resizingRef.current = null
@@ -1036,12 +1258,12 @@ export default function TransactionsPage() {
   const renderHeaderCell = (col: ColumnDef) => {
     const isSorted = grid.sortBy === col.id
     const sortIndicator = isSorted ? (grid.sortDir === 'asc' ? <ArrowUp size={12} /> : <ArrowDown size={12} />) : null
-    const alignClass = col.align === 'right' ? 'text-right' : 'text-left'
+    const alignClass = col.align === 'right' ? 'text-end' : 'text-start'
     const justify = col.align === 'right' ? 'justify-end' : 'justify-start'
     const cursorClass = col.sortable ? 'cursor-pointer select-none hover:text-foreground' : ''
-    // Match the amount/attachments body cells' pr-5 so right-aligned
+    // Match the amount/attachments body cells' pe-5 so right-aligned
     // headers line up with their values (issue #161 polish).
-    const padX = col.align === 'right' ? 'pr-5' : ''
+    const padX = col.align === 'right' ? 'pe-5' : ''
     return (
       <TableHead
         key={col.id}
@@ -1057,7 +1279,7 @@ export default function TransactionsPage() {
           onPointerDown={(e) => startResize(e, col)}
           onClick={(e) => e.stopPropagation()}
           aria-hidden="true"
-          className="absolute right-0 top-0 h-full w-2 -mr-1 cursor-col-resize select-none hover:bg-primary/40 active:bg-primary/60"
+          className="absolute end-0 top-0 h-full w-2 -me-1 cursor-col-resize select-none hover:bg-primary/40 active:bg-primary/60"
         />
       </TableHead>
     )
@@ -1077,11 +1299,11 @@ export default function TransactionsPage() {
           }`}
         >
           {mask(
-            `${tx.is_ignored ? ' ' : tx.type === 'credit' ? '+' : '−'}${formatCurrency(
+            ltrAmount(`${tx.is_ignored ? ' ' : tx.type === 'credit' ? '+' : '−'}${formatCurrency(
               Math.abs(displayAmount),
               tx.currency,
               locale,
-            )}`,
+            )}`),
           )}
         </span>
         {tx.is_shared && (
@@ -1154,6 +1376,7 @@ export default function TransactionsPage() {
                 <span className="truncate" title={groupBadgeLabel}>{groupBadgeLabel}</span>
               </span>
             )}
+            <PaybackBadge tx={tx} />
             {/* The invoice this settles. Same badge shape as the split
                 and transfer markers beside it, and absent entirely in a
                 workspace without the invoicing module — the server does
@@ -1200,6 +1423,18 @@ export default function TransactionsPage() {
                 not the word that says what the badge is. Past the point
                 where even that no longer fits, the badge clips at the
                 cell edge rather than carrying on into the next column. */}
+            {/* Issue #636: a row nobody has opened yet. The dot keeps the
+                badge readable even where the cell is too narrow for the
+                word. */}
+            {tx.is_read === false && !tx.is_shared && (
+              <span
+                title={t('transactions.newBadgeTooltip')}
+                className="inline-flex shrink-0 items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-sky-700 bg-sky-50 border border-sky-200 px-1.5 py-0.5 rounded-full dark:text-sky-300 dark:bg-sky-500/15 dark:border-sky-500/30"
+              >
+                <span className="h-1.5 w-1.5 rounded-full bg-sky-500" aria-hidden="true" />
+                {t('transactions.newBadge')}
+              </span>
+            )}
             {isTransferTransaction(tx) && (
               <span className="inline-flex max-w-full items-center gap-1 overflow-hidden text-[10px] font-semibold uppercase tracking-wide text-blue-600 bg-blue-50 border border-blue-200 px-1.5 py-0.5 rounded-full">
                 <ArrowLeftRight className="h-3 w-3 shrink-0" />
@@ -1235,6 +1470,26 @@ export default function TransactionsPage() {
                 <span className="truncate">{t('transactions.excludedFromReports')}</span>
                 <span className="shrink-0" title={t('transactions.excludeFromReportsHint')}><HelpCircle className="h-3 w-3 text-blue-400" /></span>
               </span>
+            )}
+            <TransactionFlagMarker tx={tx} locale={dateLocale} />
+            {/* The paid mark (issue #15): a badge while the money has not
+                moved, and the badge itself is the way to settle it. A paid
+                row gets nothing here, so the list stays quiet. */}
+            {tx.is_paid === false && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  togglePaidMutation.mutate(tx)
+                }}
+                disabled={!canWrite || tx.is_shared || togglePaidMutation.isPending}
+                title={t('transactions.markPaidHint')}
+                aria-label={t('transactions.markPaid')}
+                className="inline-flex shrink-0 items-center gap-1 rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-700 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-400 dark:hover:bg-amber-500/20"
+              >
+                <CircleDashed size={11} className="shrink-0" />
+                <span className="truncate">{t('transactions.unpaid')}</span>
+              </button>
             )}
             {tx.recurring_transaction_id != null && (
               <span
@@ -1273,8 +1528,9 @@ export default function TransactionsPage() {
               <Paperclip size={12} className="text-muted-foreground shrink-0" />
             )}
           </div>
+          <ReportingDateBadge tx={tx} locale={dateLocale} />
           {showInlineDate && (
-            <p className="text-xs text-muted-foreground mt-0.5">{new Date(tx.date + 'T00:00:00').toLocaleDateString(dateLocale)}</p>
+            <p className="text-xs text-muted-foreground mt-0.5">{new Date(listDate(tx) + 'T00:00:00').toLocaleDateString(dateLocale)}</p>
           )}
           {(showInlineNotes || showInlineTags) && tx.notes && (
             <div className="mt-1 space-y-0.5">
@@ -1303,18 +1559,18 @@ export default function TransactionsPage() {
 
   const renderBodyCell = (col: ColumnDef, tx: Transaction) => {
     const widthStyle = { width: grid.widthOf(col.id), minWidth: grid.widthOf(col.id) }
-    const alignClass = col.align === 'right' ? 'text-right' : ''
+    const alignClass = col.align === 'right' ? 'text-end' : ''
     const baseClass = `py-2.5 ${alignClass}`
     switch (col.id) {
       case 'date':
         return (
           <TableCell key={col.id} style={widthStyle} className={`${baseClass} text-sm text-muted-foreground tabular-nums`}>
-            {new Date(tx.date + 'T00:00:00').toLocaleDateString(dateLocale)}
+            {new Date(listDate(tx) + 'T00:00:00').toLocaleDateString(dateLocale)}
           </TableCell>
         )
       case 'description':
         return (
-          <TableCell key={col.id} style={widthStyle} className={`${baseClass} pl-2 max-w-0`}>
+          <TableCell key={col.id} style={widthStyle} className={`${baseClass} ps-2 max-w-0`}>
             {renderDescriptionCell(tx)}
           </TableCell>
         )
@@ -1341,7 +1597,7 @@ export default function TransactionsPage() {
       }
       case 'amount':
         return (
-          <TableCell key={col.id} style={widthStyle} className={`${baseClass} pr-5`}>
+          <TableCell key={col.id} style={widthStyle} className={`${baseClass} pe-5`}>
             {renderAmountCell(tx)}
           </TableCell>
         )
@@ -1383,7 +1639,7 @@ export default function TransactionsPage() {
       }
       case 'attachments':
         return (
-          <TableCell key={col.id} style={widthStyle} className={`${baseClass} pr-5 text-sm text-muted-foreground tabular-nums`}>
+          <TableCell key={col.id} style={widthStyle} className={`${baseClass} pe-5 text-sm text-muted-foreground tabular-nums`}>
             {(tx.attachment_count ?? 0) > 0 ? (
               <span className="inline-flex items-center gap-1 justify-end w-full">
                 <Paperclip size={12} />{tx.attachment_count}
@@ -1419,6 +1675,14 @@ export default function TransactionsPage() {
   const duplicableTx = selectedSingleTx && !selectedSingleTx.is_shared && !selectedSingleTx.transfer_pair_id
     ? selectedSingleTx
     : null
+  // The flag action unflags when every selected row is already flagged,
+  // and flags the whole selection otherwise.
+  const selectedRows = filteredItems.filter(tx => selectedIds.has(tx.id))
+  const selectionAllFlagged = selectedRows.length > 0 && selectedRows.every(tx => tx.is_flagged)
+  const toggleFlagOnSelection = () => {
+    if (selectedIds.size === 0) return
+    bulkFlagMutation.mutate({ ids: Array.from(selectedIds), isFlagged: !selectionAllFlagged })
+  }
   const exportLabel = exporting
     ? t('transactions.exporting')
     : selectedIds.size > 0
@@ -1443,6 +1707,7 @@ export default function TransactionsPage() {
               value: viewMode,
               onChange: (value) => {
                 if (value === 'calendar' && filterAccountIds.length > 1) setFilterAccountIds([])
+                if (value === 'calendar') setFilterLinkedCardIds([])
                 setViewMode(value)
               },
               listLabel: t('transactions.listView'),
@@ -1455,6 +1720,7 @@ export default function TransactionsPage() {
             onAdd={canWrite ? () => { setEditingTx(null); setDialogOpen(true) } : undefined}
             onDuplicate={duplicableTx ? () => handleDuplicateTransaction(duplicableTx) : undefined}
             onTransfer={canWrite ? () => setTransferDialogOpen(true) : undefined}
+            onScanReceipt={canWrite && documentAiEnabled ? () => setReceiptDialogOpen(true) : undefined}
             onRefresh={noAccounts ? undefined : () => {
               void refreshTransactionsView({
                 viewMode,
@@ -1489,6 +1755,9 @@ export default function TransactionsPage() {
         filterAccountIds={filterAccountIds}
         onAccountIdsChange={(v) => { setFilterAccountIds(viewMode === 'calendar' ? v.slice(0, 1) : v); setPage(1) }}
         accountSelectionMode={viewMode === 'calendar' ? 'single' : 'multiple'}
+        linkedCards={viewMode === 'list' ? linkedCardsList : []}
+        filterLinkedCardIds={filterLinkedCardIds}
+        onLinkedCardIdsChange={(v) => { setFilterLinkedCardIds(v); setPage(1) }}
         filterCategoryIds={filterCategoryIds}
         onCategoryIdsChange={(v) => { setFilterCategoryIds(v); setPage(1) }}
         filterUncategorized={filterUncategorized}
@@ -1501,8 +1770,17 @@ export default function TransactionsPage() {
         onTypeChange={(v) => { setFilterType(v); setPage(1) }}
         filterStatus={filterStatus}
         onStatusChange={(v) => { setFilterStatus(v); setPage(1) }}
+        filterUnpaid={filterUnpaid}
+        onUnpaidChange={(v) => { setFilterUnpaid(v); setPage(1) }}
         hideIgnored={hideIgnored}
         onHideIgnoredChange={handleHideIgnoredChange}
+        filterFlag={filterFlag}
+        onFlagFilterChange={handleFlagFilterChange}
+        onlyUnread={onlyUnread}
+        onOnlyUnreadChange={handleOnlyUnreadChange}
+        // The calendar does not apply the review queue, so it is not offered
+        // there; the state survives so the list gets it back.
+        showUnreadFilter={viewMode === 'list'}
         filterFrom={filterFrom}
         filterTo={filterTo}
         onDateRangeChange={(from, to) => { setFilterFrom(from); setFilterTo(to); setPage(1) }}
@@ -1513,15 +1791,19 @@ export default function TransactionsPage() {
           setFilterFrom('')
           setFilterTo('')
           setFilterAccountIds([])
+          setFilterLinkedCardIds([])
           setFilterCategoryIds([])
           setFilterUncategorized(false)
           setFilterPayee('')
           setFilterGroupId('')
           setFilterType('')
           setFilterStatus('')
+          setFilterUnpaid(false)
+          setFilterFlag('')
           setFilterMinAmount('')
           setFilterMaxAmount('')
           handleHideIgnoredChange(false)
+          setOnlyUnread(false)
           setSearchInput('')
           setSearchQuery('')
           clearTagFilters()
@@ -1540,7 +1822,7 @@ export default function TransactionsPage() {
             {t('splitGroups.title')}: {filterGroup?.name ?? '…'}
             <button
               onClick={() => { setFilterGroupId(''); setPage(1) }}
-              className="ml-0.5 text-primary/60 hover:text-primary"
+              className="ms-0.5 text-primary/60 hover:text-primary"
               aria-label={t('transactions.clearGroupFilter')}
             >
               ×
@@ -1558,7 +1840,7 @@ export default function TransactionsPage() {
               <span>{tag}</span>
               <button
                 onClick={() => removeTagFilter(tag)}
-                className="ml-0.5 text-primary/60 hover:text-primary"
+                className="ms-0.5 text-primary/60 hover:text-primary"
                 aria-label={`Remove ${tag} filter`}
               >
                 <X size={12} />
@@ -1586,7 +1868,41 @@ export default function TransactionsPage() {
           onOpenTransaction={handleOpenCalendarTransaction}
           accounts={accountsList}
           userCurrency={userCurrency}
+          dateBasis={calendarDateBasis}
+          onDateBasisChange={setCalendarDateBasis}
         />
+      )}
+
+      {/* Issue #636: inside the review queue, say how many rows are left and
+          offer the one-click way out of it. */}
+      {viewMode === 'list' && onlyUnread && !noAccounts && (
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-sky-200 bg-sky-50/60 px-3 py-2 dark:border-sky-500/30 dark:bg-sky-500/10">
+          <p className="text-xs font-medium text-sky-800 dark:text-sky-200">
+            {t('transactions.unreadCount', { count: data?.total ?? 0 })}
+            {data && workspaceUnread !== undefined && workspaceUnread > data.total && (
+              <span className="ms-2 font-normal">
+                {t('transactions.unreadOutsideFilters', { count: workspaceUnread - data.total })}
+              </span>
+            )}
+          </p>
+          <Button
+            size="sm"
+            variant="outline"
+            // The label carries the count, so on a phone it takes the whole
+            // row and wraps instead of running past the banner's edge.
+            className="h-auto min-h-9 w-full whitespace-normal py-1.5 text-center sm:w-auto"
+            onClick={() => markAllReadMutation.mutate(currentWorkspace?.id)}
+            // The action clears the whole workspace, not the filtered list:
+            // it says how many rows that is, and with none there is nothing
+            // to clear.
+            disabled={!canWrite || markAllReadMutation.isPending || !workspaceUnread}
+          >
+            <CheckCheck className="me-1.5 h-4 w-4" />
+            {markAllReadMutation.isPending
+              ? t('transactions.markAllReadPending')
+              : t('transactions.markAllRead', { count: workspaceUnread ?? 0 })}
+          </Button>
+        </div>
       )}
 
       {/* Table / Mobile Cards */}
@@ -1620,15 +1936,22 @@ export default function TransactionsPage() {
                     highlighted={tx.id === highlightId}
                     highlightedRowRef={tx.id === highlightId ? highlightedRowRef : undefined}
                     locale={locale}
+                    dateLocale={dateLocale}
                     userCurrency={userCurrency}
+                    showUnread
                     onSelect={toggleSelect}
+                    onMakeRecurring={
+                      canWrite && !tx.is_shared && !tx.virtual
+                        && !tx.transfer_pair_id && !tx.recurring_transaction_id
+                        ? setRecurringSource
+                        : undefined
+                    }
                     onClick={(t) => {
                       if (t.is_shared) {
                         if (t.group_id) navigate(`/groups/${t.group_id}`)
                         return
                       }
-                      setEditingTx(t)
-                      setDialogOpen(true)
+                      openTransaction(t)
                     }}
                   />
                 ))}
@@ -1646,7 +1969,7 @@ export default function TransactionsPage() {
           <Table style={{ tableLayout: 'fixed' }}>
             <TableHeader>
               <TableRow className="border-b border-border hover:bg-transparent">
-                <TableHead style={{ width: 40, minWidth: 40 }} className="py-3 pl-4 pr-0">
+                <TableHead style={{ width: 40, minWidth: 40 }} className="py-3 ps-4 pe-0">
                   {canWrite && (
                     <input
                       type="checkbox"
@@ -1682,11 +2005,10 @@ export default function TransactionsPage() {
                           return
                         }
                         if (!canWrite) return
-                        setEditingTx(tx)
-                        setDialogOpen(true)
+                        openTransaction(tx)
                       }}
                     >
-                      <TableCell style={{ width: 40, minWidth: 40 }} className="py-2.5 pl-4 pr-0">
+                      <TableCell style={{ width: 40, minWidth: 40 }} className="py-2.5 ps-4 pe-0">
                         {/* Bulk operations are scoped to user.id so they
                             silently skip shared rows — hide the checkbox
                             on those to avoid the dead-end UX. */}
@@ -1712,13 +2034,13 @@ export default function TransactionsPage() {
                         disabled={!canOpenLinkDialog}
                         onSelect={() => setLinkTransferDialogOpen(true)}
                       >
-                        <ArrowLeftRight className="mr-2 h-4 w-4" />
+                        <ArrowLeftRight className="me-2 h-4 w-4" />
                         {t('transactions.linkAsTransfer')}
                       </ContextMenuItem>
 
                       <ContextMenuSub>
                         <ContextMenuSubTrigger>
-                          <TagIcon className="mr-2 h-4 w-4" />
+                          <TagIcon className="me-2 h-4 w-4" />
                           {t('transactions.selectCategory')}
                         </ContextMenuSubTrigger>
                         <ContextMenuPortal>
@@ -1747,19 +2069,35 @@ export default function TransactionsPage() {
                       </ContextMenuSub>
 
                       <ContextMenuItem onSelect={() => setBulkAddToGroupOpen(true)}>
-                        <Users className="mr-2 h-4 w-4" />
+                        <Users className="me-2 h-4 w-4" />
                         {t('transactions.addToGroup')}
                       </ContextMenuItem>
 
+                      <ContextMenuItem
+                        disabled={bulkFlagMutation.isPending}
+                        onSelect={toggleFlagOnSelection}
+                      >
+                        <Flag className="me-2 h-4 w-4" />
+                        {selectionAllFlagged ? t('transactions.unflagAction') : t('transactions.flagAction')}
+                      </ContextMenuItem>
+
                       <ContextMenuItem onSelect={handleFocusTagInput}>
-                        <TagIcon className="mr-2 h-4 w-4" />
+                        <TagIcon className="me-2 h-4 w-4" />
                         {t('transactions.bulkAddTags')}
                       </ContextMenuItem>
 
                       {selectedSingleTx && (
                         <ContextMenuItem onSelect={() => handleCreateRuleFromTransaction(selectedSingleTx)}>
-                          <SlidersHorizontal className="mr-2 h-4 w-4" />
+                          <SlidersHorizontal className="me-2 h-4 w-4" />
                           {t('transactions.createRule')}
+                        </ContextMenuItem>
+                      )}
+
+                      {selectedSingleTx && !selectedSingleTx.transfer_pair_id
+                        && !selectedSingleTx.recurring_transaction_id && (
+                        <ContextMenuItem onSelect={() => setRecurringSource(selectedSingleTx)}>
+                          <Repeat className="me-2 h-4 w-4" />
+                          {t('transactions.makeRecurring')}
                         </ContextMenuItem>
                       )}
 
@@ -1769,7 +2107,7 @@ export default function TransactionsPage() {
                         disabled={bulkDeleteMutation.isPending}
                         onSelect={() => setBulkDeleteConfirmOpen(true)}
                       >
-                        <Trash2 className="mr-2 h-4 w-4" />
+                        <Trash2 className="me-2 h-4 w-4" />
                         {t('common.delete')}
                       </ContextMenuItem>
                     </ContextMenuContent>
@@ -1832,7 +2170,7 @@ export default function TransactionsPage() {
               </span>
             )}
             {/* Desktop: original horizontal layout */}
-            <span className="mr-auto text-xs text-muted-foreground hidden sm:inline">
+            <span className="me-auto text-xs text-muted-foreground hidden sm:inline">
               {t('transactions.summaryCount', { count: data.total })}
             </span>
             {data.summary.excluded > 0 && (
@@ -1936,9 +2274,9 @@ export default function TransactionsPage() {
           centered when the nav is collapsed (issue #1027). */}
       {viewMode === 'list' && selectedIds.size > 0 && (
         <div className={cn(
-          "fixed bottom-0 left-0 right-0 z-50",
+          "fixed bottom-0 start-0 end-0 z-50",
           "transition-[left] duration-300 ease-in-out motion-reduce:transition-none",
-          sidebarCollapsed ? 'lg:left-16' : 'lg:left-60',
+          sidebarCollapsed ? 'lg:start-16' : 'lg:start-60',
         )}>
         <div className="mx-auto max-w-7xl px-3 md:px-6 pb-4 md:pb-6">
           <div className="flex items-stretch gap-1.5 bg-card border border-border shadow-xl rounded-2xl p-2 transition-all duration-500">
@@ -1959,6 +2297,9 @@ export default function TransactionsPage() {
                 if (next) bulkCategorizeMutation.mutate({ ids: Array.from(selectedIds), categoryId: next })
               }}
               onOpenGroup={() => setBulkAddToGroupOpen(true)}
+              allFlagged={selectionAllFlagged}
+              flagPending={bulkFlagMutation.isPending}
+              onToggleFlag={toggleFlagOnSelection}
               onOpenTransfer={() => setLinkTransferDialogOpen(true)}
               onCreateRule={selectedSingleTx && !selectedSingleTx.is_shared
                 ? () => handleCreateRuleFromTransaction(selectedSingleTx)
@@ -1975,7 +2316,7 @@ export default function TransactionsPage() {
                 sum (issue #185) adds no horizontal width to an already
                 crowded bar. The sum is hidden below sm where only the
                 count pill shows. */}
-            <div className="flex items-center gap-2.5 pl-3 pr-4 whitespace-nowrap">
+            <div className="flex items-center gap-2.5 ps-3 pe-4 whitespace-nowrap">
               <span className="inline-flex items-center justify-center size-6 rounded-full bg-primary/10 text-primary text-xs font-semibold shrink-0">
                 {selectedIds.size}
               </span>
@@ -1989,11 +2330,11 @@ export default function TransactionsPage() {
                   }`}
                 >
                   {mask(
-                    `${selectedNet >= 0 ? '+' : '−'}${formatCurrency(
+                    ltrAmount(`${selectedNet >= 0 ? '+' : '−'}${formatCurrency(
                       Math.abs(selectedNet),
                       userCurrency,
                       locale,
-                    )}`,
+                    )}`),
                   )}
                 </span>
               </div>
@@ -2031,15 +2372,32 @@ export default function TransactionsPage() {
               title={t('transactions.addToGroup')}
               className="h-8 px-3 shrink-0 text-sm"
             >
-              <Users size={15} className="lg:mr-1.5" />
+              <Users size={15} className="lg:me-1.5" />
               <span className="hidden lg:inline">{t('transactions.addToGroup')}</span>
+            </Button>
+
+            <div className="w-px bg-border/60 self-stretch" />
+
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={bulkFlagMutation.isPending}
+              onClick={toggleFlagOnSelection}
+              title={selectionAllFlagged ? t('transactions.unflagAction') : t('transactions.flagAction')}
+              aria-label={selectionAllFlagged ? t('transactions.unflagAction') : t('transactions.flagAction')}
+              className="h-8 px-3 shrink-0 text-sm"
+            >
+              {/* Icon only at every width: with Create Rule showing for a
+                  single row, a label here pushes Delete out of the bar.
+                  The title and aria-label carry the name. */}
+              <Flag size={15} className={cn(selectionAllFlagged && 'fill-current text-amber-600 dark:text-amber-400')} />
             </Button>
 
             <div className="w-px bg-border/60 self-stretch" />
 
             {/* Add tags inline */}
             <div
-              className={`flex items-center gap-1 px-1 rounded-xl transition-all duration-300 ${
+              className={`flex min-w-0 items-center gap-1 px-1 rounded-xl transition-all duration-300 ${
                 isBulkBarPulsing ? 'ring-2 ring-primary ring-offset-2 scale-[1.05] bg-primary/5' : ''
               }`}>
               <input
@@ -2048,7 +2406,7 @@ export default function TransactionsPage() {
                 value={bulkTagInput}
                 onChange={(e) => setBulkTagInput(e.target.value)}
                 placeholder={t('transactions.addTagsPlaceholder')}
-                className="rounded-lg px-2.5 py-2 text-sm bg-transparent text-foreground placeholder:text-muted-foreground/70 focus:outline-none focus:bg-muted/60 w-28 md:w-40"
+                className="rounded-lg px-2.5 py-2 text-sm bg-transparent text-foreground placeholder:text-muted-foreground/70 focus:outline-none focus:bg-muted/60 w-28 md:w-40 min-w-20 shrink"
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && bulkTagInput.trim()) {
                     e.preventDefault()
@@ -2098,7 +2456,7 @@ export default function TransactionsPage() {
               onClick={() => setLinkTransferDialogOpen(true)}
               className="h-8 px-3 shrink-0 text-sm"
             >
-              <ArrowLeftRight size={15} className="mr-1.5" />
+              <ArrowLeftRight size={15} className="me-1.5" />
               <span className="hidden lg:inline">{t('transactions.linkAsTransfer')}</span>
             </Button>
 
@@ -2116,7 +2474,7 @@ export default function TransactionsPage() {
                   className="h-8 px-3 shrink-0 text-sm"
                   title={t('transactions.createRule')}
                 >
-                  <SlidersHorizontal size={15} className="lg:mr-1.5" />
+                  <SlidersHorizontal size={15} className="lg:me-1.5" />
                   <span className="hidden lg:inline">{t('transactions.createRule')}</span>
                 </Button>
               )
@@ -2130,11 +2488,11 @@ export default function TransactionsPage() {
               disabled={bulkDeleteMutation.isPending}
               className="h-8 px-3 shrink-0 text-sm"
             >
-              <Trash2 size={15} className="lg:mr-1.5" />
+              <Trash2 size={15} className="lg:me-1.5" />
               <span className="hidden lg:inline">{t('common.delete')}</span>
             </Button>
 
-            <div className="ml-auto" />
+            <div className="ms-auto" />
 
             {/* Close */}
             <button
@@ -2179,6 +2537,7 @@ export default function TransactionsPage() {
       />
 
       {/* Transfer Dialog */}
+      {documentAiEnabled && <ReceiptScanDialog open={receiptDialogOpen} onOpenChange={setReceiptDialogOpen} />}
       <TransferDialog
         open={transferDialogOpen}
         onClose={() => setTransferDialogOpen(false)}
@@ -2358,6 +2717,15 @@ export default function TransactionsPage() {
         onSave={(data) => createRuleMutation.mutate(data as Omit<Rule, 'id' | 'user_id'>)}
         loading={createRuleMutation.isPending}
         initialData={createRuleInitialData}
+      />
+
+      {/* Recurring bill filled from the selected row (issue #429) */}
+      <MakeRecurringDialog
+        transaction={recurringSource}
+        accounts={accountsList ?? []}
+        categories={categoriesList ?? []}
+        categoryGroups={categoryGroupsList ?? []}
+        onClose={() => setRecurringSource(null)}
       />
     </div>
   )

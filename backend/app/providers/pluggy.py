@@ -5,7 +5,7 @@ import json
 import logging
 import time
 from datetime import date
-from decimal import Decimal, InvalidOperation
+from decimal import ROUND_DOWN, ROUND_HALF_UP, Decimal, InvalidOperation
 from typing import Literal, Optional
 from urllib.parse import parse_qs, urlparse
 
@@ -21,6 +21,7 @@ from app.providers.base import (
     HoldingData,
     HoldingTradeData,
     RefreshOutcome,
+    ReservedBalanceData,
     TransactionData,
     mask_last4,
 )
@@ -222,6 +223,21 @@ def _decimal_or_none(value) -> Optional[Decimal]:
         return None
 
 
+# `AssetValue.gross_amount` is Numeric(15, 6): at most 9 integer digits.
+_GROSS_LIMIT = Decimal("1000000000")
+
+
+def _storable_gross(value) -> Optional[Decimal]:
+    """The gross amount, or None when the column can't hold it (even once
+    rounded to its 6 decimals); the net amount still records the value."""
+    gross = _decimal_or_none(value)
+    if gross is None or not gross.is_finite() or abs(gross) >= _GROSS_LIMIT:
+        return None
+    if abs(gross.quantize(Decimal("0.000001"), rounding=ROUND_HALF_UP)) >= _GROSS_LIMIT:
+        return None
+    return gross
+
+
 def _consolidated_credit_balance_group(
     credit_data: dict, account_balance, currency: str,
 ) -> Optional[str]:
@@ -280,6 +296,141 @@ _HOLDING_PROMOTED_KEYS = {
 # would produce badly-wrong evolution charts, so we skip it for those.
 _ISSUE_DATE_IS_PURCHASE_DATE = {"FIXED_INCOME", "COE"}
 
+# Pluggy `type` values of exchange-traded positions (stocks, units, FIIs,
+# BDRs and ETFs): their `quantity` is a share count and their trades replay
+# onto it. Fixed income, funds and pensions are left out for now.
+_EXCHANGE_TRADED_TYPES = {"EQUITY", "ETF"}
+
+# Pluggy investment transaction types that move the position. INTEREST
+# (dividends, JCP), TAX, TRANSFER and AMORTIZATION rows carry no quantity
+# change the ledger can replay, so they stay out of it.
+_TRADE_KINDS: dict[str, Literal["buy", "sell"]] = {"BUY": "buy", "SELL": "sell"}
+
+
+def _finite_decimal_or_none(value) -> Optional[Decimal]:
+    """A trade figure as a Decimal, or None when it is missing or unusable.
+
+    NaN and infinities parse (JSON accepts them too) but break comparisons
+    and arithmetic: `Decimal("NaN") <= 0` raises. They read as missing, as
+    do booleans.
+    """
+    if isinstance(value, bool):
+        return None
+    parsed = _decimal_or_none(value)
+    return parsed if parsed is not None and parsed.is_finite() else None
+
+
+def _sum_expenses(expenses) -> Decimal:
+    """Total fee of a trade from Pluggy's `expenses` breakdown.
+
+    Every numeric entry (brokerage, settlement, clearing, exchange, custody,
+    taxes) is part of what executing the trade cost; null entries and an
+    absent block count as zero.
+    """
+    if not isinstance(expenses, dict):
+        return Decimal("0")
+    total = Decimal("0")
+    for value in expenses.values():
+        amount = _finite_decimal_or_none(value)
+        if amount is not None and amount > 0:
+            total += amount
+    return total
+
+
+def _build_trade_data(tx: dict) -> Optional[HoldingTradeData]:
+    """Map one row of /investments/{id}/transactions to a ledger trade.
+
+    Returns None for rows that are not a buy or a sell, or that lack what a
+    trade needs (id, date, a positive quantity, a price). `movementType` is
+    not used: Pluggy reports it inverted on some rows.
+    """
+    tx_type = tx.get("type")
+    kind = _TRADE_KINDS.get(tx_type.upper()) if isinstance(tx_type, str) else None
+    tx_id = tx.get("id")
+    if kind is None or not tx_id:
+        return None
+    quantity = _finite_decimal_or_none(tx.get("quantity"))
+    if quantity is None or quantity <= 0:
+        return None
+    price = _finite_decimal_or_none(tx.get("value"))
+    if price is None:
+        amount = _finite_decimal_or_none(tx.get("amount"))
+        price = abs(amount) / quantity if amount is not None else None
+    if price is None or price < 0:
+        return None
+    trade_date = _date_or_none(tx.get("tradeDate") or tx.get("date"))
+    if trade_date is None:
+        return None
+    return HoldingTradeData(
+        external_id=str(tx_id),
+        kind=kind,
+        date=trade_date,
+        quantity=quantity,
+        price=price,
+        fee=_sum_expenses(tx.get("expenses")),
+    )
+
+
+def _note_key(trade: HoldingTradeData, expenses) -> Optional[tuple]:
+    """Which brokerage note a row's `expenses` block belongs to.
+
+    Pluggy repeats the note's fee total on every execution row of that note,
+    across tickers, so rows of one trade date that carry the very same block
+    are one note. None when the row has no fee to share.
+    """
+    if not isinstance(expenses, dict) or _sum_expenses(expenses) == 0:
+        return None
+    block = tuple(sorted((str(k), str(v)) for k, v in expenses.items()))
+    return (trade.date, block)
+
+
+def _split_note_fees(rows: list[tuple[HoldingTradeData, object]]) -> None:
+    """Spread each brokerage note's fee over its rows by traded amount.
+
+    `rows` pairs each trade with the `expenses` block it came with, for every
+    exchange-traded position of the item, since one note covers all tickers
+    traded that day. Summing the block per row would charge the note once per
+    execution. Shares are whole cents (the ledger stores two places): each
+    row first gets its exact share rounded down, then the cents left over go
+    one each to the rows that lost the most to that rounding, so a note's
+    shares add up to exactly its total and none is negative. A total finer
+    than a cent leaves its sub-cent residue on the largest row. A note whose
+    rows all have a zero price is split by quantity instead, so it is still
+    charged once. A row alone in its note keeps its fee.
+    """
+    notes: dict[tuple, list[HoldingTradeData]] = {}
+    for trade, expenses in rows:
+        key = _note_key(trade, expenses)
+        if key is not None:
+            notes.setdefault(key, []).append(trade)
+
+    cent = Decimal("0.01")
+    for trades in notes.values():
+        if len(trades) < 2:
+            continue
+        total_fee = trades[0].fee
+        weights = [t.quantity * t.price for t in trades]
+        total_weight = sum(weights, Decimal("0"))
+        if total_weight <= 0:
+            # Every row traded at zero price: amounts cannot weigh the note,
+            # but quantities (always positive) can.
+            weights = [t.quantity for t in trades]
+            total_weight = sum(weights, Decimal("0"))
+        exact = [total_fee * weight / total_weight for weight in weights]
+        shares = [value.quantize(cent, rounding=ROUND_DOWN) for value in exact]
+        leftover_cents = int(
+            ((total_fee - sum(shares, Decimal("0"))) / cent).to_integral_value(rounding=ROUND_DOWN)
+        )
+        # Largest rounding loss first; the sort is stable, so ties keep row order.
+        order = sorted(range(len(trades)), key=lambda i: exact[i] - shares[i], reverse=True)
+        for i in order[:leftover_cents]:
+            shares[i] += cent
+        largest = max(range(len(trades)), key=lambda i: weights[i])
+        shares[largest] += total_fee - sum(shares, Decimal("0"))
+        for trade, share in zip(trades, shares):
+            trade.fee = share
+
+
 
 def _build_holding_data(inv: dict) -> HoldingData:
     """Map a Pluggy investment payload to HoldingData.
@@ -314,13 +465,14 @@ def _build_holding_data(inv: dict) -> HoldingData:
         name=inv.get("name") or "Investment",
         currency=inv.get("currencyCode") or "BRL",
         current_value=current_value,
-        gross_value=_decimal_or_none(inv.get("amount")),
+        gross_value=_storable_gross(inv.get("amount")),
         quantity=quantity,
         unit_price=_decimal_or_none(inv.get("value")),
         purchase_price=_decimal_or_none(inv.get("amountOriginal")),
         purchase_date=purchase_date,
         isin=inv.get("isin") or None,
         maturity_date=_date_or_none(inv.get("dueDate")),
+        value_date=_date_or_none(inv.get("date")),
         is_withdrawn=is_withdrawn,
         metadata=metadata or None,
     )
@@ -343,13 +495,14 @@ _TRADE_FEE_KEYS = (
 )
 
 
-_TRADE_KINDS: dict[str, Literal["buy", "sell"]] = {"BUY": "buy", "SELL": "sell"}
+def _build_holding_trade_data(raw: dict) -> Optional[HoldingTradeData]:
+    """Map a Pluggy investment transaction to a trade for the on-request
+    import (`get_holding_trades`), or None for rows that do not change the
+    position (interest, dividends, taxes) or lack what a trade needs.
 
-
-def _build_trade_data(raw: dict) -> Optional[HoldingTradeData]:
-    """Map a Pluggy investment transaction to a trade, or None for rows
-    that do not change the position (interest, dividends, taxes) or lack
-    what a trade needs."""
+    Unlike `_build_trade_data` (exchange-traded positions read with the
+    holdings), the price comes from the trade's cash `amount` and the fee
+    leaves out income tax, since performance is measured on gross values."""
     trade_id = raw.get("id")
     kind = _TRADE_KINDS.get(str(raw.get("type") or "").upper())
     trade_date = _date_or_none(raw.get("tradeDate") or raw.get("date"))
@@ -406,6 +559,85 @@ def _build_bill_data(raw: dict) -> Optional[BillData]:
         minimum_payment=_decimal_or_none(raw.get("minimumPaymentAmount")),
         raw_data=raw,
     )
+
+
+def _reserved_balances(account: dict) -> Optional[list[ReservedBalanceData]]:
+    """Reserved/earmarked funds the account holds, or None when unreported.
+
+    Pluggy exposes Mercado Pago cofrinhos and other "saldo reservado" in
+    ``bankData.reservedBalances`` without documenting whether they are inside
+    ``balance``. They are stored and shown separately, never added to a total
+    (ADR 0022).
+
+    None means the collection is unreported or cannot be read in full, so
+    stored rows stay as they are. Only an explicitly empty collection means
+    there are no active reservations. ``availableAmounts`` carries one entry
+    per remuneration band, summed per currency; any unreadable entry or band
+    makes the entire collection unknown rather than silently dropping money.
+    """
+    bank_data = account.get("bankData")
+    if not isinstance(bank_data, dict):
+        return None
+    if bank_data.get("hasReservedBalance") is False:
+        return []
+    raw = bank_data.get("reservedBalances")
+    if not isinstance(raw, list):
+        return None
+    if not raw:
+        return []
+
+    rows: list[ReservedBalanceData] = []
+    complete = True
+    for entry in raw:
+        if not isinstance(entry, dict):
+            complete = False
+            continue
+        identification = entry.get("identification")
+        if not isinstance(identification, (str, int)) or isinstance(identification, bool):
+            complete = False
+            continue
+        external_id = str(identification).strip()
+        if not external_id:
+            complete = False
+            continue
+        raw_name = entry.get("name")
+        name = raw_name.strip() if isinstance(raw_name, str) and raw_name.strip() else None
+        # One entry per remuneration band: sum them per currency. `remuneration`
+        # is display metadata and never adjusts the amount.
+        totals: dict[str, Decimal] = {}
+        bands = entry.get("availableAmounts")
+        if not isinstance(bands, list) or not bands:
+            complete = False
+            continue
+        for band in bands:
+            if not isinstance(band, dict):
+                complete = False
+                continue
+            currency = band.get("currencyCode")
+            if not isinstance(currency, str) or not currency:
+                complete = False
+                continue
+            amount = _decimal_or_none(band.get("amount"))
+            if amount is None or not amount.is_finite() or amount < 0:
+                complete = False
+                continue
+            totals[currency] = totals.get(currency, Decimal(0)) + amount
+        for currency, amount in totals.items():
+            rows.append(
+                ReservedBalanceData(
+                    external_id=external_id, name=name, currency=currency, amount=amount
+                )
+            )
+
+    if not complete or not rows:
+        logger.warning(
+            "Pluggy reported incomplete reserved balances for account %s; "
+            "keeping stored rows",
+            account.get("id"),
+        )
+        return None
+    rows.sort(key=lambda r: (r.external_id, r.currency))
+    return rows
 
 
 def _auto_invested_balance(account: dict) -> Decimal:
@@ -473,12 +705,14 @@ def _build_account_data(acc: dict, type_mapper) -> AccountData:
             credit_data, acc.get("balance"), acc.get("currencyCode") or "USD"
         )
 
+    account_currency = acc.get("currencyCode", "USD")
+
     return AccountData(
         external_id=acc["id"],
         name=acc["name"],
         type=account_type,
         balance=Decimal(str(acc.get("balance", 0))),
-        currency=acc.get("currencyCode", "USD"),
+        currency=account_currency,
         credit_limit=credit_limit,
         statement_close_day=statement_close_day,
         payment_due_day=payment_due_day,
@@ -492,6 +726,7 @@ def _build_account_data(acc: dict, type_mapper) -> AccountData:
         auto_invested_balance=(
             Decimal(0) if account_type == "credit_card" else _auto_invested_portion(acc)
         ),
+        reserved_balances=_reserved_balances(acc),
     )
 
 
@@ -506,10 +741,15 @@ class PluggyProvider(BankProvider):
 
     _api_key: Optional[str] = None
     _api_key_expires_at: float = 0
+    _credential_key: tuple[str, str] | None = None
 
     @property
     def name(self) -> str:
         return "pluggy"
+
+    @property
+    def rereads_by_date(self) -> bool:
+        return True
 
     @property
     def flow_type(self) -> str:
@@ -518,10 +758,11 @@ class PluggyProvider(BankProvider):
     async def _ensure_api_key(self) -> str:
         """Get a valid API key, refreshing if expired or about to expire (<5min remaining)."""
         now = time.time()
-        if self._api_key and (self._api_key_expires_at - now) > 300:
+        settings = self.settings
+        credential_key = (settings.pluggy_client_id, settings.pluggy_client_secret.get_secret_value())
+        if self._credential_key == credential_key and self._api_key and (self._api_key_expires_at - now) > 300:
             return self._api_key
 
-        settings = get_settings()
         async with httpx.AsyncClient(timeout=30.0) as client:
             resp = await client.post(
                 f"{PLUGGY_API_BASE}/auth",
@@ -534,9 +775,12 @@ class PluggyProvider(BankProvider):
             data = resp.json()
 
         PluggyProvider._api_key = data["apiKey"]
+        PluggyProvider._credential_key = credential_key
         # Pluggy API keys last 2 hours
         PluggyProvider._api_key_expires_at = now + 7200
-        return PluggyProvider._api_key
+        # Another credential rotation may finish authentication before this
+        # coroutine resumes; return the token from this request's credentials.
+        return data["apiKey"]
 
     async def _headers(self) -> dict:
         api_key = await self._ensure_api_key()
@@ -656,6 +900,33 @@ class PluggyProvider(BankProvider):
         self, credentials: dict, account_external_id: str,
         since: Optional[date] = None, payee_source: str = "auto",
     ) -> list[TransactionData]:
+        params: dict = {"accountId": account_external_id}
+        if since:
+            # Filter by Pluggy ingestion time, NOT transaction date.
+            # `dateFrom`/`dateTo` filter on `date` (when the txn
+            # happened), which silently drops transactions Pluggy
+            # ingests later but backdates — e.g. credit card bill
+            # payments dated to the bill close, or merchants that
+            # settle weeks late. `createdAtFrom` filters on Pluggy's
+            # row creation time, so any newly-ingested row is fetched
+            # regardless of date. v2 still supports it.
+            params["createdAtFrom"] = since.isoformat()
+        return await self._list_transactions(params, payee_source)
+
+    async def get_transactions_by_date(
+        self, credentials: dict, account_external_id: str,
+        date_from: date, payee_source: str = "auto",
+    ) -> list[TransactionData]:
+        # Rows keep their createdAt when they post, and v2 rejects updatedAtFrom,
+        # so the transaction date is the only way to find them again.
+        return await self._list_transactions(
+            {"accountId": account_external_id, "dateFrom": date_from.isoformat()},
+            payee_source,
+        )
+
+    async def _list_transactions(
+        self, base_params: dict, payee_source: str,
+    ) -> list[TransactionData]:
         headers = await self._headers()
         all_transactions: list[TransactionData] = []
         after: Optional[str] = None
@@ -667,17 +938,7 @@ class PluggyProvider(BankProvider):
                 # API keys (rolled out per key). /v2/transactions pages via an
                 # opaque `after` cursor (returned in `next`) instead of
                 # page/pageSize.
-                params: dict = {"accountId": account_external_id}
-                if since:
-                    # Filter by Pluggy ingestion time, NOT transaction date.
-                    # `dateFrom`/`dateTo` filter on `date` (when the txn
-                    # happened), which silently drops transactions Pluggy
-                    # ingests later but backdates — e.g. credit card bill
-                    # payments dated to the bill close, or merchants that
-                    # settle weeks late. `createdAtFrom` filters on Pluggy's
-                    # row creation time, so any newly-ingested row is fetched
-                    # regardless of date. v2 still supports it.
-                    params["createdAtFrom"] = since.isoformat()
+                params = dict(base_params)
                 if after:
                     params["after"] = after
 
@@ -764,6 +1025,14 @@ class PluggyProvider(BankProvider):
                     bill_external_id = (
                         str(bill_external_id_raw) if bill_external_id_raw else None
                     )
+                    # Only a string can be a card number; mask_last4 would
+                    # turn a stray boolean into the ending "True".
+                    raw_card_number = cc_meta.get("cardNumber")
+                    card_masked_number = (
+                        mask_last4(raw_card_number)
+                        if isinstance(raw_card_number, str)
+                        else None
+                    )
 
                     all_transactions.append(
                         TransactionData(
@@ -783,6 +1052,7 @@ class PluggyProvider(BankProvider):
                             installment_total_amount=inst_total_amount_dec,
                             installment_purchase_date=inst_purchase_date,
                             bill_external_id=bill_external_id,
+                            card_masked_number=card_masked_number,
                         )
                     )
 
@@ -921,6 +1191,12 @@ class PluggyProvider(BankProvider):
         item_id = credentials["item_id"]
         headers = await self._headers()
         holdings: list[HoldingData] = []
+        # Every exchange-traded holding of the item with its trades and their
+        # `expenses` blocks: one brokerage note's fee spans all tickers traded
+        # that day (_split_note_fees), so the trades are only handed out once
+        # every position of the item has answered.
+        traded: list[tuple[HoldingData, list[tuple[HoldingTradeData, object]]]] = []
+        trades_unknown = False
         page = 1
 
         async with httpx.AsyncClient(timeout=30.0) as client:
@@ -935,13 +1211,34 @@ class PluggyProvider(BankProvider):
 
                 results = data.get("results", [])
                 for inv in results:
-                    holdings.append(_build_holding_data(inv))
+                    holding = _build_holding_data(inv)
+                    if (
+                        not trades_unknown
+                        and (inv.get("type") or "").upper() in _EXCHANGE_TRADED_TYPES
+                    ):
+                        rows = await self._fetch_investment_trades(
+                            client, headers, str(inv["id"])
+                        )
+                        if rows is None:
+                            trades_unknown = True
+                        else:
+                            traded.append((holding, rows))
+                    holdings.append(holding)
 
                 total_pages = data.get("totalPages", 1)
                 if page >= total_pages or not results:
                     break
                 page += 1
 
+        # A position whose trades could not be read hides its share of every
+        # note it was on, and the others would take the whole fee. Report
+        # every exchange-traded position's trades as unknown instead, so the
+        # sync keeps the ledgers it has until a run reads them all.
+        if trades_unknown:
+            return holdings
+        _split_note_fees([row for _, rows in traded for row in rows])
+        for holding, rows in traded:
+            holding.trades = [trade for trade, _ in rows]
         return holdings
 
     async def get_holding_trades(
@@ -965,9 +1262,15 @@ class PluggyProvider(BankProvider):
                     )
                     resp.raise_for_status()
                     data = resp.json()
-                    results = data.get("results", [])
+                    results = data.get("results") if isinstance(data, dict) else None
+                    if not isinstance(results, list):
+                        # Not an empty history: recording one would stop
+                        # asking for this holding until its position moves.
+                        raise ValueError(
+                            f"Pluggy returned no trade list for investment {holding_id}"
+                        )
                     for raw in results:
-                        trade = _build_trade_data(raw)
+                        trade = _build_holding_trade_data(raw)
                         if trade is not None:
                             trades.append(trade)
                     if page >= data.get("totalPages", 1) or not results:
@@ -993,6 +1296,61 @@ class PluggyProvider(BankProvider):
                 continue
             trades_by_holding[holding.external_id] = result
         return trades_by_holding
+
+    async def _fetch_investment_trades(
+        self, client: httpx.AsyncClient, headers: dict, investment_id: str
+    ) -> Optional[list[tuple[HoldingTradeData, object]]]:
+        """Buys and sells Pluggy reports for one exchange-traded position.
+
+        They feed the asset ledger, which derives the average price, cost
+        basis and realized gain (the /investments payload carries no cost
+        for equities). Only exchange-traded positions are asked: their
+        quantity and unit price mean shares and price per share, so the
+        trades replay onto the reported position. Returns None when the
+        endpoint fails, so the sync keeps the ledger it already has instead
+        of reading the failure as "no trades". A response that is not a page
+        of rows counts as a failure too.
+
+        Each trade comes paired with its raw `expenses` block: the fee there
+        is per brokerage note, and get_holdings splits it across the note.
+        """
+        rows: list[tuple[HoldingTradeData, object]] = []
+        page = 1
+        try:
+            while True:
+                resp = await client.get(
+                    f"{PLUGGY_API_BASE}/investments/{investment_id}/transactions",
+                    headers=headers,
+                    params={"pageSize": 500, "page": page},
+                )
+                resp.raise_for_status()
+                data = resp.json()
+                results = data.get("results") if isinstance(data, dict) else None
+                if not isinstance(results, list):
+                    raise ValueError("response has no list of results")
+                for tx in results:
+                    if not isinstance(tx, dict):
+                        continue
+                    trade = _build_trade_data(tx)
+                    if trade is not None:
+                        rows.append((trade, tx.get("expenses")))
+                if not results:
+                    break
+                total_pages = data.get("totalPages", 1)
+                # Unreadable paging could hide later pages: a dropped
+                # buy/sell pair leaves the quantity unchanged, so the
+                # partial history would still reconcile.
+                if isinstance(total_pages, bool) or not isinstance(total_pages, int) or total_pages < 1:
+                    raise ValueError(f"invalid totalPages {total_pages!r}")
+                if page >= total_pages:
+                    break
+                page += 1
+        except (httpx.HTTPError, ValueError) as exc:
+            logger.warning(
+                "Pluggy investment transactions unavailable for %s: %s", investment_id, exc
+            )
+            return None
+        return rows
 
     async def get_bills(self, credentials: dict, account_external_id: str) -> list[BillData]:
         """Fetch credit-card bills from Pluggy /bills.

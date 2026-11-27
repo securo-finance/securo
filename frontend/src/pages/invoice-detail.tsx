@@ -331,19 +331,19 @@ export default function InvoiceDetailPage() {
                   onClick={() => setEditOpen(true)}
                   data-testid="invoice-edit"
                 >
-                  <Pencil className="h-4 w-4 mr-1.5" />
+                  <Pencil className="h-4 w-4 me-1.5" />
                   {t('common.edit')}
                 </Button>
               )}
               {actions.canIssue && (
                 <Button size="sm" onClick={() => issueMutation.mutate()} data-testid="invoice-issue">
-                  <Send className="h-4 w-4 mr-1.5" />
+                  <Send className="h-4 w-4 me-1.5" />
                   {t('invoices.action.issue')}
                 </Button>
               )}
               {actions.canAllocate && (
                 <Button size="sm" onClick={() => setLinkOpen(true)} data-testid="invoice-link-payment">
-                  <Link2 className="h-4 w-4 mr-1.5" />
+                  <Link2 className="h-4 w-4 me-1.5" />
                   {t('invoices.action.markPaid')}
                 </Button>
               )}
@@ -358,7 +358,7 @@ export default function InvoiceDetailPage() {
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
                         <Button size="sm" variant="outline" data-testid="invoice-download-pdf">
-                          <Download className="h-4 w-4 mr-1.5" />
+                          <Download className="h-4 w-4 me-1.5" />
                           {t('invoices.action.downloadPdf')}
                         </Button>
                       </DropdownMenuTrigger>
@@ -394,7 +394,7 @@ export default function InvoiceDetailPage() {
                       disabled={downloadMutation.isPending}
                       data-testid="invoice-download-pdf"
                     >
-                      <Download className="h-4 w-4 mr-1.5" />
+                      <Download className="h-4 w-4 me-1.5" />
                       {t('invoices.action.downloadPdf')}
                     </Button>
                   )}
@@ -411,9 +411,9 @@ export default function InvoiceDetailPage() {
                     data-testid={invoice.share_token ? 'invoice-unshare' : 'invoice-share'}
                   >
                     {copied ? (
-                      <Check className="h-4 w-4 mr-1.5" />
+                      <Check className="h-4 w-4 me-1.5" />
                     ) : (
-                      <Share2 className="h-4 w-4 mr-1.5" />
+                      <Share2 className="h-4 w-4 me-1.5" />
                     )}
                     {invoice.share_token
                       ? t('invoices.action.revokeLink')
@@ -556,7 +556,7 @@ export default function InvoiceDetailPage() {
                   onClick={() => statementMutation.mutate()}
                   disabled={statementMutation.isPending}
                 >
-                  <Download className="h-4 w-4 mr-1.5" />
+                  <Download className="h-4 w-4 me-1.5" />
                   {t('invoices.action.downloadStatement')}
                 </Button>
               </div>
@@ -571,7 +571,7 @@ export default function InvoiceDetailPage() {
                 <Share2 className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
                 <span className="text-muted-foreground">{t('invoices.shareActive')}</span>
                 <code className="truncate font-mono text-[11px] text-foreground">{shareUrl}</code>
-                <div className="ml-auto">
+                <div className="ms-auto">
                   <IconAction
                     onClick={() => {
                       void navigator.clipboard.writeText(shareUrl)
@@ -672,19 +672,19 @@ export default function InvoiceDetailPage() {
                 <tbody>
                   {invoice.installments.map((row, index) => (
                     <tr key={row.id} className="border-b border-border last:border-0" data-testid="invoice-installment-row">
-                      <td className="py-2.5 pl-4 sm:pl-5 text-sm">
+                      <td className="py-2.5 ps-4 sm:ps-5 text-sm">
                         {row.label ?? `${index + 1}/${invoice.installments.length}`}
                       </td>
                       <td className="py-2.5 text-xs text-muted-foreground tabular-nums">{showDate(row.due_date)}</td>
-                      <td className="py-2.5 text-right text-sm tabular-nums">
+                      <td className="py-2.5 text-end text-sm tabular-nums">
                         {money(row.amount)}
                         {Number(row.settled) > 0 && Number(row.settled) < Number(row.amount) && (
-                          <span className="ml-1.5 text-[11px] text-muted-foreground">
+                          <span className="ms-1.5 text-[11px] text-muted-foreground">
                             {t('invoices.field.paid').toLowerCase()} {money(row.settled)}
                           </span>
                         )}
                       </td>
-                      <td className="py-2.5 pr-4 sm:pr-5 text-right w-28">
+                      <td className="py-2.5 pe-4 sm:pe-5 text-end w-28">
                         <span
                           data-testid={`installment-state-${row.state}`}
                           className={cn(
@@ -742,10 +742,10 @@ export default function InvoiceDetailPage() {
                       {invoice.lines.map((line) => (
                         <tr key={line.id} className="border-b border-border last:border-0">
                           <td className="py-2.5 text-sm text-foreground">{line.description}</td>
-                          <td className="py-2.5 text-right text-xs text-muted-foreground tabular-nums">
+                          <td className="py-2.5 text-end text-xs text-muted-foreground tabular-nums">
                             {Number(line.quantity)} × {money(line.unit_price)}
                           </td>
-                          <td className="py-2.5 text-right text-sm font-medium tabular-nums w-32">
+                          <td className="py-2.5 text-end text-sm font-medium tabular-nums w-32">
                             {money(line.total)}
                           </td>
                         </tr>
@@ -775,11 +775,11 @@ export default function InvoiceDetailPage() {
                     {/* The other way a debt closes: without money. Quieter
                         than the payment button, because it is the exception. */}
                     <Button size="sm" variant="ghost" onClick={() => setDeductionOpen(true)} data-testid="invoice-record-deduction">
-                      <MinusCircle className="h-3.5 w-3.5 mr-1.5" />
+                      <MinusCircle className="h-3.5 w-3.5 me-1.5" />
                       {t('invoices.deductions.action')}
                     </Button>
                     <Button size="sm" variant="outline" onClick={() => setLinkOpen(true)}>
-                      <Link2 className="h-3.5 w-3.5 mr-1.5" />
+                      <Link2 className="h-3.5 w-3.5 me-1.5" />
                       {t('invoices.action.link')}
                     </Button>
                   </div>
@@ -791,11 +791,11 @@ export default function InvoiceDetailPage() {
                 <tbody>
                   {invoice.deductions.map((deduction) => (
                     <tr key={deduction.id} data-testid="invoice-deduction" className="border-b border-border last:border-0 bg-muted/20">
-                      <td className="py-3 pl-4 sm:pl-5">
+                      <td className="py-3 ps-4 sm:ps-5">
                         <div className="text-sm font-medium text-foreground truncate">
                           {t(`invoices.deductions.kind.${deduction.kind}`)}
                           {deduction.tax_kind && (
-                            <span className="ml-1.5 text-xs uppercase text-muted-foreground">{deduction.tax_kind}</span>
+                            <span className="ms-1.5 text-xs uppercase text-muted-foreground">{deduction.tax_kind}</span>
                           )}
                         </div>
                         <div className="text-xs text-muted-foreground truncate">
@@ -803,10 +803,10 @@ export default function InvoiceDetailPage() {
                           {deduction.note ? ` · ${deduction.note}` : ''}
                         </div>
                       </td>
-                      <td className="py-3 text-right text-sm font-bold tabular-nums text-muted-foreground">
+                      <td className="py-3 text-end text-sm font-bold tabular-nums text-muted-foreground">
                         {money(deduction.amount)}
                       </td>
-                      <td className="py-3 pr-4 sm:pr-5 text-right w-16">
+                      <td className="py-3 pe-4 sm:pe-5 text-end w-16">
                         {canWrite && invoice.status === 'open' && (
                           <IconAction
                             onClick={() => undeductMutation.mutate(deduction.id)}
@@ -838,7 +838,7 @@ export default function InvoiceDetailPage() {
                       data-testid="invoice-allocation"
                       className="border-b border-border last:border-0"
                     >
-                      <td className="py-3 pl-4 sm:pl-5">
+                      <td className="py-3 ps-4 sm:ps-5">
                         <div className="text-sm font-medium text-foreground truncate">
                           {allocation.transaction?.description ?? t('invoices.linkedPayment')}
                         </div>
@@ -862,10 +862,10 @@ export default function InvoiceDetailPage() {
                           })()}
                         </div>
                       </td>
-                      <td className="py-3 text-right text-sm font-bold tabular-nums text-emerald-600">
+                      <td className="py-3 text-end text-sm font-bold tabular-nums text-emerald-600">
                         {money(allocation.amount)}
                       </td>
-                      <td className="py-3 pr-4 sm:pr-5 text-right w-16">
+                      <td className="py-3 pe-4 sm:pe-5 text-end w-16">
                         {canWrite && (
                           <IconAction
                             onClick={() => unlinkMutation.mutate(allocation.id)}
@@ -1173,7 +1173,7 @@ export function LinkPaymentDialog({
               onClick={() => setSelected(tx.id)}
               data-testid="invoice-candidate"
               className={cn(
-                'w-full flex items-center justify-between gap-3 rounded-lg border px-3 py-2 text-left transition-colors',
+                'w-full flex items-center justify-between gap-3 rounded-lg border px-3 py-2 text-start transition-colors',
                 selected === tx.id ? 'border-primary bg-primary/5' : 'hover:bg-muted/40',
               )}
             >
@@ -1552,7 +1552,7 @@ function MakeRecurringDialog({
             {t('common.cancel')}
           </Button>
           <Button onClick={() => mutation.mutate()} disabled={!ready || mutation.isPending} data-testid="recurring-submit">
-            <Repeat className="h-4 w-4 mr-1.5" />
+            <Repeat className="h-4 w-4 me-1.5" />
             {t('invoices.schedules.action.makeRecurring')}
           </Button>
         </DialogFooter>

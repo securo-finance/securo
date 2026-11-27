@@ -1,5 +1,6 @@
 """Tests for FX rate service, API endpoints, and multi-currency integration."""
 
+import logging
 import uuid
 from datetime import date, timedelta
 from decimal import Decimal
@@ -17,6 +18,34 @@ from app.models.user import User
 
 
 # ─── helpers ────────────────────────────────────────────────────────────────
+
+
+def _with_real_provider_unconfigured():
+    """Run with the real provider and no app id, the way the public demo runs.
+
+    The suite's autouse fixture swaps the provider for a mock that returns no
+    rates, which would hide the unconfigured path (#267): the mock never
+    raises, so the conversion looks quiet for the wrong reason.
+    """
+    from contextlib import ExitStack
+
+    from app.core.config import Settings
+    from app.providers.openexchangerates import OpenExchangeRatesProvider
+
+    stack = ExitStack()
+    stack.enter_context(
+        patch(
+            "app.services.fx_rate_service.OpenExchangeRatesProvider",
+            OpenExchangeRatesProvider,
+        )
+    )
+    stack.enter_context(
+        patch(
+            "app.services.fx_rate_service.resolve_settings",
+            new=AsyncMock(return_value=Settings(openexchangerates_app_id="")),
+        )
+    )
+    return stack
 
 
 async def _insert_rate(
@@ -229,6 +258,231 @@ class TestResolveRate:
 
         rate = await get_rate(session, "JPY", "CHF", allow_fetch=False)
         assert rate == Decimal("1")
+
+    @pytest.mark.asyncio
+    async def test_unconfigured_provider_does_not_log_a_traceback(
+        self, session: AsyncSession, clean_db, caplog
+    ):
+        """An instance with no app id (the public demo) keeps using the closest
+        stored rate without a warning or a traceback per conversion (#267)."""
+        from app.services.fx_rate_service import _resolve_rate
+
+        stored_date = date.today() - timedelta(days=3)
+        await _insert_rate(session, "BRL", Decimal("5.0000000000"), stored_date)
+        await _insert_rate(session, "EUR", Decimal("0.9200000000"), stored_date)
+
+        with _with_real_provider_unconfigured():
+            with caplog.at_level(logging.DEBUG, logger="app.services.fx_rate_service"):
+                rate = await _resolve_rate(session, "EUR", "BRL")
+
+        assert rate == Decimal("5.0000000000") / Decimal("0.9200000000")
+        assert not [
+            record
+            for record in caplog.records
+            if record.levelno >= logging.WARNING and record.exc_info is not None
+        ]
+
+    @pytest.mark.asyncio
+    async def test_real_fetch_failure_still_logs_a_warning(
+        self, session: AsyncSession, clean_db, caplog
+    ):
+        """A genuine provider failure keeps the warning with its traceback."""
+        from app.services.fx_rate_service import _resolve_rate
+
+        with patch(
+            "app.services.fx_rate_service.sync_rates",
+            side_effect=ValueError("Exchange-rate provider request failed"),
+        ):
+            with caplog.at_level(logging.WARNING, logger="app.services.fx_rate_service"):
+                rate = await _resolve_rate(session, "EUR", "BRL")
+
+        assert rate is None
+        warnings = [
+            record
+            for record in caplog.records
+            if record.levelno == logging.WARNING
+            and "On-demand FX rate sync failed" in record.getMessage()
+        ]
+        assert warnings
+        assert warnings[0].exc_info is not None
+
+
+class TestOnDemandFetchDiscipline:
+    """Issue #624: an on-demand fetch is not repeated and old dates sample monthly."""
+
+    @pytest.mark.asyncio
+    async def test_two_years_of_daily_rows_cost_one_fetch_per_month(
+        self, session: AsyncSession, clean_db
+    ):
+        """Importing two years of daily rows is O(months), not O(days)."""
+        from app.services.fx_rate_service import _resolve_rate
+
+        calls: list[date] = []
+
+        async def counting_sync(db: AsyncSession, target: date) -> int:
+            calls.append(target)
+            await _insert_rate(db, "BRL", Decimal("5.0000000000"), target)
+            return 1
+
+        start = date(2024, 1, 1)
+        days = (date(2026, 1, 1) - start).days  # 731 daily rows over 24 months
+        with patch("app.services.fx_rate_service.sync_rates", side_effect=counting_sync):
+            for offset in range(days):
+                rate = await _resolve_rate(
+                    session, "USD", "BRL", start + timedelta(days=offset)
+                )
+                assert rate is not None
+
+        assert len(calls) == 24
+        assert len(calls) < days // 10
+
+    @pytest.mark.asyncio
+    async def test_200_conversions_of_one_day_fetch_once(
+        self, session: AsyncSession, clean_db
+    ):
+        from app.core.app_clock import app_today
+        from app.services.fx_rate_service import _resolve_rate
+
+        calls: list[date] = []
+        target = app_today() - timedelta(days=5)
+
+        async def counting_sync(db: AsyncSession, day: date) -> int:
+            calls.append(day)
+            await _insert_rate(db, "BRL", Decimal("5.1000000000"), day)
+            return 1
+
+        with patch("app.services.fx_rate_service.sync_rates", side_effect=counting_sync):
+            for _ in range(200):
+                rate = await _resolve_rate(session, "USD", "BRL", target)
+
+        assert calls == [target]
+        assert rate == Decimal("5.1000000000")
+
+    @pytest.mark.asyncio
+    async def test_recent_date_still_fetches_its_own_rate(
+        self, session: AsyncSession, clean_db
+    ):
+        """Monthly sampling is for old rows only: a recent date keeps its own rate."""
+        from app.core.app_clock import app_today
+        from app.services.fx_rate_service import _resolve_rate
+
+        today = app_today()
+        await _insert_rate(session, "BRL", Decimal("5.0000000000"), today - timedelta(days=2))
+        calls: list[date] = []
+        target = today - timedelta(days=10)
+
+        async def counting_sync(db: AsyncSession, day: date) -> int:
+            calls.append(day)
+            await _insert_rate(db, "BRL", Decimal("5.2000000000"), day)
+            return 1
+
+        with patch("app.services.fx_rate_service.sync_rates", side_effect=counting_sync):
+            rate = await _resolve_rate(session, "USD", "BRL", target)
+
+        assert calls == [target]
+        assert rate == Decimal("5.2000000000")
+
+    @pytest.mark.asyncio
+    async def test_one_legs_monthly_rate_does_not_suppress_the_other_leg(
+        self, session: AsyncSession, clean_db
+    ):
+        """A month with only BRL history still fetches the EUR leg."""
+        from app.core.app_clock import app_today
+        from app.services.fx_rate_service import _resolve_rate
+
+        target = app_today() - timedelta(days=200)
+        await _insert_rate(session, "BRL", Decimal("5.0000000000"), target)
+        calls: list[date] = []
+
+        async def counting_sync(db: AsyncSession, day: date) -> int:
+            calls.append(day)
+            await _insert_rate(db, "EUR", Decimal("0.9200000000"), day)
+            return 1
+
+        with patch("app.services.fx_rate_service.sync_rates", side_effect=counting_sync):
+            rate = await _resolve_rate(session, "EUR", "BRL", target)
+
+        assert calls == [target]
+        assert rate == Decimal("5.0000000000") / Decimal("0.9200000000")
+
+    @pytest.mark.asyncio
+    async def test_quota_exceeded_is_remembered_and_warned_once(
+        self, session: AsyncSession, clean_db, caplog
+    ):
+        """A 429 for a date is not retried, and is said in one line, no traceback."""
+        from app.core.app_clock import app_today
+        from app.providers.openexchangerates import FxProviderQuotaExceeded
+        from app.services.fx_rate_service import _resolve_rate
+
+        calls: list[date] = []
+        target = app_today() - timedelta(days=3)
+
+        async def quota_sync(db: AsyncSession, day: date) -> int:
+            calls.append(day)
+            raise FxProviderQuotaExceeded("exchange-rate provider quota exceeded")
+
+        with patch("app.services.fx_rate_service.sync_rates", side_effect=quota_sync):
+            with caplog.at_level(logging.WARNING, logger="app.services.fx_rate_service"):
+                first = await _resolve_rate(session, "EUR", "BRL", target)
+                second = await _resolve_rate(session, "EUR", "BRL", target)
+
+        assert first is None and second is None
+        assert calls == [target]
+        warnings = [
+            record
+            for record in caplog.records
+            if record.levelno == logging.WARNING and "quota exceeded" in record.getMessage()
+        ]
+        assert len(warnings) == 1
+        assert warnings[0].exc_info is None
+
+    @pytest.mark.asyncio
+    async def test_quota_exceeded_stops_the_rest_of_the_backfill(
+        self, session: AsyncSession, clean_db
+    ):
+        """Once the quota is spent, the remaining dates are not tried either."""
+        from app.core.app_clock import app_today
+        from app.providers.openexchangerates import FxProviderQuotaExceeded
+        from app.services.fx_rate_service import _resolve_rate
+
+        calls: list[date] = []
+        dates = [app_today() - timedelta(days=offset) for offset in range(3, 53)]
+
+        async def quota_sync(db: AsyncSession, day: date) -> int:
+            calls.append(day)
+            raise FxProviderQuotaExceeded("exchange-rate provider quota exceeded")
+
+        with patch("app.services.fx_rate_service.sync_rates", side_effect=quota_sync):
+            for day in dates:
+                await _resolve_rate(session, "USD", "BRL", day)
+            for day in dates:
+                await _resolve_rate(session, "USD", "BRL", day)
+
+        assert calls == [dates[0]]
+
+    @pytest.mark.asyncio
+    async def test_failed_date_is_retried_after_the_cache_expires(
+        self, session: AsyncSession, clean_db
+    ):
+        from app.core.app_clock import app_today
+        from app.services import fx_rate_service as fx
+
+        calls: list[date] = []
+        target = app_today() - timedelta(days=3)
+
+        async def failing_sync(db: AsyncSession, day: date) -> int:
+            calls.append(day)
+            raise ValueError("Exchange-rate provider request failed")
+
+        with patch("app.services.fx_rate_service.sync_rates", side_effect=failing_sync):
+            await fx._resolve_rate(session, "USD", "BRL", target)
+            await fx._resolve_rate(session, "USD", "BRL", target)
+            assert calls == [target]
+            later = fx._now() + fx._FAILURE_TTL + timedelta(minutes=1)
+            with patch.object(fx, "_now", return_value=later):
+                await fx._resolve_rate(session, "USD", "BRL", target)
+
+        assert calls == [target, target]
 
 
 class TestConvert:
@@ -461,12 +715,15 @@ class TestFxRatesAPI:
 
     @pytest.mark.asyncio
     async def test_refresh_calls_sync(
-        self, client: AsyncClient, auth_headers
+        self, client: AsyncClient, admin_auth_headers
     ):
+        from app.core.config import get_settings
+
         mock_sync = AsyncMock(return_value=150)
-        with patch("app.api.fx_rates.sync_rates", mock_sync):
+        with patch.object(get_settings(), "openexchangerates_app_id", "test-app-id"), \
+             patch("app.services.fx_rate_service.sync_rates", mock_sync):
             response = await client.post(
-                "/api/fx-rates/refresh", headers=auth_headers
+                "/api/fx-rates/refresh", headers=admin_auth_headers
             )
         assert response.status_code == 200
         data = response.json()
@@ -653,13 +910,44 @@ class TestOpenExchangeRatesProvider:
 
     @pytest.mark.asyncio
     async def test_fetch_latest_no_api_key_raises(self):
-        from app.providers.openexchangerates import OpenExchangeRatesProvider
+        from app.providers.openexchangerates import (
+            FxProviderNotConfigured,
+            OpenExchangeRatesProvider,
+        )
 
         provider = OpenExchangeRatesProvider()
         with patch("app.providers.openexchangerates.get_settings") as mock_settings:
             mock_settings.return_value.openexchangerates_app_id = ""
-            with pytest.raises(ValueError, match="not configured"):
+            with pytest.raises(FxProviderNotConfigured, match="not configured"):
                 await provider.fetch_latest()
+        # The dedicated type still reads as the ValueError callers catch.
+        assert issubclass(FxProviderNotConfigured, ValueError)
+
+    @pytest.mark.asyncio
+    async def test_fetch_quota_exceeded_raises_its_own_type(self):
+        """A 429 is told apart from any other failure, so the caller backs off (#624)."""
+        from app.providers.openexchangerates import (
+            FxProviderQuotaExceeded,
+            OpenExchangeRatesProvider,
+        )
+
+        provider = OpenExchangeRatesProvider()
+        mock_response = MagicMock()
+        mock_response.status_code = 429
+
+        mock_client = MagicMock()
+        mock_client.get = AsyncMock(return_value=mock_response)
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+
+        with patch("app.providers.openexchangerates.get_settings") as mock_settings, \
+             patch("app.providers.openexchangerates.httpx.AsyncClient", return_value=mock_client):
+            mock_settings.return_value.openexchangerates_app_id = "test-key"
+            with pytest.raises(FxProviderQuotaExceeded):
+                await provider.fetch_latest()
+
+        # Still the ValueError every existing caller catches.
+        assert issubclass(FxProviderQuotaExceeded, ValueError)
 
     @pytest.mark.asyncio
     async def test_fetch_historical(self):
@@ -698,6 +986,14 @@ class TestOpenExchangeRatesProvider:
 class TestSyncRates:
     """Tests for fx_rate_service.sync_rates() with mocked provider."""
 
+    @pytest.fixture(autouse=True)
+    def _resolved_settings(self):
+        from app.core.config import get_settings
+
+        with patch("app.services.fx_rate_service.resolve_settings", new_callable=AsyncMock) as resolve:
+            resolve.return_value = get_settings()
+            yield
+
     @pytest.mark.asyncio
     async def test_sync_rates_calls_provider_latest(self):
         from app.services.fx_rate_service import sync_rates
@@ -713,13 +1009,37 @@ class TestSyncRates:
         mock_session.execute = AsyncMock()
         mock_session.commit = AsyncMock()
 
-        with patch("app.services.fx_rate_service._provider", mock_provider):
+        with patch("app.services.fx_rate_service.OpenExchangeRatesProvider", return_value=mock_provider):
             count = await sync_rates(mock_session, date.today())
 
         mock_provider.fetch_latest.assert_awaited_once()
         assert count == 2
         assert mock_session.execute.await_count == 2
         mock_session.commit.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_sync_rates_reads_a_spaced_supported_list(self):
+        """`SUPPORTED_CURRENCIES=USD, EUR, RSD` keeps every code (#1474).
+
+        The list was split on commas only, so " RSD" never matched the
+        provider's "RSD" and its rate was never stored.
+        """
+        from app.services.fx_rate_service import sync_rates
+
+        mock_provider = MagicMock()
+        mock_provider.name = "test_provider"
+        mock_provider.fetch_latest = AsyncMock(return_value={
+            "EUR": Decimal("0.86"),
+            "RSD": Decimal("100.7"),
+        })
+        mock_session = AsyncMock()
+        settings = MagicMock(supported_currencies="USD, EUR, rsd ")
+
+        with patch("app.services.fx_rate_service.OpenExchangeRatesProvider", return_value=mock_provider), \
+                patch("app.services.fx_rate_service.get_settings", return_value=settings):
+            count = await sync_rates(mock_session, date.today())
+
+        assert count == 2
 
     @pytest.mark.asyncio
     async def test_sync_rates_calls_provider_historical(self):
@@ -736,7 +1056,7 @@ class TestSyncRates:
         mock_session.execute = AsyncMock()
         mock_session.commit = AsyncMock()
 
-        with patch("app.services.fx_rate_service._provider", mock_provider):
+        with patch("app.services.fx_rate_service.OpenExchangeRatesProvider", return_value=mock_provider):
             count = await sync_rates(mock_session, target)
 
         mock_provider.fetch_historical.assert_awaited_once_with(target)
@@ -754,7 +1074,7 @@ class TestSyncRates:
         mock_session.execute = AsyncMock()
         mock_session.commit = AsyncMock()
 
-        with patch("app.services.fx_rate_service._provider", mock_provider):
+        with patch("app.services.fx_rate_service.OpenExchangeRatesProvider", return_value=mock_provider):
             await sync_rates(mock_session)
 
         # Should call fetch_latest (not fetch_historical) when no date given
@@ -773,11 +1093,21 @@ class TestSyncRates:
         mock_session.execute = AsyncMock()
         mock_session.commit = AsyncMock()
 
-        with patch("app.services.fx_rate_service._provider", mock_provider):
+        with patch("app.services.fx_rate_service.OpenExchangeRatesProvider", return_value=mock_provider):
             await sync_rates(mock_session, date.today() + timedelta(days=10))
 
         mock_provider.fetch_latest.assert_awaited_once()
         mock_provider.fetch_historical.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_fetch_rates_raises_when_unconfigured(self):
+        """fetch_rates keeps raising for the import preview, which reports it."""
+        from app.providers.openexchangerates import FxProviderNotConfigured
+        from app.services.fx_rate_service import fetch_rates
+
+        with _with_real_provider_unconfigured():
+            with pytest.raises(FxProviderNotConfigured):
+                await fetch_rates(AsyncMock(), date.today())
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -1585,6 +1915,96 @@ class TestManualFxOverride:
 
 class TestFxFallbackFlag:
     """Test that fx_fallback is set correctly in API responses."""
+
+    @pytest.mark.asyncio
+    async def test_currency_change_to_one_without_rate_clears_old_stamp(
+        self,
+        client: AsyncClient,
+        auth_headers,
+        test_user: User,
+        session: AsyncSession,
+        fx_rates,
+    ):
+        """A derived stamp does not survive a move to a currency with no rate (#496).
+
+        The old figure was a conversion of the old currency: kept, it counted
+        1,500 JPY as R$ 500 without a warning. The row is left unconverted,
+        as creating it in JPY does.
+        """
+        brl_account = await _make_account(
+            session, test_user, currency="BRL", name="Test BRL Account"
+        )
+        resp = await client.post(
+            "/api/transactions",
+            headers=auth_headers,
+            json={
+                "account_id": str(brl_account.id),
+                "description": "Currency moves to JPY",
+                "amount": "100.00",
+                "date": date.today().isoformat(),
+                "type": "debit",
+                "currency": "USD",
+            },
+        )
+        assert resp.status_code == 201
+        assert resp.json()["amount_primary"] == 500.0
+        txn_id = resp.json()["id"]
+        row = await session.get(Transaction, uuid.UUID(txn_id))
+        assert row is not None
+        assert row.amount_account == Decimal("500.00")
+
+        resp = await client.patch(
+            f"/api/transactions/{txn_id}",
+            headers=auth_headers,
+            json={"currency": "JPY", "amount": "1500.00"},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["amount_primary"] is None
+        assert data["fx_rate_used"] is None
+        assert data["fx_fallback"] is True
+
+        await session.refresh(row)
+        assert row.amount_primary is None
+        assert row.fx_rate_used is None
+        # The BRL account's R$ 500 was a conversion of the old currency too.
+        assert row.amount_account is None
+
+    @pytest.mark.asyncio
+    async def test_currency_change_to_one_with_rate_restamps(
+        self,
+        client: AsyncClient,
+        auth_headers,
+        test_user: User,
+        session: AsyncSession,
+        fx_rates,
+    ):
+        """A move to a currency with a rate is stamped at that rate (#496)."""
+        usd_account = await _make_account(session, test_user, currency="USD")
+        resp = await client.post(
+            "/api/transactions",
+            headers=auth_headers,
+            json={
+                "account_id": str(usd_account.id),
+                "description": "Currency moves to EUR",
+                "amount": "100.00",
+                "date": date.today().isoformat(),
+                "type": "debit",
+                "currency": "USD",
+            },
+        )
+        txn_id = resp.json()["id"]
+
+        resp = await client.patch(
+            f"/api/transactions/{txn_id}",
+            headers=auth_headers,
+            json={"currency": "EUR"},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        # 100 EUR -> BRL at 5.0 / 0.92
+        assert data["amount_primary"] == 543.48
+        assert data["fx_fallback"] is False
 
     @pytest.mark.asyncio
     async def test_foreign_currency_no_rates_returns_fx_fallback_true(

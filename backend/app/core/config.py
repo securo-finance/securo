@@ -1,10 +1,15 @@
+import asyncio
+import ipaddress
+import logging
 from datetime import datetime, timedelta, timezone
 from functools import lru_cache
 from math import isfinite
 from os import getenv
 from pathlib import Path
+from typing import Literal
+from urllib.parse import urlsplit
 
-from pydantic import SecretStr, field_validator, model_validator
+from pydantic import Field, PrivateAttr, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Use the same environment variable that systemd uses: https://systemd.io/CREDENTIALS/
@@ -13,17 +18,82 @@ CREDENTIALS_DIRECTORY: list[Path] = [
     Path(p) for p in getenv("CREDENTIALS_DIRECTORY", "/run/secrets").split(":") if p
 ]
 
+# Where a reverse proxy in front of the backend can sit: loopback, the
+# private ranges Docker and Podman give container networks, and a LAN.
+DEFAULT_TRUSTED_PROXY_NETWORKS = (
+    "127.0.0.0/8,::1/128,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,fc00::/7"
+)
+
+
+@lru_cache(maxsize=8)
+def parse_trusted_proxy_networks(
+    value: str,
+) -> tuple[ipaddress.IPv4Network | ipaddress.IPv6Network, ...]:
+    """The networks in a comma-separated TRUSTED_PROXY_NETWORKS value; a bare
+    address is a network of one. Raises ValueError on anything else."""
+    return tuple(
+        ipaddress.ip_network(entry.strip(), strict=False)
+        for entry in value.split(",")
+        if entry.strip()
+    )
+
 
 class Settings(BaseSettings):
     # App
     app_name: str = "Securo"
     debug: bool = False
+    # Hosted instances (ADR 0045). On, the instance-side settings (bank and
+    # rate providers, open registration, defaults and timezone) are the
+    # operator's: the admin screen shows them read-only and the API refuses
+    # writes. Off by default, a self-hosted instance keeps every control.
+    managed_instance: bool = False
+
+    @field_validator("managed_instance", mode="before")
+    @classmethod
+    def _blank_managed_instance_is_off(cls, value: object) -> object:
+        """`MANAGED_INSTANCE=` in a .env — a documented but unset key — arrives as
+        an empty string. Read it as off, the default, instead of failing the boot."""
+        if isinstance(value, str) and not value.strip():
+            return False
+        return value
+
+    # The operator's own credential for writing per-account limits on a managed
+    # instance (ADR 0049), sent as a bearer token to /api/operator/quotas.
+    # Unset, that route does not exist (404).
+    operator_token: SecretStr = SecretStr("")
 
     # Database
     database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/securo"
+    # Connections the API keeps open, and how many extra ones a burst may open
+    # before a request waits for one. Defaults are SQLAlchemy's, so an instance
+    # that sets nothing behaves as before. Raise them together with the
+    # database's own max_connections when many people share an instance: with
+    # 40 simultaneous users the pool ran out and requests failed instead of
+    # queueing (issue #1901). The pool size is always open; overflow may be 0
+    # so that the pool never grows past DB_POOL_SIZE.
+    db_pool_size: int = Field(default=5, ge=1)
+    db_max_overflow: int = Field(default=10, ge=0)
+    # Plan each statement with the values of the call that runs it, instead of
+    # reusing a plan sized for an average call. On an instance with a large
+    # history a 12-month report took about twice as long with the average plan
+    # (issue #584). Off sends nothing and keeps the server's plan_cache_mode,
+    # which is what an instance behind a connection pooler that refuses an
+    # unknown startup parameter needs.
+    db_force_custom_plans: bool = True
 
-    # Auth
-    secret_key: SecretStr = SecretStr("change-me-in-production")
+    # Auth. Signs session and password-reset tokens and derives the key that
+    # encrypts saved credentials. Left unset (or on a public default), the
+    # instance generates its own and keeps it in the database: see
+    # app.core.instance_secrets and get_settings().
+    secret_key: SecretStr = SecretStr("")
+    # Refuse to start instead of generating one: an operator who keeps the key
+    # out of the database finds out at startup when it is missing (ADR 0048).
+    require_secret_key: bool = False
+    # Keys this instance encrypted with before, tried when opening a saved
+    # credential. Never used to sign or check a token.
+    _secret_key_fallbacks: tuple[str, ...] = PrivateAttr(default=())
+    # Set when the instance key may hold old ciphertexts but wasn't read yet.
+    _stored_key_url: str | None = PrivateAttr(default=None)
     local_auth_enabled: bool = True
     algorithm: str = "HS256"
     access_token_expire_minutes: int = 60 * 24  # 24 hours
@@ -54,6 +124,11 @@ class Settings(BaseSettings):
 
     # Frontend
     frontend_url: str = "http://localhost:5173"
+    # Absolute path to a built frontend (Vite's `dist`), served in-process by
+    # the API. Empty by default and deliberately so: the published backend
+    # image ships no frontend build, and a default path would let it start
+    # serving whatever happened to be at that location.
+    frontend_dist_path: str = ""
     # Docker Compose passes FRONTEND_URL empty when it is not set, plus the
     # published port; an empty FRONTEND_URL becomes http://localhost:<port>.
     frontend_port: int = 3000
@@ -74,29 +149,95 @@ class Settings(BaseSettings):
 
     # FX Rates
     openexchangerates_app_id: str = ""
-    supported_currencies: str = "USD,EUR,GBP,BRL,CAD,AUD,CHF,ARS,JPY,MXN,INR,SEK,DKK,NOK,PLN,CZK,HUF,RON,CRC,IDR,COP,CLP,DOP,KZT,RUB,GTQ,PHP,UAH,NZD,VND,SGD,AZN,TRY,PKR,MDL,AED,THB,EGP,MYR,CNY,SAR,QAR,JMD,RSD,MKD,HKD,TWD,ZAR,GEL"  # comma-separated list
+    supported_currencies: str = "USD,EUR,GBP,BRL,CAD,AUD,CHF,ARS,JPY,MXN,INR,SEK,DKK,NOK,PLN,CZK,HUF,RON,CRC,IDR,COP,PEN,UYU,CLP,DOP,KZT,RUB,GTQ,PHP,UAH,NZD,VND,SGD,AZN,TRY,PKR,MDL,AED,THB,EGP,MYR,CNY,SAR,QAR,JMD,RSD,MKD,HKD,TWD,ZAR,GEL,ILS"  # comma-separated list
     fx_sync_mode: str = "on_demand"  # "on_demand" or "scheduled"
 
     # Storage
-    storage_provider: str = "local"  # "local" or "s3"
+    storage_provider: Literal["local", "s3"] = "local"
     storage_local_path: str = "./data/attachments"
     storage_max_file_size_mb: int = 10
-    storage_allowed_extensions: str = "jpg,jpeg,png,webp,gif,heic,pdf"
+    storage_allowed_extensions: str = "jpg,jpeg,png,webp,gif,heic,pdf,xml"
     storage_max_attachments_per_transaction: int = 10
     # An invoice gathers more paper than a transaction does: the bill, the
     # fiscal document, a receipt, the contract behind it, and a correction
     # of any of them.
     storage_max_attachments_per_invoice: int = 20
 
-    # S3 Storage (for future use)
+    # Scheduled backups require one filesystem shared by the API and Celery
+    # worker. Docker Compose provides it; Helm sets this from its backups PVC.
+    backup_storage_shared: bool = True
+
+    # S3 storage: blank credentials use the SDK's default credential chain.
     storage_s3_bucket: str = ""
     storage_s3_region: str = ""
     storage_s3_access_key: SecretStr = SecretStr("")
     storage_s3_secret_key: SecretStr = SecretStr("")
+    storage_s3_session_token: SecretStr = SecretStr("")
     storage_s3_endpoint_url: str = ""  # for S3-compatible services (MinIO, DigitalOcean Spaces)
+    storage_s3_allow_insecure_http: bool = False  # development only: permits http:// endpoints
+    storage_s3_addressing_style: str = "auto"  # auto|path|virtual; checked only when S3 is selected
+
+    # Let Postgres hold the workspace boundary too (ADR 0043). DATABASE_URL must
+    # then name a restricted role set up with `app.cli apply-row-security`.
+    row_security_enabled: bool = False
 
     # Registration
     registration_enabled: bool = True
+
+    # Password recovery by email (ADR 0044). One switch: while it is off no
+    # message is sent and the forgot-password route answers 503 instead of
+    # pretending a mail went out.
+    email_enabled: bool = False
+    # Who carries the message: your own relay, or the hosted API. The switch
+    # above stays the only one; this only picks the path behind it.
+    email_provider: Literal["smtp", "resend"] = "smtp"
+    resend_api_key: SecretStr = SecretStr("")
+    resend_api_url: str = "https://api.resend.com"
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_username: str = ""
+    smtp_password: SecretStr = SecretStr("")
+    # starttls upgrades port 587, ssl connects over TLS on port 465, and none
+    # is only for a relay on a network you already trust.
+    smtp_security: Literal["starttls", "ssl", "none"] = "starttls"
+    # The From address, for example "Securo <no-reply@example.com>". Empty
+    # falls back to the SMTP username.
+    email_from: str = ""
+    # How long a recovery link stays valid.
+    password_reset_token_minutes: int = 60
+
+    @model_validator(mode="after")
+    def validate_email_settings(self):
+        if not self.email_enabled:
+            return self
+        if self.email_provider == "resend":
+            if not self.resend_api_key.get_secret_value():
+                raise ValueError(
+                    "RESEND_API_KEY is required when EMAIL_ENABLED is true and "
+                    "EMAIL_PROVIDER is resend"
+                )
+            if not self.email_from:
+                raise ValueError(
+                    "EMAIL_FROM is required when EMAIL_ENABLED is true and "
+                    "EMAIL_PROVIDER is resend"
+                )
+            # The key travels in a header: never let it go out in the clear.
+            if not self.resend_api_url:
+                raise ValueError(
+                    "RESEND_API_URL is required when EMAIL_ENABLED is true and "
+                    "EMAIL_PROVIDER is resend"
+                )
+            if not self.resend_api_url.startswith("https://"):
+                raise ValueError("RESEND_API_URL must start with https://")
+        elif not self.smtp_host:
+            raise ValueError("SMTP_HOST is required when EMAIL_ENABLED is true")
+        if self.email_provider == "smtp" and not (self.email_from or self.smtp_username):
+            raise ValueError(
+                "EMAIL_FROM (or SMTP_USERNAME) is required when EMAIL_ENABLED is true"
+            )
+        if self.password_reset_token_minutes <= 0:
+            raise ValueError("PASSWORD_RESET_TOKEN_MINUTES must be positive")
+        return self
 
     # OIDC login (works with Authentik, Pocket ID, and other standard OIDC providers)
     oidc_enabled: bool = False
@@ -115,6 +256,11 @@ class Settings(BaseSettings):
     oidc_roles_claim: str = "groups"
     oidc_admin_roles: str = ""  # comma-separated provider roles/groups that grant Securo admin
     oidc_workspace_role_map: str = ""  # JSON: {"provider-role": "owner|editor|viewer"}
+    # RP-initiated logout (#1623): where to send the browser so signing out
+    # ends the provider's own session too. Empty reads end_session_endpoint
+    # from the discovery document; a provider with neither keeps today's
+    # behaviour (the local token is dropped and nothing else).
+    oidc_logout_url: str = ""
 
     # Deploy scripts that source the .env file with a shell need values with
     # spaces to be quoted, and some panels (PaaS env vars, manual exports)
@@ -155,6 +301,30 @@ class Settings(BaseSettings):
     # The same IP is the Psu-Ip-Address of user-triggered Enable Banking syncs
     # (app.providers.psu), which only sends it when it is a public address.
     trusted_proxy_hops: int = 0
+    # Where those proxies can be, as comma-separated networks or addresses.
+    # X-Forwarded-For is only read past a peer inside them; any other peer is
+    # the client itself, so a caller who reaches the backend port (or nginx,
+    # past an outer proxy) cannot pick its own address (ADR 0024). The default
+    # covers loopback and the private ranges container networks use; narrow
+    # it when untrusted clients share those ranges with the proxies.
+    trusted_proxy_networks: str = DEFAULT_TRUSTED_PROXY_NETWORKS
+
+    @field_validator("trusted_proxy_networks")
+    @classmethod
+    def _check_trusted_proxy_networks(cls, value: str) -> str:
+        try:
+            parse_trusted_proxy_networks(value)
+        except ValueError as exc:
+            raise ValueError(f"TRUSTED_PROXY_NETWORKS is not a list of networks: {exc}") from exc
+        return value
+
+    # Per-IP ceiling on the assistant chat endpoint, in requests per minute.
+    # Every message spends provider tokens, so a public demo should keep it
+    # low (for example 5); on a self-hosted instance one person uses, normal
+    # use stays well below the default. A turn that runs several tools is
+    # still one request, so the ceiling counts questions, not tool calls.
+    # 0 turns the limiter off.
+    agents_chat_rate_limit_per_minute: int = 30
 
     # Logo size for market-priced asset icons. The logo URL is built from
     # the company website we get from the market-price provider; no API
@@ -184,16 +354,90 @@ class Settings(BaseSettings):
     # never in the background; manifests come from the same host, checked
     # against the index's sha256. Point it at a mirror to host your own.
     plugins_index_url: str = "https://plugins.usesecuro.com/v1/index.json"
+    # Plugins with code run in the `securo-plugins` runner (Compose profile
+    # `plugins`), never in this process. Blank URL: no runner, so no plugin
+    # with code can be installed. The token is shared with the runner only.
+    plugins_runner_url: str = ""
+    plugins_runner_token: str = ""
+    # How a plugin's code reaches this API, over the internal network. Only
+    # plugins that declared `api_scopes` get a token to use it.
+    plugins_api_url: str = "http://backend:8000/api"
+
+    # Document reading limits (ADR 0037). The feature itself, its provider and
+    # model are set by an admin in Admin Settings, not here.
+    document_ai_max_pages: int = 20
+    document_ai_max_file_size_mb: int = 10
 
     @property
     def oidc_login_available(self) -> bool:
         return bool(self.oidc_enabled and self.oidc_client_id and self.oidc_discovery_url)
 
     @model_validator(mode="after")
+    def validate_storage_settings(self) -> "Settings":
+        if self.storage_provider != "s3":
+            return self
+        # Normalize, not just check: the provider sends these values as they are.
+        self.storage_s3_bucket = self.storage_s3_bucket.strip()
+        raw_endpoint_url = self.storage_s3_endpoint_url
+        self.storage_s3_endpoint_url = raw_endpoint_url.strip()
+        if raw_endpoint_url and not self.storage_s3_endpoint_url:
+            # A blank value would otherwise mean "no endpoint" and silently reach AWS.
+            raise ValueError("STORAGE_S3_ENDPOINT_URL must not be blank when set")
+        if not self.storage_s3_bucket:
+            raise ValueError("STORAGE_S3_BUCKET is required when STORAGE_PROVIDER=s3")
+        if self.storage_s3_addressing_style not in {"auto", "path", "virtual"}:
+            raise ValueError("STORAGE_S3_ADDRESSING_STYLE must be one of: auto, path, virtual")
+        has_access_key = bool(self.storage_s3_access_key.get_secret_value())
+        has_secret_key = bool(self.storage_s3_secret_key.get_secret_value())
+        if has_access_key != has_secret_key:
+            raise ValueError("Set both STORAGE_S3_ACCESS_KEY and STORAGE_S3_SECRET_KEY, or neither")
+        if self.storage_s3_session_token.get_secret_value() and not has_access_key:
+            raise ValueError("STORAGE_S3_SESSION_TOKEN requires explicit S3 access and secret keys")
+        if self.storage_s3_endpoint_url:
+            endpoint = urlsplit(self.storage_s3_endpoint_url)
+            allowed_schemes = {"https", "http"} if self.storage_s3_allow_insecure_http else {"https"}
+            if (
+                endpoint.scheme not in allowed_schemes
+                or not endpoint.hostname
+                or endpoint.username is not None
+                or endpoint.password is not None
+                or endpoint.query
+                or endpoint.fragment
+            ):
+                raise ValueError(
+                    "STORAGE_S3_ENDPOINT_URL must be an HTTPS URL without credentials, query or fragment "
+                    "(http:// requires STORAGE_S3_ALLOW_INSECURE_HTTP=true, development only)"
+                )
+        return self
+
+    @model_validator(mode="after")
     def default_frontend_url(self) -> "Settings":
         if not self.frontend_url:
             self.frontend_url = f"http://localhost:{self.frontend_port}"
         return self
+
+    @property
+    def secret_key_fallbacks(self) -> tuple[str, ...]:
+        if self._stored_key_url is not None and not _in_event_loop():
+            # Read on first use rather than at import: the database may still
+            # be starting then, and a key missed once would stay missed for
+            # the life of the process. Kept only once the read succeeds.
+            # Never from the event loop: the API loads it at startup in a
+            # thread (load_stored_secret_key), so a request doesn't wait.
+            from app.core import instance_secrets as instance
+
+            try:
+                stored = instance.read_existing(self._stored_key_url, instance.SECRET_KEY_NAME)
+            except Exception as exc:
+                logging.getLogger(__name__).warning(
+                    "Could not read the stored instance key yet: %s", exc
+                )
+                return self._secret_key_fallbacks
+            current = self.secret_key.get_secret_value()
+            if stored and stored != current:
+                self._secret_key_fallbacks = (stored, *self._secret_key_fallbacks)
+            self._stored_key_url = None
+        return self._secret_key_fallbacks
 
     @model_validator(mode="after")
     def validate_auth_settings(self) -> "Settings":
@@ -223,13 +467,96 @@ class Settings(BaseSettings):
     # the process environment are ignored by pydantic-settings anyway; without
     # this, the very same key written into the .env file aborted startup with
     # "Extra inputs are not permitted".
+    #
+    # hide_input_in_errors: a validator that refuses the settings prints the
+    # input it refused, and that input is every field the instance was built
+    # from — including the email API key and SECRET_KEY, truncated but legible,
+    # in the log of a container that failed to boot.
     model_config = SettingsConfigDict(
         env_file=(".env", Path(__file__).resolve().parents[2] / ".env"),
         secrets_dir=CREDENTIALS_DIRECTORY,
         extra="ignore",
+        hide_input_in_errors=True,
     )
+
+
+def _in_event_loop() -> bool:
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return False
+    return True
+
+
+def load_stored_secret_key() -> bool:
+    """Read the instance key kept as a fallback, from a thread. True once
+    there is nothing left to read."""
+    settings = get_settings()
+    settings.secret_key_fallbacks  # noqa: B018 (reads and caches)
+    return settings._stored_key_url is None
 
 
 @lru_cache
 def get_settings() -> Settings:
-    return Settings()
+    return resolve_secret_key(Settings())
+
+
+def resolve_secret_key(settings: Settings) -> Settings:
+    """Use the instance key when the environment has none of its own (#1173).
+
+    A SECRET_KEY set in the environment always wins. Missing, or set to one of
+    the public defaults that shipped with every install path, the instance
+    uses a key generated once and stored in the database, and the credentials
+    encrypted with the public default move to it (app.core.instance_secrets).
+    """
+    from app.core import instance_secrets as instance
+
+    raw = settings.secret_key.get_secret_value()
+    configured = raw.strip()
+    if not instance.is_public_or_missing(configured):
+        # The key stays exactly as given. Anything encrypted while the
+        # instance key was in use (SECRET_KEY set after it existed) still
+        # opens: that key is read on first use (secret_key_fallbacks). The
+        # restricted role of row security can't read it (ADR 0043).
+        settings._stored_key_url = None if settings.row_security_enabled else settings.database_url
+        settings._secret_key_fallbacks = tuple(
+            k for k in instance.PUBLIC_SECRET_KEYS if k != raw
+        )
+        return settings
+
+    if settings.require_secret_key:
+        raise RuntimeError(
+            "REQUIRE_SECRET_KEY is on, but SECRET_KEY is "
+            + ("a public default" if configured else "not set")
+            + ". Set a unique value (openssl rand -hex 32)."
+        )
+
+    if settings.row_security_enabled:
+        # An install that already ran without SECRET_KEY encrypted its saved
+        # credentials with the stored key: a new key would leave them unreadable.
+        raise RuntimeError(
+            "ROW_SECURITY_ENABLED needs its own SECRET_KEY in the environment: the "
+            "restricted database role can't read or create the stored instance key "
+            "(ADR 0043). On an install that already ran without SECRET_KEY, set it to "
+            "the key stored in the database, read as the owner of the tables with "
+            f"`{instance.STORED_KEY_QUERY}`; a new key would leave the saved "
+            "credentials unreadable. On a new install, generate one with "
+            "`openssl rand -hex 32`."
+        )
+
+    if configured:
+        logging.getLogger(__name__).warning(
+            "SECRET_KEY is set to a public default, which anyone can use to sign in as any "
+            "user. Using this instance's own key instead."
+        )
+    # Values were encrypted with the key exactly as configured, padding and
+    # all, or with an empty one; try those as well as the public defaults.
+    old_keys = tuple(dict.fromkeys((raw, configured, *instance.PUBLIC_SECRET_KEYS)))
+    key = instance.fetch_or_create(
+        settings.database_url,
+        instance.SECRET_KEY_NAME,
+        on_created=instance.reencrypt_with(old_keys),
+    )
+    settings.secret_key = SecretStr(key)
+    settings._secret_key_fallbacks = old_keys
+    return settings

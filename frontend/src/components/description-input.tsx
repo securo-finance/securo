@@ -16,6 +16,8 @@ interface DescriptionInputProps {
   onPick?: (suggestion: DescriptionSuggestion) => void
   required?: boolean
   className?: string
+  /** The id of the input, so a `<Label htmlFor>` names this field. */
+  id?: string
 }
 
 /**
@@ -23,7 +25,7 @@ interface DescriptionInputProps {
  * workspace (issue #1127). Suggestions are a shortcut only: whatever the user
  * types is kept as typed.
  */
-export function DescriptionInput({ value, onChange, onPick, required, className }: DescriptionInputProps) {
+export function DescriptionInput({ value, onChange, onPick, required, className, id }: DescriptionInputProps) {
   const listId = useId()
   const [focused, setFocused] = useState(false)
   const [dismissed, setDismissed] = useState(false)
@@ -80,6 +82,7 @@ export function DescriptionInput({ value, onChange, onPick, required, className 
     <Popover open={open}>
       <PopoverAnchor asChild>
         <Input
+          id={id}
           value={value}
           onChange={(e) => {
             onChange(e.target.value)

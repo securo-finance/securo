@@ -1,6 +1,8 @@
 from celery import Celery
 
 from app.core.config import get_settings
+from app.core.feature_flags import feature_flag
+from app.services import notification_channels
 
 settings = get_settings()
 
@@ -60,7 +62,31 @@ celery_app.conf.beat_schedule = {
         # stamped with the 1:1 fallback (or left NULL) once real rates land.
         "schedule": 60 * 60 * 12,
     },
+    "run-scheduled-backups-hourly": {
+        "task": "app.tasks.backup_tasks.run_scheduled_backups",
+        "schedule": 60 * 60,
+    },
+    "evaluate-notifications-hourly": {
+        "task": "app.tasks.notification_tasks.evaluate_notifications",
+        "schedule": 60 * 60,  # idempotent: rows follow what is stored
+    },
 }
+
+if notification_channels.external():
+    # Only scheduled with a channel outside the app set up.
+    celery_app.conf.beat_schedule["deliver-notifications"] = {
+        "task": "app.tasks.notification_tasks.deliver_notifications",
+        "schedule": 60,
+    }
+
+if feature_flag("PLUGINS_ENABLED"):
+    # Only scheduled when plugins are on, so an instance without them runs
+    # nothing extra. Each connection keeps its own interval (at least 15
+    # minutes, from the plugin's manifest); this only checks which are due.
+    celery_app.conf.beat_schedule["sync-plugin-connections"] = {
+        "task": "app.tasks.plugin_tasks.sync_plugin_connections",
+        "schedule": 60 * 5,
+    }
 
 celery_app.conf.include = [
     "app.tasks.sync_tasks",
@@ -68,6 +94,11 @@ celery_app.conf.include = [
     "app.tasks.invoice_schedule_tasks",
     "app.tasks.asset_tasks",
     "app.tasks.fx_rate_tasks",
+    "app.tasks.backup_tasks",
+    "app.tasks.notification_tasks",
+    "app.tasks.plugin_tasks",
+    # Dispatched only by the document routes (DOCUMENT_AI_ENABLED).
+    "app.tasks.document_tasks",
     # Optional agents module — registering the import is harmless when
     # AGENTS_ENABLED=false (the task just won't be dispatched).
     "app.agents.tasks.ingest",

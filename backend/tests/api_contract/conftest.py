@@ -10,6 +10,7 @@
   baseline.json at the end of the run (serial runs only). Add
   API_CONTRACT_DETAILS=<file> to also dump why `ok` cases missed a 2xx.
 """
+
 import json
 import os
 import socket
@@ -25,6 +26,7 @@ import pytest_asyncio
 from httpx import AsyncClient
 
 from app.core.config import get_settings
+from app.providers.benchmark import YahooBenchmarkProvider
 from tests.api_contract.world import build_world
 from tests.conftest import engine
 
@@ -193,6 +195,10 @@ def _contract_environment(monkeypatch, tmp_path, _mock_redis):
 
     monkeypatch.setattr("app.api.oidc_auth.get_redis", _fake_get_redis)
     monkeypatch.setattr(get_agent_settings(), "knowledge_storage_path", str(tmp_path / "knowledge"))
+    monkeypatch.setattr(
+        "app.services.backup_service.BACKUP_STORAGE_PATH",
+        tmp_path / "backups",
+    )
     monkeypatch.setattr(get_settings(), "storage_local_path", str(tmp_path / "storage"))
     # Celery retries the blocked Redis connection for ~19s before giving up.
     # Fail the dispatch at once: the route handles any dispatch error alike.
@@ -209,3 +215,9 @@ def _no_outbound_network(monkeypatch):
         return real_connect(sock, address)
 
     monkeypatch.setattr(socket.socket, "connect", guarded)
+    # yfinance sends through curl_cffi, which opens its sockets in C and never
+    # meets the guard above. Answer the benchmark lookup offline: Yahoo has no
+    # instrument named like the placeholder query.
+    monkeypatch.setattr(
+        YahooBenchmarkProvider, "_lookup_sync", staticmethod(lambda query, limit: [])
+    )

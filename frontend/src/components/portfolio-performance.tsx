@@ -1,4 +1,13 @@
-import { useEffect, useId, useMemo, useState, type ReactNode } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type ReactNode,
+} from 'react'
 import { useTranslation } from 'react-i18next'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
@@ -12,6 +21,7 @@ import {
   Plus,
   Search,
   Trash2,
+  TriangleAlert,
   Wallet,
   X,
 } from 'lucide-react'
@@ -26,20 +36,26 @@ import {
   Tooltip as RechartsTooltip,
   XAxis,
   YAxis,
+  useActiveTooltipLabel,
 } from 'recharts'
-import { assets, auth as authApi } from '@/lib/api'
+import { assets, auth as authApi, connections } from '@/lib/api'
 import { useAuth } from '@/contexts/auth-context'
 import { useFeatureFlags } from '@/hooks/use-feature-flags'
+import { invalidateSyncedRecords } from '@/lib/invalidate-queries'
 import {
   MAX_PERFORMANCE_BENCHMARKS,
   type PerformanceView,
+  dateToTimestamp,
   isSameSelection,
+  isShortSpan,
   moneyWeightedReturn,
   newViewId,
   periodReturn,
   readBenchmarkSelections,
   readLastSelection,
   readSavedViews,
+  timeAxisTicks,
+  timestampToDate,
   withSavedViews,
   writeBenchmarkSelections,
   writeLastSelection,
@@ -57,17 +73,41 @@ import type {
 } from '@/types'
 
 const PERIODS: PortfolioPerformancePeriod[] = ['3m', '6m', 'ytd', '1y', '3y', '5y']
-const PERIOD_LABELS: Record<PortfolioPerformancePeriod, string> = {
-  '3m': '3M',
-  '6m': '6M',
-  ytd: 'YTD',
-  '1y': '1Y',
-  '3y': '3Y',
-  '5y': '5Y',
+const PERIOD_LABEL_KEYS: Record<PortfolioPerformancePeriod, string> = {
+  '3m': 'reports.range3m',
+  '6m': 'reports.range6m',
+  ytd: 'reports.rangeYtd',
+  '1y': 'reports.range1y',
+  '3y': 'reports.range3y',
+  '5y': 'reports.range5y',
 }
 const METHODS: PerformanceMethod[] = ['twr', 'mwr']
 const BENCHMARK_COLORS = ['#6366F1', '#F59E0B', '#06B6D4', '#8B5CF6', '#F43F5E']
 const BENCHMARK_DASHES = ['6 3', '2 3', '8 3 2 3', '10 4', '4 4']
+
+/**
+ * Every wallet and holding id in the workspace, ignoring the active
+ * collection and including archived holdings. null until it has loaded.
+ */
+export interface PerformanceInventory {
+  walletIds: string[]
+  assetIds: string[]
+}
+
+/** The `YYYY-MM-DD` date of a chart label, which is the point's timestamp. */
+function labelDate(label: unknown): string | null {
+  const timestamp = label == null ? NaN : Number(label)
+  return Number.isFinite(timestamp) ? timestampToDate(timestamp) : null
+}
+
+/** Reports the date under the chart's tooltip (mouse or arrow keys). */
+function ActiveDateTracker({ onChange }: { onChange: (date: string | null) => void }) {
+  const label = useActiveTooltipLabel()
+  useEffect(() => {
+    onChange(labelDate(label))
+  }, [label, onChange])
+  return null
+}
 
 function benchmarkKey(benchmark: Pick<BenchmarkMatch, 'provider' | 'symbol'>): string {
   return `${benchmark.provider}:${benchmark.symbol}`
@@ -88,6 +128,9 @@ export function PortfolioPerformance({
   assetGroupIds,
   holdings,
   wallets,
+  inventory,
+  inventoryError = false,
+  onRetryInventory,
   locale,
   dateLocale,
   mask,
@@ -95,8 +138,17 @@ export function PortfolioPerformance({
 }: {
   workspaceId: string
   assetGroupIds: string[] | null
+  /** Holdings and wallets to offer in the picker (the active collection's). */
   holdings: Asset[]
   wallets: AssetGroup[]
+  /**
+   * The whole workspace, used to tell a deleted id from one the collection
+   * only hides. A saved or restored selection keeps hidden ids.
+   */
+  inventory: PerformanceInventory | null
+  /** The inventory failed to load; a custom selection can't be sent without it. */
+  inventoryError?: boolean
+  onRetryInventory?: () => void
   locale: string
   dateLocale: string
   mask: (value: string) => string
@@ -109,7 +161,7 @@ export function PortfolioPerformance({
   const [benchmarkOpen, setBenchmarkOpen] = useState(false)
   const [query, setQuery] = useState('')
   const [debouncedQuery, setDebouncedQuery] = useState('')
-  const { benchmarksEnabled } = useFeatureFlags()
+  const { benchmarksEnabled, isLoading: flagsLoading } = useFeatureFlags()
   const [storedBenchmarks, setSelected] = useState<BenchmarkMatch[]>(() =>
     readBenchmarkSelections(workspaceId),
   )
@@ -124,10 +176,37 @@ export function PortfolioPerformance({
   const [method, setMethod] = useState<PerformanceMethod>(lastSelection?.method ?? 'twr')
   const [scope, setScope] = useState<'all' | 'custom'>(lastSelection?.scope ?? 'all')
   const [scopeOpen, setScopeOpen] = useState(false)
-  const [selectedWalletIds, setSelectedWalletIds] = useState<string[]>(
+  const [storedWalletIds, setSelectedWalletIds] = useState<string[]>(
     lastSelection?.walletIds ?? [],
   )
-  const [selectedAssetIds, setSelectedAssetIds] = useState<string[]>(lastSelection?.assetIds ?? [])
+  const [storedAssetIds, setSelectedAssetIds] = useState<string[]>(lastSelection?.assetIds ?? [])
+  // Ids deleted since they were picked are dropped once the inventory has
+  // loaded: from the count, the request and what is remembered. Ids the
+  // active collection hides still exist, so they stay.
+  const knownWalletIds = useMemo(
+    () => (inventory ? new Set(inventory.walletIds) : null),
+    [inventory],
+  )
+  const knownAssetIds = useMemo(
+    () => (inventory ? new Set(inventory.assetIds) : null),
+    [inventory],
+  )
+  const selectedWalletIds = useMemo(
+    () =>
+      knownWalletIds ? storedWalletIds.filter((id) => knownWalletIds.has(id)) : storedWalletIds,
+    [knownWalletIds, storedWalletIds],
+  )
+  const selectedAssetIds = useMemo(
+    () => (knownAssetIds ? storedAssetIds.filter((id) => knownAssetIds.has(id)) : storedAssetIds),
+    [knownAssetIds, storedAssetIds],
+  )
+  /** A saved view without the members deleted since it was saved. */
+  const existingMembers = (view: Pick<PerformanceView, 'walletIds' | 'assetIds'>) => ({
+    walletIds: knownWalletIds
+      ? view.walletIds.filter((id) => knownWalletIds.has(id))
+      : view.walletIds,
+    assetIds: knownAssetIds ? view.assetIds.filter((id) => knownAssetIds.has(id)) : view.assetIds,
+  })
   const { user, updateUser } = useAuth()
   const savedViews = useMemo(
     () => readSavedViews(user?.preferences, workspaceId),
@@ -184,6 +263,11 @@ export function PortfolioPerformance({
   const emptyCollection = sortedGroupIds !== null && sortedGroupIds.length === 0
   const emptyCustomScope =
     scope === 'custom' && !requestWalletIds?.length && !requestAssetIds?.length
+  // Wait for /info, so benchmarks the server has disabled are never asked
+  // for, and for the inventory before sending a custom selection, so ids
+  // deleted since it was saved are left out.
+  const waitingForInputs = flagsLoading || (scope === 'custom' && !inventory)
+  const inventoryFailed = scope === 'custom' && !inventory && inventoryError
   const performance = useQuery({
     queryKey: [
       'asset-performance',
@@ -195,6 +279,8 @@ export function PortfolioPerformance({
       requestWalletIds,
       requestAssetIds,
     ],
+    // The workspace is named on the request: another tab switching workspace
+    // changes the shared default, and this cache key belongs to this one.
     queryFn: () =>
       assets.performance(
         selected,
@@ -202,9 +288,10 @@ export function PortfolioPerformance({
         sortedGroupIds,
         requestWalletIds,
         requestAssetIds,
+        workspaceId,
         method,
       ),
-    enabled: !emptyCollection && !emptyCustomScope,
+    enabled: !emptyCollection && !emptyCustomScope && !waitingForInputs,
     // A failed benchmark source is transient: retry it on the next visit
     // instead of serving the cached error for the usual five minutes.
     staleTime: (query) =>
@@ -212,20 +299,59 @@ export function PortfolioPerformance({
     retry: 1,
   })
 
-  const tradeImportKey = ['holding-trade-import', workspaceId]
   const tradeImport = useQuery({
-    queryKey: tradeImportKey,
-    queryFn: assets.tradeImport,
+    queryKey: ['holding-trade-import', workspaceId],
+    queryFn: () => assets.tradeImport(workspaceId),
     enabled: canManage,
     staleTime: 5 * 60 * 1000,
   })
+  // The workspace clicked in travels with the mutation: a request paused
+  // offline and resumed after a switch still goes to, and is cached for, it.
   const enableTradeImport = useMutation({
-    mutationFn: assets.enableTradeImport,
-    onSuccess: (status) => {
-      queryClient.setQueryData(tradeImportKey, status)
+    mutationFn: (targetWorkspaceId: string) => assets.enableTradeImport(targetWorkspaceId),
+    onSuccess: (status, targetWorkspaceId) => {
+      queryClient.setQueryData(['holding-trade-import', targetWorkspaceId], status)
       toast.success(t('assets.performanceTradeImportEnabled'))
     },
     onError: () => toast.error(t('assets.performanceTradeImportError')),
+  })
+  const tradeImportIssues = tradeImport.data?.issues ?? []
+  // Sync each affected connection, asking for the unresolved histories again.
+  // One at a time, so a provider's rate limit isn't hit by our own burst.
+  // The workspace and connections are captured on click, so a switch while
+  // the batch runs can't send this workspace's ids to another one.
+  const retryTradeImport = useMutation({
+    mutationFn: async ({
+      targetWorkspaceId,
+      connectionIds,
+    }: {
+      targetWorkspaceId: string
+      connectionIds: string[]
+    }) => {
+      let rateLimited = false
+      let partial = false
+      let failed = false
+      for (const connectionId of connectionIds) {
+        try {
+          const result = await connections.sync(connectionId, {
+            retryTradeImport: true,
+            workspaceId: targetWorkspaceId,
+          })
+          rateLimited ||= result.sync_outcome === 'rate_limited'
+          partial ||= result.sync_outcome === 'partial'
+        } catch {
+          failed = true
+        }
+      }
+      return { rateLimited, partial, failed }
+    },
+    onSuccess: ({ rateLimited, partial, failed }) => {
+      if (failed) toast.error(t('accounts.syncError'))
+      else if (rateLimited) toast.warning(t('accounts.syncRateLimited'))
+      else if (partial) toast.warning(t('accounts.syncPartial'))
+      else toast.success(t('accounts.syncDone'))
+    },
+    onSettled: () => invalidateSyncedRecords(queryClient),
   })
 
   const holdingsByGroup = useMemo(() => {
@@ -302,39 +428,58 @@ export function PortfolioPerformance({
 
   const toggleWallet = (walletId: string) => {
     const isSelected = selectedWalletIds.includes(walletId)
-    setSelectedWalletIds((current) =>
-      isSelected ? current.filter((id) => id !== walletId) : [...current, walletId],
+    setSelectedWalletIds(
+      isSelected
+        ? selectedWalletIds.filter((id) => id !== walletId)
+        : [...selectedWalletIds, walletId],
     )
     if (!isSelected) {
       const childIds = new Set((holdingsByGroup.get(walletId) ?? []).map((item) => item.id))
-      setSelectedAssetIds((current) => current.filter((id) => !childIds.has(id)))
+      setSelectedAssetIds(selectedAssetIds.filter((id) => !childIds.has(id)))
     }
   }
 
-  const activeView =
-    scope === 'custom'
-      ? savedViews.find((view) => isSameSelection(view, selectedWalletIds, selectedAssetIds))
-      : undefined
+  const matchesSelection = (view: PerformanceView) => {
+    const members = existingMembers(view)
+    return isSameSelection(members, selectedWalletIds, selectedAssetIds)
+  }
+  const activeView = scope === 'custom' ? savedViews.find(matchesSelection) : undefined
   const editingView = savedViews.find((view) => view.id === editingViewId)
-  const editingViewChanged =
-    !!editingView && !isSameSelection(editingView, selectedWalletIds, selectedAssetIds)
+  const editingViewChanged = !!editingView && !matchesSelection(editingView)
 
   const applyView = (view: PerformanceView) => {
-    // Wallets or holdings removed since the view was saved are skipped.
-    const walletIds = new Set(wallets.map((wallet) => wallet.id))
-    const assetIds = new Set(holdings.map((holding) => holding.id))
+    // Members deleted since the view was saved are skipped; members the
+    // active collection only hides are kept.
+    const members = existingMembers(view)
     setScope('custom')
-    setSelectedWalletIds(view.walletIds.filter((id) => walletIds.has(id)))
-    setSelectedAssetIds(view.assetIds.filter((id) => assetIds.has(id)))
+    setSelectedWalletIds(members.walletIds)
+    setSelectedAssetIds(members.assetIds)
     setEditingViewId(view.id)
     setScopeOpen(false)
   }
 
-  const storeViews = async (views: PerformanceView[]) => {
+  /**
+   * Save this workspace's views, computed by `change` from the latest ones.
+   * Preferences are read fresh right before the write, so a view or setting
+   * saved from another tab since this one loaded is kept. This narrows the
+   * race but doesn't close it: the server replaces the whole preferences
+   * object, so a write from another tab between our read and our write is
+   * still lost. A `change` that returns null writes nothing; the fresh
+   * preferences are still shown, so this tab catches up with the other.
+   */
+  const storeViews = async (
+    change: (views: PerformanceView[]) => PerformanceView[] | null,
+  ) => {
     setSavingView(true)
     try {
+      const fresh = await authApi.me()
+      const views = change(readSavedViews(fresh.preferences, workspaceId))
+      if (!views) {
+        updateUser(fresh)
+        return false
+      }
       const updated = await authApi.updateMe({
-        preferences: withSavedViews(user?.preferences, workspaceId, views),
+        preferences: withSavedViews(fresh.preferences, workspaceId, views),
       })
       updateUser(updated)
       return true
@@ -355,7 +500,7 @@ export function PortfolioPerformance({
       walletIds: [...selectedWalletIds],
       assetIds: [...selectedAssetIds],
     }
-    if (await storeViews([...savedViews, view])) {
+    if (await storeViews((views) => [...views, view])) {
       setEditingViewId(view.id)
       setViewName('')
       toast.success(t('assets.performanceViewSaved', { name }))
@@ -364,26 +509,40 @@ export function PortfolioPerformance({
 
   const updateEditingView = async () => {
     if (!editingView) return
-    const next = savedViews.map((view) =>
-      view.id === editingView.id
-        ? { ...view, walletIds: [...selectedWalletIds], assetIds: [...selectedAssetIds] }
-        : view,
-    )
-    if (await storeViews(next)) {
+    // Another tab may have deleted the view since. Then nothing is written,
+    // and the selection stays, so it can be saved as a new view.
+    let deleted = false
+    const update = (views: PerformanceView[]) => {
+      if (!views.some((view) => view.id === editingView.id)) {
+        deleted = true
+        return null
+      }
+      return views.map((view) =>
+        view.id === editingView.id
+          ? { ...view, walletIds: [...selectedWalletIds], assetIds: [...selectedAssetIds] }
+          : view,
+      )
+    }
+    if (await storeViews(update)) {
       toast.success(t('assets.performanceViewSaved', { name: editingView.name }))
+    } else if (deleted) {
+      setEditingViewId(null)
+      toast.error(t('assets.performanceViewGone', { name: editingView.name }))
     }
   }
 
   const deleteView = async (view: PerformanceView) => {
-    if (await storeViews(savedViews.filter((item) => item.id !== view.id))) {
+    if (await storeViews((views) => views.filter((item) => item.id !== view.id))) {
       if (editingViewId === view.id) setEditingViewId(null)
       toast.success(t('assets.performanceViewDeleted', { name: view.name }))
     }
   }
 
   const toggleAsset = (assetId: string) => {
-    setSelectedAssetIds((current) =>
-      current.includes(assetId) ? current.filter((id) => id !== assetId) : [...current, assetId],
+    setSelectedAssetIds(
+      selectedAssetIds.includes(assetId)
+        ? selectedAssetIds.filter((id) => id !== assetId)
+        : [...selectedAssetIds, assetId],
     )
   }
 
@@ -410,6 +569,8 @@ export function PortfolioPerformance({
       (data?.points ?? []).map((point) => {
         const row: Record<string, string | number | null> = {
           date: point.date,
+          // The x position: dates sit on a time scale, spaced by real time.
+          time: dateToTimestamp(point.date),
           portfolio: point.portfolio,
         }
         selected.forEach((benchmark, index) => {
@@ -428,6 +589,35 @@ export function PortfolioPerformance({
     source: typeof chartData
   } | null>(null)
   const [dragging, setDragging] = useState(false)
+  // Keyboard path: with the chart focused, the arrow keys move the tooltip;
+  // Enter or Space marks the start at that date, again marks the end, and
+  // Escape clears. True while a start is marked and the end isn't yet.
+  const [markingRange, setMarkingRange] = useState(false)
+  const activeDateRef = useRef<string | null>(null)
+  const trackActiveDate = useCallback((label: string | null) => {
+    activeDateRef.current = label
+  }, [])
+  const onChartKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.key === 'Escape') {
+      setRange(null)
+      setMarkingRange(false)
+      return
+    }
+    if (event.key !== 'Enter' && event.key !== ' ') return
+    const label = activeDateRef.current
+    if (!label) return
+    // Handled here, before the chart's own Enter (which hides the tooltip)
+    // and the page scroll on Space.
+    event.preventDefault()
+    event.stopPropagation()
+    if (markingRange && range?.source === chartData) {
+      setRange({ ...range, end: label })
+      setMarkingRange(false)
+    } else {
+      setRange({ start: label, end: label, source: chartData })
+      setMarkingRange(true)
+    }
+  }
   const indexByDate = useMemo(
     () => new Map(chartData.map((row, index) => [String(row.date), index])),
     [chartData],
@@ -464,13 +654,18 @@ export function PortfolioPerformance({
     }
   }, [range, chartData, indexByDate, selected, data])
   // Within about six months, month labels alone repeat; show the day too.
-  const shortSpan =
-    chartData.length > 1 &&
-    new Date(String(chartData[chartData.length - 1].date)).getTime() -
-      new Date(String(chartData[0].date)).getTime() <=
-      186 * 86_400_000
+  const firstTime = chartData.length ? Number(chartData[0].time) : 0
+  const lastTime = chartData.length ? Number(chartData[chartData.length - 1].time) : 0
+  const shortSpan = chartData.length > 1 && isShortSpan(firstTime, lastTime)
+  const xTicks = useMemo(() => timeAxisTicks(firstTime, lastTime), [firstTime, lastTime])
   const chartLabel = (state: { activeLabel?: unknown } | null | undefined) =>
-    state?.activeLabel == null ? null : String(state.activeLabel)
+    labelDate(state?.activeLabel)
+  // A benchmark whose history begins after the portfolio's is compared from
+  // its own first date; the card and legend say so.
+  const benchmarkStartDate = (key: string) => {
+    const start = data?.benchmarks.find((metric) => metric.key === key)?.start_date
+    return start && start !== data?.start_date ? start : null
+  }
 
   const scopeLabel =
     scope === 'all'
@@ -518,7 +713,7 @@ export function PortfolioPerformance({
                   : 'text-muted-foreground hover:bg-card/60 hover:text-foreground'
               }`}
             >
-              {PERIOD_LABELS[item]}
+              {t(PERIOD_LABEL_KEYS[item])}
             </button>
           ))}
         </div>
@@ -545,7 +740,7 @@ export function PortfolioPerformance({
                 )}
                 <ChevronDown
                   size={14}
-                  className="ml-auto text-muted-foreground"
+                  className="ms-auto text-muted-foreground"
                   aria-hidden="true"
                 />
               </Button>
@@ -611,7 +806,7 @@ export function PortfolioPerformance({
                         {walletHoldings.map((holding) => (
                           <label
                             key={holding.id}
-                            className={`ml-6 flex min-h-9 items-center gap-2 rounded-md px-2 text-sm ${
+                            className={`ms-6 flex min-h-9 items-center gap-2 rounded-md px-2 text-sm ${
                               walletSelected
                                 ? 'cursor-not-allowed text-muted-foreground/60'
                                 : 'cursor-pointer text-muted-foreground'
@@ -785,7 +980,7 @@ export function PortfolioPerformance({
                     <div className="relative">
                       <Search
                         size={16}
-                        className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
+                        className="absolute start-3 top-1/2 -translate-y-1/2 text-muted-foreground"
                         aria-hidden="true"
                       />
                       <Input
@@ -793,7 +988,7 @@ export function PortfolioPerformance({
                         onChange={(event) => setQuery(event.target.value)}
                         placeholder={t('assets.benchmarkSearchPlaceholder')}
                         aria-label={t('assets.benchmarkSearchPlaceholder')}
-                        className="h-10 pl-9 pr-10"
+                        className="h-10 ps-9 pe-10"
                       />
                       {query && (
                         <Button
@@ -801,7 +996,7 @@ export function PortfolioPerformance({
                           variant="ghost"
                           size="icon-sm"
                           onClick={() => setQuery('')}
-                          className="absolute right-1 top-1/2 -translate-y-1/2"
+                          className="absolute end-1 top-1/2 -translate-y-1/2"
                           aria-label={t('common.close')}
                         >
                           <X size={15} aria-hidden="true" />
@@ -822,7 +1017,7 @@ export function PortfolioPerformance({
                     {selected.map((benchmark, index) => (
                       <div
                         key={benchmarkKey(benchmark)}
-                        className="inline-flex max-w-full items-center gap-2 rounded-lg border border-border py-0.5 pl-2.5 pr-0.5"
+                        className="inline-flex max-w-full items-center gap-2 rounded-lg border border-border py-0.5 ps-2.5 pe-0.5"
                       >
                         <span
                           className="size-2 shrink-0 rounded-full"
@@ -868,7 +1063,7 @@ export function PortfolioPerformance({
                           key={benchmarkKey(match)}
                           type="button"
                           onClick={() => chooseBenchmark(match)}
-                          className="flex min-h-12 w-full items-center gap-3 rounded-md px-3 py-2.5 text-left outline-none hover:bg-muted/60 focus-visible:bg-muted focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+                          className="flex min-h-12 w-full items-center gap-3 rounded-md px-3 py-2.5 text-start outline-none hover:bg-muted/60 focus-visible:bg-muted focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
                         >
                           <span className="min-w-0 flex-1">
                             <span className="block truncate text-sm font-medium">{match.name}</span>
@@ -901,7 +1096,7 @@ export function PortfolioPerformance({
           !emptyCustomScope && (
             <Loader2
               size={16}
-              className="my-3 ml-auto animate-spin text-muted-foreground motion-reduce:animate-none"
+              className="my-3 ms-auto animate-spin text-muted-foreground motion-reduce:animate-none"
               aria-label={t('common.loading')}
             />
           )}
@@ -919,7 +1114,15 @@ export function PortfolioPerformance({
               {t('assets.performanceSelectAssets')}
             </Button>
           </PerformanceEmptyState>
-        ) : performance.isLoading ? (
+        ) : inventoryFailed ? (
+          <PerformanceEmptyState message={t('assets.performanceLoadError')} error>
+            {onRetryInventory && (
+              <Button variant="outline" onClick={onRetryInventory}>
+                {t('common.retry')}
+              </Button>
+            )}
+          </PerformanceEmptyState>
+        ) : performance.isLoading || waitingForInputs ? (
           <div className="space-y-6" role="status" aria-label={t('common.loading')}>
             <div className="space-y-3">
               <Skeleton className="h-4 w-40" />
@@ -964,7 +1167,14 @@ export function PortfolioPerformance({
                 </p>
               </div>
               {rangeStats && (
-                <Button variant="ghost" size="sm" onClick={() => setRange(null)}>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setRange(null)
+                    setMarkingRange(false)
+                  }}
+                >
                   <X size={14} aria-hidden="true" />
                   {t('assets.performanceClearSelection')}
                 </Button>
@@ -975,16 +1185,22 @@ export function PortfolioPerformance({
               className={`grid min-w-0 gap-6 ${showComparisonSidebar ? 'xl:grid-cols-[minmax(0,1fr)_17rem]' : ''}`}
             >
               <div className="min-w-0">
-                <div className="h-72 w-full cursor-crosshair select-none rounded-lg has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring sm:h-80 [&_*:focus]:outline-none">
+                <div
+                  className="h-72 w-full cursor-crosshair select-none rounded-lg has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring sm:h-80 [&_*:focus]:outline-none"
+                  onKeyDownCapture={onChartKeyDown}
+                >
                   <ResponsiveContainer width="100%" height="100%">
                     <ComposedChart
                       data={chartData}
                       margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
                       accessibilityLayer
+                      aria-label={t('assets.performanceChartLabel')}
+                      aria-describedby={`${chartId}-chart-hint`}
                       onMouseDown={(state) => {
                         const label = chartLabel(state)
                         if (!label) return
                         setDragging(true)
+                        setMarkingRange(false)
                         setRange({ start: label, end: label, source: chartData })
                       }}
                       onMouseMove={(state) => {
@@ -1001,6 +1217,7 @@ export function PortfolioPerformance({
                       }}
                       onMouseLeave={() => setDragging(false)}
                     >
+                      <ActiveDateTracker onChange={trackActiveDate} />
                       <defs>
                         <linearGradient id={`${chartId}-fill`} x1="0" y1="0" x2="0" y2="1">
                           <stop offset="0%" stopColor="#10B981" stopOpacity={0.16} />
@@ -1019,33 +1236,37 @@ export function PortfolioPerformance({
                         strokeOpacity={0.5}
                       />
                       <XAxis
-                        dataKey="date"
+                        dataKey="time"
+                        type="number"
+                        scale="time"
+                        domain={['dataMin', 'dataMax']}
+                        ticks={xTicks}
                         tick={{ fontSize: 11, fill: 'var(--muted-foreground)' }}
                         axisLine={false}
                         tickLine={false}
                         tickMargin={12}
-                        minTickGap={40}
-                        tickFormatter={(value: string) =>
-                          new Date(`${value}T00:00:00`).toLocaleDateString(
-                            dateLocale,
-                            shortSpan
+                        minTickGap={8}
+                        tickFormatter={(value: number) =>
+                          new Date(value).toLocaleDateString(dateLocale, {
+                            timeZone: 'UTC',
+                            ...(shortSpan
                               ? { day: 'numeric', month: 'short' }
-                              : { month: 'short', year: '2-digit' },
-                          )
+                              : { month: 'short', year: '2-digit' }),
+                          })
                         }
                       />
                       <YAxis
                         tick={{ fontSize: 11, fill: 'var(--muted-foreground)' }}
                         axisLine={false}
                         tickLine={false}
-                        width={58}
+                        width="auto"
                         tickMargin={8}
                         tickFormatter={(value: number) => mask(axisFormatter.format(value / 100))}
                       />
                       {rangeStats && (
                         <ReferenceArea
-                          x1={rangeStats.startDate}
-                          x2={rangeStats.endDate}
+                          x1={dateToTimestamp(rangeStats.startDate)}
+                          x2={dateToTimestamp(rangeStats.endDate)}
                           fill="var(--primary)"
                           fillOpacity={0.08}
                           stroke="var(--primary)"
@@ -1061,8 +1282,8 @@ export function PortfolioPerformance({
                           strokeDasharray: '3 3',
                           strokeOpacity: 0.5,
                         }}
-                        content={({ active, payload, label }) => {
-                          if (!active || !payload?.length || !label) return null
+                        content={({ active, payload }) => {
+                          if (!active || !payload?.length) return null
                           const row = payload[0].payload as Record<string, string | number | null>
                           // A date with no value (e.g. outside an index's history)
                           // shows a dash, matching the gap in its line.
@@ -1070,7 +1291,7 @@ export function PortfolioPerformance({
                           return (
                             <div className="max-w-[min(20rem,75vw)] rounded-xl border border-border bg-popover p-3 text-xs shadow-lg">
                               <p className="mb-3 border-b border-border pb-2 font-medium text-muted-foreground">
-                                {formatDate(String(label))}
+                                {formatDate(String(row.date))}
                               </p>
                               <div className="flex items-center justify-between gap-4">
                                 <span className="min-w-0 truncate">
@@ -1149,18 +1370,33 @@ export function PortfolioPerformance({
                           strokeDasharray={BENCHMARK_DASHES[index]}
                         />
                       </svg>
-                      <span className="break-words">{benchmark.name}</span>
+                      <span className="break-words">
+                        {benchmark.name}
+                        {benchmarkStartDate(benchmarkKey(benchmark)) && (
+                          <span className="text-muted-foreground/80">
+                            {' · '}
+                            {t('assets.performanceBenchmarkFrom', {
+                              date: formatDate(benchmarkStartDate(benchmarkKey(benchmark))!),
+                            })}
+                          </span>
+                        )}
+                      </span>
                     </span>
                   ))}
                 </div>
-                <p className="mt-2 text-[11px] text-muted-foreground">
-                  {t('assets.performanceDragHint')}
+                <p id={`${chartId}-chart-hint`} className="mt-2 text-[11px] text-muted-foreground">
+                  {t('assets.performanceDragHint')} {t('assets.performanceKeyboardHint')}
+                </p>
+                <p className="sr-only" aria-live="polite">
+                  {markingRange && range
+                    ? t('assets.performanceRangeStartMarked', { date: formatDate(range.start) })
+                    : ''}
                 </p>
               </div>
 
               {selected.length > 0 && (
                 <aside
-                  className={`min-w-0 border-t border-border pt-5 ${showComparisonSidebar ? 'xl:border-t-0 xl:border-l xl:pt-0 xl:pl-5' : ''}`}
+                  className={`min-w-0 border-t border-border pt-5 ${showComparisonSidebar ? 'xl:border-t-0 xl:border-s xl:pt-0 xl:ps-5' : ''}`}
                   aria-label={t('assets.performanceBenchmarks')}
                 >
                   <h3 className="mb-3 text-sm font-semibold">
@@ -1203,7 +1439,7 @@ export function PortfolioPerformance({
                             <Button
                               variant="ghost"
                               size="icon-sm"
-                              className="-my-1 -mr-1 text-muted-foreground"
+                              className="-my-1 -me-1 text-muted-foreground"
                               onClick={() => removeBenchmark(benchmarkKey(benchmark))}
                               aria-label={t('assets.performanceRemoveBenchmark', {
                                 name: benchmark.name,
@@ -1212,6 +1448,15 @@ export function PortfolioPerformance({
                               <X size={14} aria-hidden="true" />
                             </Button>
                           </div>
+                          {!rangeStats &&
+                            !apiMetric?.source_error &&
+                            benchmarkStartDate(benchmarkKey(benchmark)) && (
+                              <p className="mt-1 text-[11px] text-muted-foreground">
+                                {t('assets.performanceBenchmarkFrom', {
+                                  date: formatDate(benchmarkStartDate(benchmarkKey(benchmark))!),
+                                })}
+                              </p>
+                            )}
                           {apiMetric?.source_error ? (
                             <div className="mt-2" role="alert">
                               <p className="text-xs text-rose-600 dark:text-rose-400">
@@ -1268,9 +1513,58 @@ export function PortfolioPerformance({
             size="sm"
             variant="outline"
             disabled={enableTradeImport.isPending}
-            onClick={() => enableTradeImport.mutate()}
+            onClick={() => enableTradeImport.mutate(workspaceId)}
           >
             {t('assets.performanceTradeImportAction')}
+          </Button>
+        </div>
+      )}
+      {canManage && tradeImport.data?.enabled && tradeImportIssues.length > 0 && (
+        <div className="flex flex-wrap items-start gap-3 border-t border-border px-4 py-3 sm:px-6">
+          <div className="flex min-w-0 flex-1 basis-64 items-start gap-2">
+            <TriangleAlert
+              size={15}
+              className="mt-0.5 shrink-0 text-amber-600 dark:text-amber-400"
+              aria-hidden="true"
+            />
+            <div className="min-w-0">
+              <p className="text-xs leading-relaxed text-muted-foreground">
+                {t('assets.performanceTradeImportIssues')}
+              </p>
+              <ul className="mt-1.5 max-h-32 space-y-0.5 overflow-y-auto text-xs">
+                {tradeImportIssues.map((issue) => (
+                  <li key={issue.asset_id} className="flex min-w-0 gap-1.5">
+                    <span className="truncate font-medium text-foreground" title={issue.name}>
+                      {issue.name}
+                    </span>
+                    <span className="shrink-0 text-muted-foreground">
+                      {' · '}
+                      {t(
+                        issue.status === 'no_history'
+                          ? 'assets.performanceTradeImportNoHistory'
+                          : 'assets.performanceTradeImportIncomplete',
+                      )}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={retryTradeImport.isPending}
+            onClick={() =>
+              retryTradeImport.mutate({
+                targetWorkspaceId: workspaceId,
+                connectionIds: [...new Set(tradeImportIssues.map((issue) => issue.connection_id))],
+              })
+            }
+          >
+            {retryTradeImport.isPending && (
+              <Loader2 size={14} className="animate-spin" aria-hidden="true" />
+            )}
+            {t('assets.performanceTradeImportRetry')}
           </Button>
         </div>
       )}
@@ -1280,7 +1574,7 @@ export function PortfolioPerformance({
           {t('assets.performanceMethodology')}
           <ChevronDown
             size={14}
-            className="ml-auto shrink-0 transition-transform group-open:rotate-180"
+            className="ms-auto shrink-0 transition-transform group-open:rotate-180"
             aria-hidden="true"
           />
         </summary>

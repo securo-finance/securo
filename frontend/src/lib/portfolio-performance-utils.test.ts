@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   benchmarkStorageKey,
+  dateToTimestamp,
   isSameSelection,
   moneyWeightedReturn,
   newViewId,
@@ -9,6 +10,8 @@ import {
   readBenchmarkSelections,
   readLastSelection,
   readSavedViews,
+  timeAxisTicks,
+  timestampToDate,
   withSavedViews,
   writeBenchmarkSelection,
   writeBenchmarkSelections,
@@ -193,5 +196,37 @@ describe('moneyWeightedReturn', () => {
     expect(moneyWeightedReturn(dates, [0, 0, 0], [0, 0, 0], 0, 2)).toBe(0)
     expect(moneyWeightedReturn(dates, [0, 500, 0], [0, 500, 0], 0, 2)).toBe(-100)
     expect(moneyWeightedReturn(dates, [0, 0, 0], [0, -500, 0], 0, 2)).toBeNull()
+  })
+})
+
+describe('performance time axis', () => {
+  const day = (date: string) => dateToTimestamp(date)
+
+  it('maps dates to UTC midnight and back without shifting a day', () => {
+    expect(day('2026-03-10')).toBe(Date.UTC(2026, 2, 10))
+    expect(timestampToDate(day('2026-03-10'))).toBe('2026-03-10')
+    // Spacing is by elapsed time, not by position in the series.
+    expect(day('2026-08-11') - day('2026-08-10')).toBe(86_400_000)
+    expect(day('2026-06-10') - day('2026-03-10')).toBe(92 * 86_400_000)
+  })
+
+  it('puts one tick on the 1st of each month over a long span', () => {
+    const ticks = timeAxisTicks(day('2026-01-10'), day('2026-11-25'))
+    expect(ticks.map(timestampToDate)).toEqual(
+      ['02', '03', '04', '05', '06', '07', '08', '09', '10', '11'].map((m) => `2026-${m}-01`),
+    )
+    expect(timeAxisTicks(day('2025-11-01'), day('2026-07-01')).map(timestampToDate)).toEqual([
+      '2025-11-01', '2025-12-01', '2026-01-01', '2026-02-01', '2026-03-01',
+      '2026-04-01', '2026-05-01', '2026-06-01', '2026-07-01',
+    ])
+  })
+
+  it('spaces day ticks evenly over a short span', () => {
+    expect(timeAxisTicks(day('2026-03-01'), day('2026-03-05')).map(timestampToDate)).toEqual([
+      '2026-03-01', '2026-03-02', '2026-03-03', '2026-03-04', '2026-03-05',
+    ])
+    expect(timeAxisTicks(day('2026-03-01'), day('2026-03-31')).map(timestampToDate)).toEqual([
+      '2026-03-01', '2026-03-08', '2026-03-15', '2026-03-22', '2026-03-29',
+    ])
   })
 })
