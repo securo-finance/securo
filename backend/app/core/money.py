@@ -55,6 +55,24 @@ def bounded_conversion(value: Decimal, field: str = "amount_primary") -> Decimal
     return value
 
 
+def bounded_asset_value(value: Decimal, field: str = "amount") -> Decimal:
+    """A value worked out for `asset_values.amount`, or a readable refusal.
+
+    The column keeps the same 13 integer digits as the money columns, and the
+    value is usually not the client's: a growth rule compounded for years, a
+    provider balance in a weak currency, units × price. Any of them can go
+    past the column while every input fits, and then the write fails at flush
+    with a raw `NumericValueOutOfRangeError` — a 500 instead of an answer
+    (issue #642). `NaN` and `Infinity` are refused here too: the column can
+    hold neither, and `NaN` cannot even be compared.
+    """
+    if not value.is_finite():
+        raise MoneyOutOfRange(f"{field} must be a finite number")
+    if abs(value) > MAX_MONEY_AMOUNT:
+        raise MoneyOutOfRange(f"{field} must be at most {MAX_MONEY_AMOUNT}")
+    return value
+
+
 def bounded_money(
     value: Decimal, field: str = "amount", *, allow_zero: bool = False
 ) -> Decimal:

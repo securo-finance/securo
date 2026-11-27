@@ -16,6 +16,7 @@ from sqlalchemy.orm.attributes import flag_modified
 
 from app.core.app_clock import app_today
 from app.core.config import get_settings
+from app.core.money import MoneyOutOfRange, bounded_asset_value
 from app.models.asset import PROVIDER_VALUE_DATE_METADATA_KEY, Asset
 from app.models.asset_group import AssetGroup
 from app.models.asset_transaction import AssetTransaction
@@ -1680,8 +1681,15 @@ async def _ensure_historical_seed(
 
     Called on every sync but a no-op once the seed exists. Skips if ANY
     AssetValue already exists on that date (even a manual one) — we don't
-    want to stomp a value the user may have entered themselves.
+    want to stomp a value the user may have entered themselves. A price the
+    column cannot hold is left out with a warning: one bad holding must not
+    fail the sync of the whole connection (issue #642).
     """
+    try:
+        seed_amount = bounded_asset_value(purchase_price, "purchase_price")
+    except MoneyOutOfRange as exc:
+        logger.warning("Not seeding a value for asset %s: %s", asset.id, exc)
+        return
     existing = await session.execute(
         select(AssetValue).where(
             AssetValue.asset_id == asset.id,
@@ -1693,8 +1701,8 @@ async def _ensure_historical_seed(
     session.add(
         AssetValue(
             asset_id=asset.id,
-            amount=purchase_price,
-            gross_amount=purchase_price,
+            amount=seed_amount,
+            gross_amount=seed_amount,
             date=purchase_date,
             source="sync",
         )
@@ -1717,7 +1725,21 @@ async def _upsert_asset_value_for_today(
     over time.
     `price` records the unit value so performance can tell buying more
     shares apart from the price going up.
+
+    A balance the column cannot hold (a weak-currency holding past 13 digits)
+    keeps the row it already had and logs, so one holding never fails the
+    sync of the whole connection (issue #642).
     """
+    try:
+        stored_amount = bounded_asset_value(amount)
+        stored_gross = (
+            bounded_asset_value(gross_amount, "gross_amount")
+            if gross_amount is not None
+            else None
+        )
+    except MoneyOutOfRange as exc:
+        logger.warning("Not storing today's synced value for asset %s: %s", asset.id, exc)
+        return
     existing = await session.execute(
         select(AssetValue).where(
             AssetValue.asset_id == asset.id,
@@ -1727,17 +1749,17 @@ async def _upsert_asset_value_for_today(
     )
     row = existing.scalar_one_or_none()
     if row is not None:
-        row.amount = amount
+        row.amount = stored_amount
         row.price = price
         # A same-day re-sync replaces the whole snapshot: a gross the
         # provider no longer reports must not sit next to the new net.
-        row.gross_amount = gross_amount
+        row.gross_amount = stored_gross
     else:
         session.add(
             AssetValue(
                 asset_id=asset.id,
-                amount=amount,
-                gross_amount=gross_amount,
+                amount=stored_amount,
+                gross_amount=stored_gross,
                 price=price,
                 date=today,
                 source="sync",
