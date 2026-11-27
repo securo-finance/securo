@@ -4452,6 +4452,7 @@
     "description": "Een opgeschorte werkruimte kan worden gelezen en geëxporteerd, maar niet gewijzigd, en de bankkoppelingen worden niet meer gesynchroniseerd.",
     "search": "Zoek op naam of e-mailadres van de eigenaar...",
     "empty": "Geen werkruimtes gevonden",
+    "active": "Actief",
     "suspended": "Opgeschort",
     "suspend": "Opschorten",
     "reactivate": "Heractiveren",

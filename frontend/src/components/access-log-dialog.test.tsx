@@ -93,7 +93,8 @@ describe('AccessLogDialog', () => {
 
     expect(await screen.findByText('Workspace status changed')).toBeInTheDocument()
     expect(screen.getByText('Workspace Pessoal')).toBeInTheDocument()
-    expect(screen.getByText('Status active → suspended')).toBeInTheDocument()
+    // The states are named for the person reading the log, not as the record has them.
+    expect(screen.getByText('Status Active → Suspended')).toBeInTheDocument()
     expect(screen.getByText('Support ticket 12')).toBeInTheDocument()
   })
 

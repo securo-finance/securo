@@ -4465,6 +4465,7 @@
     "description": "Un espacio suspendido se puede leer y exportar, pero no cambiar, y sus conexiones bancarias dejan de sincronizarse.",
     "search": "Buscar por nombre o correo del propietario...",
     "empty": "No se encontraron espacios de trabajo",
+    "active": "Activo",
     "suspended": "Suspendido",
     "suspend": "Suspender",
     "reactivate": "Reactivar",

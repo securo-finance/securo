@@ -88,6 +88,7 @@ from app.services.fx_rate_service import (
 )
 from app.services.payee_service import find_payee_by_name, get_or_create_payee
 from app.services.transaction_match_service import find_unique_transaction_match
+from app.services.workspace_status_service import SUSPENDED_DETAIL, is_suspended
 
 logger = logging.getLogger(__name__)
 
@@ -4772,6 +4773,11 @@ async def sync_connection(
         raise ProviderNotConfiguredError("This connection is synced by its plugin.")
     if provider is None and not connection.credentials:
         raise ValueError("Credentials not found")
+    # The lock above may have waited behind another run, and an administrator
+    # may have suspended the workspace meanwhile. Stop before the provider and
+    # before anything is written (ADR 0049).
+    if await is_suspended(session, workspace_id):
+        raise WorkspaceSuspendedError(SUSPENDED_DETAIL)
 
     # Authorization is workspace-scoped and happens before this service is
     # called. Data imported from a bank connection, however, must always be
@@ -5943,6 +5949,10 @@ async def _mark_initial_import_failed(
 
 class ConnectionDisconnectedError(Exception):
     """A sync was asked of a connection the user disconnected."""
+
+
+class WorkspaceSuspendedError(Exception):
+    """A sync got the connection lock only after the workspace was suspended."""
 
 
 async def unlink_connection(

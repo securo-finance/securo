@@ -146,6 +146,11 @@ async def _run_routines_of(
             for routine in await connections.list_routines(session, [connection.id]):
                 if only is not None and routine.routine not in only:
                     continue
+                # Checked again for every routine: a suspension that lands
+                # while an earlier one runs stops the rest of the round, so
+                # nothing more is written into the workspace (ADR 0049).
+                if await is_suspended(session, connection.workspace_id):
+                    return []
                 # Forced: the values just changed and this run is what proves
                 # them, so a routine not yet due runs anyway.
                 if not force and not connections.routine_due(routine, connection):

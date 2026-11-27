@@ -4450,6 +4450,7 @@
     "description": "A suspended workspace can be read and exported, but not changed, and its bank connections stop syncing.",
     "search": "Search by name or owner's email...",
     "empty": "No workspaces found",
+    "active": "Active",
     "suspended": "Suspended",
     "suspend": "Suspend",
     "reactivate": "Reactivate",

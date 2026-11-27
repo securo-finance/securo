@@ -4465,6 +4465,7 @@
     "description": "Un espace suspendu peut être lu et exporté, mais pas modifié, et ses connexions bancaires ne se synchronisent plus.",
     "search": "Rechercher par nom ou e-mail du propriétaire...",
     "empty": "Aucun espace de travail trouvé",
+    "active": "Actif",
     "suspended": "Suspendu",
     "suspend": "Suspendre",
     "reactivate": "Réactiver",

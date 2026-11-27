@@ -4451,6 +4451,7 @@
     "description": "Ein gesperrter Arbeitsbereich kann gelesen und exportiert, aber nicht geändert werden, und seine Bankverbindungen werden nicht mehr synchronisiert.",
     "search": "Nach Name oder E-Mail des Eigentümers suchen...",
     "empty": "Keine Arbeitsbereiche gefunden",
+    "active": "Aktiv",
     "suspended": "Gesperrt",
     "suspend": "Sperren",
     "reactivate": "Reaktivieren",

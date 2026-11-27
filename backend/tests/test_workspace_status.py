@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 from fastapi import HTTPException
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 
 from app.models.account import Account
 from app.models.admin_access_log import AdminAccessLog
@@ -24,6 +24,7 @@ from app.schemas.group import GroupCreate, GroupMemberCreate
 from app.schemas.group_settlement import GroupSettlementCreate, GroupSettlementUpdate
 from app.schemas.transaction import TransactionPaybackInput
 from app.services import (
+    connection_service,
     group_service,
     invoice_schedule_service,
     recurring_transaction_service,
@@ -514,6 +515,29 @@ async def test_the_plugin_sync(session, test_user, test_workspace, status, calls
         assert sync.await_count == calls * 2
 
 
+async def test_a_queued_sync_refuses_when_the_lock_comes_after_a_suspension(
+    session, test_user, test_workspace
+):
+    """The suspension lands while the run waits for the connection lock. The
+    sync stops there: the provider is never asked and nothing is written."""
+    conn = _bank(test_user, test_workspace.id)
+    session.add(conn)
+    test_workspace.status = "suspended"
+    await session.commit()
+    provider = AsyncMock()
+
+    with pytest.raises(connection_service.WorkspaceSuspendedError):
+        await connection_service.sync_connection(
+            session, conn.id, test_workspace.id, test_user.id, provider=provider
+        )
+
+    assert provider.mock_calls == []
+    accounts = await session.scalar(
+        select(func.count()).select_from(Account).where(Account.workspace_id == test_workspace.id)
+    )
+    assert accounts == 0
+
+
 @pytest.mark.parametrize("status,calls", [("suspended", 0), ("active", 1)])
 async def test_the_plugin_routines(session, test_user, test_workspace, status, calls):
     connection = PluginConnection(
@@ -543,6 +567,51 @@ async def test_the_plugin_routines(session, test_user, test_workspace, status, c
         assert await plugin_tasks.run_due_routines(session) == calls
         await plugin_tasks._run_routines_of(str(connection.id))
         assert run.await_count == calls * 2
+
+
+async def test_the_plugin_routines_stop_when_a_suspension_lands_between_two(
+    session, test_user, test_workspace
+):
+    """The round started while the workspace was active; the suspension lands
+    while the first routine runs. The next one does not run."""
+    connection = PluginConnection(
+        id=uuid.uuid4(),
+        plugin_id="demo",
+        integration="demo",
+        name="Demo",
+        workspace_id=test_workspace.id,
+        created_by=test_user.id,
+        status="active",
+    )
+    session.add(connection)
+    await session.flush()
+    session.add_all(
+        [
+            PluginConnectionRoutine(connection_id=connection.id, routine="tidy", every_minutes=15),
+            PluginConnectionRoutine(connection_id=connection.id, routine="sweep", every_minutes=15),
+        ]
+    )
+    await session.commit()
+
+    async def suspend_while_running(*_args, **_kwargs):
+        await session.execute(
+            update(Workspace).where(Workspace.id == test_workspace.id).values(status="suspended")
+        )
+        return "ran"
+
+    with (
+        patch.object(plugin_tasks, "_session_maker", lambda: (_Engine(), lambda: session)),
+        patch.object(plugin_tasks, "close_redis", new_callable=AsyncMock),
+        patch.object(plugin_tasks.connections, "routine_due", lambda r, c: True),
+        patch.object(
+            plugin_tasks.connections,
+            "run_routine",
+            new_callable=AsyncMock,
+            side_effect=suspend_while_running,
+        ) as run,
+    ):
+        assert await plugin_tasks._run_routines_of(str(connection.id)) == []
+    assert run.await_count == 1
 
 
 @pytest.mark.parametrize("status,calls", [("suspended", 0), ("active", 1)])
@@ -664,6 +733,52 @@ async def test_the_growth_job(session, test_user, test_workspace, status, calls)
     await session.commit()
     with patch.object(asset_tasks, "_make_session_maker", lambda: (_Engine(), lambda: session)):
         assert await asset_tasks._apply_growth_rules() == calls
+
+
+async def test_the_growth_job_rechecks_the_workspace_before_writing(
+    session, test_user, test_workspace
+):
+    """The job picked the asset while the workspace was active; the suspension
+    lands before the asset's own session opens. Nothing is written into it."""
+    asset = _asset(
+        test_user, test_workspace.id, valuation_method="growth_rule", growth_type="absolute",
+        growth_rate=Decimal("1"), growth_frequency="yearly",
+    )
+    session.add(asset)
+    await session.flush()
+    session.add(
+        AssetValue(asset_id=asset.id, amount=Decimal("5"), date=date.today() - timedelta(days=400), source="manual")
+    )
+    await session.commit()
+    asset_id = asset.id
+
+    class _SuspendingMaker:
+        """The session the job opens per asset, after the administrator acted."""
+
+        calls = 0
+
+        def __call__(self):
+            self.calls += 1
+            return self
+
+        async def __aenter__(self):
+            if self.calls == 2:
+                await session.execute(
+                    update(Workspace)
+                    .where(Workspace.id == test_workspace.id)
+                    .values(status="suspended")
+                )
+            return session
+
+        async def __aexit__(self, *_exc):
+            return False
+
+    with patch.object(asset_tasks, "_make_session_maker", lambda: (_Engine(), _SuspendingMaker())):
+        assert await asset_tasks._apply_growth_rules() == 0
+    count = await session.scalar(
+        select(func.count()).select_from(AssetValue).where(AssetValue.asset_id == asset_id)
+    )
+    assert count == 1
 
 
 @pytest.mark.parametrize("status,asked", [("suspended", 0), ("active", 1)])

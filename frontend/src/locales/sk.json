@@ -4646,6 +4646,7 @@
     "description": "Pozastavený priestor sa dá čítať a exportovať, ale nie meniť, a jeho bankové pripojenia sa prestanú synchronizovať.",
     "search": "Hľadať podľa názvu alebo e-mailu vlastníka...",
     "empty": "Nenašli sa žiadne pracovné priestory",
+    "active": "Aktívna",
     "suspended": "Pozastavený",
     "suspend": "Pozastaviť",
     "reactivate": "Obnoviť",

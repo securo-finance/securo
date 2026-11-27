@@ -4612,6 +4612,7 @@
     "description": "Zawieszoną przestrzeń można czytać i eksportować, ale nie zmieniać, a jej połączenia bankowe przestają się synchronizować.",
     "search": "Szukaj po nazwie lub e-mailu właściciela...",
     "empty": "Nie znaleziono przestrzeni roboczych",
+    "active": "Aktywna",
     "suspended": "Zawieszona",
     "suspend": "Zawieś",
     "reactivate": "Przywróć",

@@ -4450,6 +4450,7 @@
     "description": "A felfüggesztett munkaterület olvasható és exportálható, de nem módosítható, és a bankkapcsolatai nem szinkronizálódnak.",
     "search": "Keresés név vagy a tulajdonos e-mail-címe alapján...",
     "empty": "Nem található munkaterület",
+    "active": "Aktív",
     "suspended": "Felfüggesztve",
     "suspend": "Felfüggesztés",
     "reactivate": "Újraaktiválás",

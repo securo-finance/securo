@@ -234,6 +234,8 @@ async def sync_connection(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
     except connection_service.ConnectionDisconnectedError as e:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
+    except connection_service.WorkspaceSuspendedError as e:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
     except ProviderUserActionRequired as e:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,

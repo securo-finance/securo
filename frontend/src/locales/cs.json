@@ -4662,6 +4662,7 @@
     "description": "Pozastavený prostor lze číst a exportovat, ale ne měnit, a jeho bankovní připojení se přestanou synchronizovat.",
     "search": "Hledat podle názvu nebo e-mailu vlastníka...",
     "empty": "Nenalezeny žádné pracovní prostory",
+    "active": "Aktivní",
     "suspended": "Pozastaveno",
     "suspend": "Pozastavit",
     "reactivate": "Obnovit",

@@ -21,6 +21,12 @@ const ACTION_LABELS: Record<string, string> = {
   'workspace.status': 'accessLog.actionWorkspaceStatus',
 }
 
+/** A workspace status is a value the person reads, not a field name, so it is said in their language. */
+const STATUS_LABELS: Record<string, string> = {
+  active: 'workspaceStatus.active',
+  suspended: 'workspaceStatus.suspended',
+}
+
 /**
  * What the action changed, said in the affected person's words (#556).
  *
@@ -46,10 +52,14 @@ function ChangeLines({ entry }: { entry: AdminAccessLogEntry }) {
   // A workspace's status moves between two named states, so it says which way.
   const status = changes.status
   if (status && (status.from || status.to)) {
+    const named = (value: unknown) => {
+      const key = STATUS_LABELS[String(value ?? '')]
+      return key ? t(key) : String(value ?? '')
+    }
     lines.push(
       t('accessLog.statusChange', {
-        from: String(status.from ?? ''),
-        to: String(status.to ?? ''),
+        from: named(status.from),
+        to: named(status.to),
       }),
     )
   }

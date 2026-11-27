@@ -16,7 +16,7 @@ The administrator of an instance with several workspaces had no way to stop one 
 - The workspace routes that check ownership inside the handler refuse a rename, a new member and a role change. Leaving, removing a member and archiving stay open.
 - A write that starts in another workspace and lands here, a linked member's settlement, is refused as well.
 - Reading and every export keep working, for the same people as before.
-- Scheduled jobs that write (bank sync, plugin sync and routines, recurring transactions, invoice schedules, asset prices and growth) leave suspended workspaces out with `in_active_workspace()`, or check `is_suspended()` when they act on one row. A job already queued checks again when it runs.
+- Scheduled jobs that write (bank sync, plugin sync and routines, recurring transactions, invoice schedules, asset prices and growth) leave suspended workspaces out with `in_active_workspace()`, or check `is_suspended()` when they act on one row. A job already queued checks again when it runs: once per row it processes, and a bank sync also after it holds the connection lock, so a workspace suspended mid-run takes none of the writes still ahead.
 
 ## Consequences
 

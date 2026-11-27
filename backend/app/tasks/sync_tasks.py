@@ -312,13 +312,18 @@ async def _sync_one(
             logger.info("Connection %s: workspace suspended; skipping sync", connection_id)
             return None
         with use_resolved_timezone(await get_workspace_timezone(session, workspace_id)):
-            _, _, outcome = await connection_service.sync_connection(
-                session,
-                connection_id,
-                workspace_id,
-                user_id,
-                trigger_provider_refresh=trigger_provider_refresh,
-            )
+            try:
+                _, _, outcome = await connection_service.sync_connection(
+                    session,
+                    connection_id,
+                    workspace_id,
+                    user_id,
+                    trigger_provider_refresh=trigger_provider_refresh,
+                )
+            except connection_service.WorkspaceSuspendedError:
+                # Suspended while this run waited for the connection lock.
+                logger.info("Connection %s: workspace suspended; skipping sync", connection_id)
+                return None
         return outcome
 
 
@@ -363,8 +368,12 @@ async def _sync_one_celery(connection_id: str, user_id: str) -> None:
                 logger.info("Connection %s: workspace suspended; skipping sync", connection_id)
                 return
             async with use_timezone(session, workspace_id, fresh=True):
-                await connection_service.sync_connection(
-                    session, conn_uuid, workspace_id, uuid.UUID(user_id)
-                )
+                try:
+                    await connection_service.sync_connection(
+                        session, conn_uuid, workspace_id, uuid.UUID(user_id)
+                    )
+                except connection_service.WorkspaceSuspendedError:
+                    # Suspended while this run waited for the connection lock.
+                    logger.info("Connection %s: workspace suspended; skipping sync", connection_id)
     finally:
         await engine.dispose()

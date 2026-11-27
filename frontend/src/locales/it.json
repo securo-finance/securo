@@ -4465,6 +4465,7 @@
     "description": "Uno spazio sospeso può essere letto ed esportato, ma non modificato, e le sue connessioni bancarie smettono di sincronizzarsi.",
     "search": "Cerca per nome o e-mail del proprietario...",
     "empty": "Nessuno spazio di lavoro trovato",
+    "active": "Attivo",
     "suspended": "Sospeso",
     "suspend": "Sospendi",
     "reactivate": "Riattiva",

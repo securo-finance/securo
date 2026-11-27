@@ -636,6 +636,11 @@ async def _write_payload(
                     complete_feed=_integration(manifest, connection.integration).complete_feed,
                 ),
             )
+        except connection_service.WorkspaceSuspendedError:
+            # Suspended while this run waited for the connection lock: nothing
+            # is written into the workspace, and the cursor is not kept, so the
+            # next run fetches the same payload again.
+            return
         except Exception as exc:  # noqa: BLE001 - recorded on the connection, retried on the next sync
             logger.exception("Writing the records of plugin connection %s failed", connection_id)
             refreshed = await session.get(PluginConnection, connection_id)
