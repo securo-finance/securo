@@ -10,7 +10,7 @@ from app.services import transaction_service
 from app.services._query_filters import reporting_date_value
 from mcp_server.auth import CallContext
 from mcp_server.registry import ToolInputError, tool
-from mcp_server.tools._helpers import num, parse_date, parse_uuid, parse_uuid_list, resolve_workspace_id
+from mcp_server.tools._helpers import num, parse_bool, parse_date, parse_uuid, parse_uuid_list, resolve_workspace_id
 
 
 _STATUS_ALIASES = {"all": None, "any": None, "both": None, "": None, "posted": "posted", "pending": "pending"}
@@ -167,6 +167,9 @@ async def list_transactions(
     # with the values that work, so the model can correct itself.
     status = _normalize_status(status)
     tx_type = _normalize_tx_type(tx_type)
+    include_opening_balance = parse_bool(
+        include_opening_balance, field="include_opening_balance"
+    )
     ws_id = await resolve_workspace_id(session, ctx)
     txs, total, _ = await transaction_service.get_transactions(
         session,

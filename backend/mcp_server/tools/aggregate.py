@@ -15,7 +15,7 @@ from app.services._query_filters import (
 )
 from mcp_server.auth import CallContext
 from mcp_server.registry import tool
-from mcp_server.tools._helpers import num, parse_date, parse_uuid_list, resolve_workspace_id
+from mcp_server.tools._helpers import num, parse_bool, parse_date, parse_uuid_list, resolve_workspace_id
 
 
 @tool(
@@ -25,11 +25,15 @@ from mcp_server.tools._helpers import num, parse_date, parse_uuid_list, resolve_
         "(sum|count|avg) and a group_by (category|month|account|payee|day). "
         "Returns a list of {bucket, value, count} rows. Amounts use the "
         "user's primary currency when available, falling back to native. "
-        "By default counts only POSTED transactions (already settled) — "
-        "set status='all' or 'pending' to include scheduled/recurring rows. "
-        "Synthetic opening_balance rows are excluded by default (matching "
-        "list_transactions and P&L reports); set include_opening_balance=true "
-        "to include them when reconciling full table counts."
+        "By default counts only POSTED transactions (status='posted') and "
+        "excludes transfers (exclude_transfers=true) — set status='all' or "
+        "'pending' to include scheduled/recurring rows, and "
+        "exclude_transfers=false to include transfers. "
+        "Synthetic opening_balance rows are also excluded by default (matching "
+        "list_transactions and P&L reports); to reconcile full table counts "
+        "when pending rows or transfers exist, pass "
+        "include_opening_balance=true alongside status='all' and "
+        "exclude_transfers=false."
     ),
     parameters={
         "type": "object",
@@ -46,7 +50,18 @@ from mcp_server.tools._helpers import num, parse_date, parse_uuid_list, resolve_
             "description_contains": {"type": "string", "description": "Case-insensitive substring match against the transaction description — use this to scope to a merchant/keyword like 'uber', 'spotify', 'amigos do bem'."},
             "status": {"type": "string", "enum": ["posted", "pending", "all"], "default": "posted", "description": "Default 'posted' = only money that already moved. Use 'pending' for scheduled/recurring not yet settled, or 'all' to include both."},
             "exclude_transfers": {"type": "boolean", "default": True, "description": "Leave out transfers: paired transfer legs and rows in a category flagged treat_as_transfer."},
-            "include_opening_balance": {"type": "boolean", "default": False, "description": "Include synthetic opening_balance rows. False by default (matching list_transactions and P&L reports); set true when reconciling full table counts."},
+            "include_opening_balance": {
+                "type": "boolean",
+                "default": False,
+                "description": (
+                    "Include synthetic opening_balance rows. False by default "
+                    "(matching list_transactions and P&L reports); when "
+                    "reconciling full table counts (and pending rows or "
+                    "transfers exist), pair include_opening_balance=true with "
+                    "status='all' and exclude_transfers=false since aggregate "
+                    "defaults to status='posted' and exclude_transfers=true."
+                ),
+            },
             "limit": {"type": "integer", "minimum": 1, "maximum": 50, "default": 25, "description": "Max bucket rows in the result. Capped at 50."},
         },
         "additionalProperties": False,
@@ -75,6 +90,9 @@ async def aggregate(
     # Hard cap regardless of LLM input — keeps payload small enough for
     # token-tight providers.
     limit = max(1, min(int(limit), 50))
+    include_opening_balance = parse_bool(
+        include_opening_balance, field="include_opening_balance"
+    )
     ws_id = await resolve_workspace_id(session, ctx)
     # Read category parts: a transaction split across categories becomes one
     # row per part, so every sum below takes the part's share and every

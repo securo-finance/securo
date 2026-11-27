@@ -15,7 +15,7 @@ from app.models.account import Account
 from app.models.transaction import Transaction
 from app.models.workspace import Workspace, WorkspaceMember
 from mcp_server.auth import CallContext
-from mcp_server.registry import REGISTRY
+from mcp_server.registry import REGISTRY, ToolInputError
 
 
 async def _seed_workspace_with_opening_balance(
@@ -150,6 +150,12 @@ async def test_opening_balance_excluded_by_default_and_matches_rest(
     assert sum(item["value"] for item in income_default["items"]) == pytest.approx(3200.0)
     assert sum(item["count"] for item in income_default["items"]) == 1
 
+    agg_explicit_false = await agg_handler(
+        session=session, ctx=ctx, tx_type="income", include_opening_balance=False
+    )
+    assert sum(item["value"] for item in agg_explicit_false["items"]) == pytest.approx(3200.0)
+    assert sum(item["count"] for item in agg_explicit_false["items"]) == 1
+
     # All-status account aggregate count must match GET /api/transactions total and MCP list_transactions total.
     by_account_default = await agg_handler(
         session=session, ctx=ctx, group_by="account", status="all"
@@ -158,6 +164,16 @@ async def test_opening_balance_excluded_by_default_and_matches_rest(
     assert by_account_default["items"][0]["bucket"] == str(account.id)
     assert by_account_default["items"][0]["count"] == rest_default_body["total"] == len(normal_txs)
     assert by_account_default["items"][0]["value"] == pytest.approx(3750.0)
+
+    by_account_explicit_false = await agg_handler(
+        session=session,
+        ctx=ctx,
+        group_by="account",
+        status="all",
+        include_opening_balance=False,
+    )
+    assert by_account_explicit_false["items"][0]["count"] == len(normal_txs)
+    assert by_account_explicit_false["items"][0]["value"] == pytest.approx(3750.0)
 
     count_default = await agg_handler(
         session=session, ctx=ctx, metric="count", group_by="account", status="all"
@@ -262,24 +278,23 @@ async def test_include_opening_balance_respects_workspace_boundary(
     )
     session.add(other_account)
     await session.flush()
-    session.add(
-        Transaction(
-            id=uuid.uuid4(),
-            user_id=test_user.id,
-            workspace_id=other_ws.id,
-            account_id=other_account.id,
-            description="Other opening balance",
-            amount=Decimal("99999.00"),
-            amount_primary=Decimal("99999.00"),
-            currency="EUR",
-            date=date(2026, 1, 1),
-            effective_date=date(2026, 1, 1),
-            type="credit",
-            source="opening_balance",
-            status="posted",
-            created_at=datetime.now(timezone.utc),
-        )
+    other_opening_tx = Transaction(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=other_ws.id,
+        account_id=other_account.id,
+        description="Other opening balance",
+        amount=Decimal("99999.00"),
+        amount_primary=Decimal("99999.00"),
+        currency="EUR",
+        date=date(2026, 1, 1),
+        effective_date=date(2026, 1, 1),
+        type="credit",
+        source="opening_balance",
+        status="posted",
+        created_at=datetime.now(timezone.utc),
     )
+    session.add(other_opening_tx)
     await session.commit()
 
     ctx = CallContext(
@@ -296,6 +311,168 @@ async def test_include_opening_balance_respects_workspace_boundary(
     assert sum(item["value"] for item in agg_result["items"]) == pytest.approx(53200.0)
     assert sum(item["count"] for item in agg_result["items"]) == 2
 
+    list_result = await REGISTRY["list_transactions"].handler(
+        session=session,
+        ctx=ctx,
+        include_opening_balance=True,
+    )
+    assert list_result["total"] == 4
+    assert str(other_opening_tx.id) not in {item["id"] for item in list_result["items"]}
+
+
+@pytest.mark.asyncio
+async def test_include_opening_balance_coerces_strings_and_rejects_invalid(
+    session: AsyncSession,
+    test_user,
+    test_workspace,
+):
+    _, opening_tx, normal_txs = await _seed_workspace_with_opening_balance(
+        session, user_id=test_user.id, workspace_id=test_workspace.id
+    )
+    ctx = CallContext(
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        conversation_id=uuid.uuid4(),
+    )
+    agg_handler = REGISTRY["aggregate"].handler
+    list_handler = REGISTRY["list_transactions"].handler
+
+    for falsy_str in ("false", "FALSE", "0", " false "):
+        listed = await list_handler(
+            session=session, ctx=ctx, include_opening_balance=falsy_str
+        )
+        assert listed["total"] == len(normal_txs)
+        assert str(opening_tx.id) not in {item["id"] for item in listed["items"]}
+
+        agg = await agg_handler(
+            session=session, ctx=ctx, tx_type="income", include_opening_balance=falsy_str
+        )
+        assert sum(item["value"] for item in agg["items"]) == pytest.approx(3200.0)
+        assert sum(item["count"] for item in agg["items"]) == 1
+
+    for truthy_str in ("true", "1"):
+        listed = await list_handler(
+            session=session, ctx=ctx, include_opening_balance=truthy_str
+        )
+        assert listed["total"] == len(normal_txs) + 1
+        assert str(opening_tx.id) in {item["id"] for item in listed["items"]}
+
+        agg = await agg_handler(
+            session=session, ctx=ctx, tx_type="income", include_opening_balance=truthy_str
+        )
+        assert sum(item["value"] for item in agg["items"]) == pytest.approx(53200.0)
+        assert sum(item["count"] for item in agg["items"]) == 2
+
+    for invalid_val in ("maybe", "", None, 123):
+        with pytest.raises((ValueError, ToolInputError), match="include_opening_balance"):
+            await list_handler(
+                session=session, ctx=ctx, include_opening_balance=invalid_val
+            )
+        with pytest.raises((ValueError, ToolInputError), match="include_opening_balance"):
+            await agg_handler(
+                session=session, ctx=ctx, include_opening_balance=invalid_val
+            )
+
+
+@pytest.mark.asyncio
+async def test_debit_opening_balance_excluded_by_default_and_included_when_true(
+    session: AsyncSession,
+    client: AsyncClient,
+    test_user,
+    test_workspace,
+    auth_headers,
+):
+    card = Account(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        name="Credit Card",
+        type="credit_card",
+        balance=Decimal("1200.00"),
+        currency="EUR",
+    )
+    session.add(card)
+    await session.flush()
+
+    now = datetime.now(timezone.utc)
+    debit_opening = Transaction(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        account_id=card.id,
+        description="Opening balance",
+        amount=Decimal("1200.00"),
+        amount_primary=Decimal("1200.00"),
+        currency="EUR",
+        date=date(2026, 1, 1),
+        effective_date=date(2026, 1, 1),
+        type="debit",
+        source="opening_balance",
+        status="posted",
+        created_at=now,
+    )
+    normal_expense = Transaction(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        account_id=card.id,
+        description="Dinner",
+        amount=Decimal("80.00"),
+        amount_primary=Decimal("80.00"),
+        currency="EUR",
+        date=date(2026, 1, 12),
+        effective_date=date(2026, 1, 12),
+        type="debit",
+        source="manual",
+        status="posted",
+        created_at=now,
+    )
+    session.add_all([debit_opening, normal_expense])
+    await session.commit()
+
+    ctx = CallContext(
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        conversation_id=uuid.uuid4(),
+    )
+    agg_handler = REGISTRY["aggregate"].handler
+    list_handler = REGISTRY["list_transactions"].handler
+
+    rest_default = await client.get(
+        "/api/transactions",
+        headers={**auth_headers, "X-Workspace-Id": str(test_workspace.id)},
+    )
+    assert rest_default.status_code == 200
+    assert rest_default.json()["total"] == 1
+
+    mcp_list_default = await list_handler(session=session, ctx=ctx)
+    assert mcp_list_default["total"] == 1
+    assert str(debit_opening.id) not in {item["id"] for item in mcp_list_default["items"]}
+
+    expense_default = await agg_handler(session=session, ctx=ctx, tx_type="expense")
+    assert sum(item["value"] for item in expense_default["items"]) == pytest.approx(80.0)
+    assert sum(item["count"] for item in expense_default["items"]) == 1
+
+    rest_included = await client.get(
+        "/api/transactions",
+        headers={**auth_headers, "X-Workspace-Id": str(test_workspace.id)},
+        params={"include_opening_balance": "true"},
+    )
+    assert rest_included.status_code == 200
+    assert rest_included.json()["total"] == 2
+
+    mcp_list_included = await list_handler(
+        session=session, ctx=ctx, include_opening_balance=True
+    )
+    assert mcp_list_included["total"] == 2
+    assert str(debit_opening.id) in {item["id"] for item in mcp_list_included["items"]}
+
+    expense_included = await agg_handler(
+        session=session, ctx=ctx, tx_type="expense", include_opening_balance=True
+    )
+    assert sum(item["value"] for item in expense_included["items"]) == pytest.approx(1280.0)
+    assert sum(item["count"] for item in expense_included["items"]) == 2
+
 
 def test_mcp_and_openapi_schemas_document_include_opening_balance():
     agg_spec = REGISTRY["aggregate"]
@@ -303,8 +480,12 @@ def test_mcp_and_openapi_schemas_document_include_opening_balance():
     assert agg_prop["type"] == "boolean"
     assert agg_prop["default"] is False
     assert "opening_balance" in agg_prop["description"]
+    assert "status='all'" in agg_prop["description"]
+    assert "exclude_transfers=false" in agg_prop["description"]
     assert "opening_balance" in agg_spec.description
     assert "include_opening_balance" in agg_spec.description
+    assert "status='all'" in agg_spec.description
+    assert "exclude_transfers=false" in agg_spec.description
 
     list_spec = REGISTRY["list_transactions"]
     list_prop = list_spec.parameters["properties"]["include_opening_balance"]
