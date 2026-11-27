@@ -1,6 +1,7 @@
 import csv
 import io
 import uuid
+from decimal import Decimal
 from datetime import date
 from typing import List, Literal, Optional
 
@@ -11,7 +12,9 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.app_clock import app_today
+from app.core.currency import UnsupportedCurrency, normalize_currency_code
 from app.core.database import get_async_session
+from app.core.money import MoneyOutOfRange
 from app.core.workspace_context import (
     WorkspaceContext,
     current_workspace,
@@ -28,8 +31,16 @@ from app.services.csv_safety import csv_safe as _csv_safe
 from app.services.admin_service import get_credit_card_accounting_mode
 from app.services.transaction_calendar_service import get_transaction_calendar
 from app.services._query_filters import reporting_date_value
+from app.services.viewer_currency import viewer_currency
 
 router = APIRouter(prefix="/api/transactions", tags=["transactions"])
+
+# The month grid builds its edges with date arithmetic and, for a future
+# month, carries every recurring occurrence since today. The farther the
+# requested month, the longer one worker stays on the request, and a month at
+# the ends of the supported calendar overflows the date math. Fifty years past
+# today is beyond any planning horizon and keeps that walk short (#598).
+_MAX_CALENDAR_MONTH_YEARS = 50
 
 # Text columns go through `_csv_safe` (app.services.csv_safety): a spreadsheet
 # evaluates any cell that starts with a formula leader, so a description like
@@ -129,6 +140,79 @@ def _tag_fx_fallback(tx: TransactionRead, primary_currency: str) -> TransactionR
     return tx
 
 
+async def _in_viewer_currency(
+    session: AsyncSession, primary_currency: str, items: list[TransactionRead]
+) -> list[TransactionRead]:
+    """Show each row's stamp in the viewer's currency (#269).
+
+    `amount_primary` is in the display currency of the row's owner; a row
+    another member of a shared workspace created can be stamped in theirs.
+    Those are converted at the row's date, with the rates and rounding the
+    list footer and the dashboard use, so the rows add up to the totals.
+    Only the response objects change; the stored stamp stays the owner's.
+    """
+    viewer = await viewer_currency(session, primary_currency)
+    if not viewer.foreign_owners:
+        return items
+    for item in items:
+        if viewer.stamp_currency(item.user_id) == viewer.currency:
+            continue
+        own_amount = (
+            normalize_currency_code(item.currency) == viewer.currency
+            and item.amount_primary is not None
+        )
+        if not own_amount:
+            # Judged on the stored stamp, in its owner's currency: converting
+            # a legacy 1:1 stamp scales it and rewrites `fx_rate_used`, which
+            # would hide the warning. A row read as its own amount needs no
+            # rate, so it carries no warning.
+            _tag_fx_fallback(item, viewer.stamp_currency(item.user_id))
+        ratio = await viewer.ratio(session, item.user_id, item.date)
+        converted = await viewer.convert(
+            session, item.user_id, item.amount_primary, item.date,
+            currency=item.currency, amount=item.amount,
+        )
+        item.amount_primary = float(converted) if converted is not None else None
+        item.matched_amount_primary = await viewer.convert(
+            session, item.user_id, item.matched_amount_primary, item.date,
+            currency=item.currency, amount=item.matched_amount,
+        )
+        if item.amount_primary is not None and item.amount:
+            item.fx_rate_used = float(
+                abs(Decimal(str(item.amount_primary)) / Decimal(str(item.amount)))
+            )
+        elif item.fx_rate_used is not None:
+            item.fx_rate_used = float(Decimal(str(item.fx_rate_used)) * ratio)
+    return items
+
+
+async def _read_all_in_viewer_currency(
+    session: AsyncSession, primary_currency: str, rows
+) -> list[TransactionRead]:
+    """Rows as the list shows them: stamps in the viewer's currency, then
+    tagged. Every response the transaction dialog can open must read like
+    this; it sends `amount_primary` back as it got it (#440)."""
+    items = [TransactionRead.model_validate(tx, from_attributes=True) for tx in rows]
+    viewer = await viewer_currency(session, primary_currency)
+    # The warning is judged on each row as it was stored, in its owner's
+    # currency: a converted row's rate is rewritten, and a 1.0 it lands on
+    # by chance is not the legacy fallback.
+    converted = {
+        item.id for item in items
+        if viewer.stamp_currency(item.user_id) != viewer.currency
+    }
+    for item in items:
+        if item.id not in converted:
+            _tag_fx_fallback(item, primary_currency)
+    return await _in_viewer_currency(session, primary_currency, items)
+
+
+async def _read_in_viewer_currency(
+    session: AsyncSession, primary_currency: str, tx
+) -> TransactionRead:
+    return (await _read_all_in_viewer_currency(session, primary_currency, [tx]))[0]
+
+
 class TransactionsSummary(BaseModel):
     """Income / expense / net totals across all rows matching the active
     filters (issue #185). Amounts are in the user's primary currency.
@@ -152,6 +236,12 @@ class PaginatedTransactions(BaseModel):
     page: int
     limit: int
     summary: Optional[TransactionsSummary] = None
+
+
+class MarkAllReadResult(BaseModel):
+    """How many rows the "mark all as read" action cleared (issue #636)."""
+
+    updated: int
 
 
 def _merge_id_filters(
@@ -191,9 +281,12 @@ async def list_transactions(
     include_running_balance: bool = Query(False, description="Fill running_balance per row (issue #1202): one account, `from` set, include_opening_balance, default order, and no filter beyond a credit card's statement window (`bill_id`/`unbilled_only`); null otherwise"),
     exclude_transfers: bool = Query(False),
     user_pnl_only: bool = Query(False, description="Return only rows that count toward dashboard/user income/expense totals"),
+    workspace_only: bool = Query(False, description="Only rows of this workspace: drop the viewer's shares of group expenses that live in another workspace (queue views, #469)"),
     exclude_ignored: bool = Query(False, description="Drop rows the user marked ignored, or whose category is ignored"),
     flagged: bool = Query(False, description="Return only rows the user flagged"),
+    unpaid_only: bool = Query(False, description="Return only rows not yet marked as paid (issue #15)"),
     flag_due: Optional[FlagDue] = Query(None, description="Flagged rows past their reminder date (overdue) or due within a week (soon)"),
+    unread_only: bool = Query(False, description="Only rows nobody has reviewed yet (issue #636)"),
     tags: Optional[List[str]] = Query(None),
     min_amount: Optional[float] = Query(None, ge=0, description="Filter to transactions with absolute amount >= this value (primary currency)."),
     max_amount: Optional[float] = Query(None, ge=0, description="Filter to transactions with absolute amount <= this value (primary currency)."),
@@ -216,6 +309,8 @@ async def list_transactions(
         exclude_ignored=exclude_ignored,
         flagged_only=flagged,
         flag_due=flag_due,
+        unpaid_only=unpaid_only,
+        unread_only=unread_only,
         status=status,
         accounting_mode=accounting_mode,
         tags=tags,
@@ -230,9 +325,10 @@ async def list_transactions(
         include_summary=True,
         include_running_balance=include_running_balance,
         primary_currency=ctx.user.primary_currency,
+        workspace_only=workspace_only,
     )
     primary_currency = ctx.user.primary_currency
-    items = [_tag_fx_fallback(TransactionRead.model_validate(tx, from_attributes=True), primary_currency) for tx in transactions]
+    items = await _read_all_in_viewer_currency(session, primary_currency, transactions)
     await _attach_invoice_links(session, ctx, items)
     await _attach_transfer_counterparts(session, ctx.workspace.id, items)
     summary_out = (
@@ -252,6 +348,19 @@ async def transaction_calendar(
     ctx: WorkspaceContext = Depends(current_workspace),
     session: AsyncSession = Depends(get_async_session),
 ):
+    if month is not None:
+        # Refuse before any date math or occurrence walk: a month at the ends
+        # of the calendar used to overflow into a 500, and a far future month
+        # kept the worker counting for minutes. Compared by year, since the
+        # grid ignores the day (#598).
+        today = app_today()
+        if abs(month.year - today.year) > _MAX_CALENDAR_MONTH_YEARS:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"month must be within {_MAX_CALENDAR_MONTH_YEARS} years of today"
+                ),
+            )
     return await get_transaction_calendar(
         session,
         ctx.workspace.id,
@@ -298,7 +407,9 @@ async def export_transactions(
     status: Optional[str] = Query(None),
     exclude_ignored: bool = Query(False, description="Drop rows the user marked ignored, or whose category is ignored"),
     flagged: bool = Query(False, description="Export only rows the user flagged"),
+    unpaid_only: bool = Query(False, description="Export only rows not yet marked as paid (issue #15)"),
     flag_due: Optional[FlagDue] = Query(None, description="Flagged rows past their reminder date (overdue) or due within a week (soon)"),
+    unread_only: bool = Query(False, description="Export only rows nobody has reviewed yet (issue #636)"),
     tags: Optional[List[str]] = Query(None),
     transaction_ids: Optional[List[uuid.UUID]] = Query(None, description="If set, exports exactly these rows (scoped to the workspace); other filters are ignored."),
     ctx: WorkspaceContext = Depends(current_workspace),
@@ -326,6 +437,8 @@ async def export_transactions(
             exclude_ignored=exclude_ignored,
             flagged_only=flagged,
             flag_due=flag_due,
+            unpaid_only=unpaid_only,
+            unread_only=unread_only,
             tags=tags,
         )
 
@@ -463,8 +576,8 @@ async def create_transfer(
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="transfer_pair cannot be null")
 
         return TransferRead(
-            debit=_tag_fx_fallback(TransactionRead.model_validate(debit_full, from_attributes=True), primary_currency),
-            credit=_tag_fx_fallback(TransactionRead.model_validate(credit_full, from_attributes=True), primary_currency),
+            debit=await _read_in_viewer_currency(session, primary_currency, debit_full),
+            credit=await _read_in_viewer_currency(session, primary_currency, credit_full),
             transfer_pair_id=debit_tx.transfer_pair_id,
         )
     except ValueError as e:
@@ -490,8 +603,8 @@ async def link_transfer(
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="transfer_pair cannot be null")
 
         return TransferRead(
-            debit=_tag_fx_fallback(TransactionRead.model_validate(debit_full, from_attributes=True), primary_currency),
-            credit=_tag_fx_fallback(TransactionRead.model_validate(credit_full, from_attributes=True), primary_currency),
+            debit=await _read_in_viewer_currency(session, primary_currency, debit_full),
+            credit=await _read_in_viewer_currency(session, primary_currency, credit_full),
             transfer_pair_id=debit_tx.transfer_pair_id,
         )
     except ValueError as e:
@@ -519,8 +632,8 @@ async def create_counterpart(
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="transfer_pair cannot be null")
 
         return TransferRead(
-            debit=_tag_fx_fallback(TransactionRead.model_validate(debit_full, from_attributes=True), primary_currency),
-            credit=_tag_fx_fallback(TransactionRead.model_validate(credit_full, from_attributes=True), primary_currency),
+            debit=await _read_in_viewer_currency(session, primary_currency, debit_full),
+            credit=await _read_in_viewer_currency(session, primary_currency, credit_full),
             transfer_pair_id=debit_tx.transfer_pair_id,
         )
     except ValueError as e:
@@ -542,11 +655,9 @@ async def get_transfer_candidates(
     candidates = await transaction_service.get_transfer_candidates(
         session, ctx.workspace.id, transaction_id, limit=limit, window_days=window_days
     )
-    primary_currency = ctx.user.primary_currency
-    return [
-        _tag_fx_fallback(TransactionRead.model_validate(tx, from_attributes=True), primary_currency)
-        for tx in candidates
-    ]
+    return await _read_all_in_viewer_currency(
+        session, ctx.user.primary_currency, candidates
+    )
 
 
 @router.get("/{transaction_id}/transfer-pair", response_model=Optional[TransactionRead])
@@ -564,9 +675,7 @@ async def get_transfer_pair(
     )
     if not pair:
         return None
-    return _tag_fx_fallback(
-        TransactionRead.model_validate(pair, from_attributes=True), ctx.user.primary_currency
-    )
+    return await _read_in_viewer_currency(session, ctx.user.primary_currency, pair)
 
 
 @router.get("/{transaction_id}", response_model=TransactionRead)
@@ -579,7 +688,7 @@ async def get_transaction(
     if not transaction:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Transaction not found")
     primary_currency = ctx.user.primary_currency
-    return _tag_fx_fallback(TransactionRead.model_validate(transaction, from_attributes=True), primary_currency)
+    return await _read_in_viewer_currency(session, primary_currency, transaction)
 
 
 @router.post("/installments", response_model=list[TransactionRead], status_code=status.HTTP_201_CREATED)
@@ -594,13 +703,13 @@ async def create_installment_series(
         created = await transaction_service.create_installment_series(
             session, ctx.workspace.id, ctx.user_id, data
         )
+    except UnsupportedCurrency as e:
+        raise HTTPException(status_code=422, detail=str(e))
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
-    primary_currency = ctx.user.primary_currency
-    return [
-        _tag_fx_fallback(TransactionRead.model_validate(tx, from_attributes=True), primary_currency)
-        for tx in created
-    ]
+    return await _read_all_in_viewer_currency(
+        session, ctx.user.primary_currency, created
+    )
 
 
 @router.post("", response_model=TransactionRead, status_code=status.HTTP_201_CREATED)
@@ -615,7 +724,9 @@ async def create_transaction(
         )
         full_tx = await transaction_service.get_transaction(session, transaction.id, ctx.workspace.id)
         primary_currency = ctx.user.primary_currency
-        return _tag_fx_fallback(TransactionRead.model_validate(full_tx, from_attributes=True), primary_currency)
+        return await _read_in_viewer_currency(session, primary_currency, full_tx)
+    except (MoneyOutOfRange, UnsupportedCurrency) as e:
+        raise HTTPException(status_code=422, detail=str(e))
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
@@ -631,13 +742,17 @@ async def update_transaction(
         transaction = await transaction_service.update_transaction(
             session, transaction_id, ctx.workspace.id, ctx.user_id, data
         )
+    except PermissionError as e:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
+    except (MoneyOutOfRange, UnsupportedCurrency) as e:
+        raise HTTPException(status_code=422, detail=str(e))
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     if not transaction:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Transaction not found")
     transaction = await transaction_service.get_transaction(session, transaction.id, ctx.workspace.id)
     primary_currency = ctx.user.primary_currency
-    return _tag_fx_fallback(TransactionRead.model_validate(transaction, from_attributes=True), primary_currency)
+    return await _read_in_viewer_currency(session, primary_currency, transaction)
 
 
 @router.patch("/{transaction_id}/ignore", response_model=TransactionRead)
@@ -655,7 +770,35 @@ async def toggle_ignore_transaction(
     if not transaction:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Transaction not found")
     primary_currency = ctx.user.primary_currency
-    return _tag_fx_fallback(TransactionRead.model_validate(transaction, from_attributes=True), primary_currency)
+    return await _read_in_viewer_currency(session, primary_currency, transaction)
+
+
+@router.patch("/{transaction_id}/read", response_model=TransactionRead)
+async def mark_transaction_read(
+    transaction_id: uuid.UUID,
+    ctx: WorkspaceContext = Depends(current_writable_workspace),
+    session: AsyncSession = Depends(get_async_session),
+):
+    """Clear the "new" marker of one transaction (issue #636). Idempotent."""
+    transaction = await transaction_service.mark_transaction_read(
+        session, transaction_id, ctx.workspace.id
+    )
+    if not transaction:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Transaction not found")
+    primary_currency = ctx.user.primary_currency
+    return await _read_in_viewer_currency(session, primary_currency, transaction)
+
+
+@router.post("/read-all", response_model=MarkAllReadResult)
+async def mark_all_transactions_read(
+    ctx: WorkspaceContext = Depends(current_writable_workspace),
+    session: AsyncSession = Depends(get_async_session),
+):
+    """Mark every unread transaction of the workspace as read (issue #636)."""
+    updated = await transaction_service.mark_all_transactions_read(
+        session, ctx.workspace.id
+    )
+    return MarkAllReadResult(updated=updated)
 
 
 @router.post("/{transaction_id}/post-today", response_model=TransactionRead)
@@ -679,7 +822,7 @@ async def post_transaction_today(
     if not transaction:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Transaction not found")
     primary_currency = ctx.user.primary_currency
-    return _tag_fx_fallback(TransactionRead.model_validate(transaction, from_attributes=True), primary_currency)
+    return await _read_in_viewer_currency(session, primary_currency, transaction)
 
 
 @router.patch("/{transaction_id}/unlink-recurring", response_model=TransactionRead)
@@ -697,7 +840,7 @@ async def unlink_recurring_transaction(
             detail="Transaction not found or not linked to a recurring bill",
         )
     primary_currency = ctx.user.primary_currency
-    return _tag_fx_fallback(TransactionRead.model_validate(transaction, from_attributes=True), primary_currency)
+    return await _read_in_viewer_currency(session, primary_currency, transaction)
 
 
 @router.delete("/{transaction_id}", status_code=status.HTTP_204_NO_CONTENT)

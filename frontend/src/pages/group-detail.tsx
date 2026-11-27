@@ -33,6 +33,7 @@ import {
   type GroupSettlementPayload,
 } from '@/lib/api'
 import { localDateString } from '@/lib/date-utils'
+import { extractApiError } from '@/lib/api-errors'
 import { MemberForm } from '@/components/member-form'
 import { useAuth } from '@/contexts/auth-context'
 import { useWorkspace } from '@/contexts/workspace-context'
@@ -150,6 +151,14 @@ function KpiCard({
       )}
     </div>
   )
+}
+
+/** What group paybacks leave of a transaction to link. A credit they already
+ * cover up to its amount cannot take another one: the API refuses past it. */
+function linkableAmount(tx: Transaction): number {
+  const settled = (tx.settled_by ?? []).reduce((sum, s) => sum + Number(s.amount), 0)
+  // In cents: the subtraction must not leave float noise in what is shown or saved.
+  return Math.max(0, Math.round((Number(tx.amount) - settled) * 100) / 100)
 }
 
 export default function GroupDetailPage() {
@@ -329,13 +338,16 @@ export default function GroupDetailPage() {
     return () => clearTimeout(id)
   }, [settleTxSearch])
 
-  // The payer's debit transactions, searched server-side and capped —
-  // offered when linking an existing transaction instead of creating one.
+  // Transactions to link instead of creating one, searched server-side and
+  // capped: the payer's debits, or the credit that already arrived when the
+  // viewer is the one being paid.
+  const settleAsReceiver =
+    !!group?.is_owner && !!viewerMember && settleTo === viewerMember.id && settleFrom !== viewerMember.id
   const { data: settleTxOptions } = useQuery({
-    queryKey: ['settle-tx-options', settleTxQuery],
+    queryKey: ['settle-tx-options', settleTxQuery, settleAsReceiver],
     queryFn: () =>
       transactionsApi.list({
-        type: 'debit',
+        type: settleAsReceiver ? 'credit' : 'debit',
         q: settleTxQuery || undefined,
         limit: 20,
         sort_by: 'date',
@@ -343,6 +355,10 @@ export default function GroupDetailPage() {
       }),
     enabled: settleOpen && settleTxMode === 'existing',
   })
+  // A credit the group already paid back in full has nothing left to link.
+  const settleTxChoices = (settleTxOptions?.items ?? []).filter(
+    (tx) => linkableAmount(tx) > 0,
+  )
 
   const settlementMutation = useMutation({
     mutationFn: (payload: GroupSettlementPayload) =>
@@ -354,11 +370,8 @@ export default function GroupDetailPage() {
       toast.success(t('splitGroups.settled'))
     },
     onError: (err: unknown) => {
-      const detail =
-        err && typeof err === 'object' && 'response' in err
-          ? (err as { response?: { data?: { detail?: string } } }).response?.data?.detail
-          : undefined
-      toast.error(detail ?? t('common.error'))
+      // The API answers in English; the toast follows the user's language.
+      toast.error(extractApiError(err, t('common.error')))
     },
   })
 
@@ -407,7 +420,7 @@ export default function GroupDetailPage() {
     if (settleTxMode === 'create' && settleAccountId) {
       payload.account_id = settleAccountId
     } else if (settleTxMode === 'existing' && settlePickedTx) {
-      payload.transaction_id = settlePickedTx.id
+      payload[settleAsReceiver ? 'receiver_transaction_id' : 'transaction_id'] = settlePickedTx.id
     }
     settlementMutation.mutate(payload)
   }
@@ -993,7 +1006,12 @@ export default function GroupDetailPage() {
               <select
                 className="w-full border border-border rounded-md px-3 py-2 text-sm bg-card"
                 value={settleTo}
-                onChange={(e) => setSettleTo(e.target.value)}
+                onChange={(e) => {
+                  setSettleTo(e.target.value)
+                  setSettleTxMode('none')
+                  setSettlePickedTx(null)
+                  setSettleTxSearch('')
+                }}
               >
                 <option value="">{t('splitGroups.selectMember')}</option>
                 {group.members.map((m) => (
@@ -1008,7 +1026,7 @@ export default function GroupDetailPage() {
                 will back this settlement. When linking an existing
                 transaction, the amount/currency/date below mirror that
                 transaction and lock so the two records can't disagree. */}
-            {viewerIsPayer && (
+            {(viewerIsPayer || settleAsReceiver) && (
                 <div className="space-y-2">
                   <Label>{t('splitGroups.txAction')}</Label>
                   <select
@@ -1022,7 +1040,9 @@ export default function GroupDetailPage() {
                     }}
                   >
                     <option value="none">{t('splitGroups.txActionNone')}</option>
-                    <option value="create">{t('splitGroups.txActionCreate')}</option>
+                    {viewerIsPayer && (
+                      <option value="create">{t('splitGroups.txActionCreate')}</option>
+                    )}
                     <option value="existing">{t('splitGroups.txActionExisting')}</option>
                   </select>
                   {settleTxMode === 'create' && (
@@ -1053,13 +1073,14 @@ export default function GroupDetailPage() {
                         placeholder={t('splitGroups.searchTransaction')}
                       />
                       <div className="max-h-44 overflow-y-auto rounded-md border border-border divide-y divide-border">
-                        {(settleTxOptions?.items ?? []).length === 0 ? (
+                        {settleTxChoices.length === 0 ? (
                           <p className="text-xs text-muted-foreground px-3 py-4 text-center">
                             {t('splitGroups.noTransactions')}
                           </p>
                         ) : (
-                          (settleTxOptions?.items ?? []).map((tx) => {
+                          settleTxChoices.map((tx) => {
                             const picked = settlePickedTx?.id === tx.id
+                            const linkable = linkableAmount(tx)
                             return (
                               <button
                                 key={tx.id}
@@ -1068,8 +1089,9 @@ export default function GroupDetailPage() {
                                   // Picking an existing transaction *as* the
                                   // settlement: align amount, currency and
                                   // date so the two records can't disagree.
+                                  // Only what paybacks leave is still free.
                                   setSettlePickedTx(tx)
-                                  setSettleAmount(Number(tx.amount).toFixed(2))
+                                  setSettleAmount(linkable.toFixed(2))
                                   setSettleCurrency(tx.currency)
                                   setSettleDate(tx.date)
                                 }}
@@ -1082,13 +1104,21 @@ export default function GroupDetailPage() {
                                   {tx.description}
                                 </span>
                                 <span className="shrink-0 tabular-nums text-muted-foreground">
-                                  {tx.amount} {tx.currency}
+                                  {linkable === Number(tx.amount)
+                                    ? tx.amount
+                                    : `${linkable} / ${tx.amount}`}{' '}
+                                  {tx.currency}
                                 </span>
                               </button>
                             )
                           })
                         )}
                       </div>
+                      {settleAsReceiver && (
+                        <p className="text-xs text-muted-foreground">
+                          {t('splitGroups.linkableHint')}
+                        </p>
+                      )}
                       {settlePickedTx && (
                         <p className="text-xs text-muted-foreground truncate">
                           {t('splitGroups.selectedTransaction')}: {settlePickedTx.date} ·{' '}
@@ -1107,7 +1137,8 @@ export default function GroupDetailPage() {
                   step="0.01"
                   value={settleAmount}
                   onChange={(e) => setSettleAmount(e.target.value)}
-                  disabled={settleTxMode === 'existing'}
+                  // One transfer can pay back for several people.
+                  disabled={settleTxMode === 'existing' && !settleAsReceiver}
                 />
               </div>
               <div className="space-y-2">

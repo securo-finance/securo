@@ -1,6 +1,7 @@
 from app.models.user import User
 from app.models.access_token import AccessToken
 from app.models.passkey import UserPasskey
+from app.models.user_quota import UserQuota
 from app.models.workspace import Workspace, WorkspaceMember, WorkspaceTaxId
 from app.models.category import Category
 from app.models.category_group import CategoryGroup
@@ -12,7 +13,7 @@ from app.models.account_reserved_balance import AccountReservedBalance
 from app.models.transaction import Transaction
 from app.models.rule import Rule
 from app.models.workspace_plugin import WorkspacePlugin
-from app.models.plugin_connection import PluginConnection
+from app.models.plugin_connection import PluginConnection, PluginConnectionRoutine
 from app.models.plugin_logo import PluginLogo
 from app.models.ui_layout import UiLayout
 from app.models.recurring_transaction import RecurringTransaction
@@ -24,8 +25,11 @@ from app.models.asset_transaction import AssetTransaction
 from app.models.asset_value import AssetValue
 from app.models.fx_rate import FxRate
 from app.models.transaction_attachment import TransactionAttachment
+from app.models.document_extraction import DocumentExtraction, WorkspaceDocumentAiSettings
+from app.models.notification import Notification, NotificationDelivery, NotificationPreference
 from app.models.payee import Payee, PayeeMapping, PayeeTaxId
 from app.models.app_settings import AppSetting
+from app.models.admin_access_log import AdminAccessLog, AdminAccessLogViewer
 from app.models.goal import Goal
 from app.models.credit_card_bill import CreditCardBill
 from app.models.group import Group, GroupMember
@@ -58,9 +62,15 @@ from app.models.reconciliation import (
 from app.core import workspace_autostamp  # noqa: F401, E402
 
 __all__ = [
+    "DocumentExtraction",
+    "Notification",
+    "NotificationDelivery",
+    "NotificationPreference",
+    "WorkspaceDocumentAiSettings",
     "AccessToken",
     "User",
     "UserPasskey",
+    "UserQuota",
     "Workspace",
     "WorkspaceMember",
     "WorkspaceTaxId",
@@ -75,6 +85,7 @@ __all__ = [
     "Rule",
     "WorkspacePlugin",
     "PluginConnection",
+    "PluginConnectionRoutine",
     "PluginLogo",
     "UiLayout",
     "RecurringTransaction",
@@ -90,6 +101,8 @@ __all__ = [
     "PayeeMapping",
     "PayeeTaxId",
     "AppSetting",
+    "AdminAccessLog",
+    "AdminAccessLogViewer",
     "Goal",
     "CreditCardBill",
     "Group",

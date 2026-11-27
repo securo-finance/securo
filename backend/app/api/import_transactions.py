@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, s
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_async_session
+from app.core.money import MoneyOutOfRange
 from app.core.workspace_context import (
     WorkspaceContext,
     current_workspace,
@@ -40,6 +41,17 @@ async def preview_import(
 ):
     content = await file.read()
     filename = file.filename or ""
+
+    # A PDF or a photo is not a format this parser reads. Without this, the
+    # fallback below took a PDF for an empty QIF and answered 0 rows, no error.
+    if import_service.is_document_file(filename, content):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                "PDF and image files are not statement formats. Export the statement as OFX, CSV, QIF "
+                "or CAMT, or turn on document reading (an LLM connection under Agents) to read it with a model."
+            ),
+        )
 
     logger.info(
         "Import preview requested: filename=%s, size=%d bytes, content_type=%s",
@@ -161,11 +173,59 @@ async def import_transactions(
     if not account:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Account not found")
 
-    imported, skipped, excluded, import_log_id = await import_service.import_transactions(
-        session, ctx.workspace.id, ctx.user_id, data.account_id, data.transactions, "import",
-        filename=data.filename, detected_format=data.detected_format,
-        detect_duplicates=data.detect_duplicates,
-    )
+    if data.document_extraction_id is not None:
+        from app.services import document_ai_settings_service, document_extraction_service
+
+        if not document_ai_settings_service.document_ai_available():
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document reading is not enabled")
+        try:
+            await document_extraction_service.require_statement_ready(
+                session, ctx.workspace.id, data.document_extraction_id,
+            )
+        except document_extraction_service.ExtractionError as exc:
+            raise HTTPException(status_code=exc.status, detail={"code": exc.code, "message": exc.message})
+
+    before_commit = None
+    if data.document_extraction_id is not None:
+        extraction_id = data.document_extraction_id
+
+        async def before_commit(import_log_id):
+            # Same commit as the rows: the read is marked imported only if
+            # they landed, and they land only with it marked.
+            await document_extraction_service.mark_statement_confirmed(
+                session,
+                workspace_id=ctx.workspace.id,
+                user_id=ctx.user_id,
+                extraction_id=extraction_id,
+                account_id=data.account_id,
+                import_log_id=import_log_id,
+                rows=data.transactions,
+                commit=False,
+            )
+
+    try:
+        imported, skipped, excluded, import_log_id = await import_service.import_transactions(
+            session, ctx.workspace.id, ctx.user_id, data.account_id, data.transactions, "import",
+            filename=data.filename, detected_format=data.detected_format,
+            detect_duplicates=data.detect_duplicates,
+            before_commit=before_commit,
+        )
+    except import_service.ImportCategoryNotFound as e:
+        # Checked before anything is written: the whole batch is refused.
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except MoneyOutOfRange as e:
+        # A row whose conversion does not fit the column (issue #422): the
+        # import commits once at the end, so nothing of it was saved.
+        raise HTTPException(status_code=422, detail=str(e))
+    except Exception as e:
+        # Another import of the same document won the race: nothing of this
+        # one was committed; drop it and say so.
+        from app.services.document_extraction_service import ExtractionError
+
+        if not isinstance(e, ExtractionError):
+            raise
+        await session.rollback()
+        raise HTTPException(status_code=e.status, detail={"code": e.code, "message": e.message})
 
     return {
         "imported": imported,

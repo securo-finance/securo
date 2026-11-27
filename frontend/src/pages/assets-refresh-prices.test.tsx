@@ -90,12 +90,22 @@ describe('Assets price refresh for the whole portfolio (issue #778)', () => {
     // lands in another one.
     await waitFor(() => expect(api.assets.refreshPrices).toHaveBeenCalledWith('ws-1'))
     await waitFor(() =>
-      expect(toast.success).toHaveBeenCalledWith(
-        t('assets.refreshAllPricesDone', { refreshed: 3, skipped: 1 }),
-      ),
+      expect(toast.success).toHaveBeenCalledWith('3 prices updated, 1 without a new quote'),
     )
     // The list is refetched so the rows show the new prices.
     await waitFor(() => expect(api.assets.list).toHaveBeenCalledTimes(2))
+  })
+
+  it('reads a single updated price in the singular', async () => {
+    api.assets.refreshPrices.mockResolvedValue({ refreshed: 1, skipped: 0, rate_limited: 0 })
+    renderWithProviders(<AssetsPage />)
+
+    const button = await screen.findByRole('button', { name: t('assets.refreshAllPrices') })
+    button.click()
+
+    await waitFor(() =>
+      expect(toast.success).toHaveBeenCalledWith('1 price updated, 0 without a new quote'),
+    )
   })
 
   it('shows the price the refresh wrote', async () => {
@@ -151,7 +161,7 @@ describe('Assets price refresh for the whole portfolio (issue #778)', () => {
 
     await waitFor(() =>
       expect(toast.error).toHaveBeenCalledWith(
-        t('assets.refreshAllPricesRateLimited', { refreshed: 2, skipped: 1 }),
+        'Market data is rate-limiting right now. Before it stopped: 2 prices updated, 1 skipped. Try again in a minute.',
       ),
     )
     expect(await screen.findByText('$11.00')).toBeInTheDocument()

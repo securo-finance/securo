@@ -257,6 +257,46 @@ async def test_mcp_tools_call_runs_real_tool(test_user, monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_mcp_tools_call_logs_a_bad_enum_value_without_a_traceback(
+    test_user, monkeypatch, caplog
+):
+    """An argument value the filter does not know is expected input, not a
+    server bug. It comes back as an isError result naming the values that
+    work, and the log line carries no traceback."""
+    import logging
+
+    from tests.conftest import TestSessionLocal
+    import mcp_server.main as mcp_main
+
+    monkeypatch.setattr(mcp_main, "async_session_maker", TestSessionLocal)
+    caplog.set_level(logging.INFO, logger="mcp_server.main")
+
+    async with _client() as cli:
+        r = await cli.post(
+            "/mcp",
+            json={
+                "jsonrpc": "2.0",
+                "id": 11,
+                "method": "tools/call",
+                "params": {
+                    "name": "list_transactions",
+                    "arguments": {"tx_type": "transfer"},
+                },
+            },
+            headers=_auth_headers(test_user.id),
+        )
+    result = r.json()["result"]
+    assert result["isError"] is True
+    assert "debit, credit, expense, income" in result["content"][0]["text"]
+
+    rejected = [rec for rec in caplog.records if "rejected an argument" in rec.getMessage()]
+    assert len(rejected) == 1
+    assert rejected[0].levelno == logging.INFO
+    assert rejected[0].exc_info is None
+    assert [rec for rec in caplog.records if "MCP tool failure" in rec.getMessage()] == []
+
+
+@pytest.mark.asyncio
 async def test_mcp_list_rules_returns_advanced_rule_definition(
     session, test_user, test_workspace, test_categories, monkeypatch
 ):

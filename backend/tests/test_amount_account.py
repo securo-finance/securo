@@ -600,3 +600,65 @@ async def test_clearing_a_typed_conversion_with_no_rate_leaves_the_row_unconvert
     await session.refresh(tx)
     assert (tx.amount_account, tx.amount_account_source) == (None, None)
     assert await _balance(client, auth_headers, account_id) == Decimal("0.00")
+
+
+@pytest.mark.asyncio
+async def test_a_provider_amount_correction_drops_a_typed_conversion(
+    session: AsyncSession, test_user: User, test_account: Account, rates
+):
+    """The typed conversion was for the old amount (ADR 0031)."""
+    tx = _bank_row(
+        test_user, test_account, raw_data={"id": "ext-1"},
+        amount_primary=Decimal("560.00"), fx_rate_used=Decimal("5.6"),
+        amount_primary_typed=Decimal("560.00"), amount_primary_typed_currency="BRL",
+    )
+    session.add(tx)
+    await session.flush()
+
+    def _data(amount: str) -> TransactionData:
+        return TransactionData(
+            external_id="ext-1", description="Online store", amount=Decimal(amount),
+            date=ON, type="debit", currency="USD",
+        )
+
+    provider = MagicMock(spec=BankProvider)
+    provider.parse_raw_transaction.return_value = _data("100.00")
+    await _refresh_provider_values(
+        session, provider, tx, _data("80.00"),
+        payee_source="auto", account_currency="BRL", user_currency="BRL",
+    )
+    assert tx.amount == Decimal("80.00")
+    assert (tx.amount_primary_typed, tx.amount_primary_typed_currency) == (None, None)
+
+
+@pytest.mark.asyncio
+async def test_a_provider_type_only_correction_keeps_a_typed_conversion(
+    session: AsyncSession, test_user: User, test_account: Account, rates
+):
+    """Only amount, currency, date or account drop a typed conversion (ADR 0031)."""
+    tx = _bank_row(
+        test_user, test_account, raw_data={"id": "ext-1"},
+        amount_primary=Decimal("560.00"), fx_rate_used=Decimal("5.6"),
+        amount_primary_typed=Decimal("560.00"), amount_primary_typed_currency="BRL",
+    )
+    tx.type = "credit"
+    session.add(tx)
+    await session.flush()
+
+    def _data(kind: str) -> TransactionData:
+        return TransactionData(
+            external_id="ext-1", description="Online store", amount=Decimal("100.00"),
+            date=ON, type=kind, currency="USD",
+        )
+
+    provider = MagicMock(spec=BankProvider)
+    provider.parse_raw_transaction.return_value = _data("credit")
+    await _refresh_provider_values(
+        session, provider, tx, _data("debit"),
+        payee_source="auto", account_currency="BRL", user_currency="BRL",
+    )
+    assert (tx.type, tx.amount) == ("debit", Decimal("100.00"))
+    assert (tx.amount_primary, tx.fx_rate_used) == (Decimal("560.00"), Decimal("5.6"))
+    assert (tx.amount_primary_typed, tx.amount_primary_typed_currency) == (
+        Decimal("560.00"), "BRL",
+    )

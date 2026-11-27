@@ -30,6 +30,23 @@ export function todayInTimezone(timeZone?: string | null, now = new Date()) {
   }
 }
 
+// Tick labels for a chart over yyyy-MM-dd points. Month and year are enough
+// when every point sits in a month of its own; once two points share a month
+// (daily values, a portfolio started this month) that label would repeat on
+// the axis ("Nov 26, Nov 26, Nov 26"), so the day is shown, and the year only
+// when the points cross one.
+export function dateTickFormatter(dates: string[], locale: string) {
+  const months = new Set(dates.map((d) => d.slice(0, 7)))
+  const years = new Set(dates.map((d) => d.slice(0, 4)))
+  const options: Intl.DateTimeFormatOptions =
+    months.size === dates.length
+      ? { month: 'short', year: '2-digit' }
+      : years.size > 1
+        ? { day: 'numeric', month: 'short', year: '2-digit' }
+        : { day: 'numeric', month: 'short' }
+  return (value: string) => new Date(value + 'T00:00:00').toLocaleDateString(locale, options)
+}
+
 // Short weekday names for a Sunday-start calendar header. The reference week is
 // anchored in UTC, so it has to be formatted in UTC as well — otherwise a viewer
 // behind UTC reads each instant as the previous day and every label shifts one

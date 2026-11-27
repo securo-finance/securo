@@ -16,6 +16,7 @@ from app.core.app_clock import is_valid_timezone
 from app.core.auth import current_active_user, get_user_manager, UserManager
 from app.core.auth_policy import local_auth_enabled, require_local_auth_enabled
 from app.core.database import get_async_session
+from app.core.row_security import bind_workspace
 from app.core.workspace_context import WorkspaceContext, current_workspace
 from app.models.user import User
 from app.models.workspace import Workspace, WorkspaceMember
@@ -27,7 +28,12 @@ from app.schemas.workspace import (
     WorkspaceRead,
     WorkspaceUpdate,
 )
-from app.services import module_service, workspace_service
+from app.services import (
+    account_lookup_service,
+    module_service,
+    quota_service,
+    workspace_service,
+)
 from app.services.primary_restamp_service import (
     fetch_missing_today_rates,
     restamp_user_primary_amounts,
@@ -209,12 +215,13 @@ async def invite_member(
         session, workspace_id, user.id, min_role="owner"
     )
 
-    # Find existing user by email (case-insensitive — fastapi-users
-    # stores email lowercased on register, but be safe).
-    existing = await session.execute(
-        select(User).where(User.email == body.email.lower())
-    )
-    target = existing.scalar_one_or_none()
+    # Find the account without regard to case, the way sign-in resolves the
+    # address: an account stored as `Ana@example.com` must be found when the
+    # owner invites `ana@example.com`, or the invite would try to create a
+    # second account for the same mailbox (#556). One resolver for every
+    # address, so an instance that still holds two rows for it (#568) adds the
+    # person instead of answering 500.
+    target = await account_lookup_service.find_account_by_email(session, body.email)
 
     if target is None:
         # Brand-new user — creating the account here mints a local password,
@@ -236,6 +243,10 @@ async def invite_member(
                 status_code=400,
                 detail="User not found. Provide a password to create them.",
             )
+        # Creating the account commits on its own, so the member limit is
+        # checked first: a refusal after it would leave a user with no
+        # workspace who can sign in with the password typed here.
+        await quota_service.check_new_member(session, workspace_id, None)
         try:
             create_payload = fu_schemas.BaseUserCreate(
                 email=body.email,
@@ -262,14 +273,26 @@ async def invite_member(
             await workspace_service.create_personal_workspace_for_user(session, target)
         except Exception as e:
             raise HTTPException(status_code=400, detail=f"Could not create user: {e}")
+        created_user_id = target.id
+    else:
+        created_user_id = None
 
-    member = await workspace_service.add_member(
-        session,
-        workspace_id=workspace_id,
-        user_id=target.id,
-        role=body.role,
-        invited_by_user_id=user.id,
-    )
+    try:
+        member = await workspace_service.add_member(
+            session,
+            workspace_id=workspace_id,
+            user_id=target.id,
+            role=body.role,
+            invited_by_user_id=user.id,
+        )
+    except HTTPException:
+        # The seat can go to a parallel invite between the check above and
+        # this one; the account made for this invite goes with the refusal.
+        if created_user_id is not None:
+            await session.rollback()
+            await workspace_service.drop_unattached_account(session, created_user_id)
+            await session.commit()
+        raise
     await session.commit()
     return MemberRead(
         id=member.id,
@@ -322,6 +345,7 @@ async def workspace_stats(
 ):
     """KPIs surfaced on the settings page (members / accounts / transactions)."""
     await workspace_service.require_membership(session, workspace_id, user.id)
+    await bind_workspace(session, workspace_id, user.id)
     return await workspace_service.get_workspace_stats(session, workspace_id)
 
 

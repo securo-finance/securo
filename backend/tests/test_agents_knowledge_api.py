@@ -167,3 +167,30 @@ async def test_delete_knowledge_404_for_unknown_doc(client, auth_headers, test_u
         f"/api/agents/{aid}/knowledge/{uuid.uuid4()}", headers=auth_headers
     )
     assert r.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_upload_knowledge_marks_failed_when_celery_dispatch_fails(
+    client, auth_headers, test_user, _stub_celery_dispatch
+):
+    """If Celery dispatch raises, mark_status commits & refreshes the doc so
+    upload_knowledge returns 201 with status='failed' instead of 500."""
+    aid = await _make_agent(client, auth_headers)
+    _stub_celery_dispatch.side_effect = RuntimeError("broker down")
+
+    r = await client.post(
+        f"/api/agents/{aid}/knowledge",
+        files={"file": ("broken.md", io.BytesIO(b"# Hello"), "text/markdown")},
+        headers=auth_headers,
+    )
+    assert r.status_code == 201, r.text
+    body = r.json()
+    assert body["status"] == "failed"
+    assert body["error"] == "celery dispatch failed"
+    assert body["updated_at"] is not None
+
+    listed = (await client.get(f"/api/agents/{aid}/knowledge", headers=auth_headers)).json()
+    assert listed["total"] == 1
+    assert listed["items"][0]["id"] == body["id"]
+    assert listed["items"][0]["status"] == "failed"
+    assert listed["items"][0]["error"] == "celery dispatch failed"

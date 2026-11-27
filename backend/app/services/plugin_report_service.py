@@ -14,7 +14,7 @@ from collections import defaultdict
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 
 from sqlalchemy import case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -41,6 +41,7 @@ from app.services._query_filters import (
 )
 from app.services.rule_service import resolve_default_category_keys
 from app.services.admin_service import get_credit_card_accounting_mode
+from app.services.viewer_currency import viewer_currency
 
 #: The key a group's row takes when it has none (no category, no payee).
 NONE_KEY = "none"
@@ -72,9 +73,13 @@ class ReportResult:
 
 
 async def installed_report(
-    session: AsyncSession, workspace_id: uuid.UUID, plugin_id: str, key: str
+    session: AsyncSession,
+    workspace_id: uuid.UUID,
+    plugin_id: str,
+    key: str,
+    kind: Literal["reports", "widgets"] = "reports",
 ) -> tuple[WorkspacePlugin, Manifest, Report]:
-    """The report as the workspace installed it (never from the catalog)."""
+    """The report, or dashboard widget (ADR 0034), as the workspace installed it: never from the catalog."""
     record = await session.scalar(
         select(WorkspacePlugin).where(
             WorkspacePlugin.workspace_id == workspace_id, WorkspacePlugin.plugin_id == plugin_id
@@ -83,7 +88,7 @@ async def installed_report(
     if record is None or not record.manifest:
         raise PluginReportNotFound
     manifest = parse_manifest(record.manifest)
-    report = next((r for r in manifest.contributes.reports if r.key == key), None)
+    report = next((r for r in getattr(manifest.contributes, kind) if r.key == key), None)
     if report is None:
         raise PluginReportNotFound
     return record, manifest, report
@@ -258,7 +263,7 @@ async def run_report(
     report_date = reporting_date_col(accounting_mode)
     end = min(end, app_today())
 
-    amount = line_primary_or_amount()
+    amount = line_primary_or_amount(await viewer_currency(session, currency))
     if report.measure == "expenses":
         types: tuple[str, ...] = ("debit",)
         value = func.abs(amount)
@@ -380,7 +385,8 @@ async def _transactions_input(
     viewer's part of it, so a code report adds up what the native figures
     count. A row the viewer paid with a group split counts only the viewer's
     share (the other members' shares come off, as in `run_report`); any
-    other row counts whole, and `amount_primary` stays as stored.
+    other row counts whole. `amount_primary` is read in the viewer's currency,
+    so another member's stamp is converted like everywhere else (ADR 0032).
     """
     from app.models.transaction_category_line import TransactionCategoryLine
     from app.models.transaction_split import TransactionSplit
@@ -433,12 +439,16 @@ async def _transactions_input(
             if member_id not in viewer_member_ids:
                 others_by_tx[tx_id] += Decimal(str(share or 0))
 
+    viewer = await viewer_currency(session, primary_currency)
     rates: dict[tuple[str, date], Optional[Decimal]] = {}
     out: list[dict[str, Any]] = []
     for (
         tx_id, day, description, amount, kind, currency, amount_primary, category_id, account_id, payee,
         status, source, ignored, owner_id, tx_date,
     ) in rows:
+        amount_primary = await viewer.convert(
+            session, owner_id, amount_primary, tx_date, currency=currency, amount=amount
+        )
         full = abs(Decimal(str(amount or 0)))
         others = others_by_tx.get(tx_id, Decimal("0")) if owner_id == user_id else Decimal("0")
         my_share = full - others
@@ -533,7 +543,8 @@ async def run_code_report(
 
     The plugin gets only the inputs its manifest names, read for this
     workspace with the period and accounts the viewer picked, and returns a
-    view of blocks; what it returns is checked before anyone sees it.
+    view of blocks; what it returns is checked before anyone sees it. A
+    dashboard widget (ADR 0034) runs the same way through its `widget` method.
     """
     from app.plugins import runner
     from app.plugins.report_view import InvalidView, parse_view
@@ -556,7 +567,7 @@ async def run_code_report(
     if "categories" in report.inputs:
         data["categories"] = await _categories_input(session, workspace_id)
     params = {
-        "report": report.key,
+        report.METHOD: report.key,
         "start_date": start.isoformat(),
         "end_date": end.isoformat(),
         "today": app_today().isoformat(),
@@ -565,11 +576,11 @@ async def run_code_report(
         "account_ids": [str(a) for a in account_ids] if account_ids is not None else None,
         "data": data,
     }
-    securo = {"workspace_id": str(workspace_id), "report": report.key}
+    securo = {"workspace_id": str(workspace_id), report.METHOD: report.key}
 
     async def call() -> Any:
         async with runner.RunnerClient() as client:
-            return await client.call(record.plugin_id, "report", params, securo=securo, commit=record.commit)
+            return await client.call(record.plugin_id, report.METHOD, params, securo=securo, commit=record.commit)
 
     try:
         try:
@@ -584,7 +595,7 @@ async def run_code_report(
     except runner.PluginCallFailed as exc:
         raise CodeReportFailed(f"{exc.kind}: {exc.message}"[:500]) from None
     except runner.RunnerRefused as exc:
-        raise CodeReportUnavailable(f"the plugin runner refused the report ({exc.status})") from None
+        raise CodeReportUnavailable(f"the plugin runner refused the {report.NOUN} ({exc.status})") from None
     except runner.RunnerUnavailable as exc:
         raise CodeReportUnavailable(str(exc)) from None
     try:

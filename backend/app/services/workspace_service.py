@@ -9,10 +9,12 @@ import uuid
 from typing import Optional
 
 from fastapi import HTTPException
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
+from app.core.row_security import bind_workspace
+from app.services import quota_service
 from app.models.user import User
 from app.models.workspace import (
     MANAGER_VIRTUAL_ROLE,
@@ -75,6 +77,7 @@ async def create_personal_workspace_for_user(
     )
     session.add(workspace)
     await session.flush()
+    await bind_workspace(session, workspace.id, user.id)
 
     membership = WorkspaceMember(
         workspace_id=workspace.id,
@@ -234,6 +237,7 @@ async def create_workspace(
     new workspace would force the user to rebuild their taxonomy from
     scratch.
     """
+    await quota_service.check_new_workspace(session, creator.id, kind)
     prefs = creator.preferences or {}
     workspace_locale = locale or prefs.get("language") or "en"
     workspace = Workspace(
@@ -249,6 +253,7 @@ async def create_workspace(
     )
     session.add(workspace)
     await session.flush()
+    await bind_workspace(session, workspace.id, creator.id)
     if self_membership:
         session.add(
             WorkspaceMember(
@@ -331,6 +336,7 @@ async def add_member(
     existing = await get_membership(session, workspace_id, user_id)
     if existing:
         raise HTTPException(status_code=409, detail="User is already a member")
+    await quota_service.check_new_member(session, workspace_id, user_id)
     member = WorkspaceMember(
         workspace_id=workspace_id,
         user_id=user_id,
@@ -342,6 +348,37 @@ async def add_member(
     return member
 
 
+async def drop_unattached_account(session: AsyncSession, user_id: uuid.UUID) -> bool:
+    """Delete an account made for a refused invite, unless it belongs anywhere.
+
+    Once created, the account is visible to other invites: a parallel one in
+    another workspace can add it and commit before this refusal. Deleting it
+    then would cascade away that membership, so the account is removed only
+    while it has no workspace at all. The row lock waits for an insert that
+    references it still in flight, so the count below sees that member.
+    Returns whether the account was deleted; the caller commits.
+    """
+    await session.execute(
+        select(User.id).where(User.id == user_id).with_for_update()
+    )
+    memberships = await session.scalar(
+        select(func.count()).select_from(WorkspaceMember).where(
+            WorkspaceMember.user_id == user_id
+        )
+    )
+    if memberships:
+        return False
+    await session.execute(delete(User).where(User.id == user_id))
+    return True
+
+
+async def _lock_workspace(session: AsyncSession, workspace_id: uuid.UUID) -> None:
+    """Owner changes take turns, with each other and with a user deletion."""
+    await session.execute(
+        select(Workspace.id).where(Workspace.id == workspace_id).with_for_update()
+    )
+
+
 async def update_member_role(
     session: AsyncSession,
     workspace_id: uuid.UUID,
@@ -350,6 +387,7 @@ async def update_member_role(
 ) -> WorkspaceMember:
     if new_role not in WORKSPACE_ROLES:
         raise HTTPException(status_code=400, detail=f"Invalid role: {new_role}")
+    await _lock_workspace(session, workspace_id)
     member = await get_membership(session, workspace_id, user_id)
     if member is None:
         raise HTTPException(status_code=404, detail="Member not found")
@@ -440,6 +478,7 @@ async def remove_member(
     workspace_id: uuid.UUID,
     user_id: uuid.UUID,
 ) -> None:
+    await _lock_workspace(session, workspace_id)
     member = await get_membership(session, workspace_id, user_id)
     if member is None:
         raise HTTPException(status_code=404, detail="Member not found")

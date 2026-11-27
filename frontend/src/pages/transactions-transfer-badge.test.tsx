@@ -13,7 +13,7 @@ import { screen, waitFor } from '@testing-library/react'
 
 import TransactionsPage from '@/pages/transactions'
 import { MobileTransactionRow } from '@/components/mobile-transaction-row'
-import { renderWithProviders } from '@/test/utils'
+import { renderWithProviders, t } from '@/test/utils'
 import type { Account, Transaction } from '@/types'
 
 const api = vi.hoisted(() => ({
@@ -48,9 +48,11 @@ vi.mock('@/lib/api', () => ({
   currencies: api.currencies,
   settings: api.settings,
 }))
-vi.mock('@/hooks/use-mobile', () => ({ useIsMobile: () => false }))
+const viewport = vi.hoisted(() => ({ mobile: false }))
+vi.mock('@/hooks/use-mobile', () => ({ useIsMobile: () => viewport.mobile }))
 vi.mock('@/hooks/use-display-locale', () => ({
   useDisplayLocale: () => 'en-US',
+  useDisplayLocaleSettled: () => true,
   useDateLocale: () => 'en-US',
 }))
 vi.mock('@/hooks/use-privacy-mode', () => ({
@@ -110,6 +112,7 @@ async function renderPage() {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  viewport.mobile = false
   vi.setSystemTime(new Date('2026-10-20T12:00:00'))
   api.transactions.list.mockResolvedValue({ items: rows, total: rows.length, page: 1, limit: 50 })
   api.categories.list.mockResolvedValue([])
@@ -178,5 +181,66 @@ describe('transfer rows in the transactions list', () => {
     // so it works on touch, not only as a hover tooltip.
     expect(screen.getByText('Checking')).toBeInTheDocument()
     expect(screen.getByText('Savings')).toBeInTheDocument()
+  })
+
+  it('offers to make a transaction recurring from the mobile row', async () => {
+    const onMakeRecurring = vi.fn()
+    const { user } = renderWithProviders(
+      <MobileTransactionRow
+        tx={rows[3]}
+        account={undefined}
+        groupName={undefined}
+        selected={false}
+        selectable={false}
+        canWrite={true}
+        highlighted={false}
+        locale="en-US"
+        userCurrency="BRL"
+        onSelect={() => {}}
+        onClick={() => {}}
+        onMakeRecurring={onMakeRecurring}
+      />,
+    )
+
+    // The phone list has no context menu, so the action is a button on the
+    // row itself, with a label a screen reader can announce.
+    await user.click(screen.getByRole('button', { name: t('transactions.makeRecurring') }))
+
+    expect(onMakeRecurring).toHaveBeenCalledWith(rows[3])
+  })
+
+  it('opens the bill form from the mobile list', async () => {
+    viewport.mobile = true
+    const { user } = await renderPage()
+
+    // The phone list has no context menu: the row button is the only way in.
+    // Only the plain row gets one, so there is a single button to press.
+    await user.click(
+      await screen.findByRole('button', { name: t('transactions.makeRecurring') }),
+    )
+
+    expect(await screen.findByText(t('recurring.makeFromTransaction'))).toBeInTheDocument()
+  })
+
+  it('shows no bill action on the row when the page does not offer it', () => {
+    renderWithProviders(
+      <MobileTransactionRow
+        tx={rows[3]}
+        account={undefined}
+        groupName={undefined}
+        selected={false}
+        selectable={false}
+        canWrite={false}
+        highlighted={false}
+        locale="en-US"
+        userCurrency="BRL"
+        onSelect={() => {}}
+        onClick={() => {}}
+      />,
+    )
+
+    expect(
+      screen.queryByRole('button', { name: t('transactions.makeRecurring') }),
+    ).not.toBeInTheDocument()
   })
 })

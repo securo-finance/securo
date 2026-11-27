@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { DASHBOARD_WIDGETS, defaultLayout, pluginReportEntries, REPORTS, resizeItem, resolveLayout, snapSpan, SPANS, widgetSpan } from './library'
+import { DASHBOARD_WIDGETS, defaultLayout, pluginReportEntries, pluginWidgetEntries, REPORTS, resizeItem, resolveLayout, snapSpan, SPANS, widgetSpan } from './library'
 import type { InstalledPlugin } from '@/types'
 
 const entry = (id: string) => DASHBOARD_WIDGETS.find((widget) => widget.id === id)!
@@ -101,6 +101,40 @@ describe('library', () => {
       expect(resolveLayout('reports', saved, null).map((item) => item.id)).toEqual(saved.map((item) => item.id))
       expect(resolveLayout('reports', saved, pluginReportEntries([plugin])).map((item) => item.id)).toEqual(['net_worth', 'plugin:maria/casa:pets'])
       expect(resolveLayout('reports', saved).map((item) => item.id)).toEqual(['net_worth'])
+    })
+  })
+
+  describe('plugin widgets', () => {
+    const plugin = {
+      plugin_id: 'maria/casa',
+      name: { en: 'Home' },
+      reports: [{ key: 'pets', name: { en: 'Pet spending' }, measure: 'expenses', group_by: 'month', chart: 'bar' }],
+      widgets: [
+        { key: 'pets', name: { en: 'Pets this year' }, measure: 'expenses', group_by: 'month', chart: 'bar', width: 'third', period: 'last_12_months' },
+        { key: 'top', name: { en: 'Top payees' }, measure: 'expenses', group_by: 'payee', chart: 'table', width: 'full', period: 'month' },
+        { key: 'narrow', name: { en: 'Narrow table' }, measure: 'expenses', group_by: 'payee', chart: 'table', width: 'third', period: 'month' },
+        { key: 'mix', name: { en: 'Mix' }, code: true, measure: 'expenses', chart: 'bar', width: 'two_thirds', period: 'month' },
+      ],
+    } as unknown as InstalledPlugin
+
+    it('lists each widget at the width it asked for, and never as a report', () => {
+      const entries = pluginWidgetEntries([plugin, { ...plugin, plugin_id: 'joao/x', widgets: undefined } as unknown as InstalledPlugin])
+      expect(entries.map((entry) => [entry.id, entry.span, entry.minSpan, entry.tall])).toEqual([
+        ['plugin:maria/casa:pets', 4, 4, true],
+        // A table needs half the row and no chart height.
+        ['plugin:maria/casa:top', 12, 6, false],
+        // Asked for a third, but a table starts no narrower than it reads.
+        ['plugin:maria/casa:narrow', 6, 6, false],
+        ['plugin:maria/casa:mix', 8, 4, true],
+      ])
+      expect(entries.every((entry) => entry.optional)).toBe(true)
+      expect(pluginReportEntries([plugin]).map((entry) => entry.id)).toEqual(['plugin:maria/casa:pets'])
+    })
+
+    it("keeps a plugin's widget while the plugins are still being read, and drops one that's gone once they're known", () => {
+      const saved = [{ id: 'overview' }, { id: 'plugin:maria/casa:top', span: 6 as const }, { id: 'plugin:gone/away:x' }]
+      expect(resolveLayout('dashboard', saved, null)).toEqual(saved)
+      expect(resolveLayout('dashboard', saved, pluginWidgetEntries([plugin]))).toEqual(saved.slice(0, 2))
     })
   })
 })

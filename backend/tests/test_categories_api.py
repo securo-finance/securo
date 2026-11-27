@@ -10,7 +10,32 @@ from app.main import app
 
 from app.models.category import Category
 from app.models.user import User
-from app.services import category_service
+from app.models.workspace import Workspace, WorkspaceMember
+from app.schemas.category_group import CategoryGroupCreate
+from app.services import category_group_service, category_service
+
+
+async def _second_workspace(session: AsyncSession, user: User) -> Workspace:
+    """A workspace of the same user, so a group from it is out of scope."""
+    workspace = Workspace(
+        id=uuid.uuid4(),
+        name="Other workspace",
+        kind="personal",
+        created_by_user_id=user.id,
+        default_currency="USD",
+    )
+    session.add(workspace)
+    await session.flush()
+    session.add(
+        WorkspaceMember(
+            id=uuid.uuid4(),
+            workspace_id=workspace.id,
+            user_id=user.id,
+            role="owner",
+        )
+    )
+    await session.commit()
+    return workspace
 
 
 @pytest.mark.asyncio
@@ -323,9 +348,9 @@ async def test_hidden_category_is_not_assigned_by_rules(
     payload = {
         "account_id": str(test_account.id),
         "description": "IFOOD PEDIDO",
-        "amount": -42.0,
+        "amount": 42.0,
         "date": "2026-08-24",
-        "type": "expense",
+        "type": "debit",
     }
 
     matched = await client.post("/api/transactions", headers=auth_headers, json=payload)
@@ -426,3 +451,134 @@ async def test_hiding_can_deactivate_the_rules_that_assign_the_category(
         item for item in rules.json() if item["id"] == create_other.json()["id"]
     )
     assert untouched["is_active"] is True
+
+
+# ---------------------------------------------------------------------------
+# A category group must belong to the workspace of the request
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_create_category_refuses_a_group_from_another_workspace(
+    client: AsyncClient,
+    auth_headers: dict,
+    session: AsyncSession,
+    test_user: User,
+    test_workspace: Workspace,
+):
+    other = await _second_workspace(session, test_user)
+    foreign_group = await category_group_service.create_group(
+        session, other.id, test_user.id, CategoryGroupCreate(name="Outside")
+    )
+
+    response = await client.post(
+        "/api/categories",
+        headers={**auth_headers, "X-Workspace-Id": str(test_workspace.id)},
+        json={"name": "Leak", "group_id": str(foreign_group.id)},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Category group not found"
+    listed = await client.get("/api/categories", headers=auth_headers)
+    assert "Leak" not in {item["name"] for item in listed.json()}
+
+
+@pytest.mark.asyncio
+async def test_create_category_refuses_a_group_that_does_not_exist(
+    client: AsyncClient,
+    auth_headers: dict,
+    test_workspace: Workspace,
+):
+    missing = uuid.uuid4()
+
+    response = await client.post(
+        "/api/categories",
+        headers={**auth_headers, "X-Workspace-Id": str(test_workspace.id)},
+        json={"name": "Dangling", "group_id": str(missing)},
+    )
+
+    # Same answer as the foreign group: the response never tells the two apart.
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Category group not found"
+
+
+@pytest.mark.asyncio
+async def test_update_category_refuses_a_group_from_another_workspace(
+    client: AsyncClient,
+    auth_headers: dict,
+    session: AsyncSession,
+    test_user: User,
+    test_workspace: Workspace,
+    test_categories: list[Category],
+):
+    other = await _second_workspace(session, test_user)
+    foreign_group = await category_group_service.create_group(
+        session, other.id, test_user.id, CategoryGroupCreate(name="Outside")
+    )
+    category = test_categories[0]
+    original_group = category.group_id
+
+    response = await client.patch(
+        f"/api/categories/{category.id}",
+        headers={**auth_headers, "X-Workspace-Id": str(test_workspace.id)},
+        json={"group_id": str(foreign_group.id)},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Category group not found"
+    await session.refresh(category)
+    assert category.group_id == original_group
+
+
+@pytest.mark.asyncio
+async def test_update_category_refuses_a_group_that_does_not_exist(
+    client: AsyncClient,
+    auth_headers: dict,
+    test_workspace: Workspace,
+    test_categories: list[Category],
+):
+    category = test_categories[0]
+    original_group = category.group_id
+
+    response = await client.patch(
+        f"/api/categories/{category.id}",
+        headers={**auth_headers, "X-Workspace-Id": str(test_workspace.id)},
+        json={"group_id": str(uuid.uuid4())},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Category group not found"
+    listed = await client.get("/api/categories", headers=auth_headers)
+    current = next(item for item in listed.json() if item["id"] == str(category.id))
+    assert current["group_id"] == (
+        str(original_group) if original_group is not None else None
+    )
+
+
+@pytest.mark.asyncio
+async def test_update_category_can_clear_the_group(
+    client: AsyncClient,
+    auth_headers: dict,
+    session: AsyncSession,
+    test_user: User,
+    test_workspace: Workspace,
+):
+    own_group = await category_group_service.create_group(
+        session, test_workspace.id, test_user.id, CategoryGroupCreate(name="Own")
+    )
+    created = await client.post(
+        "/api/categories",
+        headers=auth_headers,
+        json={"name": "Grouped", "group_id": str(own_group.id)},
+    )
+    assert created.status_code == 201
+    assert created.json()["group_id"] == str(own_group.id)
+
+    cleared = await client.patch(
+        f"/api/categories/{created.json()['id']}",
+        headers=auth_headers,
+        json={"group_id": None},
+    )
+
+    assert cleared.status_code == 200
+    assert cleared.json()["group_id"] is None

@@ -13,6 +13,8 @@ gives the same result as running it once. A row whose currency already is the
 new primary currency gets its amount at rate 1. A row in another currency than
 its account, when the new primary is the account's currency, takes what the
 account was charged (`amount_account`, ADR 0027), not a market conversion.
+A converted amount the user typed comes back as typed whenever the display
+currency is again the one it was typed in (`amount_primary_typed`, ADR 0031).
 Balances read `amount_account`, which this never writes, so no balance moves
 when the display currency does. A foreign row with no
 resolvable rate is set to NULL, the honest "not converted" state, rather than
@@ -42,6 +44,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.app_clock import app_today
 from app.core.currency import same_currency
+from app.core.money import MoneyOutOfRange, bounded_conversion
 from app.models.account import Account
 from app.models.asset import Asset
 from app.models.recurring_transaction import RecurringTransaction
@@ -111,7 +114,15 @@ async def _converted(
     if rate is None:
         stats.unconverted += 1
         return None, None
-    return (amount * rate).quantize(CENT), rate.quantize(RATE_SCALE)
+    try:
+        primary = bounded_conversion((amount * rate).quantize(CENT))
+    except MoneyOutOfRange:
+        # Past what the column holds in the new currency (issue #422): left
+        # "not converted", like a row with no rate, instead of failing the
+        # whole restamp at commit.
+        stats.unconverted += 1
+        return None, None
+    return primary, rate.quantize(RATE_SCALE)
 
 
 def _charged_in_primary(
@@ -133,6 +144,26 @@ def _charged_in_primary(
     ):
         return None
     primary = Decimal(str(tx.amount_account)).quantize(CENT)
+    return primary, (primary / abs(Decimal(str(tx.amount)))).quantize(RATE_SCALE)
+
+
+def typed_primary_amount(
+    tx: Transaction, currency: str
+) -> Optional[tuple[Decimal, Decimal]]:
+    """(amount, rate) the user typed for `tx` in `currency`, if they did.
+
+    A converted amount typed in the transaction dialog is kept with the
+    display currency it was typed in (ADR 0031). On a row in its account's
+    own currency it exists nowhere else, so without it a round trip through
+    another display currency would bring back a market conversion.
+    """
+    if (
+        tx.amount_primary_typed is None
+        or not tx.amount
+        or not same_currency(tx.amount_primary_typed_currency, currency)
+    ):
+        return None
+    primary = Decimal(str(tx.amount_primary_typed)).quantize(CENT)
     return primary, (primary / abs(Decimal(str(tx.amount)))).quantize(RATE_SCALE)
 
 
@@ -223,7 +254,9 @@ async def restamp_user_primary_amounts(
     ).scalars().all()
 
     for tx, account_currency in transactions:
-        charged = _charged_in_primary(stats, tx, account_currency)
+        charged = typed_primary_amount(tx, stats.currency) or _charged_in_primary(
+            stats, tx, account_currency
+        )
         if charged is not None:
             primary, rate = charged
         else:

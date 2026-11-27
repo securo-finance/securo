@@ -36,6 +36,9 @@ const api = vi.hoisted(() => ({
   fiscal: { taxIdKinds: vi.fn() },
   rules: { create: vi.fn(), list: vi.fn() },
   settings: { attachments: vi.fn() },
+  info: { get: vi.fn() },
+  plugins: { installed: vi.fn() },
+  reports: { plugin: vi.fn() },
   // Nobody arranged anything: Securo's default layout. Tests that need one set `layouts.saved`.
   uiLayouts: {
     get: async () => ({ dashboard: null, reports: null, ...layouts.saved }),
@@ -194,6 +197,8 @@ beforeEach(() => {
   api.payees.list.mockResolvedValue([])
   api.rules.list.mockResolvedValue([])
   api.settings.attachments.mockResolvedValue({ enabled: false })
+  // Unread flags, as before plugins joined the dashboard: plugin items are kept but not drawn.
+  api.info.get.mockRejectedValue(new Error('no info'))
 })
 
 describe('Dashboard net worth breakdown', () => {
@@ -1065,6 +1070,38 @@ it('identifies each category in its spending progress bar accessible name', asyn
 describe('Dashboard arranged from the library', () => {
   const regions = () => screen.getAllByRole('region').map((region) => region.getAttribute('aria-label'))
 
+  it("draws a plugin's widget where it was placed, for the month and accounts on screen", async () => {
+    api.info.get.mockResolvedValue({ features: { plugins: true } })
+    api.plugins.installed.mockResolvedValue([{
+      plugin_id: 'maria/casa', name: { en: 'Home' }, themes: [], reports: [],
+      widgets: [{ key: 'pets-card', name: { en: 'Pets this month' }, measure: 'expenses', group_by: 'category', chart: 'bar', width: 'third', period: 'month' }],
+    }])
+    api.reports.plugin.mockResolvedValue({
+      key: 'pets-card', code: false, measure: 'expenses', group_by: 'category', chart: 'bar', currency: 'USD', total: 321,
+      rows: [{ key: 'c1', label: 'Pets', value: 321, color: null }],
+    })
+    collectionFilter.activeAccountIds = ['a1']
+    layouts.saved = { dashboard: [{ id: 'plugin:maria/casa:pets-card' }, { id: 'overview' }] }
+    renderWithProviders(<TooltipProvider><DashboardPage /></TooltipProvider>)
+
+    expect(await screen.findByText(formatCurrency(321, 'USD', 'en-US'))).toBeInTheDocument()
+    expect(regions()).toEqual(['Pets this month', t('library.widget.overview')])
+    const month = new Date()
+    const ym = `${month.getFullYear()}-${String(month.getMonth() + 1).padStart(2, '0')}`
+    expect(api.reports.plugin).toHaveBeenCalledWith('maria/casa', 'pets-card', `${ym}-01`, expect.stringMatching(new RegExp(`^${ym}-`)), ['a1'], 'dashboard')
+  })
+
+  it("keeps a plugin's widget in the saved arrangement while the plugins can't be read", async () => {
+    layouts.saved = { dashboard: [{ id: 'plugin:maria/casa:pets-card' }, { id: 'overview' }, { id: 'transactions' }] }
+    const { user } = renderWithProviders(<TooltipProvider><DashboardPage /></TooltipProvider>)
+    await screen.findByText(formatCurrency(500, 'USD', 'en-US'))
+    expect(regions()).toEqual([t('library.widget.overview'), t('dashboard.periodTransactions')])
+
+    await user.click(screen.getByRole('button', { name: t('library.customizeDashboard') }))
+    await user.click(screen.getByRole('button', { name: t('library.removeFrom.dashboard', { name: t('library.widget.overview') }) }))
+    await waitFor(() => expect(layouts.saves.at(-1)?.ids).toEqual(['transactions', 'plugin:maria/casa:pets-card']))
+  })
+
   it("shows Securo's arrangement when nothing was saved", async () => {
     renderWithProviders(<TooltipProvider><DashboardPage /></TooltipProvider>)
     await screen.findByText(formatCurrency(500, 'USD', 'en-US'))
@@ -1319,4 +1356,35 @@ describe('Dashboard uncategorized drill-down', () => {
     await act(async () => finishSecond(rows[1]))
     expect(within(screen.getByRole('dialog')).getByDisplayValue('Third row')).toBeInTheDocument()
   })
+})
+
+it('renders ReportingDateBadge on shifted credit-card rows in Dashboard Period Transactions (#1379)', async () => {
+  api.transactions.list.mockResolvedValue({
+    items: [{
+      id: 'tx-cc-shifted',
+      description: 'October Cafe Charge',
+      date: '2026-10-27',
+      reporting_date: '2026-11-11',
+      reporting_date_override: null,
+      type: 'debit',
+      amount: 383.4,
+      amount_primary: 383.4,
+      currency: 'USD',
+      status: 'posted',
+      category: null,
+      account_id: 'acc-cc',
+      attachment_count: 0,
+      splits: [],
+      is_shared: false,
+      is_ignored: false,
+      installment_number: null,
+      total_installments: null,
+      user_id: 'me',
+    }],
+    total: 1,
+  })
+  renderWithProviders(<TooltipProvider><DashboardPage /></TooltipProvider>, { route: '/?month=2026-11' })
+  expect(await screen.findByText('October Cafe Charge')).toBeInTheDocument()
+  expect(screen.getByText(/Reporting date:/)).toBeInTheDocument()
+  expect(screen.getByText(/Bank date:/)).toBeInTheDocument()
 })

@@ -95,6 +95,17 @@ An integration becomes a bank provider by declaring `provides` in
 `provides` can't be empty or repeat a kind. A payload that carries a kind the
 integration doesn't declare is refused.
 
+`complete_feed: true` (optional, needs `transactions`) says the plugin returns
+every entry of an account from `since` on, pending ones included. Securo then
+treats a pending row the plugin stops returning as cancelled and removes it on
+that sync. (Enable Banking's rows wait out a settle window first, because a
+booked entry there can still claim its hold; a plugin's booked entries never
+do.) A plugin that books an entry under its pending entry's `external_id`
+turns the row `posted` in place instead. Without it, a pending row that leaves the feed stays until
+someone deletes it. Only declare it when every sync really returns the whole
+window: a plugin that pages and stops early must leave `transactions` out for
+that account (`null`), which also skips the clean-up.
+
 ### Manifest: the rest
 
 `securo-plugin.json` is checked whole when the plugin is installed
@@ -108,7 +119,7 @@ not ignored. What a provider plugin sets:
 | `version`, `min_securo_version` | Versions `MAJOR.MINOR.PATCH`, digits only (`1.4.0`); no pre-release or build suffix, no leading zeros |
 | `repository`, `license` | The plugin's GitHub repository (`https://github.com/owner/repo`) and its license |
 | `workspaces` | `personal`, `business` or both; both when left out |
-| `contributes.integrations` | What a person connects: `key`, `name`, optional `description`, `auth`, `fields`, `sync_minutes`, `provides` |
+| `contributes.integrations` | What a person connects: `key`, `name`, optional `description`, `auth`, `fields`, `sync_minutes`, `provides`, `complete_feed` |
 | `runtime` | `entrypoint` (`module:attribute`) and an optional `lockfile`, a requirements file with a hash for every package. Required with an integration |
 | `network` | Each host the plugin may reach, with a `purpose`; at most 100. A plain host name with an optional port, never a wildcard or an IP address |
 | `api_scopes` | Only for a plugin that also calls the Securo API: each scope with a `purpose`. A provider that only returns records needs none |
@@ -248,9 +259,24 @@ shows both named errors: access code `expired` and `busy`.
    `PluginPayloadProvider` (`backend/app/plugins/provider.py`). From there it
    is the same code as a native provider's:
    - accounts are matched by `external_id` and get their balance;
+   - a transaction's `notes` (the bank's full purpose, a reference, an order
+     number) land in the row's notes: not shown in the list, but searched and
+     matched by rules, so `description` can stay what the bank's app shows.
+     A row that already exists (the pending one a booking settles, a manual
+     entry the sync adopts) gets them appended to what it has, cut to the
+     column's 1000 characters; notes the plugin sent never count as the
+     user's when a `complete_feed` hold expires;
+   - a plugin may correct what it sent: a row it sent before takes a new
+     `description`, `payee`, `notes` or amount where the row still holds what
+     the plugin sent last, also when a pending row posts under a new id; text
+     someone edited, cleared (or a rule manages) stays. Notes someone wrote
+     where the plugin sent none get the plugin's beside them. Securo keeps
+     what the plugin sent under `securo_synced` in the row's `raw_data` to
+     tell the two apart, its amount rounded to cents as the row stores it;
    - transactions are deduplicated by `external_id`; a `pending` one becomes
      `posted` in place. The connection's own settings (pending import, payee
-     source) apply;
+     source) apply; with `complete_feed`, a pending row that left the feed
+     expires;
    - rules run on new transactions, and transfer detection looks for pairs
      among them;
    - bills are written for their account;

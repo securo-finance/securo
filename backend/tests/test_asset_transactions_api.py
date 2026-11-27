@@ -128,6 +128,60 @@ async def test_deleting_a_split_a_later_sell_needs_returns_422(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("buys", [[10], [6, 4]], ids=["only_buy", "one_of_two_buys"])
+async def test_deleting_a_buy_a_later_sell_needs_returns_422(
+    client: AsyncClient, auth_headers: dict, market_asset_api: Asset, buys: list[int]
+):
+    url = f"/api/assets/{market_asset_api.id}/transactions"
+    entries = [
+        {"kind": "buy", "quantity": quantity, "price": 100, "date": f"2026-01-{day:02d}"}
+        for day, quantity in enumerate(buys, start=1)
+    ]
+    entries.append({"kind": "sell", "quantity": 10, "price": 110, "date": "2026-03-01"})
+    for body in entries:
+        assert (await client.post(url, headers=auth_headers, json=body)).status_code == 201
+    ledger = (await client.get(url, headers=auth_headers)).json()
+    buy_id = next(tx["id"] for tx in ledger if tx["kind"] == "buy" and tx["quantity"] == buys[-1])
+
+    r = await client.delete(f"/api/assets/transactions/{buy_id}", headers=auth_headers)
+
+    assert r.status_code == 422
+    assert "later sell" in r.json()["detail"]
+    assert (await client.get(url, headers=auth_headers)).json() == ledger
+    asset = (await client.get(f"/api/assets/{market_asset_api.id}", headers=auth_headers)).json()
+    assert asset["realized_gain"] == 100
+
+    # With the sell gone, nothing depends on the buy any more.
+    sell_id = next(tx["id"] for tx in ledger if tx["kind"] == "sell")
+    for tx_id in (sell_id, buy_id):
+        r = await client.delete(f"/api/assets/transactions/{tx_id}", headers=auth_headers)
+        assert r.status_code == 200
+    assert r.json()["units"] == sum(buys[:-1])
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("extra_date", ["2026-01-15", "2026-04-01"], ids=["spare_units", "after_the_sell"])
+async def test_deleting_a_buy_no_sell_needs_still_works(
+    client: AsyncClient, auth_headers: dict, market_asset_api: Asset, extra_date: str
+):
+    url = f"/api/assets/{market_asset_api.id}/transactions"
+    for body in (
+        {"kind": "buy", "quantity": 10, "price": 100, "date": "2026-01-01"},
+        {"kind": "buy", "quantity": 4, "price": 100, "date": extra_date},
+        {"kind": "sell", "quantity": 10, "price": 110, "date": "2026-03-01"},
+    ):
+        assert (await client.post(url, headers=auth_headers, json=body)).status_code == 201
+    ledger = (await client.get(url, headers=auth_headers)).json()
+    extra_id = next(tx["id"] for tx in ledger if tx["quantity"] == 4)
+
+    r = await client.delete(f"/api/assets/transactions/{extra_id}", headers=auth_headers)
+
+    assert r.status_code == 200
+    assert r.json()["units"] == 0
+    assert r.json()["realized_gain"] == 100
+
+
+@pytest.mark.asyncio
 async def test_a_split_too_large_to_store_returns_422(
     client: AsyncClient, auth_headers: dict, market_asset_api: Asset
 ):
@@ -507,3 +561,87 @@ async def test_database_accepts_the_two_valid_shapes(session: AsyncSession, mark
             )
         )
     await session.commit()
+
+
+@pytest.mark.asyncio
+async def test_sold_ledger_holding_carries_its_closed_position(
+    client: AsyncClient, auth_headers: dict, market_asset_api: Asset
+):
+    for body in (
+        {"kind": "buy", "quantity": 10, "price": 100, "fee": 5, "date": "2026-01-01"},
+        {"kind": "sell", "quantity": 10, "price": 120, "fee": 3, "date": "2026-02-01"},
+    ):
+        r = await client.post(
+            f"/api/assets/{market_asset_api.id}/transactions", headers=auth_headers, json=body
+        )
+        assert r.status_code == 201
+
+    listed = (await client.get("/api/assets", headers=auth_headers)).json()
+    single = (await client.get(f"/api/assets/{market_asset_api.id}", headers=auth_headers)).json()
+    row = next(a for a in listed if a["id"] == str(market_asset_api.id))
+    for body in (row, single):
+        assert body["sold_cost"] == 1005.0
+        assert body["sale_proceeds"] == 1197.0
+        assert body["average_buy_price"] == 100.5
+        assert body["average_sell_price"] == 120.0
+
+
+@pytest.mark.asyncio
+async def test_closed_position_adds_up_with_prices_past_six_decimals(
+    client: AsyncClient, auth_headers: dict, market_asset_api: Asset
+):
+    # The stored realized gain is worked out before the price column rounds
+    # these to six decimals; a replay of the stored prices lands a cent away.
+    for body in (
+        {"kind": "buy", "quantity": 5000, "price": "1.0000004999", "date": "2026-01-01"},
+        {"kind": "sell", "quantity": 5000, "price": "2.0000014999", "date": "2026-02-01"},
+    ):
+        r = await client.post(
+            f"/api/assets/{market_asset_api.id}/transactions", headers=auth_headers, json=body
+        )
+        assert r.status_code == 201
+
+    body = (await client.get(f"/api/assets/{market_asset_api.id}", headers=auth_headers)).json()
+    assert round(body["sold_cost"] + body["realized_gain"], 2) == body["sale_proceeds"]
+
+
+@pytest.mark.asyncio
+async def test_held_ledger_holding_has_no_closed_position(
+    client: AsyncClient, auth_headers: dict, market_asset_api: Asset
+):
+    await _seed_buy(client, auth_headers, market_asset_api)
+    # A partial sale: realized, but the position is still open.
+    r = await client.post(
+        f"/api/assets/{market_asset_api.id}/transactions",
+        headers=auth_headers,
+        json={"kind": "sell", "quantity": 5, "price": 500, "date": "2026-01-06"},
+    )
+    assert r.status_code == 201
+    body = (await client.get(f"/api/assets/{market_asset_api.id}", headers=auth_headers)).json()
+    for key in ("sold_cost", "sale_proceeds", "average_buy_price", "average_sell_price"):
+        assert body[key] is None
+
+
+@pytest.mark.asyncio
+async def test_manual_sold_holding_reads_its_closed_position_from_prices(
+    client: AsyncClient, auth_headers: dict
+):
+    payload = {
+        "name": "Old stake", "type": "other", "currency": "EUR",
+        "valuation_method": "manual", "purchase_date": "2025-01-01",
+        "purchase_price": 1000, "sell_price": 1500, "sell_date": "2026-01-01",
+    }
+    with_units = await client.post(
+        "/api/assets", headers=auth_headers, json={**payload, "units": 4}
+    )
+    assert with_units.status_code == 201, with_units.text
+    no_units = await client.post("/api/assets", headers=auth_headers, json=payload)
+    assert no_units.status_code == 201, no_units.text
+
+    a = (await client.get(f"/api/assets/{with_units.json()['id']}", headers=auth_headers)).json()
+    assert (a["sold_cost"], a["sale_proceeds"]) == (1000.0, 1500.0)
+    assert (a["average_buy_price"], a["average_sell_price"]) == (250.0, 375.0)
+
+    b = (await client.get(f"/api/assets/{no_units.json()['id']}", headers=auth_headers)).json()
+    assert (b["sold_cost"], b["sale_proceeds"]) == (1000.0, 1500.0)
+    assert b["average_buy_price"] is None and b["average_sell_price"] is None

@@ -4,23 +4,27 @@ import io
 import re
 import unicodedata
 import uuid
+from collections.abc import Awaitable, Callable, Collection
+from typing import Optional
 import warnings
 import xml.etree.ElementTree as ET
 from xml.parsers import expat
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 
 from bs4 import XMLParsedAsHTMLWarning
 from ofxparse import OfxParser
-from sqlalchemy import or_, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
+from app.core.money import as_stored_amount, bounded_conversion
 from app.models.account import Account
 from app.models.bank_connection import BankConnection
 from app.models.category import Category
 from app.models.rule import Rule
 from app.models.transaction import Transaction
+from app.models.user import User
 from pydantic import ValidationError
 
 from app.schemas.transaction import FailedRow, ImportCategoryLine, TransactionImport
@@ -32,10 +36,15 @@ from app.services import category_line_service, reconciliation_service, recurrin
 from app.services.credit_card_service import apply_effective_date
 from app.services.category_service import get_assignable_category_ids
 from app.services.rule_engine import apply_rule_actions, evaluate_conditions, merge_notes
-from app.services.rule_service import apply_rules_to_transaction, preview_rules_for_transaction
+from app.services.rule_service import (
+    apply_rules_to_transaction,
+    load_workspace_rules,
+    preview_rules_for_transaction,
+)
 from app.services.fx_rate_service import stamp_account_amount, stamp_primary_amount
 from app.services.payee_service import get_or_create_payee
 from app.services.transaction_match_service import find_unique_transaction_match
+from app.services.transfer_detection_service import detect_transfer_pairs
 
 
 # Descriptions used by some Brazilian banks (e.g. Banco do Brasil) for
@@ -210,10 +219,20 @@ def _ensure_ofx_sgml_header(text: str, encoding: str) -> str:
     return header + text
 
 
+# ofxparse converts a date with a "[+1:CET]" suffix to UTC, so a midnight
+# booking in Europe or Asia lands on the previous day. The bank's day is the
+# one printed, so drop the offset from transaction dates.
+_OFX_TXN_DATE_OFFSET = re.compile(
+    r"(<(?:DTPOSTED|DTUSER)\s*>\s*(?:<!\[CDATA\[)?\s*[0-9.]+)\s*\[[^\]<]*\]",
+    re.IGNORECASE,
+)
+
+
 def _preprocess_ofx(content: bytes) -> bytes:
     """Apply text-level fixups ofxparse needs before it can parse the file."""
     text, encoding = _decode_ofx_bytes(content)
     text = _patch_empty_fitids(text)
+    text = _OFX_TXN_DATE_OFFSET.sub(r"\1", text)
     text = _ensure_ofx_sgml_header(text, encoding)
     return text.encode(encoding, errors="replace")
 
@@ -223,6 +242,22 @@ def _is_balance_summary_row(description: str | None) -> bool:
         return False
     normalized = description.strip().lower()
     return any(normalized.startswith(prefix) for prefix in _OFX_BALANCE_ROW_DESCRIPTIONS)
+
+
+_DOCUMENT_EXTENSIONS = (".pdf", ".png", ".jpg", ".jpeg", ".webp", ".heic", ".gif")
+
+
+def is_document_file(filename: str, content: bytes) -> bool:
+    """A PDF or an image: something to read with a model, not to parse."""
+    if (filename or "").lower().endswith(_DOCUMENT_EXTENSIONS):
+        return True
+    head = content[:16]
+    return (
+        head.startswith(b"%PDF")
+        or head.startswith(b"\x89PNG")
+        or head.startswith(b"\xff\xd8\xff")
+        or (head[:4] == b"RIFF" and head[8:12] == b"WEBP")
+    )
 
 
 def parse_ofx(content: bytes) -> list[TransactionImport]:
@@ -1119,6 +1154,137 @@ async def enrich_with_category_suggestions(
     return transactions
 
 
+def _cents(value: Decimal) -> Decimal:
+    """A conversion as `Numeric(15, 2)` stores it, rounded before it is bounded:
+    9999999999999.9918 fits as 9999999999999.99 (issue #422)."""
+    return as_stored_amount(value)
+
+
+class ImportCategoryNotFound(ValueError):
+    """A row names a category the workspace does not have."""
+
+    def __init__(self) -> None:
+        super().__init__("Category not found")
+
+
+async def _ensure_categories_in_workspace(
+    session: AsyncSession,
+    workspace_id: uuid.UUID,
+    rows: list[TransactionImport],
+) -> None:
+    """Refuse the batch when a row's `category_id` or `suggested_category_id`
+    is not a category of this workspace.
+
+    Both ids come from the request body and are written as they are, so one
+    from another workspace would file the row under that workspace's category
+    and show its name to whoever imported. An id from another workspace and
+    one that does not exist get the same answer, so the refusal does not tell
+    which ids exist elsewhere. Hidden categories of the workspace are still
+    accepted, as on a hand-made transaction.
+    """
+    named = {
+        category_id
+        for row in rows
+        for category_id in (row.category_id, row.suggested_category_id)
+        if category_id is not None
+    }
+    if not named:
+        return
+    found = await session.execute(
+        select(Category.id).where(
+            Category.workspace_id == workspace_id,
+            Category.id.in_(named),
+        )
+    )
+    if named - set(found.scalars()):
+        raise ImportCategoryNotFound()
+
+
+# A row a connection already brought in is a duplicate of a file row a few
+# days apart (`find_unique_transaction_match` and its default tolerance).
+_SYNCED_SOURCES = frozenset({"sync"})
+_MATCH_REACH_DAYS = 3
+
+
+class _StatementRows:
+    """The account's rows around the file's dates, and the rows this import adds.
+
+    Duplicate detection asks, for every file row, whether the account
+    already holds it, a row this same file added included. Loaded once and
+    kept up to date as rows land, the rows answer that in memory, on the
+    terms the per-row query used. They are the session's own objects, so a
+    placeholder an earlier row upgraded is seen as it now is.
+    """
+
+    def __init__(self, rows: list[Transaction]):
+        # In the order the query read them: first written first.
+        self.rows = rows
+
+    @classmethod
+    async def load(
+        cls, session: AsyncSession, account_id: uuid.UUID, first_date: date, last_date: date
+    ) -> "_StatementRows":
+        result = await session.execute(
+            select(Transaction)
+            .where(
+                Transaction.account_id == account_id,
+                Transaction.date >= first_date - timedelta(days=_MATCH_REACH_DAYS),
+                Transaction.date <= last_date + timedelta(days=_MATCH_REACH_DAYS),
+            )
+            .order_by(Transaction.created_at, Transaction.id)
+        )
+        return cls(list(result.scalars().all()))
+
+    def add(self, transaction: Transaction) -> None:
+        self.rows.append(transaction)
+
+    def duplicate_of(
+        self,
+        txn_data: TransactionImport,
+        utc_dated_import_ids: Collection[uuid.UUID],
+        matched_existing_ids: Collection[uuid.UUID],
+    ) -> Optional[Transaction]:
+        """The first row the file row repeats, or None.
+
+        Prefer an external ID (OFX FITID), with date retained because some
+        Brazilian cards reuse one purchase FITID across monthly installments,
+        and amount and type retained because some banks reuse one FITID for
+        several distinct entries posted on the same day. The date may differ
+        by one day only for rows of imports parsed before OFX offsets were
+        dropped, which can sit on the neighbouring day. Any other row a day
+        apart is a distinct entry (a recurring fee under one FITID), whether
+        this run or an overlapping earlier statement added it. Formats
+        without unique IDs fall back to transaction fields; compare both
+        descriptions because rules may have changed the displayed one, and
+        a row already matched is not matched again.
+
+        The first match rather than the only one: the key can legitimately
+        match more than one row (a prior sync/import race left a duplicate,
+        or a bank reuses one FITID across statements), and any match is a
+        duplicate. Amounts compare as the column stores them, on both sides:
+        the query rounded the file's amount to the column's scale, and a row
+        this import added matches as it will be written.
+        """
+        for row in self.rows:
+            if row.type != txn_data.type or _cents(row.amount) != _cents(txn_data.amount):
+                continue
+            if txn_data.external_id:
+                if row.external_id != txn_data.external_id:
+                    continue
+                if row.date == txn_data.date or (
+                    row.import_id in utc_dated_import_ids
+                    and abs((row.date - txn_data.date).days) <= 1
+                ):
+                    return row
+            elif (
+                row.date == txn_data.date
+                and row.id not in matched_existing_ids
+                and txn_data.description in (row.description, row.original_description)
+            ):
+                return row
+        return None
+
+
 async def import_transactions(
     session: AsyncSession,
     workspace_id: uuid.UUID,
@@ -1129,6 +1295,7 @@ async def import_transactions(
     filename: str = "",
     detected_format: str = "",
     detect_duplicates: bool = True,
+    before_commit: Optional[Callable[[uuid.UUID], Awaitable[None]]] = None,
 ) -> tuple[int, int, int, uuid.UUID]:
     """Import transactions into an account in the given workspace.
 
@@ -1139,26 +1306,18 @@ async def import_transactions(
 
     included = [t for t in transactions if not t.excluded]
     excluded_count = len(transactions) - len(included)
+    await _ensure_categories_in_workspace(session, workspace_id, included)
 
     # Calculate summaries from included transactions only
     total_credit = sum(t.amount for t in included if t.type == "credit")
     total_debit = sum(t.amount for t in included if t.type == "debit")
 
-    # Create import log first to get its ID
-    import_log = ImportLog(
-        user_id=user_id,
-        workspace_id=workspace_id,
-        account_id=account_id,
-        filename=filename,
-        format=detected_format,
-        transaction_count=len(included),
-        total_credit=total_credit,
-        total_debit=total_debit,
-    )
-    session.add(import_log)
-    await session.flush()  # Get the import_log.id
-
-    # Look up account currency for fallback
+    # Lock the connection, then the account, before writing anything that
+    # points at the account. Inserting the import log takes a key-share lock
+    # on the account row (its foreign key); two imports that both held that
+    # share and then asked for the update lock deadlocked, and Postgres
+    # aborted one of them with a 500 (#613). Locked first, a second import
+    # of the same account waits here for the first to commit.
     account_result = await session.execute(select(Account).where(Account.id == account_id))
     account = account_result.scalar_one_or_none()
     if account and account.connection_id:
@@ -1173,6 +1332,19 @@ async def import_transactions(
         )
         account = account_result.scalar_one()
     account_currency = account.currency if account else get_settings().default_currency
+
+    import_log = ImportLog(
+        user_id=user_id,
+        workspace_id=workspace_id,
+        account_id=account_id,
+        filename=filename,
+        format=detected_format,
+        transaction_count=len(included),
+        total_credit=total_credit,
+        total_debit=total_debit,
+    )
+    session.add(import_log)
+    await session.flush()  # Get the import_log.id
 
     # Build category name → id map scoped to the workspace, on the same terms
     # the preview used: hidden categories excluded, names matched
@@ -1200,6 +1372,46 @@ async def import_transactions(
     matched_existing_ids: set[uuid.UUID] = set()
     effective_format = (detected_format or source or "").lower()
     should_detect_duplicates = detect_duplicates if effective_format == "csv" else True
+    # Imports parsed before OFX offsets were dropped: only their rows may sit
+    # one day off the bank's date (see the FITID lookup below).
+    utc_dated_import_ids: list[uuid.UUID] = []
+    if should_detect_duplicates:
+        utc_dated_import_ids = list(
+            (
+                await session.execute(
+                    select(ImportLog.id).where(
+                        ImportLog.account_id == account_id,
+                        ImportLog.ofx_utc_dates.is_(True),
+                    )
+                )
+            ).scalars()
+        )
+
+    # What every row asks about is read once for the batch: the rules and
+    # what they check, the recurring rule with the account's bills and
+    # placeholders, and the account's rows a row may duplicate. Asked per
+    # row, these were most of an import's queries, and an import of a few
+    # hundred rows took seconds (#1919). Each lookup below judges in memory
+    # on the terms its own query used.
+    workspace_rules = await load_workspace_rules(session, workspace_id)
+    incoming_pool = None
+    statement_rows = _StatementRows([])
+    if included:
+        first_date = min(t.date for t in included)
+        last_date = max(t.date for t in included)
+        if account is not None:
+            incoming_pool = await recurring_match_service.load_incoming_pool(
+                session, user_id, account, first_date, last_date
+            )
+        if should_detect_duplicates:
+            statement_rows = await _StatementRows.load(
+                session, account_id, first_date, last_date
+            )
+    # The currency stamps below read the importing user by id. The session
+    # holds its objects weakly, so with nothing referencing the user it was
+    # loaded again, flushing the pending rows, for every row.
+    importing_user = await session.get(User, user_id)  # noqa: F841
+    payee_ids: dict[str, uuid.UUID] = {}
 
     for txn_data in included:
         # Resolve currency: CSV value > account currency
@@ -1209,48 +1421,25 @@ async def import_transactions(
             # Prefer an external ID (OFX FITID), with date retained because some
             # Brazilian cards reuse one purchase FITID across monthly installments,
             # and amount and type retained because some banks reuse one FITID for
-            # several distinct entries posted on the same day.
+            # several distinct entries posted on the same day. The date may differ
+            # by one day only for rows of imports parsed before OFX offsets were
+            # dropped, which can sit on the neighbouring day. Any other row a day
+            # apart is a distinct entry (a recurring fee under one FITID), whether
+            # this run or an overlapping earlier statement added it.
             # Formats without unique IDs fall back to transaction fields; compare
             # both descriptions because rules may have changed the displayed one.
-            if txn_data.external_id:
-                existing_statement = select(Transaction).where(
-                    Transaction.account_id == account_id,
-                    Transaction.external_id == txn_data.external_id,
-                    Transaction.date == txn_data.date,
-                    Transaction.amount == txn_data.amount,
-                    Transaction.type == txn_data.type,
-                )
-            else:
-                existing_statement = select(Transaction).where(
-                    Transaction.account_id == account_id,
-                    Transaction.date == txn_data.date,
-                    Transaction.amount == txn_data.amount,
-                    Transaction.type == txn_data.type,
-                    or_(
-                        Transaction.description == txn_data.description,
-                        Transaction.original_description == txn_data.description,
-                    ),
-                )
-            # `.first()` rather than `.scalar_one_or_none()`: the dedup key can
-            # legitimately match more than one row (e.g. a prior sync/import race
-            # left a duplicate, or a bank reuses one FITID across statements),
-            # and we only need to know whether *any* match exists. Requiring
-            # exactly one would raise MultipleResultsFound and abort the import.
-            if matched_existing_ids and not txn_data.external_id:
-                existing_statement = existing_statement.where(
-                    Transaction.id.not_in(matched_existing_ids)
-                )
-            existing = await session.execute(
-                existing_statement.order_by(Transaction.created_at, Transaction.id)
+            duplicate = statement_rows.duplicate_of(
+                txn_data, utc_dated_import_ids, matched_existing_ids
             )
-            duplicate = existing.scalars().first()
             if not duplicate:
                 duplicate = await find_unique_transaction_match(
                     session,
                     account_id,
                     txn_data,
-                    {"sync"},
+                    _SYNCED_SOURCES,
+                    date_tolerance_days=_MATCH_REACH_DAYS,
                     exclude_ids=matched_existing_ids,
+                    candidates=statement_rows.rows if source not in _SYNCED_SOURCES else None,
                 )
             if duplicate:
                 matched_existing_ids.add(duplicate.id)
@@ -1260,11 +1449,15 @@ async def import_transactions(
         import_payee_id = None
         import_payee_raw = getattr(txn_data, "payee_raw", None)
         if import_payee_raw:
-            import_payee_entity = await get_or_create_payee(
-                session, user_id, import_payee_raw, workspace_id=workspace_id,
-                source="import",
-            )
-            import_payee_id = import_payee_entity.id
+            # The same name finds the same payee: rows of one file repeat
+            # their counterparties.
+            import_payee_id = payee_ids.get(import_payee_raw)
+            if import_payee_id is None:
+                import_payee_entity = await get_or_create_payee(
+                    session, user_id, import_payee_raw, workspace_id=workspace_id,
+                    source="import",
+                )
+                import_payee_id = payee_ids[import_payee_raw] = import_payee_entity.id
 
         user_category_id = txn_data.category_id
         suggested_category_id = txn_data.suggested_category_id
@@ -1290,6 +1483,9 @@ async def import_transactions(
             type=txn_data.type,
             status="posted",
             source=source,
+            # Imported rows are new to the person until they review them
+            # (issue #636).
+            is_read=False,
             import_id=import_log.id,
             external_id=txn_data.external_id,
             currency=txn_currency,
@@ -1304,6 +1500,7 @@ async def import_transactions(
             user_id,
             incoming,
             skip_category_rules=txn_data.force_uncategorized,
+            workspace_rules=workspace_rules,
         )
         if preview.category_id is None and not txn_data.force_uncategorized:
             preview.category_id = csv_category_id
@@ -1319,12 +1516,19 @@ async def import_transactions(
             txn_data.type,
             txn_data.date,
             preview.description,
+            pool=incoming_pool,
         )
         if placeholder and not placeholder.is_ignored:
             placeholder.source = source
             placeholder.external_id = txn_data.external_id
             placeholder.import_id = import_log.id
             placeholder.status = "posted"
+            # The bill's charge is on the statement file (#15).
+            placeholder.is_paid = True
+            # The placeholder was generated for the person; the imported charge
+            # that replaced it was not reviewed yet (issue #636). Duplicates
+            # above are skipped before this point, so they keep their state.
+            placeholder.is_read = False
             # The rules already ran, against the incoming charge, to build
             # `preview`. Fold that result in rather than re-running them
             # against the placeholder: its description is the recurring
@@ -1359,7 +1563,9 @@ async def import_transactions(
                 charge_changed = amount_changed or currency_changed
                 if txn_data.fx_rate:
                     placeholder.fx_rate_used = txn_data.fx_rate
-                    placeholder.amount_primary = txn_data.amount * txn_data.fx_rate
+                    placeholder.amount_primary = bounded_conversion(
+                        _cents(txn_data.amount * txn_data.fx_rate)
+                    )
                     await stamp_account_amount(
                         session, placeholder, recompute=charge_changed
                     )
@@ -1405,16 +1611,23 @@ async def import_transactions(
             txn_data.type,
             txn_data.date,
             preview.description,
+            pool=incoming_pool,
         )
         incoming.recurring_transaction_id = (
             recurring_link.id if recurring_link else None
         )
         if txn_data.fx_rate:
             incoming.fx_rate_used = txn_data.fx_rate
-            incoming.amount_primary = txn_data.amount * txn_data.fx_rate
+            incoming.amount_primary = bounded_conversion(
+                _cents(txn_data.amount * txn_data.fx_rate)
+            )
 
+        # Written with the rest of the batch at the next flush rather than
+        # one INSERT per row; the id is set here, since the lookups below
+        # and the duplicate detection of later rows read it.
+        incoming.id = uuid.uuid4()
         session.add(incoming)
-        await session.flush()
+        statement_rows.add(incoming)
         if should_detect_duplicates and not txn_data.external_id:
             matched_existing_ids.add(incoming.id)
         if recurring_link is not None:
@@ -1428,6 +1641,7 @@ async def import_transactions(
             # A split brought back from an export keeps its categories; rules
             # never categorize a split row.
             skip_category_rules=txn_data.force_uncategorized or split_payload is not None,
+            workspace_rules=workspace_rules,
         )
         if split_payload is not None:
             try:
@@ -1461,6 +1675,20 @@ async def import_transactions(
     # at a transaction, which has to exist first.
     await reconciliation_service.match_incoming(session, workspace_id, landed)
 
+    # Two files that carry the two legs of one transfer land as a pair, just
+    # as rows from a connection do (#1802). Every row this import created is
+    # a candidate, so the rule still holds: a pair needs one leg that just
+    # arrived, and two rows already in the books are never linked on the
+    # strength of a third one being imported.
+    if landed:
+        await detect_transfer_pairs(
+            session, workspace_id, candidate_ids=[tx.id for tx in landed]
+        )
+
+    # Anything that has to land with the rows (a document read marked as
+    # imported) is written into this same commit.
+    if before_commit is not None:
+        await before_commit(import_log.id)
     await session.commit()
     return imported, skipped, excluded_count, import_log.id
 
@@ -1519,6 +1747,9 @@ def infer_decimal_separator(values) -> str | None:
     """
     votes: set[str] = set()
     comma_thousands = False
+    # "0,125" is never a grouped number, so a column with one cannot be read
+    # as comma-thousands, even if its other cells look like it ("1,125").
+    zero_comma = False
     for raw in values:
         if not raw:
             continue
@@ -1531,11 +1762,13 @@ def infer_decimal_separator(values) -> str | None:
             votes.add(',')
         elif _DOT_DECIMAL_TAIL.search(s):
             votes.add('.')
-        elif _COMMA_THOUSANDS.match(s) and not s.startswith('0,'):
+        elif _ZERO_COMMA_DECIMAL.match(s):
+            zero_comma = True
+        elif _COMMA_THOUSANDS.match(s):
             comma_thousands = True
     if len(votes) == 1:
         return votes.pop()
-    if not votes and comma_thousands:
+    if not votes and comma_thousands and not zero_comma:
         return '.'
     return None
 
@@ -1574,6 +1807,9 @@ def normalize_amount(amount_str: str | None, decimal_separator: str | None = Non
             amount_str = amount_str.replace('.', '').replace(',', '.')
         else:
             amount_str = amount_str.replace(',', '')
+    elif amount_str.count(',') > 1 and _COMMA_THOUSANDS.match(amount_str):
+        # Two or more comma groups and no dot can only be grouping.
+        amount_str = amount_str.replace(',', '')
     elif ',' in amount_str:
         amount_str = amount_str.replace(',', '.')
 

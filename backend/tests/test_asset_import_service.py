@@ -92,6 +92,41 @@ def test_portuguese_broker_headers_are_recognised():
     assert str(orders[0].date) == "2026-02-10"
 
 
+def test_comma_grouped_quantities_keep_their_thousands():
+    """A US export groups thousands with commas: "1,500" shares is 1500, not 1.5."""
+    orders, errors, _ = asset_import_service.parse_orders_csv(_csv(
+        "ticker,date,quantity,price",
+        'AAPL,2026-01-15,"1,500","1,234.50"',
+        "MSFT,2026-01-16,\"2,000\",410.25",
+        "KO,2026-01-17,10,60.10",
+    ))
+    assert errors == []
+    assert [o.quantity for o in orders] == [Decimal("1500"), Decimal("2000"), Decimal("10")]
+    assert orders[0].price == Decimal("1234.50")
+
+
+def test_comma_decimal_quantities_stay_fractional():
+    """In a comma-decimal file, "1,5" is still one and a half units."""
+    orders, errors, _ = asset_import_service.parse_orders_csv(_csv(
+        "Ativo;Data;Quantidade;Preço",
+        "BTC;10/02/2026;1,5;38,50",
+        "ETH;11/02/2026;2,000;12,00",
+    ))
+    assert errors == []
+    assert [o.quantity for o in orders] == [Decimal("1.5"), Decimal("2.000")]
+
+
+def test_zero_led_comma_quantities_are_decimals():
+    """With "0,125" in the column, "1,125" is one and an eighth, not 1125."""
+    orders, errors, _ = asset_import_service.parse_orders_csv(_csv(
+        "ticker;date;quantity;price",
+        "BTC;2026-02-10;0,125;38,50",
+        "ETH;2026-02-11;1,125;12,00",
+    ))
+    assert errors == []
+    assert [o.quantity for o in orders] == [Decimal("0.125"), Decimal("1.125")]
+
+
 def test_negative_quantity_reads_as_a_sale():
     """The convention most broker exports use for a sale."""
     orders, _, _ = asset_import_service.parse_orders_csv(_csv(
@@ -402,6 +437,27 @@ async def test_orders_in_another_currency_are_converted_at_their_date(
     ), provider)
     assert again["imported"] == 0
     assert again["skipped"] == 2
+
+
+@pytest.mark.asyncio
+async def test_a_converted_row_keeps_its_file_price_for_the_table(
+    session: AsyncSession, test_user: User, test_workspace: Workspace, provider
+):
+    """The preview shows both numbers: what the file paid, and what the row
+    becomes at its own date's rate."""
+    await _eur_rate(session, date(2026, 1, 15), "0.8")
+
+    summary = await _import(session, test_workspace, test_user, _csv(
+        "ticker,date,quantity,price,fee,kind,currency",
+        "AAPL,2026-01-15,1,400,2,buy,EUR",
+    ), provider, dry_run=True)
+
+    [row] = summary["orders"]
+    assert row.currency == "EUR"
+    assert row.price == Decimal("400")
+    assert row.converted_currency == "USD"
+    assert row.converted_price == Decimal("500.000000")
+    assert row.converted_fee == Decimal("2.50")
 
 
 @pytest.mark.asyncio

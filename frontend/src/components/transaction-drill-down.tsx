@@ -8,6 +8,8 @@ import { CategoryIcon } from '@/components/category-icon'
 import { TransactionCategoryIcon } from '@/components/category-lines-display'
 import { isSplitByCategory } from '@/lib/category-lines'
 import { ProjectedTransactionBadge } from '@/components/projected-transaction-badge'
+import { ReportingDateBadge } from '@/components/reporting-date-badge'
+import { listDate } from '@/lib/list-date'
 import { sumDrillDownTotals } from '@/lib/drill-down-totals'
 import { hasOpenDialog, isInsideOverlayLayer } from '@/lib/overlay-layers'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
@@ -27,6 +29,10 @@ export type DrillDownFilter = {
   // other workspaces: their categories live there, so reports count them
   // as uncategorized here.
   sharedAsUncategorized?: boolean
+  // Leave out the viewer's shares of expenses from other workspaces. A queue
+  // the viewer clears from this workspace sets it: the write that would clear
+  // such a row belongs to its own workspace, so it would stay pending here.
+  workspaceOnly?: boolean
   account_id?: string
   // Scope to a set of accounts (e.g. the active collection's accounts).
   account_ids?: string[]
@@ -125,6 +131,7 @@ export function TransactionDrillDown({
         category_ids: filter?.category_ids,
         uncategorized: filter?.uncategorized,
         shared_as_uncategorized: filter?.sharedAsUncategorized,
+        workspace_only: filter?.workspaceOnly,
         account_id: filter?.account_id,
         account_ids: filter?.account_ids,
         type: filter?.type,
@@ -188,13 +195,17 @@ export function TransactionDrillDown({
       // share, the owner the amount less everyone else's shares, and anyone
       // else the full amount.
       const splits = tx.splits ?? []
+      // A credit's settled part is a payback, not income, as on the card.
+      const settled = tx.type === 'credit'
+        ? (tx.settled_by ?? []).reduce((sum, s) => sum + Number(s.amount), 0)
+        : 0
       const countsShare = tx.type === 'debit' || (tx.type === 'credit' && !!filter?.ownShareCredits)
       const ownShare = viewerShare != null || !filter?.ownShare || !countsShare
         ? null
         : tx.is_shared
           ? Number(tx.viewer_share ?? 0)
-          : splits.length > 0 && tx.user_id === user?.id
-            ? parentAmount - (splits.reduce((sum, s) => sum + Number(s.share_amount), 0) - Number(tx.viewer_share ?? 0))
+          : (splits.length > 0 || settled > 0) && tx.user_id === user?.id
+            ? parentAmount - (splits.reduce((sum, s) => sum + Number(s.share_amount), 0) - Number(tx.viewer_share ?? 0)) - settled
             : null
       const share = viewerShare ?? ownShare
       // Shares are in the row's own currency, so the primary amount scales
@@ -209,7 +220,7 @@ export function TransactionDrillDown({
       items.push({
         key: tx.id,
         description: tx.description,
-        date: tx.date,
+        date: listDate(tx),
         type: tx.type as 'debit' | 'credit',
         amount,
         amountPrimary,
@@ -243,8 +254,9 @@ export function TransactionDrillDown({
       if (filter?.category_id && !matchedParts.length && String(pt.category_id) !== filter.category_id) continue
       if (filter?.category_ids && !parts.some((part) => filter.category_ids!.includes(part.category_id)) && !filter.category_ids.includes(String(pt.category_id))) continue
       if (filter?.uncategorized && (pt.category_id != null || parts.length)) continue
-      if (filter?.from && pt.date < filter.from) continue
-      if (filter?.to && pt.date > filter.to) continue
+      const ptDate = pt.reporting_date ?? pt.date
+      if (filter?.from && ptDate < filter.from) continue
+      if (filter?.to && ptDate > filter.to) continue
       if (!filter?.category_id && parts.length) {
         // Income and expense views count only the parts that are income or
         // expense, as the projected totals do.
@@ -255,7 +267,7 @@ export function TransactionDrillDown({
         items.push({
           key: `proj-${pt.recurring_id}-${pt.date}`,
           description: pt.description,
-          date: pt.date,
+          date: ptDate,
           type: pt.type,
           amount: share,
           amountPrimary: pt.amount_primary != null ? pt.amount_primary * ratio : null,
@@ -277,7 +289,7 @@ export function TransactionDrillDown({
         items.push({
           key: `proj-${pt.recurring_id}-${pt.date}`,
           description: pt.description,
-          date: pt.date,
+          date: ptDate,
           type: pt.type,
           amount: share,
           amountPrimary: pt.amount_primary != null ? pt.amount_primary * ratio : null,
@@ -297,7 +309,7 @@ export function TransactionDrillDown({
       items.push({
         key: `proj-${pt.recurring_id}-${pt.date}`,
         description: pt.description,
-        date: pt.date,
+        date: ptDate,
         type: pt.type,
         amount: pt.amount,
         amountPrimary: pt.amount_primary ?? null,
@@ -491,6 +503,7 @@ export function TransactionDrillDown({
                         value: mask(formatCurrency(item.partOf, item.currency ?? userCurrency, locale)),
                       })}`}
                     </p>
+                    {item.transaction && <ReportingDateBadge tx={item.transaction} locale={dateLocale} />}
                     {quickTx && quickCategorize && (
                       // Picking here must not also open the row's dialog.
                       <div

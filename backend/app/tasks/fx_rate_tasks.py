@@ -6,6 +6,8 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sess
 from app.core.app_clock import use_timezone
 from app.worker import celery_app
 from app.core.config import get_settings
+from app.core.money import MoneyOutOfRange
+from app.core.row_security import workspace_makers
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +33,14 @@ async def _sync_fx_rates() -> int:
 
 
 async def _restamp_recurring_fx() -> int:
+    engine, session_maker = _make_session_maker()
+    try:
+        return sum([await _restamp_recurring_fx_in(maker) for maker in await workspace_makers(session_maker)])
+    finally:
+        await engine.dispose()
+
+
+async def _restamp_recurring_fx_in(session_maker) -> int:
     """Re-stamp active recurring transactions with latest FX rates."""
     from sqlalchemy import select
 
@@ -38,32 +48,39 @@ async def _restamp_recurring_fx() -> int:
     from app.models.user import User
     from app.services.fx_rate_service import stamp_primary_amount
 
-    engine, session_maker = _make_session_maker()
-    try:
-        async with session_maker() as session, use_timezone(session, fresh=True):
-            users = (await session.execute(select(User))).scalars().all()
-            count = 0
-            for user in users:
-                primary = user.primary_currency
-                result = await session.execute(
-                    select(RecurringTransaction).where(
-                        RecurringTransaction.user_id == user.id,
-                        RecurringTransaction.is_active == True,
-                        RecurringTransaction.currency != primary,
-                    )
+    async with session_maker() as session, use_timezone(session, fresh=True):
+        users = (await session.execute(select(User))).scalars().all()
+        count = 0
+        for user in users:
+            primary = user.primary_currency
+            result = await session.execute(
+                select(RecurringTransaction).where(
+                    RecurringTransaction.user_id == user.id,
+                    RecurringTransaction.is_active == True,
+                    RecurringTransaction.currency != primary,
                 )
-                for rec in result.scalars().all():
+            )
+            for rec in result.scalars().all():
+                try:
                     await stamp_primary_amount(
                         session, user.id, rec, date_field="start_date",
                     )
-                    count += 1
-            await session.commit()
-    finally:
-        await engine.dispose()
+                except MoneyOutOfRange:
+                    continue  # converts past the column: left as it was
+                count += 1
+        await session.commit()
     return count
 
 
 async def _restamp_fallback_transactions() -> int:
+    engine, session_maker = _make_session_maker()
+    try:
+        return sum([await _restamp_fallback_transactions_in(maker) for maker in await workspace_makers(session_maker)])
+    finally:
+        await engine.dispose()
+
+
+async def _restamp_fallback_transactions_in(session_maker) -> int:
     """Heal cross-currency transactions that lack a real FX rate.
 
     Targets rows left NULL or stamped with the legacy 1:1 fallback (issue #353)
@@ -84,33 +101,32 @@ async def _restamp_fallback_transactions() -> int:
     from app.services.fx_rate_service import stamp_primary_amount
 
     settings = get_settings()
-    engine, session_maker = _make_session_maker()
-    try:
-        async with session_maker() as session, use_timezone(session, fresh=True):
-            users = {
-                u.id: u.primary_currency
-                for u in (await session.execute(select(User))).scalars().all()
-            }
-            result = await session.execute(
-                select(Transaction).where(
-                    or_(
-                        Transaction.amount_primary.is_(None),
-                        Transaction.fx_rate_used == 1,
-                    )
+    async with session_maker() as session, use_timezone(session, fresh=True):
+        users = {
+            u.id: u.primary_currency
+            for u in (await session.execute(select(User))).scalars().all()
+        }
+        result = await session.execute(
+            select(Transaction).where(
+                or_(
+                    Transaction.amount_primary.is_(None),
+                    Transaction.fx_rate_used == 1,
                 )
             )
-            count = 0
-            for tx in result.scalars().all():
-                primary = users.get(tx.user_id, settings.default_currency)
-                if tx.currency == primary:
-                    continue  # genuine same-currency row — never touch
-                before = (tx.amount_primary, tx.fx_rate_used)
+        )
+        count = 0
+        for tx in result.scalars().all():
+            primary = users.get(tx.user_id, settings.default_currency)
+            if tx.currency == primary:
+                continue  # genuine same-currency row — never touch
+            before = (tx.amount_primary, tx.fx_rate_used)
+            try:
                 await stamp_primary_amount(session, tx.user_id, tx, allow_fetch=False)
-                if (tx.amount_primary, tx.fx_rate_used) != before:
-                    count += 1
-            await session.commit()
-    finally:
-        await engine.dispose()
+            except MoneyOutOfRange:
+                continue  # converts past the column: left as it was (#422)
+            if (tx.amount_primary, tx.fx_rate_used) != before:
+                count += 1
+        await session.commit()
     return count
 
 

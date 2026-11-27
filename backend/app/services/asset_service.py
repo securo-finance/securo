@@ -1,15 +1,17 @@
 import logging
 import uuid
+from collections.abc import Sequence
 from datetime import date, datetime, timezone, timedelta
-from decimal import ROUND_DOWN, Decimal
-from typing import Any, Optional, Sequence, cast
+from decimal import ROUND_DOWN, ROUND_HALF_UP, Decimal
+from typing import Any, Optional, cast
 
 from fastapi import HTTPException, status
 from sqlalchemy import select, func, desc, or_, update as sa_update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.app_clock import app_today
+from app.core.app_clock import app_timezone, app_today
+from app.core.money import MoneyOutOfRange, bounded_asset_value
 from app.models.account import Account
 from app.models.asset import (
     ASSET_PRICE_DECIMALS,
@@ -35,12 +37,19 @@ from app.schemas.asset import (
     MarketSymbolMatch,
 )
 from app.services.asset_group_service import ensure_group_in_workspace
-from app.services.fx_rate_service import convert, convert_or_none, has_rate, stamp_primary_amount
+from app.services.fx_rate_service import (
+    DatedRateBook,
+    convert,
+    convert_or_none,
+    has_rate,
+    stamp_primary_amount,
+)
 
 logger = logging.getLogger(__name__)
 
 ValueRecord = tuple[date, Decimal, Optional[Decimal]]  # (date, amount, price_per_share)
 TxRecord = tuple[date, str, Decimal, Optional[Decimal]]  # (date, kind, quantity, price_per_share)
+GrossValueRecord = tuple[date, Decimal, Optional[Decimal]]  # (date, net, gross)
 SplitRecord = tuple[date, int, int]  # (date, old_units, new_units)
 
 
@@ -95,7 +104,11 @@ def _generate_growth_values(
     """Generate all AssetValue rows from base_date to today using the growth rule.
     When growth_start_date is set, growth iteration begins from that date — not
     from base_date — so the asset accrues no growth for the gap between
-    purchase and the configured growth start."""
+    purchase and the configured growth start.
+
+    Raises `MoneyOutOfRange` when the rule compounds past what the column
+    holds: the rates are the user's, and a series that cannot be stored is
+    refused (a 422) instead of half-written and failing at flush (issue #642)."""
     today = app_today()
     if growth_start_date and today < growth_start_date:
         return []
@@ -121,7 +134,7 @@ def _generate_growth_values(
             break
         values.append(AssetValue(
             asset_id=asset_id,
-            amount=Decimal(str(round(current_amount, 6))),
+            amount=bounded_asset_value(Decimal(str(round(current_amount, 6)))),
             date=next_due,
             source="rule",
         ))
@@ -224,14 +237,12 @@ def _asset_to_read(
 
 
 async def _get_latest_value(session: AsyncSession, asset_id: uuid.UUID) -> Optional[AssetValue]:
-    """Get the most recent AssetValue for an asset."""
-    result = await session.execute(
-        select(AssetValue)
-        .where(AssetValue.asset_id == asset_id)
-        .order_by(desc(AssetValue.date), desc(AssetValue.id))
-        .limit(1)
-    )
-    return result.scalar_one_or_none()
+    """Get the AssetValue an asset is worth today.
+
+    A valuation dated after today has not happened yet, so it is left out,
+    as the dashboard, net worth and goals leave it out (#646).
+    """
+    return await _get_value_as_of(session, asset_id, app_today())
 
 
 async def _get_value_as_of(
@@ -258,6 +269,57 @@ def split_units(quantity: Decimal, old_units: int, new_units: int) -> Decimal:
     divide evenly (10 units through a 3 → 1 reverse split are 3.333333).
     """
     return (quantity * new_units / old_units).quantize(_UNIT_STEP, rounding=ROUND_DOWN)
+
+
+def is_historical_seed(
+    asset: Asset, point_date: date, is_first_point: bool, has_later_points: bool
+) -> bool:
+    """Whether a synced holding's stored value is the sync's purchase-date
+    placeholder rather than a provider valuation.
+
+    Connected holdings get a one-time value at ``purchase_date`` from
+    ``purchase_price`` so charts have a starting point. Pluggy reports the
+    cost of the units still held there, which changes after a partial
+    redemption, so the placeholder is recognised by being the first stored
+    point, dated on the purchase date, not by its amount. Only used for
+    holdings with a trade ledger, which values that period exactly instead.
+    """
+    return (
+        asset.source != "manual"
+        and is_first_point
+        and has_later_points
+        and asset.purchase_date == point_date
+    )
+
+
+def build_synced_ledger_series(
+    snapshots: list[tuple[date, float]],
+    txs: list[TxRecord],
+) -> list[tuple[date, float]]:
+    """Value a synced holding from its trades until the provider reports it.
+
+    ``snapshots`` are the provider's own valuations (placeholders removed).
+    Before the first one, the position is valued as quantity held × the price
+    of its latest trade, so each buy and sell shows up on its own date at what
+    was actually paid or received. From the first snapshot on, the provider's
+    valuation is authoritative. Trades on the same day replay in the order
+    given (the sort is stable), so pass them in the order they were recorded.
+    """
+    first_snapshot = snapshots[0][0] if snapshots else None
+    out: list[tuple[date, float]] = []
+    qty = Decimal("0")
+    for d, kind, q, p in sorted(txs, key=lambda t: t[0]):
+        if first_snapshot is not None and d >= first_snapshot:
+            break
+        qty += q if kind == "buy" else -q
+        if p is None:
+            continue
+        value = float(max(qty, Decimal("0")) * p)
+        if out and out[-1][0] == d:
+            out[-1] = (d, value)
+        else:
+            out.append((d, value))
+    return out + snapshots
 
 
 def _normalize_symbol_text(value: Optional[str]) -> str:
@@ -342,6 +404,8 @@ def build_market_value_series(
     value_rows: list[ValueRecord],
     txs: list[TxRecord],
     splits: Sequence[SplitRecord] = (),
+    has_ledger: bool = False,
+    keep_stored_amounts: bool = False,
 ) -> list[tuple[date, float]]:
     """Rebuild a market-priced holding's value series from the ledger.
 
@@ -369,9 +433,18 @@ def build_market_value_series(
 
     A holding with no ledger at all (e.g. a pre-ledger "no cost" position that
     still has a stored quantity) keeps its baked amounts — replaying an empty
-    ledger would wrongly zero it out.
+    ledger would wrongly zero it out. `has_ledger` says the holding has trades
+    outside `txs` (the caller cut the ledger at a date): it is then valued by
+    the replay like any other range, so a date reads the same wherever the
+    range ends.
+
+    `keep_stored_amounts` is for a holding a provider syncs: a stored point
+    keeps the amount the provider reported on its date (which may differ from
+    its unit price × units, e.g. a net balance against a quote), so the chart
+    agrees with the holding's current value; only the trade dates in between
+    are replayed. Its price still carries forward to those dates.
     """
-    if not txs:
+    if not txs and not has_ledger:
         return [(d, float(amount)) for d, amount, _ in value_rows]
 
     # Net quantity change per trade date, plus a representative per-share price
@@ -416,8 +489,9 @@ def build_market_value_series(
             # Once market prices begin they take over and carry forward.
             last_price = tx_price[d]
 
-        if d in value_by_date and price is None:
-            out.append((d, float(amount)))  # stored point with no per-share price
+        if d in value_by_date and (price is None or keep_stored_amounts):
+            # A stored point with no per-share price, or the provider's own figure.
+            out.append((d, float(amount)))
         elif last_price is not None:
             out.append((d, float(last_price * held)))
         else:
@@ -425,10 +499,129 @@ def build_market_value_series(
     return out
 
 
+def estimate_gross_value_series(
+    records: Sequence[GrossValueRecord],
+) -> list[tuple[date, float]]:
+    """Fill legacy gaps between exact gross valuation anchors.
+
+    Older synced rows only stored the withdrawable value. Once a provider gives
+    us an exact gross anchor, interpolate the gross gain against the observed
+    net gain within each uninterrupted holding segment. Decreases start a new
+    segment so a redemption is never mistaken for taxable performance.
+    Exact gross rows always win; assets with no gross data simply retain their
+    existing net series.
+    """
+    if not records:
+        return []
+    if not any(gross is not None for _, _, gross in records):
+        return [(point_date, float(net)) for point_date, net, _ in records]
+
+    adjusted: list[Decimal] = [net for _, net, _ in records]
+    segment_starts = [0]
+    for index in range(1, len(records)):
+        if records[index][1] < records[index - 1][1]:
+            segment_starts.append(index)
+    segment_starts.append(len(records))
+
+    for segment_index in range(len(segment_starts) - 1):
+        start = segment_starts[segment_index]
+        stop = segment_starts[segment_index + 1]
+        anchors = [
+            (index, gross)
+            for index, (_, _, gross) in enumerate(records[start:stop], start=start)
+            if gross is not None
+        ]
+        if not anchors:
+            continue
+        if anchors[0][0] != start:
+            anchors.insert(0, (start, records[start][1]))
+
+        for (left_index, left_gross), (right_index, right_gross) in zip(anchors, anchors[1:]):
+            left_net = records[left_index][1]
+            right_net = records[right_index][1]
+            net_change = right_net - left_net
+            for index in range(left_index, right_index + 1):
+                exact_gross = records[index][2]
+                if exact_gross is not None:
+                    adjusted[index] = exact_gross
+                elif net_change != 0:
+                    net_progress = (records[index][1] - left_net) / net_change
+                    adjusted[index] = left_gross + net_progress * (right_gross - left_gross)
+                else:
+                    adjusted[index] = left_gross
+
+        last_anchor_index, last_anchor_gross = anchors[-1]
+        last_anchor_net = records[last_anchor_index][1]
+        for index in range(last_anchor_index, stop):
+            exact_gross = records[index][2]
+            adjusted[index] = (
+                exact_gross
+                if exact_gross is not None
+                else last_anchor_gross + records[index][1] - last_anchor_net
+            )
+
+    return [
+        (point_date, float(adjusted[index])) for index, (point_date, _, _) in enumerate(records)
+    ]
+
+def _replays_provider_ledger(asset: Asset) -> bool:
+    """A synced holding whose chart may come from its provider's trades."""
+    return asset.valuation_method != "market_price" and asset.connection_id is not None and bool(asset.source)
+
+
+def _ledger_valued(asset: Asset, provider_units: Optional[tuple[Decimal, Decimal, Optional[Decimal]]]) -> bool:
+    """Whether the asset's chart is its ledger replayed (units held each day x price).
+
+    Market-priced holdings always are. A holding a bank connection syncs is
+    while its provider's trades (`provider_units`: their buys minus sells,
+    their largest lot and the hand trades' buys minus sells, None without any
+    provider trade) add up to the units the provider reports, within the
+    tolerance the import checked them with: they carry each buy and sale on its
+    own date, which the stored values (one per sync) cannot. A set that stopped
+    adding up (the sync kept an older ledger) falls back to the stored values,
+    and trades entered by hand never count.
+
+    A trade recorded by hand recomputes `units` from the whole ledger, so until
+    the next sync puts back the provider's count they are the provider's plus
+    the hand trades'. Either matches. A hand split can't be netted out
+    (the hand net is None), so only the stored units count then.
+    """
+    if asset.valuation_method == "market_price":
+        return True
+    if not _replays_provider_ledger(asset) or provider_units is None or asset.units is None:
+        return False
+    units = Decimal(str(asset.units))
+    net, largest_lot, by_hand = provider_units
+    targets = [units] if not by_hand else [units, units - by_hand]
+    # The import's tolerance (connection_service._reconciled_trades): one
+    # millionth of the largest lot, at least 0.0001.
+    largest = max(abs(units), largest_lot)
+    tolerance = max(Decimal("0.0001"), largest * Decimal("0.000001"))
+    return any(abs(net - target) <= tolerance for target in targets)
+
+
+def _provider_units(asset: Asset, rows) -> Optional[tuple[Decimal, Decimal, Optional[Decimal]]]:
+    """Of `rows` of (kind, quantity, source): the asset's own provider's buys minus sells and its largest lot, and
+    the other rows' buys minus sells (None when one of them is a split, which a net can't express)."""
+    mine = [
+        (kind, Decimal(str(qty))) for kind, qty, source in rows if source == asset.source and kind in ("buy", "sell")
+    ]
+    if not mine:
+        return None
+    net = sum((q if k == "buy" else -q for k, q in mine), Decimal(0))
+    others = [(kind, Decimal(str(qty or 0))) for kind, qty, source in rows if source != asset.source]
+    by_hand: Optional[Decimal] = sum((q if k == "buy" else -q for k, q in others if k in ("buy", "sell")), Decimal(0))
+    if any(k == "split" for k, _ in others):
+        by_hand = None
+    return net, max(q for _, q in mine), by_hand
+
+
 async def _load_asset_native_values(
     session: AsyncSession,
     assets: list[Asset],
     up_to_date: Optional[date] = None,
+    *,
+    use_gross: bool = False,
 ) -> dict[str, list[tuple[date, float]]]:
     """Bulk-load each asset's value series (native currency).
 
@@ -443,31 +636,61 @@ async def _load_asset_native_values(
 
     asset_ids = [a.id for a in assets]
     q = (
-        select(AssetValue.asset_id, AssetValue.date, AssetValue.amount, AssetValue.price)
+        select(
+            AssetValue.asset_id,
+            AssetValue.date,
+            AssetValue.amount,
+            AssetValue.price,
+            AssetValue.gross_amount,
+        )
         .where(AssetValue.asset_id.in_(asset_ids))
         .order_by(AssetValue.asset_id, AssetValue.date, AssetValue.id)
     )
-    if up_to_date is not None:
-        q = q.where(AssetValue.date <= up_to_date)
 
+    # The cutoff is applied here rather than in the query: whether the first
+    # stored value is the sync's purchase-date placeholder depends on the
+    # whole history, so an as-of load must classify it like the full load.
     rows = (await session.execute(q)).all()
     raw: dict[str, list[ValueRecord]] = {str(a.id): [] for a in assets}
-    for aid, d, amt, price in rows:
+    gross_raw: dict[str, list[GrossValueRecord]] = {str(a.id): [] for a in assets}
+    value_counts: dict[str, int] = {}
+    for aid, d, amt, price, gross_amount in rows:
+        value_counts[str(aid)] = value_counts.get(str(aid), 0) + 1
+        if up_to_date is not None and d > up_to_date:
+            continue
         raw[str(aid)].append((d, amt, price))
+        gross_raw[str(aid)].append((d, amt, gross_amount))
 
-    # Bulk-load the ledger for market-priced holdings (one query).
-    market_ids = [a.id for a in assets if a.valuation_method == "market_price"]
+    # Bulk-load the ledger (one query): market-priced holdings are valued
+    # from it, synced holdings use it before their first provider snapshot.
     txs_by_aid: dict[str, list[TxRecord]] = {}
     splits_by_aid: dict[str, list[SplitRecord]] = {}
-    if market_ids:
+    # Holdings with any trade, before the cutoff: whether a holding has a
+    # ledger must not depend on where the range ends.
+    ledger_ids: set[str] = set()
+    by_id = {str(a.id): a for a in assets}
+    provider_rows: dict[str, list[tuple[str, Any, Optional[str]]]] = {}
+    if asset_ids:
         tq = select(
             AssetTransaction.asset_id, AssetTransaction.date,
             AssetTransaction.kind, AssetTransaction.quantity, AssetTransaction.price,
-            AssetTransaction.old_units, AssetTransaction.new_units,
-        ).where(AssetTransaction.asset_id.in_(market_ids))
-        if up_to_date is not None:
-            tq = tq.where(AssetTransaction.date <= up_to_date)
-        for aid, d, kind, qty, price, old_units, new_units in (await session.execute(tq)).all():
+            AssetTransaction.old_units, AssetTransaction.new_units, AssetTransaction.source,
+        ).where(AssetTransaction.asset_id.in_(asset_ids))
+        # Same-day trades replay in the order they were recorded (a buy then a
+        # sell is not a sell then a buy), so the ledger order must be fixed.
+        tq = tq.order_by(AssetTransaction.date, AssetTransaction.created_at, AssetTransaction.id)
+        for aid, d, kind, qty, price, old_units, new_units, source in (await session.execute(tq)).all():
+            owner = by_id[str(aid)]
+            if _replays_provider_ledger(owner):
+                # Every row decides whether the provider's trades add up (hand trades
+                # are netted out there); a synced holding replays only its provider's.
+                provider_rows.setdefault(str(aid), []).append((kind, qty, source))
+                if source != owner.source:
+                    continue
+            if kind != "split":
+                ledger_ids.add(str(aid))
+            if up_to_date is not None and d > up_to_date:
+                continue
             if kind == "split":
                 # A split has no quantity or price of its own; replaying it as a
                 # "sell of 0" would leave the units unchanged.
@@ -478,17 +701,45 @@ async def _load_asset_native_values(
             )
 
     values_map: dict[str, list[tuple[date, float]]] = {}
+    synced_ledger_ids: set[str] = set()
     for asset in assets:
         aid = str(asset.id)
-        if asset.valuation_method == "market_price":
+        # Outside performance (`use_gross`), a holding a connection syncs is
+        # drawn from its provider's ledger while those trades add up, else
+        # from its stored values. Performance values it from its (gross)
+        # snapshots, with the ledger only before the first one.
+        by_connection = not use_gross and _replays_provider_ledger(asset)
+        if asset.valuation_method == "market_price" or (
+            by_connection and _ledger_valued(asset, _provider_units(asset, provider_rows.get(aid, [])))
+        ):
             values_map[aid] = build_market_value_series(
-                raw[aid], txs_by_aid.get(aid, []), splits_by_aid.get(aid, [])
+                raw[aid], txs_by_aid.get(aid, []), splits_by_aid.get(aid, []),
+                has_ledger=aid in ledger_ids,
+                keep_stored_amounts=_replays_provider_ledger(asset),
             )
+            continue
+        gross_rows = gross_raw[aid]
+        if asset.source != "manual" and txs_by_aid.get(aid) and not by_connection:
+            synced_ledger_ids.add(aid)
+            # Rows are date-ordered, so the kept rows are a prefix of the
+            # full history and share its indexes.
+            gross_rows = [
+                row
+                for index, row in enumerate(gross_rows)
+                if not is_historical_seed(asset, row[0], index == 0, index < value_counts[aid] - 1)
+            ]
+        if use_gross:
+            series = estimate_gross_value_series(gross_rows)
         else:
-            values_map[aid] = [(d, float(amt)) for d, amt, _ in raw[aid]]
+            series = [(d, float(amt)) for d, amt, _ in gross_rows]
+        if aid in synced_ledger_ids:
+            series = build_synced_ledger_series(series, txs_by_aid[aid])
+        values_map[aid] = series
 
     for asset in assets:
         aid = str(asset.id)
+        if aid in synced_ledger_ids:
+            continue  # the ledger already supplies the opening value
         vals = values_map[aid]
         if asset.purchase_price is not None and asset.purchase_date is not None:
             if not vals or asset.purchase_date < vals[0][0]:
@@ -557,7 +808,62 @@ async def get_assets(
         latest = await _get_latest_value(session, asset.id)
         count = await _get_value_count(session, asset.id)
         reads.append(_asset_to_read(asset, latest, count, tx_counts.get(asset.id, 0)))
+    await _fill_closed_positions(session, workspace_id, assets, reads)
     return reads
+
+
+async def _fill_closed_positions(
+    session: AsyncSession,
+    workspace_id: uuid.UUID,
+    assets: list[Asset],
+    reads: list[AssetRead],
+) -> None:
+    """Fill the closed-position fields of the sold holdings in place.
+
+    A ledger-backed holding is read from its transactions (one query for all of
+    them); one sold by hand from its purchase and sell prices.
+    """
+    # Local import: asset_transaction_service imports this module.
+    from app.services import asset_transaction_service
+
+    sold = [(a, r) for a, r in zip(assets, reads) if a.sell_date is not None]
+    ledger_ids = [a.id for a, r in sold if r.transaction_count > 0]
+    by_asset: dict[uuid.UUID, list[AssetTransaction]] = {}
+    if ledger_ids:
+        rows = await session.execute(
+            select(AssetTransaction).where(
+                AssetTransaction.asset_id.in_(ledger_ids),
+                AssetTransaction.workspace_id == workspace_id,
+            )
+        )
+        for tx in rows.scalars().all():
+            by_asset.setdefault(tx.asset_id, []).append(tx)
+
+    price_quantum = Decimal(1).scaleb(-ASSET_PRICE_DECIMALS)
+    for asset, read in sold:
+        if read.transaction_count > 0:
+            position = asset_transaction_service.closed_position(
+                by_asset.get(asset.id, []), asset.realized_gain
+            )
+            if position is None:
+                continue
+            read.average_buy_price = float(position["average_buy_price"])
+            read.average_sell_price = float(position["average_sell_price"])
+            read.sold_cost = float(position["sold_cost"])
+            read.sale_proceeds = float(position["sale_proceeds"])
+            continue
+        cost, proceeds = asset.purchase_price, asset.sell_price
+        read.sold_cost = float(cost) if cost is not None else None
+        read.sale_proceeds = float(proceeds) if proceeds is not None else None
+        if asset.units is not None and asset.units > 0:
+            if cost is not None:
+                read.average_buy_price = float(
+                    (cost / asset.units).quantize(price_quantum, rounding=ROUND_HALF_UP)
+                )
+            if proceeds is not None:
+                read.average_sell_price = float(
+                    (proceeds / asset.units).quantize(price_quantum, rounding=ROUND_HALF_UP)
+                )
 
 
 async def stamp_primary_values(
@@ -624,7 +930,9 @@ async def get_asset(
         .select_from(AssetTransaction)
         .where(AssetTransaction.asset_id == asset.id)
     )
-    return _asset_to_read(asset, latest, count, tx_count or 0)
+    read = _asset_to_read(asset, latest, count, tx_count or 0)
+    await _fill_closed_positions(session, workspace_id, [asset], [read])
+    return read
 
 
 async def create_asset(
@@ -738,7 +1046,7 @@ async def create_asset(
         session.add(
             AssetValue(
                 asset_id=asset.id,
-                amount=initial_amount,
+                amount=bounded_asset_value(initial_amount),
                 price=Decimal(str(quote.price)),
                 date=app_today(),
                 source="sync",
@@ -750,7 +1058,7 @@ async def create_asset(
     if data.current_value is not None:
         value = AssetValue(
             asset_id=asset.id,
-            amount=data.current_value,
+            amount=bounded_asset_value(data.current_value),
             date=app_today(),
             source="manual",
         )
@@ -760,7 +1068,7 @@ async def create_asset(
         base_date = data.purchase_date or data.growth_start_date or app_today()
         seed = AssetValue(
             asset_id=asset.id,
-            amount=data.purchase_price,
+            amount=bounded_asset_value(data.purchase_price),
             date=base_date,
             source="manual",
         )
@@ -1058,25 +1366,32 @@ async def get_asset_value_trend(
         )
     ).all()
 
-    if asset.valuation_method == "market_price":
+    txs = []
+    if asset.valuation_method == "market_price" or asset.connection_id is not None:
         txs = (
             await session.execute(
                 select(
                     AssetTransaction.date, AssetTransaction.kind,
                     AssetTransaction.quantity, AssetTransaction.price,
                     AssetTransaction.old_units, AssetTransaction.new_units,
+                    AssetTransaction.source,
                 )
                 .where(AssetTransaction.asset_id == asset_id)
             )
         ).all()
+    provider_units = _provider_units(asset, [(k, q, src) for _, k, q, _, _, _, src in txs])
+    if _replays_provider_ledger(asset):
+        txs = [tx for tx in txs if tx[-1] == asset.source]
+    if _ledger_valued(asset, provider_units):
         series = build_market_value_series(
             [(d, a, p) for d, a, p in rows],
             [
                 (d, k, Decimal(str(q)), Decimal(str(pr)) if pr is not None else None)
-                for d, k, q, pr, _, _ in txs
+                for d, k, q, pr, _, _, _ in txs
                 if k != "split"
             ],
-            [(d, old, new) for d, k, _, _, old, new in txs if k == "split"],
+            [(d, old, new) for d, k, _, _, old, new, _ in txs if k == "split"],
+            keep_stored_amounts=_replays_provider_ledger(asset),
         )
         return [{"date": d.isoformat(), "amount": v} for d, v in series]
 
@@ -1087,6 +1402,12 @@ async def get_portfolio_trend(
     session: AsyncSession,
     workspace_id: uuid.UUID,
     user_id: Optional[uuid.UUID] = None,
+    asset_group_ids: Optional[list[uuid.UUID]] = None,
+    primary_currency: Optional[str] = None,
+    *,
+    use_gross_values: bool = False,
+    selected_asset_group_ids: Optional[list[uuid.UUID]] = None,
+    asset_ids: Optional[list[uuid.UUID]] = None,
 ) -> dict:
     """Get portfolio trend data for stacked area chart.
     Returns asset metadata + pivoted trend with fill-forward values.
@@ -1094,24 +1415,40 @@ async def get_portfolio_trend(
     to the historical total; their contribution drops to 0 the day after
     sell_date.
 
-    `user_id` is only used to resolve the user's primary_currency for the
-    chart's converted totals; it falls back to the workspace's default when
-    not supplied.
+    `primary_currency` lets callers request a specific reporting currency.
+    Otherwise `user_id` resolves the user's display currency, with the app
+    default as the final fallback.
     """
-    result = await session.execute(
-        select(Asset).where(
-            Asset.workspace_id == workspace_id,
-            Asset.is_archived == False,
-        ).order_by(Asset.position, Asset.name)
+    query = select(Asset).where(
+        Asset.workspace_id == workspace_id,
+        Asset.is_archived == False,
     )
+    if asset_group_ids is not None:
+        if not asset_group_ids:
+            return {"assets": [], "trend": [], "total": 0.0}
+        query = query.where(Asset.group_id.in_(asset_group_ids))
+    # A custom performance scope is the union of complete wallets and
+    # individually selected holdings. The collection filter above remains an
+    # independent intersection, so IDs outside the active collection (or
+    # workspace) can never leak into the result.
+    if selected_asset_group_ids is not None or asset_ids is not None:
+        selection_filters = []
+        if selected_asset_group_ids:
+            selection_filters.append(Asset.group_id.in_(selected_asset_group_ids))
+        if asset_ids:
+            selection_filters.append(Asset.id.in_(asset_ids))
+        if not selection_filters:
+            return {"assets": [], "trend": [], "total": 0.0}
+        query = query.where(or_(*selection_filters))
+    result = await session.execute(query.order_by(Asset.position, Asset.name))
     active_assets = list(result.scalars().all())
 
     if not active_assets:
         return {"assets": [], "trend": [], "total": 0.0}
 
-    # Get user's primary currency for conversion
-    user = await session.get(User, user_id) if user_id is not None else None
-    primary_currency = user.primary_currency if user else get_settings().default_currency
+    if primary_currency is None:
+        user = await session.get(User, user_id) if user_id is not None else None
+        primary_currency = user.primary_currency if user else get_settings().default_currency
 
     # Assets whose currency has no resolvable FX rate cannot be expressed in
     # the primary currency. Excluding them keeps the chart's total honest
@@ -1131,7 +1468,7 @@ async def get_portfolio_trend(
         return {"assets": [], "trend": [], "total": 0.0}
     active_assets = convertible_assets
 
-    values_map = await _load_asset_native_values(session, active_assets)
+    values_map = await _load_asset_native_values(session, active_assets, use_gross=use_gross_values)
 
     asset_meta: list[dict[str, Any]] = []
     asset_currency: dict[str, str] = {}
@@ -1186,6 +1523,8 @@ async def get_portfolio_trend(
     # Each native-currency amount is converted at the display date `d` so that
     # fill-forwarded values reflect current FX rates — consistent with
     # get_asset_values_at(as_of_date=d).
+    # One series read per currency instead of several lookups per point.
+    rates = DatedRateBook(session)
     trend = []
     last_known: dict[str, float] = {}  # native currency amounts
     for aid in [a["id"] for a in asset_meta]:
@@ -1211,8 +1550,8 @@ async def get_portfolio_trend(
             # Convert native amount to primary currency at this display date
             currency = asset_currency[aid]
             if native != 0.0 and currency != primary_currency:
-                converted, _ = await convert(
-                    session, Decimal(str(native)), currency, primary_currency, d,
+                converted, _ = await rates.convert(
+                    Decimal(str(native)), currency, primary_currency, d,
                     decimals=ASSET_PRICE_DECIMALS,
                 )
                 val = converted
@@ -1341,12 +1680,23 @@ async def upsert_today_value(
 
     Leaves `last_price` and `last_price_at` alone, so a change of quantity
     doesn't pass for a new quote.
+
+    A quote and a quantity each fit the column while their product does not,
+    and this runs from the price sweep as well as from the routes: the row
+    keeps the value it had and the move is logged, instead of the whole sync
+    failing at flush with a raw database error (issue #642).
     """
     if not asset.units or asset.units <= 0:
         return
 
     today = value_date or app_today()
-    new_amount = price * Decimal(str(asset.units))
+    try:
+        new_amount = bounded_asset_value(price * Decimal(str(asset.units)))
+    except MoneyOutOfRange as exc:
+        logger.warning(
+            "Not storing today's value for asset %s (units × price): %s", asset.id, exc
+        )
+        return
     existing = await session.execute(
         select(AssetValue)
         .where(AssetValue.asset_id == asset.id, AssetValue.date == today)
@@ -1397,7 +1747,30 @@ async def refresh_market_price_asset(
     if quote is None or quote.price is None:
         return False
 
-    await _apply_price_to_asset(session, asset, Decimal(str(quote.price)))
+    # The quote carries no trading day. On a split day, before the market
+    # opens, it is the previous session's close per pre-split unit, and stored
+    # under today it would be multiplied by the units after the split (issue
+    # #1357). Ask for the latest close's day and wait for one from the split
+    # day on, as the batch refresh does.
+    split_on = (await _last_split_dates(session, [asset.id])).get(asset.id)
+    price = Decimal(str(quote.price))
+    if split_on is not None and quote_may_predate_split(asset.last_price_at, split_on):
+        try:
+            closes = await provider.get_latest_closes([asset.ticker])
+        except MarketPriceRateLimitedError:
+            raise
+        except Exception as e:
+            logger.warning("Latest close lookup failed for %s: %s", asset.ticker, e)
+            return False
+        close = closes.get(asset.ticker.upper())
+        if close is None or close.on is None or close.on < split_on:
+            return False
+        # The validated close carries both the trading day and the price that
+        # belongs to it. Keeping the live quote's price here would pair an
+        # undated, possibly pre-split quote with a post-split close date.
+        price = close.price
+
+    await _apply_price_to_asset(session, asset, price)
     # Opportunistic logo backfill: assets created before Brandfetch was
     # configured have no logo_url. On the next single-asset refresh (which
     # goes through the full get_quote → website lookup), stamp it in.
@@ -1407,6 +1780,24 @@ async def refresh_market_price_asset(
         asset.logo_url = quote.logo_url
     await session.flush()
     return True
+
+
+def quote_may_predate_split(last_price_at: Optional[datetime], split_on: Optional[date]) -> bool:
+    """Whether a price quoted at ``last_price_at`` can be per pre-split unit.
+
+    A quote taken on the split day itself counts: before the market opens it
+    is still the previous session's close, and the time it was taken doesn't
+    tell which session it came from.
+    """
+    if split_on is None:
+        return False
+    if last_price_at is None:
+        # Never quoted: only a split dated today leaves the latest close
+        # possibly from before it.
+        return split_on >= app_today()
+    if last_price_at.tzinfo is None:
+        last_price_at = last_price_at.replace(tzinfo=timezone.utc)
+    return split_on >= last_price_at.astimezone(app_timezone()).date()
 
 
 async def _last_split_dates(
@@ -1435,9 +1826,9 @@ async def refresh_all_market_prices(
 ) -> dict[str, int]:
     """Refresh every non-archived market-priced asset in the database.
 
-    Uses the provider's batch ``get_latest_closes`` endpoint when possible —
-    one HTTP request covers the whole portfolio via ``yfinance.download``
-    instead of one call per asset. Falls back silently to per-asset refresh
+    Uses the provider's batch ``get_latest_closes`` when possible, which
+    reads closes other workspaces already fetched from the shared cache and
+    downloads only the rest. Falls back silently to per-asset refresh
     if the batch returns nothing (provider without bulk support, or a hard
     failure on Yahoo's end). A close from before the holding's latest
     recorded split is skipped, not stored.
@@ -1476,7 +1867,7 @@ async def refresh_all_market_prices(
     # older quote in hand (and stamped as if it were fresh).
     fetch_started_at = datetime.now(timezone.utc)
 
-    # Batch path: one request → dict[SYMBOL, close]. On rate-limit we halt
+    # Batch path: dict[SYMBOL, close]. On rate-limit we halt
     # immediately — retrying within the same task would just pile on 429s
     # and risk an IP-level cookie ban.
     try:
@@ -1565,6 +1956,11 @@ async def refresh_all_market_prices(
         price: Optional[Decimal] = close.price if close is not None else None
         logo_url: Optional[str] = None
         if price is None and current.ticker:
+            if quote_may_predate_split(current.last_price_at, split_on):
+                # A single quote has no trading day, so on a split day it
+                # can't be told from the previous session's pre-split close.
+                skipped += 1
+                continue
             # Only a quote for the ticker the holding has now: one fetched
             # for the ticker it used to have belongs to another holding.
             price = fallback_quotes.get(current.ticker)

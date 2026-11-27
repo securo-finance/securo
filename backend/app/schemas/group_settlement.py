@@ -13,6 +13,8 @@ class GroupSettlementBase(BaseModel):
     currency: str = Field(min_length=3, max_length=3)
     date: _Date
     transaction_id: Optional[uuid.UUID] = None
+    # The receiver's own credit that already arrived, instead of a synthetic one.
+    receiver_transaction_id: Optional[uuid.UUID] = None
     notes: Optional[str] = None
 
     @model_validator(mode="after")

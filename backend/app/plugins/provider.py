@@ -8,9 +8,10 @@ exactly the code a native provider's do.
 from __future__ import annotations
 
 from datetime import date
+from decimal import Decimal
 from typing import Optional
 
-from app.plugins.contract import Payload
+from app.plugins.contract import SYNCED_TEXT, Payload, column_amount
 from app.providers.base import (
     AccountData,
     BankProvider,
@@ -36,7 +37,12 @@ class PluginPayloadProvider(BankProvider):
     """Serves one payload. Credentials stay sealed with the plugin connection."""
 
     def __init__(
-        self, name: str, payload: Payload, logos: dict[str, str] | None = None, scope: str | None = None
+        self,
+        name: str,
+        payload: Payload,
+        logos: dict[str, str] | None = None,
+        scope: str | None = None,
+        complete_feed: bool = False,
     ) -> None:
         self._name = name
         # Holdings are matched by (source, external_id) across the workspace,
@@ -53,6 +59,9 @@ class PluginPayloadProvider(BankProvider):
         # Accounts whose transactions weren't fetched this run: the pipeline
         # treats them as a partial feed (no phantom cleanup, `last_sync_at`
         # stays), as for a native fetch cut short.
+        # The manifest's `complete_feed`: the pipeline may expire a pending row
+        # the payload no longer carries, as it does for Enable Banking.
+        self.complete_feed = complete_feed
         self.incomplete_account_ids: set[str] = {
             account.external_id for account in self._accounts if account.transactions is None
         }
@@ -60,6 +69,21 @@ class PluginPayloadProvider(BankProvider):
     @property
     def name(self) -> str:
         return self._name
+
+    def parse_raw_transaction(self, raw: dict, payee_source: str = "auto") -> Optional[TransactionData]:
+        """What the plugin last sent for a row, from the snapshot `Transaction.to_data` keeps in its `raw_data`."""
+        sent = raw.get(SYNCED_TEXT) if isinstance(raw, dict) else None
+        if not isinstance(sent, dict):
+            return None
+        try:
+            # A snapshot from before the rounding keeps up to eight decimals; the row's column has two.
+            amount = column_amount(Decimal(str(sent["amount"])))
+        except (KeyError, ArithmeticError, ValueError):
+            return None
+        return TransactionData(
+            external_id="", description="", amount=amount, date=date.min, type=str(sent.get("type") or ""),
+            payee=sent.get("payee"), notes=sent.get("notes"),
+        )
 
     async def get_oauth_url(self, redirect_uri: str, state: str, flow_params: Optional[dict] = None) -> str:
         raise NotImplementedError("a plugin connection signs in through its plugin")

@@ -7,7 +7,7 @@ from datetime import date
 import pytest
 
 from app.models import Transaction
-from app.services.rule_engine import evaluate_conditions, apply_rule_actions
+from app.services.rule_engine import NOTES_MAX_LENGTH, apply_rule_actions, evaluate_conditions, merge_notes
 
 
 def make_tx(**kwargs) -> Transaction:
@@ -373,6 +373,38 @@ def test_provider_category_condition_is_case_and_accent_insensitive():
     ]
 
     assert evaluate_conditions("and", conditions, tx) is True
+
+
+def test_provider_category_condition_matches_a_numeric_code_as_text():
+    """A code the engine already matched as text keeps matching (#353).
+
+    `_match_condition` compares the text form of both sides, so a saved rule on
+    `"5411"` matched `{"category": 5411}` before this change and must go on
+    matching it now that the property turns the code into a string.
+    """
+    tx = make_tx(raw_data={"category": 5411})
+    for op in ("equals", "contains", "starts_with"):
+        conditions = [{"field": "provider_category", "op": op, "value": "5411"}]
+        assert evaluate_conditions("and", conditions, tx) is True
+
+
+def test_provider_category_condition_does_not_match_a_non_label_value():
+    """A list, an object, a bool and blank text are no label for a rule.
+
+    The negated operators are the reason the "never labelled" short-circuit
+    exists: without it, `not_equals` and `not_contains` would match every one
+    of these rows and recategorise the whole ledger.
+    """
+    for raw_data in (
+        {"category": [1, 2]},
+        {"category": {"id": 42}},
+        {"category": True},
+        {"category": ""},
+        {"category": "   "},
+    ):
+        for op in ("equals", "not_equals", "contains", "not_contains"):
+            conditions = [{"field": "provider_category", "op": op, "value": "42"}]
+            assert evaluate_conditions("and", conditions, make_tx(raw_data=raw_data)) is False
 
 
 def test_provider_category_condition_without_category_does_not_match():
@@ -973,3 +1005,12 @@ def test_equals_amount_non_numeric_falls_back_to_text():
     conditions = [{"field": "amount", "op": "equals", "value": "abc"}]
     tx = make_tx(type="credit", amount=Decimal("100.00"))
     assert evaluate_conditions("and", conditions, tx) is False
+
+
+def test_merge_notes_cuts_the_incoming_part_to_the_column():
+    """A note merged past `Transaction.notes` would fail the write."""
+    existing = "x" * 990
+    assert merge_notes(existing, "purpose text from the bank") == f"{existing} purpose t"
+    assert len(merge_notes(existing, "y" * 50) or "") == NOTES_MAX_LENGTH
+    assert merge_notes("x" * NOTES_MAX_LENGTH, "more") == "x" * NOTES_MAX_LENGTH
+    assert merge_notes(None, "y" * 1500) == "y" * NOTES_MAX_LENGTH

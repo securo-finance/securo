@@ -322,27 +322,42 @@ async def test_footer_converts_a_shared_row_from_its_own_currency(
     assert body["summary"]["currency"] == "BRL"
 
 
+@pytest.mark.parametrize(
+    ("new_amount", "expected_expense"),
+    [
+        # 60 - 20 = 40 taxi, plus the 50 dinner share.
+        ("60.00", 90.0),
+        # The sync can also shrink the row below the splits: 10 - 20 = -10,
+        # a negative remainder the dashboard counts signed.
+        ("10.00", 40.0),
+    ],
+)
 @pytest.mark.asyncio
 async def test_footer_follows_a_shared_row_whose_amount_the_sync_changed(
-    client: AsyncClient, auth_headers: dict, shared_trip: dict, session: AsyncSession
+    client: AsyncClient,
+    auth_headers: dict,
+    shared_trip: dict,
+    session: AsyncSession,
+    new_amount: str,
+    expected_expense: float,
 ):
     """The bank sync rewrites `amount` and rescales the category lines, but
     leaves the splits alone (connection_service.py). The owner's 40,00 taxi
-    becomes 60,00 while its splits still say 20/20; reading the stored share
-    against the new total would leave the unallocated 20,00 out of the
-    owner's side. The owner's share is what the other member doesn't have:
-    60 - 20 = 40, plus the 50 dinner share = 90, the same figure the
+    changes while its splits still say 20/20; reading the stored share
+    against the new total would leave the unallocated difference outside the
+    owner's side. The owner's share is what the other member doesn't have
+    (new amount - 20), plus the 50 dinner share, the same figure the
     dashboard card shows."""
     taxi_id = uuid.UUID(shared_trip["taxi"]["id"])
     await session.execute(
         update(Transaction)
         .where(Transaction.id == taxi_id)
-        .values(amount=Decimal("60.00"), amount_primary=Decimal("60.00"))
+        .values(amount=Decimal(new_amount), amount_primary=Decimal(new_amount))
     )
     await session.commit()
 
     body = await _summary(client, auth_headers)
-    assert body["summary"]["expense"] == pytest.approx(90.0)
+    assert body["summary"]["expense"] == pytest.approx(expected_expense)
 
     dashboard = await client.get("/api/dashboard/summary", headers=auth_headers)
     assert dashboard.status_code == 200, dashboard.text

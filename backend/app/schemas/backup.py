@@ -25,6 +25,8 @@ class BackupConfig(BaseModel):
     retention_count: int = Field(default=10, ge=1, le=200)
     retention_days: int | None = Field(default=None, ge=1, le=3650)
     last_run_at: datetime | None = None
+    # The last scheduled run that failed, until a backup works.
+    last_failure_at: datetime | None = None
     next_run_at: datetime | None = None
 
 

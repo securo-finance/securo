@@ -2,6 +2,7 @@ import asyncio
 import base64
 import hashlib
 import json
+import logging
 import secrets
 import time
 from typing import Any
@@ -14,7 +15,8 @@ from fastapi_users import schemas
 from fastapi_users.exceptions import UserAlreadyExists
 from jose import JWTError, jwt
 from pydantic import BaseModel, EmailStr
-from sqlalchemy import func, select, update as sql_update
+from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import UserManager, get_jwt_strategy, get_user_manager
@@ -24,7 +26,7 @@ from app.core.redis import get_redis
 from app.models.account import Account
 from app.models.user import User
 from app.models.workspace import WORKSPACE_ROLES, Workspace, WorkspaceMember
-from app.services import admin_service
+from app.services import account_lookup_service, admin_service
 from app.services.category_service import create_default_categories
 from app.services.rule_service import create_default_rules
 from app.services.workspace_service import create_personal_workspace_for_user
@@ -32,11 +34,19 @@ from app.services.workspace_service import create_personal_workspace_for_user
 router = APIRouter(prefix="/api/auth/oidc", tags=["auth"])
 OIDC_STATE_TTL = 600
 
+logger = logging.getLogger(__name__)
+
 
 class OIDCConfigResponse(BaseModel):
     enabled: bool
     provider_name: str = "OIDC"
     local_auth_enabled: bool = True
+    # Recovery by email exists only with EMAIL_ENABLED; the sign-in page reads
+    # it here, next to the other sign-in options.
+    password_reset_enabled: bool = False
+
+
+class OIDCLogoutUrlResponse(BaseModel):
     # Where the browser goes after the local sign-out so the provider's own
     # session ends too (#1623); empty when there is nowhere to send it.
     logout_url: str = ""
@@ -76,8 +86,8 @@ def _safe_logout_url(url: str, client_id: str) -> str:
     """`_with_client_id`, but an unparsable URL answers "" instead of raising.
 
     `urlsplit` raises `ValueError` on a broken URL (`https://[broken`). The
-    local sign-out already happened by then, so `/config` must keep answering
-    rather than fail the whole sign-in page over a logout hint.
+    local sign-out already happened by then, so the logout-url route must
+    keep answering rather than fail over a logout hint.
     """
     try:
         return _with_client_id(url, client_id)
@@ -86,20 +96,67 @@ def _safe_logout_url(url: str, client_id: str) -> str:
 
 
 _LOGOUT_URL_TTL = 300.0
-# The frontend asks for `/config` with a 5 s timeout; the discovery has to
-# answer well inside it, or the browser silently skips the redirect (#1623).
+# A discovery that failed is cached too, but briefly: caching the empty answer
+# for the full TTL turned one hiccup into five minutes without provider logout
+# (#1639). Long enough to spare a down provider a burst of sign-outs.
+_LOGOUT_URL_FAILURE_TTL = 30.0
+# The sign-out waits on this answer and the browser gives up at 10 s; the
+# discovery has to answer well inside it, or the redirect is silently skipped
+# (#1623). A hung lookup is cached too, so it does not delay every sign-out.
 _LOGOUT_DISCOVERY_TIMEOUT = 3.0
-# (monotonic time, discovery url + client id it was read for, resolved URL)
-_logout_url_cache: tuple[float, str, str] | None = None
+# (monotonic time, discovery url + client id it was read for, resolved URL,
+# whether the discovery answered at all)
+_logout_url_cache: tuple[float, str, str, bool] | None = None
+
+
+def _loggable_url(url: str) -> str:
+    """`url` with only scheme, host, port and path, for a log line.
+
+    A discovery URL can carry a credential in its userinfo or a token in its
+    query; neither belongs in the log. Only the log sees this: discovery keeps
+    reading the configured URL as it is.
+    """
+    try:
+        parts = urlsplit(url)
+        host = parts.hostname or ""
+        if ":" in host:
+            host = f"[{host}]"
+        netloc = f"{host}:{parts.port}" if parts.port else host
+    except ValueError:
+        return "<unparsable discovery URL>"
+    return urlunsplit((parts.scheme, netloc, parts.path, "", ""))
+
+
+def _logout_failure_reason(error: BaseException) -> str:
+    """Why discovery failed, in words an operator can act on. The caller
+    masks the discovery URL in it; the client secret is not read here."""
+    if isinstance(error, (asyncio.TimeoutError, TimeoutError)):
+        return f"discovery timed out after {_LOGOUT_DISCOVERY_TIMEOUT:g}s"
+    if isinstance(error, httpx.HTTPStatusError):
+        return f"discovery answered HTTP {error.response.status_code}"
+    if isinstance(error, httpx.HTTPError):
+        return f"discovery request failed ({type(error).__name__}: {error})"
+    if isinstance(error, HTTPException):
+        return f"discovery is not available (HTTP {error.status_code}: {error.detail})"
+    return f"discovery failed ({type(error).__name__}: {error})"
 
 
 async def _provider_logout_url() -> str:
     """Where to send the browser so the provider's own session ends (#1623).
 
     An explicit `OIDC_LOGOUT_URL` wins; otherwise the discovery document's
-    `end_session_endpoint`. Cached for a few minutes because `/config` is
-    public and the document rarely changes. Every failure answers "": the
-    local sign-out already happened and must never wait on the provider.
+    `end_session_endpoint`. Cached because the route is public and the document
+    rarely changes: a few minutes for an answer, seconds for a failure, so one
+    hiccup does not disable provider sign-out for long (#1639). Every failure
+    answers "": the local sign-out already happened and must never wait on the
+    provider.
+
+    A failure is logged once, where it is cached: `/logout-url` takes no
+    authentication, so a down provider would otherwise write one line per
+    call. Until the cache window ends, sign-out is local-only and this
+    warning is the only sign of it. This is the only route that talks to the
+    provider; `/config` must stay local, because the sign-in page blocks on
+    it to decide what to show.
     """
     global _logout_url_cache
     settings = get_settings()
@@ -110,22 +167,44 @@ async def _provider_logout_url() -> str:
 
     cache_key = f"{settings.oidc_discovery_url}|{settings.oidc_client_id}"
     now = time.monotonic()
-    if (
-        _logout_url_cache is not None
-        and _logout_url_cache[1] == cache_key
-        and now - _logout_url_cache[0] < _LOGOUT_URL_TTL
-    ):
-        return _logout_url_cache[2]
+    if _logout_url_cache is not None and _logout_url_cache[1] == cache_key:
+        cached_at, _cached_key, cached_url, discovery_answered = _logout_url_cache
+        ttl = _LOGOUT_URL_TTL if discovery_answered else _LOGOUT_URL_FAILURE_TTL
+        if now - cached_at < ttl:
+            return cached_url
+    failure_reason: str | None = None
     try:
         discovery = await asyncio.wait_for(
             _discover(), timeout=_LOGOUT_DISCOVERY_TIMEOUT
         )
         raw_endpoint = discovery.get("end_session_endpoint") if isinstance(discovery, dict) else None
         endpoint = raw_endpoint if isinstance(raw_endpoint, str) else ""
-    except (HTTPException, httpx.HTTPError, ValueError, asyncio.TimeoutError):
+    # Every failure has the same answer, including the ones httpx raises
+    # outside HTTPError: InvalidURL for an unparsable URL, and an
+    # ExceptionGroup(OverflowError) for an out-of-range port.
+    except Exception as exc:
         endpoint = ""
+        discovery_answered = False
+        failure_reason = _logout_failure_reason(exc)
+    else:
+        discovery_answered = True
     url = _safe_logout_url(endpoint, settings.oidc_client_id) if endpoint else ""
-    _logout_url_cache = (now, cache_key, url)
+    if failure_reason is None and endpoint and not url:
+        failure_reason = "the end_session_endpoint is not a usable URL"
+    if failure_reason is not None:
+        raw_url = settings.oidc_discovery_url
+        log_url = _loggable_url(raw_url)
+        # An httpx error can quote the URL it was asked for; mask it there too.
+        if raw_url:
+            failure_reason = failure_reason.replace(raw_url, log_url)
+        logger.warning(
+            "OIDC logout discovery failed for %s: %s. SSO sign-out stays off "
+            "until it answers; the empty answer is cached and retried when "
+            "the window ends.",
+            log_url,
+            failure_reason,
+        )
+    _logout_url_cache = (now, cache_key, url, discovery_answered)
     return url
 
 
@@ -136,8 +215,14 @@ async def oidc_config():
         enabled=settings.oidc_login_available,
         provider_name=settings.oidc_provider_name or "OIDC",
         local_auth_enabled=settings.local_auth_enabled,
-        logout_url=await _provider_logout_url(),
+        password_reset_enabled=settings.email_enabled,
     )
+
+
+@router.get("/logout-url", response_model=OIDCLogoutUrlResponse)
+async def oidc_logout_url():
+    """Only the sign-out asks this: it may reach the provider (#1623)."""
+    return OIDCLogoutUrlResponse(logout_url=await _provider_logout_url())
 
 
 @router.get("/login")
@@ -325,6 +410,59 @@ async def _sync_oidc_roles(user: User, merged_claims: dict[str, Any], session: A
         session.add(member)
 
 
+async def _link_existing_account(
+    user: User,
+    *,
+    issuer: str,
+    subject: str,
+    email_verified: Any,
+    link_mode: str,
+    merged: dict[str, Any],
+    session: AsyncSession,
+) -> User:
+    """Attach this OIDC identity to an account the login found but did not
+    create.
+
+    The same checks apply whether the lookup found the account or a concurrent
+    request created it between that lookup and the insert: an account already
+    linked to another identity is refused, the link mode decides whether an
+    unlinked account may be attached, and the verified-email policy is honoured.
+    Nothing else of the account is touched: its preferences, workspace and
+    wallet belong to the person who already signed up.
+    """
+    if user.oidc_issuer or user.oidc_subject:
+        # A concurrent request for this same identity won the race: the
+        # identity is already where it belongs, so this is a login.
+        if user.oidc_issuer != issuer or user.oidc_subject != subject:
+            raise HTTPException(status_code=403, detail="OIDC identity is linked to a different account")
+    else:
+        if link_mode == "disabled":
+            raise HTTPException(status_code=403, detail="Existing account is not linked to this OIDC identity")
+        if link_mode == "verified_email" and email_verified not in (True, "true"):
+            raise HTTPException(status_code=400, detail="OIDC email is not verified")
+        user.oidc_issuer = issuer
+        user.oidc_subject = subject
+        session.add(user)
+    await _sync_oidc_roles(user, merged, session)
+    await session.commit()
+    await session.refresh(user)
+    return user
+
+
+class _OIDCUserCreate(schemas.BaseUserCreate):
+    """The account row the OIDC sign-up inserts, identity and all.
+
+    The identity and the preferences travel with the insert so the row is never
+    visible without them: a concurrent sign-in that read the account between
+    the insert and a later update would find it unlinked, and would either
+    refuse it (the default link mode) or claim it as its own.
+    """
+
+    preferences: dict[str, Any] | None = None
+    oidc_issuer: str | None = None
+    oidc_subject: str | None = None
+
+
 async def _get_or_create_oidc_user(
     claims: dict[str, Any],
     userinfo: dict[str, Any],
@@ -361,25 +499,27 @@ async def _get_or_create_oidc_user(
     email = merged.get("email")
     if not email:
         raise HTTPException(status_code=400, detail="OIDC provider did not return an email claim")
-    email = str(EmailStr._validate(email)).lower()
+    # Keep the spelling the provider sent for every lookup: the resolver picks
+    # the row written exactly that way when an instance holds two accounts for
+    # one mailbox (#568). Only the account created here is stored in lower
+    # case, so a new row never comes in shouting.
+    email = str(EmailStr._validate(email))
     email_verified = merged.get("email_verified")
 
-    existing = await session.execute(select(User).where(func.lower(User.email) == email))
-    user = existing.scalar_one_or_none()
+    # One address can name two accounts on an instance built before the
+    # case-insensitive checks (#568); the resolver answers one of them instead
+    # of raising, and picks the row written in this spelling when there is one.
+    user = await account_lookup_service.find_account_by_email(session, email)
     if user is not None:
-        if user.oidc_issuer or user.oidc_subject:
-            raise HTTPException(status_code=403, detail="OIDC identity is linked to a different account")
-        if link_mode == "disabled":
-            raise HTTPException(status_code=403, detail="Existing account is not linked to this OIDC identity")
-        if link_mode == "verified_email" and email_verified not in (True, "true"):
-            raise HTTPException(status_code=400, detail="OIDC email is not verified")
-        user.oidc_issuer = issuer
-        user.oidc_subject = subject
-        session.add(user)
-        await _sync_oidc_roles(user, merged, session)
-        await session.commit()
-        await session.refresh(user)
-        return user
+        return await _link_existing_account(
+            user,
+            issuer=issuer,
+            subject=subject,
+            email_verified=email_verified,
+            link_mode=link_mode,
+            merged=merged,
+            session=session,
+        )
     if settings.oidc_require_verified_email and email_verified not in (True, "true"):
         raise HTTPException(status_code=400, detail="OIDC email is not verified")
     if not await admin_service.is_registration_enabled(session):
@@ -398,24 +538,45 @@ async def _get_or_create_oidc_user(
     }
     provider_roles = _claim_values(merged, settings.oidc_roles_claim)
     admin_roles = {role.strip() for role in settings.oidc_admin_roles.split(",") if role.strip()}
-    user_create = schemas.BaseUserCreate(
-        email=email,
+    user_create = _OIDCUserCreate(
+        email=email.lower(),
         password=secrets.token_urlsafe(32),
         is_verified=True,
         is_superuser=bool(settings.oidc_sync_roles and admin_roles and provider_roles & admin_roles),
+        preferences=preferences,
+        oidc_issuer=issuer,
+        oidc_subject=subject,
     )
     try:
         user = await user_manager.create(user_create, safe=True, request=None)
-    except UserAlreadyExists:
-        user = (await session.execute(select(User).where(func.lower(User.email) == email))).scalar_one()
+    except (UserAlreadyExists, IntegrityError) as conflict:
+        # A concurrent request created the account between the lookup above and
+        # this insert, so it is an existing account now. The failed insert left
+        # the session unusable, so roll it back and look the row up again — by
+        # the identity first, since the winner may carry another address, then
+        # by the address through the same resolver that read it before (#568).
+        # Apply the same checks instead of claiming it, overwriting its
+        # preferences and provisioning a second workspace and wallet for it
+        # (#572).
+        await session.rollback()
+        winner = (
+            await session.execute(select(User).where(User.oidc_issuer == issuer, User.oidc_subject == subject))
+        ).scalar_one_or_none()
+        if winner is None:
+            winner = await account_lookup_service.find_account_by_email(session, email)
+        if winner is None:
+            raise conflict
+        return await _link_existing_account(
+            winner,
+            issuer=issuer,
+            subject=subject,
+            email_verified=email_verified,
+            link_mode=link_mode,
+            merged=merged,
+            session=session,
+        )
 
     db_session = user_manager.db_session
-    await db_session.execute(
-        sql_update(User)
-        .where(User.id == user.id)
-        .values(preferences=preferences, oidc_issuer=issuer, oidc_subject=str(merged.get("sub")))
-    )
-    await db_session.refresh(user)
     workspace = await create_personal_workspace_for_user(db_session, user)
     wallet = Account(
         user_id=user.id,

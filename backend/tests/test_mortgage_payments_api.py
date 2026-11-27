@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.account import Account
 from app.models.asset import Asset
 from app.models.bank_connection import BankConnection
+from app.models.fx_rate import FxRate
 from app.models.mortgage_payment_allocation import (
     MORTGAGE_PRINCIPAL_SOURCE,
     MortgagePaymentAllocation,
@@ -1071,3 +1072,440 @@ async def test_a_loan_from_another_workspace_cannot_take_a_part(
             Transaction.source == MORTGAGE_PRINCIPAL_SOURCE,
         )
     ) is None
+
+
+async def _make_unsecured_payment_and_loan(
+    session: AsyncSession,
+    user: User,
+    workspace: Workspace,
+    *,
+    snapshot_date: date,
+    currency: str = "EUR",
+    loan_kind: str = "student",
+    loan_balance: Decimal = Decimal("1000.00"),
+):
+    bank_account = Account(
+        id=uuid.uuid4(),
+        user_id=user.id,
+        workspace_id=workspace.id,
+        name="Current",
+        type="checking",
+        balance=Decimal("0"),
+        currency=currency,
+    )
+    loan_account = Account(
+        id=uuid.uuid4(),
+        user_id=user.id,
+        workspace_id=workspace.id,
+        name=f"{loan_kind.title()} Loan",
+        type="loan",
+        loan_kind=loan_kind,
+        balance=loan_balance,
+        currency=currency,
+        secured_asset_id=None,
+    )
+    session.add_all([bank_account, loan_account])
+    await session.flush()
+    payment = Transaction(
+        id=uuid.uuid4(),
+        user_id=user.id,
+        workspace_id=workspace.id,
+        account_id=bank_account.id,
+        description="Loan servicer",
+        amount=Decimal("232.83"),
+        currency=currency,
+        date=date(2026, 6, 2),
+        effective_date=date(2026, 6, 2),
+        type="debit",
+        source="manual",
+        status="posted",
+    )
+    snapshot = Transaction(
+        id=uuid.uuid4(),
+        user_id=user.id,
+        workspace_id=workspace.id,
+        account_id=loan_account.id,
+        description="Saldo initial",
+        amount=loan_balance,
+        currency=currency,
+        date=snapshot_date,
+        effective_date=snapshot_date,
+        type="debit",
+        source="opening_balance",
+        status="posted",
+    )
+    session.add_all([payment, snapshot])
+    await session.commit()
+    return payment, loan_account
+
+
+@pytest.mark.asyncio
+async def test_unsecured_student_loan_can_allocate_principal_and_interest(
+    client: AsyncClient,
+    auth_headers,
+    session: AsyncSession,
+    test_user: User,
+    test_workspace: Workspace,
+):
+    payment, loan = await _make_unsecured_payment_and_loan(
+        session, test_user, test_workspace, snapshot_date=date(2026, 5, 31), loan_kind="student"
+    )
+
+    body = await _post_breakdown(client, auth_headers, payment, loan)
+
+    assert body["principal_total"] == 167.76
+    assert body["interest_total"] == 65.07
+    assert body["allocations"][0]["historical"] is False
+    entry = await _principal_entry(session, payment)
+    assert entry.account_id == loan.id
+    assert entry.type == "credit"
+    assert entry.amount == Decimal("167.76")
+    assert entry.source == MORTGAGE_PRINCIPAL_SOURCE
+
+    fetched = await client.get(f"/api/mortgage-payments/{payment.id}", headers=auth_headers)
+    assert fetched.status_code == 200
+    assert len(fetched.json()["allocations"]) == 1
+
+    removed = await client.delete(f"/api/mortgage-payments/{payment.id}", headers=auth_headers)
+    assert removed.status_code == 204
+    assert await session.scalar(select(Transaction.id).where(Transaction.id == entry.id)) is None
+
+
+@pytest.mark.asyncio
+async def test_payment_can_allocate_across_secured_and_unsecured_loans(
+    client: AsyncClient,
+    auth_headers,
+    session: AsyncSession,
+    test_user: User,
+    test_workspace: Workspace,
+):
+    payment, secured_loan = await _make_payment_and_loan(
+        session, test_user, test_workspace, snapshot_date=date(2026, 5, 31)
+    )
+    unsecured_loan = Account(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        name="Personal Loan",
+        type="loan",
+        loan_kind="personal",
+        balance=Decimal("5000.00"),
+        currency="EUR",
+        secured_asset_id=None,
+    )
+    session.add(unsecured_loan)
+    await session.commit()
+
+    response = await client.put(
+        f"/api/mortgage-payments/{payment.id}",
+        headers=auth_headers,
+        json={
+            "allocations": [
+                {
+                    "loan_account_id": str(secured_loan.id),
+                    "principal_amount": 100,
+                    "interest_amount": 20,
+                },
+                {
+                    "loan_account_id": str(unsecured_loan.id),
+                    "principal_amount": 67.76,
+                    "interest_amount": 45.07,
+                },
+            ]
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert len(body["allocations"]) == 2
+    allocations = (
+        await session.scalars(
+            select(MortgagePaymentAllocation).where(
+                MortgagePaymentAllocation.payment_transaction_id == payment.id,
+            )
+        )
+    ).all()
+    assert {row.loan_account_id for row in allocations} == {secured_loan.id, unsecured_loan.id}
+    for row in allocations:
+        assert row.loan_transaction_id is not None
+        entry = await session.get(Transaction, row.loan_transaction_id)
+        assert entry is not None
+        assert entry.account_id == row.loan_account_id
+        assert entry.amount == row.principal_amount
+
+
+@pytest.mark.asyncio
+async def test_non_loan_account_and_currency_mismatch_still_rejected_without_secured_asset(
+    client: AsyncClient,
+    auth_headers,
+    session: AsyncSession,
+    test_user: User,
+    test_workspace: Workspace,
+):
+    payment, _ = await _make_unsecured_payment_and_loan(
+        session, test_user, test_workspace, snapshot_date=date(2026, 5, 31), loan_kind="student"
+    )
+    other_checking = Account(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        name="Savings",
+        type="savings",
+        balance=Decimal("0"),
+        currency="EUR",
+    )
+    usd_loan = Account(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        name="USD Student Loan",
+        type="loan",
+        loan_kind="student",
+        balance=Decimal("2000.00"),
+        currency="USD",
+        secured_asset_id=None,
+    )
+    session.add_all([other_checking, usd_loan])
+    await session.commit()
+
+    non_loan = await client.put(
+        f"/api/mortgage-payments/{payment.id}",
+        headers=auth_headers,
+        json={
+            "allocations": [
+                {
+                    "loan_account_id": str(other_checking.id),
+                    "principal_amount": 167.76,
+                    "interest_amount": 65.07,
+                }
+            ]
+        },
+    )
+    assert non_loan.status_code == 400
+    assert "loan in this workspace" in non_loan.json()["detail"]
+
+    mismatch = await client.put(
+        f"/api/mortgage-payments/{payment.id}",
+        headers=auth_headers,
+        json={
+            "allocations": [
+                {
+                    "loan_account_id": str(usd_loan.id),
+                    "principal_amount": 167.76,
+                    "interest_amount": 65.07,
+                }
+            ]
+        },
+    )
+    assert mismatch.status_code == 400
+    assert "same currency" in mismatch.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_foreign_currency_loan_principal_entry_is_fx_stamped_and_counted_in_running_balance(
+    client: AsyncClient,
+    auth_headers,
+    session: AsyncSession,
+    test_user: User,
+    test_workspace: Workspace,
+):
+    payment, loan = await _make_unsecured_payment_and_loan(
+        session,
+        test_user,
+        test_workspace,
+        snapshot_date=date(2026, 5, 31),
+        currency="EUR",
+        loan_kind="student",
+        loan_balance=Decimal("1000.00"),
+    )
+    # test_user primary_currency is BRL; 1 EUR = 4.80 / 0.80 = 6 BRL.
+    session.add_all([
+        FxRate(
+            base_currency="USD",
+            quote_currency="EUR",
+            date=date(2026, 6, 2),
+            rate=Decimal("0.80"),
+            source="test",
+        ),
+        FxRate(
+            base_currency="USD",
+            quote_currency="BRL",
+            date=date(2026, 6, 2),
+            rate=Decimal("4.80"),
+            source="test",
+        ),
+    ])
+    await session.commit()
+
+    await _post_breakdown(client, auth_headers, payment, loan)
+
+    entry = await _principal_entry(session, payment)
+    assert entry.amount_primary == Decimal("1006.56")
+    assert entry.fx_rate_used == Decimal("6")
+
+    series_res = await client.get(
+        f"/api/accounts/{loan.id}/running-balance",
+        params={"from": "2026-06-01", "to": "2026-06-03"},
+        headers=auth_headers,
+    )
+    assert series_res.status_code == 200, series_res.text
+    by_day = {row["date"]: row for row in series_res.json()}
+    assert by_day["2026-06-01"]["balance"] == -1000.0
+    assert by_day["2026-06-01"]["balance_primary"] == -6000.0
+    assert by_day["2026-06-02"]["balance"] == -832.24
+    assert by_day["2026-06-02"]["balance_primary"] == -4993.44
+
+
+@pytest.mark.asyncio
+async def test_foreign_currency_loan_principal_entry_leaves_primary_null_when_no_fx_rate(
+    client: AsyncClient,
+    auth_headers,
+    session: AsyncSession,
+    test_user: User,
+    test_workspace: Workspace,
+):
+    payment, loan = await _make_unsecured_payment_and_loan(
+        session, test_user, test_workspace, snapshot_date=date(2026, 5, 31), currency="EUR"
+    )
+
+    await _post_breakdown(client, auth_headers, payment, loan)
+
+    entry = await _principal_entry(session, payment)
+    assert entry.amount_primary is None
+    assert entry.fx_rate_used is None
+
+
+@pytest.mark.asyncio
+async def test_resync_principal_entries_fx_stamps_created_entry(
+    client: AsyncClient,
+    auth_headers,
+    session: AsyncSession,
+    test_user: User,
+    test_workspace: Workspace,
+):
+    payment, loan = await _make_unsecured_payment_and_loan(
+        session,
+        test_user,
+        test_workspace,
+        snapshot_date=date(2026, 6, 30),
+        currency="EUR",
+        loan_kind="student",
+    )
+    session.add_all([
+        FxRate(
+            base_currency="USD",
+            quote_currency="EUR",
+            date=date(2026, 6, 2),
+            rate=Decimal("0.80"),
+            source="test",
+        ),
+        FxRate(
+            base_currency="USD",
+            quote_currency="BRL",
+            date=date(2026, 6, 2),
+            rate=Decimal("4.80"),
+            source="test",
+        ),
+    ])
+    await session.commit()
+
+    # Initially historical: snapshot is after payment date, so no principal entry exists yet.
+    initial = await _post_breakdown(client, auth_headers, payment, loan)
+    assert initial["allocations"][0]["historical"] is True
+
+    # Moving the opening balance earlier triggers resync_principal_entries.
+    earlier = await client.patch(
+        f"/api/accounts/{loan.id}",
+        headers=auth_headers,
+        json={"balance": 1000.00, "balance_date": "2026-05-31"},
+    )
+    assert earlier.status_code == 200, earlier.text
+
+    entry = await _principal_entry(session, payment)
+    assert entry.amount == Decimal("167.76")
+    assert entry.amount_primary == Decimal("1006.56")
+    assert entry.fx_rate_used == Decimal("6")
+
+
+@pytest.mark.asyncio
+async def test_same_currency_loan_principal_entry_stamps_1to1(
+    client: AsyncClient,
+    auth_headers,
+    session: AsyncSession,
+    test_user: User,
+    test_workspace: Workspace,
+):
+    # test_user primary_currency is BRL.
+    payment, loan = await _make_unsecured_payment_and_loan(
+        session,
+        test_user,
+        test_workspace,
+        snapshot_date=date(2026, 5, 31),
+        currency="BRL",
+        loan_kind="student",
+    )
+
+    await _post_breakdown(client, auth_headers, payment, loan)
+
+    entry = await _principal_entry(session, payment)
+    assert entry.amount_primary == Decimal("167.76")
+    assert entry.fx_rate_used == Decimal("1")
+
+
+@pytest.mark.asyncio
+async def test_invalid_mortgage_allocation_skips_fx_prewarm(
+    client: AsyncClient,
+    auth_headers,
+    session: AsyncSession,
+    test_user: User,
+    test_workspace: Workspace,
+    monkeypatch,
+):
+    """L10: Malformed 400 requests (e.g. total mismatch or ignored payment) must
+    fail cheap validation before invoking _resolve_rate."""
+    from app.api import mortgage_payments
+
+    payment, loan = await _make_unsecured_payment_and_loan(
+        session, test_user, test_workspace, snapshot_date=date(2026, 5, 31), currency="EUR"
+    )
+
+    async def _forbid_fx(*args, **kwargs):
+        raise AssertionError("FX pre-warm must not run on invalid requests")
+
+    monkeypatch.setattr(mortgage_payments, "_resolve_rate", _forbid_fx)
+
+    # Wrong total must fail with 400 without touching FX pre-warm.
+    bad_total = await client.put(
+        f"/api/mortgage-payments/{payment.id}",
+        headers=auth_headers,
+        json={
+            "allocations": [
+                {
+                    "loan_account_id": str(loan.id),
+                    "principal_amount": 100.00,
+                    "interest_amount": 10.00,
+                }
+            ]
+        },
+    )
+    assert bad_total.status_code == 400
+    assert "add up" in bad_total.json()["detail"]
+
+    # Ignored payment must also fail with 400 without touching FX pre-warm.
+    payment.is_ignored = True
+    await session.commit()
+    ignored_res = await client.put(
+        f"/api/mortgage-payments/{payment.id}",
+        headers=auth_headers,
+        json={
+            "allocations": [
+                {
+                    "loan_account_id": str(loan.id),
+                    "principal_amount": 167.76,
+                    "interest_amount": 65.07,
+                }
+            ]
+        },
+    )
+    assert ignored_res.status_code == 400
+    assert "ignored" in ignored_res.json()["detail"]

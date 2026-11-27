@@ -8,6 +8,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.app_clock import app_today
+from app.core.currency import parse_supported_currency
 from app.models.account import Account
 from app.models.transaction import Transaction
 from app.schemas.account import AccountCreate, AccountUpdate
@@ -141,7 +142,8 @@ def _normalize_currency(currency: str) -> str:
     normalized = currency.strip().upper()
     if not _CURRENCY_RE.fullmatch(normalized):
         raise ValueError("currency must be a three-letter code")
-    return normalized
+    # AccountCreate refuses the rest, so the preview must refuse it too.
+    return parse_supported_currency(normalized)
 
 
 def _parse_opening_balance_date(value: str | None):

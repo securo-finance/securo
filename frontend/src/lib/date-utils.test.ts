@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { localDateString, todayInTimezone, weekdayShortLabels } from './date-utils'
+import { dateTickFormatter, localDateString, todayInTimezone, weekdayShortLabels } from './date-utils'
 
 describe('todayInTimezone', () => {
   // 01:00 UTC on May 19 is still May 18 in Sao Paulo and already May 19 in Tokyo.
@@ -49,5 +49,24 @@ describe('weekdayShortLabels', () => {
 
   it('translates the labels for the requested locale', () => {
     expect(weekdayShortLabels('es-ES')[0]).toMatch(/^dom/i)
+  })
+})
+
+describe('dateTickFormatter', () => {
+  it('labels monthly points by month and year', () => {
+    const dates = ['2026-09-30', '2026-10-31', '2026-11-20']
+    expect(dates.map(dateTickFormatter(dates, 'en-US'))).toEqual(['Sep 26', 'Oct 26', 'Nov 26'])
+  })
+
+  it('shows the day when points share a month, so the axis does not repeat "Nov 26"', () => {
+    const dates = ['2026-11-03', '2026-11-10', '2026-11-20']
+    const labels = dates.map(dateTickFormatter(dates, 'en-US'))
+    expect(labels).toEqual(['Nov 3', 'Nov 10', 'Nov 20'])
+    expect(new Set(labels).size).toBe(dates.length)
+  })
+
+  it('keeps the year on day labels when the points cross one', () => {
+    const dates = ['2025-12-30', '2026-01-02', '2026-01-05']
+    expect(dates.map(dateTickFormatter(dates, 'en-US'))).toEqual(['Dec 30, 25', 'Jan 2, 26', 'Jan 5, 26'])
   })
 })

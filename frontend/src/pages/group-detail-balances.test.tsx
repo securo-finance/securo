@@ -1,14 +1,20 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { screen, within } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
 
 import GroupDetailPage from '@/pages/group-detail'
 import { renderWithProviders, t } from '@/test/utils'
+
+const toast = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn() }))
+
+vi.mock('sonner', () => ({ toast }))
 
 const api = vi.hoisted(() => ({
   get: vi.fn(),
   balances: vi.fn(),
   settlements: vi.fn(),
   transactions: vi.fn(),
+  createSettlement: vi.fn(),
+  listTransactions: vi.fn(),
 }))
 
 vi.mock('@/lib/api', () => ({
@@ -16,11 +22,11 @@ vi.mock('@/lib/api', () => ({
     get: api.get,
     balances: api.balances,
     transactions: api.transactions,
-    settlements: { list: api.settlements, create: vi.fn(), delete: vi.fn() },
+    settlements: { list: api.settlements, create: api.createSettlement, delete: vi.fn() },
     members: { create: vi.fn(), update: vi.fn(), delete: vi.fn() },
   },
   accounts: { list: vi.fn().mockResolvedValue([]) },
-  transactions: { list: vi.fn().mockResolvedValue({ items: [], total: 0 }) },
+  transactions: { list: api.listTransactions },
 }))
 
 const auth = vi.hoisted(() => ({ userId: 'user-bob' }))
@@ -83,6 +89,7 @@ describe('GroupDetailPage balances', () => {
     vi.clearAllMocks()
     api.settlements.mockResolvedValue([])
     api.transactions.mockResolvedValue([])
+    api.listTransactions.mockResolvedValue({ items: [], total: 0 })
   })
 
   it('shows a linked member what they owe the owner, not the other way round', async () => {
@@ -146,6 +153,130 @@ describe('GroupDetailPage balances', () => {
     const [from, to] = within(dialog).getAllByRole('combobox')
     expect(from).toHaveValue('m-alice')
     expect(to).toHaveValue('m-carol')
+  })
+
+  it('lets the owner link the credit that already arrived when they are paid', async () => {
+    auth.userId = 'user-alice'
+    api.get.mockResolvedValue(group('alice'))
+    api.balances.mockResolvedValue({
+      group_id: 'g1', self_member_id: 'm-alice', default_currency: 'USD', lines: [line('m-bob', 30)],
+    })
+    api.listTransactions.mockResolvedValue({
+      items: [{ id: 'tx-in', date: '2026-10-21', description: 'Transfer from Bob', amount: 30, currency: 'USD', type: 'credit' }],
+      total: 1,
+    })
+    const { user } = renderPage()
+
+    await screen.findByText(t('splitGroups.owesYou', { name: 'Bob' }))
+    await user.click(balanceRows().getByRole('button', { name: t('splitGroups.settleUp') }))
+    const dialog = await screen.findByRole('dialog')
+    const [from, to, action] = within(dialog).getAllByRole('combobox')
+    expect(from).toHaveValue('m-bob')
+    expect(to).toHaveValue('m-alice')
+    // The receiver can link what arrived, not create a new transaction.
+    expect(within(action).queryByRole('option', { name: t('splitGroups.txActionCreate') })).not.toBeInTheDocument()
+    await user.selectOptions(action, 'existing')
+    await user.click(await within(dialog).findByRole('button', { name: /Transfer from Bob/ }))
+    await user.click(within(dialog).getByRole('button', { name: t('common.save') }))
+
+    expect(api.listTransactions).toHaveBeenCalledWith(expect.objectContaining({ type: 'credit' }))
+    expect(api.createSettlement).toHaveBeenCalledWith('g1', expect.objectContaining({
+      from_member_id: 'm-bob', to_member_id: 'm-alice', receiver_transaction_id: 'tx-in',
+    }))
+    expect(api.createSettlement.mock.calls[0][1]).not.toHaveProperty('transaction_id')
+  })
+
+  it('leaves out a credit the group already paid back in full', async () => {
+    auth.userId = 'user-alice'
+    api.get.mockResolvedValue(group('alice'))
+    api.balances.mockResolvedValue({
+      group_id: 'g1', self_member_id: 'm-alice', default_currency: 'USD', lines: [line('m-bob', 30)],
+    })
+    api.listTransactions.mockResolvedValue({
+      items: [{
+        id: 'tx-done', date: '2026-10-21', description: 'Transfer from Bob', amount: 30,
+        currency: 'USD', type: 'credit',
+        // A payback of the whole credit: nothing left to link.
+        settled_by: [{ id: 's1', group_id: 'g1', from_member_id: 'm-bob', amount: 30 }],
+      }],
+      total: 1,
+    })
+    const { user } = renderPage()
+
+    await screen.findByText(t('splitGroups.owesYou', { name: 'Bob' }))
+    await user.click(balanceRows().getByRole('button', { name: t('splitGroups.settleUp') }))
+    const dialog = await screen.findByRole('dialog')
+    const [, , action] = within(dialog).getAllByRole('combobox')
+    await user.selectOptions(action, 'existing')
+
+    await within(dialog).findByText(t('splitGroups.noTransactions'))
+    expect(within(dialog).queryByRole('button', { name: /Transfer from Bob/ })).not.toBeInTheDocument()
+  })
+
+  it('offers only the part of a credit the group has not paid back yet', async () => {
+    auth.userId = 'user-alice'
+    api.get.mockResolvedValue(group('alice'))
+    api.balances.mockResolvedValue({
+      group_id: 'g1', self_member_id: 'm-alice', default_currency: 'USD', lines: [line('m-bob', 30)],
+    })
+    api.listTransactions.mockResolvedValue({
+      items: [{
+        id: 'tx-part', date: '2026-10-21', description: 'Transfer from Bob', amount: 100,
+        currency: 'USD', type: 'credit',
+        settled_by: [{ id: 's1', group_id: 'g1', from_member_id: 'm-bob', amount: 60 }],
+      }],
+      total: 1,
+    })
+    const { user } = renderPage()
+
+    await screen.findByText(t('splitGroups.owesYou', { name: 'Bob' }))
+    await user.click(balanceRows().getByRole('button', { name: t('splitGroups.settleUp') }))
+    const dialog = await screen.findByRole('dialog')
+    const [, , action] = within(dialog).getAllByRole('combobox')
+    await user.selectOptions(action, 'existing')
+
+    const row = await within(dialog).findByRole('button', { name: /Transfer from Bob/ })
+    // What is still free next to the transaction's own amount.
+    expect(row).toHaveTextContent('40 / 100')
+    await user.click(row)
+
+    expect(within(dialog).getByRole('spinbutton')).toHaveValue(40)
+    await user.click(within(dialog).getByRole('button', { name: t('common.save') }))
+
+    expect(api.createSettlement).toHaveBeenCalledWith('g1', expect.objectContaining({
+      amount: 40, receiver_transaction_id: 'tx-part',
+    }))
+  })
+
+  it('shows a refused link in the dialog language, not the API English', async () => {
+    auth.userId = 'user-alice'
+    api.get.mockResolvedValue(group('alice'))
+    api.balances.mockResolvedValue({
+      group_id: 'g1', self_member_id: 'm-alice', default_currency: 'USD', lines: [line('m-bob', 30)],
+    })
+    api.listTransactions.mockResolvedValue({
+      items: [{
+        id: 'tx-in', date: '2026-10-21', description: 'Transfer from Bob', amount: 30,
+        currency: 'USD', type: 'credit',
+      }],
+      total: 1,
+    })
+    api.createSettlement.mockRejectedValue({
+      response: { data: { detail: 'Settlements linked to this transaction would exceed its amount' } },
+    })
+    const { user } = renderPage()
+
+    await screen.findByText(t('splitGroups.owesYou', { name: 'Bob' }))
+    await user.click(balanceRows().getByRole('button', { name: t('splitGroups.settleUp') }))
+    const dialog = await screen.findByRole('dialog')
+    const [, , action] = within(dialog).getAllByRole('combobox')
+    await user.selectOptions(action, 'existing')
+    await user.click(await within(dialog).findByRole('button', { name: /Transfer from Bob/ }))
+    await user.click(within(dialog).getByRole('button', { name: t('common.save') }))
+
+    await waitFor(() => {
+      expect(toast.error).toHaveBeenCalledWith(t('splitGroups.errorExceedsAmount'))
+    })
   })
 
   it('shows a workspace member outside the group the owner\'s balances in the third person', async () => {

@@ -23,6 +23,7 @@ from app.services.asset_service import (
     _generate_growth_values,
     _next_due_date,
     build_market_value_series,
+    estimate_gross_value_series,
     get_portfolio_trend,
 )
 
@@ -47,6 +48,36 @@ def test_build_market_value_series_reflects_quantity_over_time():
     assert round(out[date(2026, 5, 15)]) == round(250 * 46.43)    # 250 units at the carried price
     assert round(out[date(2026, 5, 17)]) == round(250 * 45.47)    # after → 250 units
     assert round(out[date(2026, 6, 11)]) == round(250 * 41.65)
+
+
+def test_estimate_gross_value_series_interpolates_legacy_net_rows():
+    start = date(2026, 5, 25)
+    records = [
+        (start, Decimal("100"), Decimal("100")),
+        (start + timedelta(days=1), Decimal("105"), None),
+        (start + timedelta(days=2), Decimal("110"), Decimal("112")),
+    ]
+    assert estimate_gross_value_series(records) == [
+        (start, 100.0),
+        (start + timedelta(days=1), 106.0),
+        (start + timedelta(days=2), 112.0),
+    ]
+
+
+def test_estimate_gross_value_series_resets_after_withdrawal():
+    start = date(2026, 5, 25)
+    records = [
+        (start, Decimal("100"), Decimal("100")),
+        (start + timedelta(days=1), Decimal("110"), None),
+        (start + timedelta(days=2), Decimal("50"), None),
+        (start + timedelta(days=3), Decimal("55"), Decimal("56")),
+    ]
+    assert estimate_gross_value_series(records) == [
+        (start, 100.0),
+        (start + timedelta(days=1), 110.0),
+        (start + timedelta(days=2), 50.0),
+        (start + timedelta(days=3), 56.0),
+    ]
 
 
 def test_build_market_value_series_handles_sell_and_missing_price():
@@ -486,6 +517,42 @@ async def test_value_series_apply_a_recorded_split(
         session, test_workspace.id, as_of_date=date(2026, 10, 26), by_workspace=True,
     )
     assert totals["BRL"] == 5000.0  # before the split: 10 × 500
+
+
+@pytest.mark.asyncio
+async def test_as_of_value_does_not_depend_on_where_the_ledger_is_cut(
+    session: AsyncSession, test_user: User, test_workspace
+):
+    """A stored value that predates the first trade (#1643): a snapshot taken
+    before the trade must not fall back to the stored amount just because the
+    cut ledger is empty there; the portfolio trend replays the ledger and says 0."""
+    asset = Asset(
+        id=uuid.uuid4(), user_id=test_user.id, name="Apple", type="stock", currency="BRL",
+        valuation_method="market_price", ticker="AAPL", units=Decimal("10"), position=0,
+    )
+    session.add(asset)
+    await session.flush()
+    session.add_all([
+        AssetValue(asset_id=asset.id, amount=Decimal("1000"), price=Decimal("100"),
+                   date=date(2026, 1, 31), source="sync"),
+        AssetTransaction(
+            asset_id=asset.id, workspace_id=test_workspace.id, kind="buy",
+            quantity=Decimal("10"), price=Decimal("100"), fee=Decimal("0"), date=date(2026, 2, 15),
+        ),
+    ])
+    await session.commit()
+
+    portfolio = await get_portfolio_trend(session, test_workspace.id, test_user.id)
+    on_jan_31 = next(row for row in portfolio["trend"] if row["date"] == "2026-01-31")
+
+    totals, _ = await asset_service.get_asset_values_at(
+        session, test_workspace.id, as_of_date=date(2026, 1, 31), by_workspace=True,
+    )
+    assert totals.get("BRL", 0.0) == on_jan_31.get(str(asset.id), 0.0) == 0.0
+    totals, _ = await asset_service.get_asset_values_at(
+        session, test_workspace.id, as_of_date=date(2026, 2, 28), by_workspace=True,
+    )
+    assert totals["BRL"] == 1000.0
 
 
 @pytest.mark.asyncio

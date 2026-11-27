@@ -1164,12 +1164,12 @@ export default function ReportsPage() {
       <>
       {/* Main Trend Chart */}
       <div className="bg-card rounded-xl border border-border shadow-sm mb-5">
-        <div className="px-5 pt-5 pb-2 flex items-center justify-between">
+        <div className="px-5 pt-5 pb-2 flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
           <p className="text-sm font-semibold text-foreground">
             {t(currentTab.labelKey)} · {t('reports.trend')}
           </p>
           {meta && (
-            <div className="flex items-center gap-3">
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 min-w-0">
               {meta.type === 'net_worth' ? (
                 <div className="flex items-center gap-1.5">
                   <div className="w-2 h-2 rounded-full" style={{ backgroundColor: 'var(--chart-1)' }} />
@@ -1346,12 +1346,13 @@ export default function ReportsPage() {
                   tickCount={5}
                 />
                 <Tooltip
-                  formatter={(value?: number, name?: string) => [
-                    privacyMode ? MASK : formatCurrency(value ?? 0, userCurrency, locale),
-                    name === 'value'
-                      ? t('reports.netIncome')
-                      : t(`reports.${name ?? ''}`, { defaultValue: name ?? '' }),
-                  ]}
+                  formatter={(value, name) => {
+                    const label = String(name ?? '')
+                    return [
+                      privacyMode ? MASK : formatCurrency(Number(value ?? 0), userCurrency, locale),
+                      label === 'value' ? t('reports.netIncome') : t(`reports.${label}`, { defaultValue: label }),
+                    ]
+                  }}
                   labelFormatter={(label) => label}
                   contentStyle={tooltipStyle}
                 />
@@ -1811,8 +1812,8 @@ export default function ReportsPage() {
                                     </defs>
                                     <XAxis dataKey="date" hide />
                                     <Tooltip
-                                      formatter={(value?: number) => [
-                                        privacyMode ? MASK : formatCurrency(value ?? 0, userCurrency, locale),
+                                      formatter={(value) => [
+                                        privacyMode ? MASK : formatCurrency(Number(value ?? 0), userCurrency, locale),
                                         item.label,
                                       ]}
                                       labelFormatter={(label) => label}

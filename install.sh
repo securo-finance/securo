@@ -16,6 +16,7 @@ error()   { echo -e "${RED}[ERROR]${NC} $*"; exit 1; }
 
 REPO_URL="https://github.com/securo-finance/securo.git"
 INSTALL_DIR="securo"
+REPO_OUTDATED=
 COMPOSE_FILE="docker-compose.prod.yml"
 HEALTH_URL="http://localhost:8000/api/health"
 HEALTH_TIMEOUT=60
@@ -258,6 +259,9 @@ update_repo() {
   if git pull --ff-only --quiet; then
     success "Repository updated"
   else
+    # The files keep the version they have, so the images are kept too:
+    # pulling the newest ones here would run code newer than this folder.
+    REPO_OUTDATED=1
     warn "Could not update the repository files. Continuing with the version already here."
   fi
 }
@@ -320,8 +324,14 @@ EOF
 
 # ── Start Services ───────────────────────────────────────────────────────────
 start_services() {
-  info "Pulling latest images..."
-  "${COMPOSE_CMD[@]}" -f "$COMPOSE_FILE" pull
+  if [ -n "$REPO_OUTDATED" ]; then
+    # `up` pulls only what is missing locally, so the stack keeps matching
+    # the folder: the images already here are reused instead of replaced.
+    info "Keeping the images already on this machine, so the app stays on this version; an image missing from it is downloaded anyway."
+  else
+    info "Pulling latest images..."
+    "${COMPOSE_CMD[@]}" -f "$COMPOSE_FILE" pull
+  fi
 
   info "Starting Securo..."
   "${COMPOSE_CMD[@]}" -f "$COMPOSE_FILE" up -d

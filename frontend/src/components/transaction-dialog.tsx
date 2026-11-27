@@ -17,6 +17,7 @@ import { findCategoryReference, getRuleCategoryId } from '@/lib/category-referen
 import { flattenConditions, hasConditionGroups } from '@/lib/rule-conditions'
 import { cn, normalizeText } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { DescriptionInput } from '@/components/description-input'
 import { Label } from '@/components/ui/label'
@@ -32,20 +33,24 @@ import {
   DialogTitle,
   DialogFooter,
 } from '@/components/ui/dialog'
-import { AlertTriangle, ArrowRight, ChevronDown, ChevronLeft, Download, Eye, EyeClosed, Flag, Paperclip, Upload, X, FileText, Plus, Unlink, SlidersHorizontal, ListPlus, Check, Pencil } from 'lucide-react'
+import { AlertTriangle, ArrowRight, ChevronDown, ChevronLeft, Download, Eye, EyeClosed, Flag, Paperclip, Upload, X, FileText, Plus, Unlink, SlidersHorizontal, ListPlus, Check, CircleCheck, Pencil, Trash2, ScanText } from 'lucide-react'
+import { documentAi } from '@/lib/api'
+import { documentErrorMessage, errorFromResponse, isDocumentFile, isImageFile, useDocumentAiStatus } from '@/hooks/use-document-extraction'
+import type { DocumentExtraction } from '@/types'
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { CategorySelect } from '@/components/category-select'
 import { PayeeSelect } from '@/components/payee-select'
 import { PayeeFormDialog } from '@/components/payee-form-dialog'
 import { RuleDialog, type RuleDialogInitialData } from '@/components/rule-dialog'
 import { TransactionAttachments } from '@/components/transaction-attachments'
 import type { AttachmentPreview } from '@/components/transaction-attachments'
-import { TransactionSplitsSection } from '@/components/transaction-splits-section'
+import { TransactionSplitsSection, type TransactionSettleInput } from '@/components/transaction-splits-section'
 import { buildInstallmentSeriesInput, hasNonStatusChange, isManualInstallmentSeriesRow } from '@/lib/installment-series'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
 import type { Transaction, RecurringTransaction, TransactionSplitsInput, TransactionEditPayload, InstallmentSeriesInput, TransactionApplyScope, CategoryGroup, Category, CategoryLineShareType, Rule, RuleCondition, RuleConditionNode, Payee } from '@/types'
@@ -157,7 +162,7 @@ export function TransactionDialog({
   transaction: Transaction | null
   categories: Category[]
   categoryGroups: CategoryGroup[]
-  accounts: { id: string; name: string; display_name?: string | null; type?: string; currency?: string; secured_asset_id?: string | null }[]
+  accounts: { id: string; name: string; display_name?: string | null; type?: string; currency?: string; secured_asset_id?: string | null; loan_kind?: string | null }[]
   recurringMatch?: RecurringTransaction
   onSave: (data: TransactionSavePayload, recurringData?: { frequency: string; end_date?: string }, installmentData?: InstallmentSeriesInput, pendingFiles?: File[], action?: SaveAction) => void
   onDelete?: () => void
@@ -258,7 +263,7 @@ export function TransactionDialog({
           : 'flex flex-col min-h-0 flex-1'}>
           {/* Left column: form */}
           <div className={isEditing
-            ? 'flex flex-col min-w-0 min-h-0 flex-1 overflow-hidden sm:pe-6'
+            ? cn('flex flex-col min-w-0 min-h-0 flex-1', hasPreview && 'overflow-hidden sm:pe-6')
             : 'flex flex-col min-h-0 flex-1'}>
             <DialogHeader className="mb-4">
               <DialogTitle>
@@ -314,7 +319,11 @@ export function TransactionDialog({
                         className="max-h-full max-w-full rounded object-contain"
                       />
                     </div>
-                  ) : null}
+                  ) : (
+                    <p className="flex h-full items-center justify-center p-6 text-center text-sm text-muted-foreground">
+                      {t('transactions.attachmentNoPreview')}
+                    </p>
+                  )}
                 </div>
                 <div className="flex items-center gap-2 px-4 py-3 border-t text-sm shrink-0">
                   <button
@@ -358,7 +367,11 @@ export function TransactionDialog({
                     className="max-h-full max-w-full rounded object-contain"
                   />
                 </div>
-              ) : null}
+              ) : (
+                <p className="flex h-full items-center justify-center p-6 text-center text-sm text-muted-foreground">
+                  {t('transactions.attachmentNoPreview')}
+                </p>
+              )}
             </div>
             <div className="flex items-center gap-2 px-4 py-3 border-t text-sm shrink-0">
               <button
@@ -429,6 +442,76 @@ export function TransactionDialog({
   )
 }
 
+/**
+ * Width a scroll region's vertical scrollbar takes from its content: 0 where
+ * scrollbars overlay the content (phones, macOS with a trackpad) or when
+ * nothing overflows. The observer fires when a classic bar appears or goes,
+ * since that changes the content box.
+ */
+function useScrollbarWidth() {
+  const ref = useRef<HTMLDivElement>(null)
+  const [width, setWidth] = useState(0)
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const measure = () => setWidth(Math.max(0, el.offsetWidth - el.clientWidth))
+    measure()
+    const observer = new ResizeObserver(measure)
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [])
+  return [ref, width] as const
+}
+
+/**
+ * Icon-only footer action. The label names the action for screen readers and
+ * shows on hover; it already changes with the state ("Mark as unpaid"), so the
+ * button carries no aria-pressed, which would read as "Mark as unpaid, pressed".
+ */
+function FooterIconAction({
+  label,
+  hint,
+  active,
+  onClick,
+  disabled,
+  className,
+  children,
+}: {
+  label: string
+  hint?: string
+  active: boolean
+  onClick: () => void
+  disabled?: boolean
+  className?: string
+  children: React.ReactNode
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          aria-label={label}
+          onClick={onClick}
+          disabled={disabled}
+          className={cn(
+            'size-9 text-muted-foreground hover:text-foreground [&_svg]:size-[18px]',
+            active && 'bg-muted text-foreground',
+            className,
+          )}
+        >
+          {children}
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent>
+        <span className="font-medium">{label}</span>
+        {hint && <span className="block opacity-80">{hint}</span>}
+      </TooltipContent>
+    </Tooltip>
+  )
+}
+
 function TransactionForm({
   transaction,
   duplicateDraft,
@@ -456,7 +539,7 @@ function TransactionForm({
   defaultAccountId?: string
   categories: Category[]
   categoryGroups: CategoryGroup[]
-  accounts: { id: string; name: string; display_name?: string | null; type?: string; currency?: string; secured_asset_id?: string | null }[]
+  accounts: { id: string; name: string; display_name?: string | null; type?: string; currency?: string; secured_asset_id?: string | null; loan_kind?: string | null }[]
   recurringMatch?: RecurringTransaction
   onSave: (data: TransactionEditPayload, recurringData?: { frequency: string; end_date?: string }, installmentData?: InstallmentSeriesInput, pendingFiles?: File[], action?: SaveAction) => void
   onDelete?: () => void
@@ -474,6 +557,7 @@ function TransactionForm({
 }) {
   const { t } = useTranslation()
   const id = useId()
+  const [scrollRef, scrollbarWidth] = useScrollbarWidth()
   const queryClient = useQueryClient()
   const { user } = useAuth()
   const { privacyMode, MASK } = usePrivacyMode()
@@ -567,6 +651,16 @@ function TransactionForm({
   const [hadInitialFx] = useState(
     !!transaction && (seed?.amount_primary != null || seed?.fx_rate_used != null)
   )
+  // Whether the user edited the conversion fields themselves. The fields are
+  // also filled from the row, and following the amount and the rate, so
+  // sending them back as they stand would freeze a derived figure as typed:
+  // a date move left the conversion on the old day's rate (#481), and an
+  // untouched echo rewrote the owner's stamp (#440). Only an edit counts.
+  const [conversionEdited, setConversionEdited] = useState(false)
+  // The amount and currency the dialog opened with. Changing either makes the
+  // shown conversion a new figure (the amount at the shown rate), so the save
+  // sends it: what is saved is what the dialog showed (#482).
+  const [initialMoney] = useState(() => ({ amount, currency, date }))
   const [isRecurring, setIsRecurring] = useState(false)
   const [frequency, setFrequency] = useState<RecurringTransaction['frequency']>('monthly')
   const [endDate, setEndDate] = useState('')
@@ -583,6 +677,11 @@ function TransactionForm({
   // Seeded from the transaction's existing splits so the edit dialog
   // round-trips them rather than appearing empty.
   const [splitsValid, setSplitsValid] = useState(true)
+  // A payback recorded from an incoming transaction (see TransactionSplitsSection).
+  // Undefined until the section reports one, so a section that never showed
+  // leaves the transaction's payback alone.
+  const [settle, setSettle] = useState<TransactionSettleInput | null | undefined>(undefined)
+  const singleGroupPayback = new Set((transaction?.settled_by ?? []).map((s) => s.group_id)).size <= 1
   const [splits, setSplits] = useState<TransactionSplitsInput | null>(() => {
     const existing = (seed as Transaction | null | undefined)?.splits
     if (!existing || existing.length === 0) return null
@@ -627,6 +726,13 @@ function TransactionForm({
   const showReportingDateOverride =
     isSynced && selectedAccount != null && !isCreditCardSelected
   const showConversion = currency !== userCurrency && !isSynced
+  // A row whose conversion came from a rate follows its date and amount: the
+  // server works it out again, so the dialog never sends it back, and after
+  // a new date or currency the old day's rate is not shown as if it held
+  // (#483). Editing the fields makes the figure the user's own.
+  const followsRate = !!transaction && !transaction.fx_typed && !conversionEdited
+  const conversionStale =
+    followsRate && (date !== initialMoney.date || currency !== initialMoney.currency)
   // Privacy mode hides monetary values across the app, but the edit modal
   // surfaced the raw amount anyway (issue #323). Only existing transactions
   // carry a value worth hiding — when creating, the user must see what they
@@ -638,6 +744,87 @@ function TransactionForm({
   const [pendingDragOver, setPendingDragOver] = useState(false)
   const pendingFileInputRef = useRef<HTMLInputElement>(null)
   const pendingActionRef = useRef<SaveAction>('save')
+
+  // Document reading (when an admin turned it on): a receipt or a PDF added while
+  // creating fills in the fields that are still empty. What the person typed
+  // is never replaced, and the temporary read is deleted once applied; the
+  // file itself is attached on save like any other.
+  const { enabled: documentAiEnabled, status: documentAiStatus } = useDocumentAiStatus()
+  const [readingFile, setReadingFile] = useState(false)
+  const formNow = useRef({ description, amount, date, categoryId })
+  formNow.current = { description, amount, date, categoryId }
+  const readCancelled = useRef(false)
+  useEffect(() => {
+    // Re-armed on every mount: StrictMode mounts twice, and a flag left set by
+    // the first cleanup would stop every read before it starts.
+    readCancelled.current = false
+    return () => { readCancelled.current = true }
+  }, [])
+  const canReadFile = (file: File) =>
+    documentAiEnabled && isCreating && !!documentAiStatus?.configured && isDocumentFile(file.name)
+    && !(isImageFile(file.name) && documentAiStatus?.vision === 'no')
+
+  const applyReadFile = (extraction: DocumentExtraction) => {
+    const receipt = extraction.receipt
+    if (!receipt) return
+    const now = formNow.current
+    const filled: string[] = []
+    if (!now.description.trim() && receipt.merchant) {
+      setDescription(receipt.merchant)
+      filled.push(t('transactions.description'))
+    }
+    if (!now.amount && receipt.total) {
+      // Money as printed on a receipt: always two decimals (35.70, not 35.7).
+      setAmount(formatAmountInput(Number(receipt.total), displayLocale, 2, 2))
+      setType(receipt.kind === 'refund' ? 'credit' : 'debit')
+      if (receipt.currency) setCurrency(receipt.currency)
+      filled.push(t('transactions.amount'))
+    }
+    // Today is the form's default, not a choice; another date someone picked is.
+    if (receipt.date && now.date === localDateString() && receipt.date !== now.date) {
+      setDate(receipt.date)
+      filled.push(t('transactions.date'))
+    }
+    if (!now.categoryId && extraction.suggested_category_id) {
+      setCategoryId(extraction.suggested_category_id)
+      filled.push(t('transactions.category'))
+    }
+    if (filled.length) toast.success(t('documentAi.fill.filled', { fields: filled.join(', ') }))
+    else toast.info(t('documentAi.fill.nothingNew'))
+  }
+
+  const readFile = async (file: File) => {
+    if (readingFile) return
+    setReadingFile(true)
+    try {
+      let extraction = await documentAi.upload(file, 'receipt')
+      for (let i = 0; i < 150 && (extraction.status === 'pending' || extraction.status === 'processing'); i++) {
+        await new Promise(resolve => setTimeout(resolve, 2000))
+        if (readCancelled.current) break
+        extraction = await documentAi.get(extraction.id)
+      }
+      if (!readCancelled.current) {
+        if (extraction.status === 'done') applyReadFile(extraction)
+        else if (extraction.status === 'failed') toast.error(documentErrorMessage(t, extraction.error_code, extraction.error))
+      }
+      // The file is attached on save; the read was only for the fields.
+      documentAi.remove(extraction.id).catch(() => {})
+    } catch (error) {
+      if (!readCancelled.current) toast.error(errorFromResponse(t, error))
+    } finally {
+      if (!readCancelled.current) setReadingFile(false)
+    }
+  }
+
+  // A form still empty means the person started from the file: read it right
+  // away. Otherwise the button on the file does it, so attaching a proof never
+  // spends a paid model's tokens unasked.
+  const addPendingFilesAndRead = (files: FileList | File[]) => {
+    const list = Array.from(files)
+    addPendingFiles(list)
+    const first = list.find(canReadFile)
+    if (first && !formNow.current.description.trim() && !formNow.current.amount) void readFile(first)
+  }
   const formRef = useRef<HTMLFormElement>(null)
   const descriptionRef = useRef<HTMLTextAreaElement>(null)
 
@@ -696,6 +883,8 @@ function TransactionForm({
   const [togglingIgnore, setTogglingIgnore] = useState(false)
   const [isFlagged, setIsFlagged] = useState(seed?.is_flagged ?? false)
   const [togglingFlag, setTogglingFlag] = useState(false)
+  const [isPaid, setIsPaid] = useState(seed?.is_paid ?? false)
+  const [togglingPaid, setTogglingPaid] = useState(false)
   const [flagDueDate, setFlagDueDate] = useState(seed?.flag_due_date ?? '')
   const [flagNote, setFlagNote] = useState(seed?.flag_note ?? '')
   const [savedFlagNote, setSavedFlagNote] = useState(seed?.flag_note ?? '')
@@ -840,6 +1029,26 @@ function TransactionForm({
     }
   }
 
+  // Paid or not is the user's mark and never waits for the form to be saved,
+  // so it goes out on its own like the flag (issue #15).
+  const handleTogglePaid = async () => {
+    if (!seed?.id || togglingPaid) return
+    setTogglingPaid(true)
+    try {
+      const updated = await transactionsApi.update(seed.id, { is_paid: !isPaid })
+      setIsPaid(updated.is_paid ?? false)
+      toast.success(updated.is_paid
+        ? t('transactions.paidSuccess')
+        : t('transactions.unpaidSuccess'))
+      queryClient.invalidateQueries({ queryKey: ['transactions'] })
+      queryClient.invalidateQueries({ queryKey: ['drill-down'] })
+    } catch {
+      toast.error(t('common.error'))
+    } finally {
+      setTogglingPaid(false)
+    }
+  }
+
   function applyFlagResponse(updated: Transaction) {
     setIsFlagged(updated.is_flagged ?? false)
     setFlagDueDate(updated.flag_due_date ?? '')
@@ -896,7 +1105,7 @@ function TransactionForm({
     staleTime: 5 * 60 * 1000,
     enabled: isCreating,
   })
-  const allowedExtensions = useMemo(() => attachmentSettings?.allowed_extensions ?? ['jpg', 'jpeg', 'png', 'webp', 'gif', 'heic', 'pdf'], [attachmentSettings?.allowed_extensions])
+  const allowedExtensions = useMemo(() => attachmentSettings?.allowed_extensions ?? ['jpg', 'jpeg', 'png', 'webp', 'gif', 'heic', 'pdf', 'xml'], [attachmentSettings?.allowed_extensions])
   const maxFileSize = (attachmentSettings?.max_file_size_mb ?? 10) * 1024 * 1024
   const maxAttachments = attachmentSettings?.max_attachments_per_transaction ?? 10
 
@@ -912,7 +1121,7 @@ function TransactionForm({
         }
         const ext = file.name.includes('.') ? file.name.split('.').pop()!.toLowerCase() : ''
         if (!allowedExtensions.includes(ext)) {
-          toast.error(t('transactions.attachmentTypeNotAllowed'))
+          toast.error(t('transactions.attachmentTypeNotAllowed', { types: allowedExtensions.join(', ') }))
           continue
         }
         if (file.size > maxFileSize) {
@@ -931,6 +1140,7 @@ function TransactionForm({
   }
 
   const handleConvertedAmountChange = (val: string) => {
+    setConversionEdited(true)
     setConvertedAmount(val)
     const numVal = parseAmountInput(val, displayLocale)
     const numAmount = parseAmountInput(amount, displayLocale)
@@ -943,6 +1153,7 @@ function TransactionForm({
   }
 
   const handleFxRateChange = (val: string) => {
+    setConversionEdited(true)
     setFxRate(val)
     const numRate = parseAmountInput(val, displayLocale)
     const numAmount = parseAmountInput(amount, displayLocale)
@@ -999,10 +1210,25 @@ function TransactionForm({
           toast.error(t('common.error'))
           return
         }
-        if (showConversion && parsedConverted != null) {
+        // The fields carry the row's own conversion and follow the amount,
+        // so sending them untouched is not a statement about the rate: a
+        // date move must let the server derive it again (#481), and an echo
+        // must not rewrite the owner's stamp (#440). A new amount or currency
+        // on a typed conversion is a new figure, shown at the shown rate, so
+        // it is sent (#482); a derived one is left to the server (#483). A
+        // new row is different too: a duplicate opens seeded from the
+        // previous payload, and the figures shown are the ones the user
+        // chose to copy.
+        const sendConversion =
+          isCreating ||
+          conversionEdited ||
+          (!followsRate &&
+            (parsedAmount !== parseAmountInput(initialMoney.amount, displayLocale) ||
+              currency !== initialMoney.currency))
+        if (showConversion && sendConversion && parsedConverted != null) {
           fxFields.amount_primary = parsedConverted
         }
-        if (showConversion && parsedFxRate != null) {
+        if (showConversion && sendConversion && parsedFxRate != null) {
           fxFields.fx_rate_used = parsedFxRate
         }
         if (showConversion && hadInitialFx && !convertedAmount && !fxRate) {
@@ -1044,6 +1270,23 @@ function TransactionForm({
           : hadInitialLines
             ? { category_lines: { share_type: 'exact', lines: [] } }
             : {}
+        // The payback goes with the save, like splits, and only when its group,
+        // payers or their amounts changed, so what is already recorded is kept.
+        // A new amount re-splits a payback that covered the whole transaction.
+        const before = transaction?.settled_by ?? []
+        // Per member, so two settlements from one payer read as their sum.
+        const paybackKey = (groupId: string | undefined, parts: { member_id: string; amount: number | string }[]) => {
+          const byMember = new Map<string, number>()
+          for (const p of parts) byMember.set(p.member_id, (byMember.get(p.member_id) ?? 0) + Number(p.amount))
+          return `${groupId}:${[...byMember].map(([id, a]) => `${id}=${a.toFixed(2)}`).sort().join()}`
+        }
+        const coveredWhole = Math.abs(before.reduce((sum, s) => sum + Number(s.amount), 0) - Number(transaction?.amount)) < 0.005
+        const paybackPayload: Pick<TransactionEditPayload, 'payback'> = settle !== undefined && !splitByCategory
+          && (paybackKey(before[0]?.group_id, before.map((s) => ({ member_id: s.from_member_id, amount: s.amount })))
+            !== paybackKey(settle?.group_id, settle?.payers ?? [])
+            || (!!settle && coveredWhole && parsedAmount != null && Number(transaction?.amount) !== parsedAmount))
+          ? { payback: settle ? { group_id: settle.group_id, to_member_id: settle.to_member_id, payers: settle.payers } : { payers: [] } }
+          : {}
         const pnlExclusionPayload = transaction
           ? { exclude_from_pnl: excludeFromReports }
           : {}
@@ -1057,6 +1300,7 @@ function TransactionForm({
               ...pnlExclusionPayload,
               ...overridePayload,
               ...splitsPayload,
+              ...paybackPayload,
               ...categoryLinesPayload,
             } as TransactionEditPayload
           : {
@@ -1077,6 +1321,7 @@ function TransactionForm({
               ...fxFields,
               ...overridePayload,
               ...splitsPayload,
+              ...paybackPayload,
               ...categoryLinesPayload,
             } as TransactionEditPayload
         const recurringData = isCreating && isRecurring
@@ -1110,7 +1355,15 @@ function TransactionForm({
         hasPreview && 'mt-4'
       )}
     >
-      <div className="space-y-4 overflow-y-auto flex-1 min-h-0 pb-2 sm:pe-3">
+      {/* The scroll region reaches into the dialog's 24px end padding and gives
+          back whatever the scrollbar does not take, so the fields end on the
+          footer's line with a classic bar and with an overlay one (0px). */}
+      <div
+        ref={scrollRef}
+        data-testid="transaction-form-scroll"
+        style={{ '--scrollbar-w': `${scrollbarWidth}px` } as React.CSSProperties}
+        className="space-y-4 overflow-y-auto flex-1 min-h-0 pb-2 -me-6 pe-[max(0px,calc(1.5rem_-_var(--scrollbar-w)))] [scrollbar-width:thin]"
+      >
       {error && (
         <div className="p-3 text-sm text-destructive bg-destructive/10 rounded-md">
           {error}
@@ -1296,6 +1549,13 @@ function TransactionForm({
         {isSynced && transaction?.payee && transaction.payee !== transaction.description && (
           <p className="text-xs text-muted-foreground">{transaction.payee}</p>
         )}
+        {/* The bank's own category label, untranslated. Rules match this exact
+            text, so the row shows it where the user edits the transaction. */}
+        {transaction?.provider_category && (
+          <p className="text-xs text-muted-foreground">
+            {t('transactions.providerCategory')}: {transaction.provider_category}
+          </p>
+        )}
       </div>
       <div className="grid grid-cols-2 gap-3 sm:gap-4">
         <div className="space-y-2">
@@ -1443,7 +1703,7 @@ function TransactionForm({
                   id={`${id}-converted-amount`}
                   type="text"
                   inputMode="decimal"
-                  value={convertedAmount}
+                  value={conversionStale ? '' : convertedAmount}
                   onChange={(e) => handleConvertedAmountChange(e.target.value)}
                   placeholder={t('transactions.autoCalculated')}
                   className="bg-card"
@@ -1456,7 +1716,7 @@ function TransactionForm({
                 id={`${id}-exchange-rate`}
                 type="text"
                 inputMode="decimal"
-                value={fxRate}
+                value={conversionStale ? '' : fxRate}
                 onChange={(e) => handleFxRateChange(e.target.value)}
                 placeholder={t('transactions.autoCalculated')}
                 className="bg-card"
@@ -1764,10 +2024,13 @@ function TransactionForm({
           value={splits}
           onChange={setSplits}
           onValidityChange={setSplitsValid}
+          // A payback spread over several groups is managed from the group pages.
+          settledBy={singleGroupPayback ? transaction?.settled_by : undefined}
+          onSettle={transaction?.type === 'credit' && singleGroupPayback ? setSettle : undefined}
         />
       )}
 
-      {!isCreating && !splitByCategory && !transaction?.has_category_lines && transaction?.type === 'debit' && transaction.status === 'posted' && !transaction.is_ignored && !transaction.transfer_pair_id && !transaction.category?.is_ignored && Number(transaction.amount) > 0 && accounts.find(a => a.id === transaction.account_id)?.type !== 'loan' && accounts.some(a => a.type === 'loan' && a.secured_asset_id) && (
+      {!isCreating && !splitByCategory && !transaction?.has_category_lines && transaction?.type === 'debit' && transaction.status === 'posted' && !transaction.is_ignored && !transaction.transfer_pair_id && !transaction.category?.is_ignored && Number(transaction.amount) > 0 && accounts.find(a => a.id === transaction.account_id)?.type !== 'loan' && accounts.some(a => a.type === 'loan' && Boolean(transaction.currency) && a.currency === transaction.currency) && (
         <MortgagePaymentEditor transaction={transaction} accounts={accounts} />
       )}
 
@@ -1786,9 +2049,12 @@ function TransactionForm({
           fileInputRef={pendingFileInputRef}
           onDragOver={() => setPendingDragOver(true)}
           onDragLeave={() => setPendingDragOver(false)}
-          onDrop={(e) => { e.preventDefault(); setPendingDragOver(false); if (e.dataTransfer.files?.length) addPendingFiles(e.dataTransfer.files) }}
-          onFileChange={(e) => { if (e.target.files?.length) { addPendingFiles(e.target.files); e.target.value = '' } }}
+          onDrop={(e) => { e.preventDefault(); setPendingDragOver(false); if (e.dataTransfer.files?.length) addPendingFilesAndRead(e.dataTransfer.files) }}
+          onFileChange={(e) => { if (e.target.files?.length) { addPendingFilesAndRead(e.target.files); e.target.value = '' } }}
           onRemove={removePendingFile}
+          canRead={canReadFile}
+          onRead={(file) => void readFile(file)}
+          reading={readingFile}
         />
       )}
 
@@ -1894,65 +2160,68 @@ function TransactionForm({
       </div>
 
       <DialogFooter className={cn(
-        'shrink-0 border-t pt-4 mt-2 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between',
-        !(onDelete || seed?.id) ? 'sm:justify-end' : ''
+        'shrink-0 border-t pt-4 mt-2 flex flex-row flex-wrap items-center justify-between gap-3',
+        !(onDelete || seed?.id) ? 'justify-end' : ''
       )}>
-        <div className="flex min-w-0 flex-wrap gap-2 items-center">
-          {onDelete && (
-            <Button type="button" variant="destructive" onClick={onDelete} disabled={loading} className="whitespace-nowrap text-xs sm:text-sm h-8 sm:h-9">
-              {t('common.delete')}
-            </Button>
-          )}
+        <TooltipProvider>
+        <div className="flex min-w-0 flex-wrap items-center gap-1">
           {seed?.id && (
-            <Button
-              type="button"
-              variant={isIgnored ? 'secondary' : 'outline'}
-              onClick={handleToggleIgnore}
-              disabled={loading || togglingIgnore}
-              title={t('transactions.ignoreTransferHint')}
-              className="gap-1.5 whitespace-nowrap text-xs sm:text-sm h-8 sm:h-9"
-            >
-              {isIgnored ? <Eye size={14} /> : <EyeClosed size={14} />}
-              {isIgnored ? t('transactions.unignoreAction') : t('transactions.ignoreAction')}
-            </Button>
-          )}
-          {seed?.id && (
-            <Button
-              type="button"
-              variant={isFlagged ? 'secondary' : 'outline'}
-              onClick={handleToggleFlag}
-              disabled={loading || togglingFlag}
-              className="gap-1.5 whitespace-nowrap text-xs sm:text-sm h-8 sm:h-9"
-            >
-              <Flag size={14} className={isFlagged ? 'fill-current text-amber-600 dark:text-amber-400' : undefined} />
-              {isFlagged ? t('transactions.unflagAction') : t('transactions.flagAction')}
-            </Button>
+            <>
+              <FooterIconAction
+                label={isIgnored ? t('transactions.unignoreAction') : t('transactions.ignoreAction')}
+                hint={t('transactions.ignoreTransferHint')}
+                active={isIgnored}
+                onClick={handleToggleIgnore}
+                disabled={loading || togglingIgnore}
+              >
+                {isIgnored ? <Eye /> : <EyeClosed />}
+              </FooterIconAction>
+              <FooterIconAction
+                label={isFlagged ? t('transactions.unflagAction') : t('transactions.flagAction')}
+                active={isFlagged}
+                onClick={handleToggleFlag}
+                disabled={loading || togglingFlag}
+              >
+                <Flag className={isFlagged ? 'fill-current text-amber-600 dark:text-amber-400' : undefined} />
+              </FooterIconAction>
+              <FooterIconAction
+                label={isPaid ? t('transactions.markUnpaid') : t('transactions.markPaid')}
+                hint={isPaid ? t('transactions.markUnpaidHint') : t('transactions.markPaidHint')}
+                active={isPaid}
+                onClick={handleTogglePaid}
+                disabled={loading || togglingPaid}
+              >
+                <CircleCheck className={isPaid ? 'text-emerald-600 dark:text-emerald-400' : undefined} />
+              </FooterIconAction>
+            </>
           )}
           {transaction && onCreateRule && (
-            <div className="inline-flex">
-              <Button
-                type="button"
-                variant="outline"
+            <div className="inline-flex items-center">
+              <FooterIconAction
+                label={t('transactions.createRule')}
+                active={false}
                 onClick={() => onCreateRule(transaction)}
-                className="gap-1.5 rounded-e-none whitespace-nowrap text-xs sm:text-sm h-8 sm:h-9"
-                title={t('transactions.createRule')}
+                className="rounded-e-none"
               >
-                <SlidersHorizontal size={14} />
-                {t('transactions.createRule')}
-              </Button>
+                <SlidersHorizontal />
+              </FooterIconAction>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button
                     type="button"
-                    variant="outline"
+                    variant="ghost"
                     aria-label={t('transactions.ruleActions')}
-                    className="rounded-s-none border-s-0 px-1.5 sm:px-2 has-[>svg]:px-1.5 sm:has-[>svg]:px-2 h-8 sm:h-9"
+                    className="h-9 w-5 rounded-s-none px-0 text-muted-foreground hover:text-foreground"
                     disabled={updateRuleMutation.isPending}
                   >
                     <ChevronDown size={14} />
                   </Button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="start" className="w-56">
+                <DropdownMenuContent align="start" side="top" className="w-60">
+                  <DropdownMenuItem onSelect={() => onCreateRule(transaction)}>
+                    <SlidersHorizontal size={16} />
+                    {t('transactions.createRule')}
+                  </DropdownMenuItem>
                   <DropdownMenuItem onSelect={() => setAddToRuleOpen(true)}>
                     <ListPlus size={16} />
                     {t('transactions.addToExistingRule')}
@@ -1961,8 +2230,23 @@ function TransactionForm({
               </DropdownMenu>
             </div>
           )}
+          {onDelete && (
+            <>
+              <div aria-hidden="true" className="mx-1 h-5 w-px bg-border" />
+              <FooterIconAction
+                label={t('common.delete')}
+                active={false}
+                onClick={onDelete}
+                disabled={loading}
+                className="hover:bg-destructive/10 hover:text-destructive"
+              >
+                <Trash2 />
+              </FooterIconAction>
+            </>
+          )}
         </div>
-        <div className="flex flex-wrap gap-2 justify-end sm:ms-auto">
+        </TooltipProvider>
+        <div className="flex flex-wrap gap-2 justify-end ms-auto">
           <Button type="button" variant="outline" onClick={onCancel} className="whitespace-nowrap text-xs sm:text-sm h-8 sm:h-9">
             {t('common.cancel')}
           </Button>
@@ -2063,18 +2347,20 @@ function TransactionForm({
   )
 }
 
+const KNOWN_LOAN_KINDS = new Set(['mortgage', 'auto', 'personal', 'student', 'other'])
+
 function MortgagePaymentEditor({
   transaction,
   accounts,
 }: {
   transaction: Transaction
-  accounts: { id: string; name: string; display_name?: string | null; type?: string; currency?: string; secured_asset_id?: string | null }[]
+  accounts: { id: string; name: string; display_name?: string | null; type?: string; currency?: string; secured_asset_id?: string | null; loan_kind?: string | null }[]
 }) {
   const { t } = useTranslation()
   const id = useId()
   const queryClient = useQueryClient()
   const loans = useMemo(
-    () => accounts.filter(account => account.type === 'loan' && account.secured_asset_id && account.currency === transaction.currency),
+    () => accounts.filter(account => account.type === 'loan' && Boolean(transaction.currency) && account.currency === transaction.currency),
     [accounts, transaction.currency],
   )
   const account = accounts.find(item => item.id === transaction.account_id)
@@ -2091,6 +2377,7 @@ function MortgagePaymentEditor({
   const { data: propertyAssets } = useQuery({
     queryKey: ['assets'],
     queryFn: () => assetsApi.list(),
+    enabled: loans.some(loan => Boolean(loan.secured_asset_id)),
   })
   const refreshMortgageData = async () => {
     invalidateFinancialQueries(queryClient)
@@ -2150,9 +2437,22 @@ function MortgagePaymentEditor({
       {loans.map(loan => {
         const value = amounts[loan.id] ?? { principal: '', interest: '' }
         const propertyName = propertyAssets?.find(asset => asset.id === loan.secured_asset_id)?.name
+        const loanKindLabel =
+          !loan.secured_asset_id && loan.loan_kind && KNOWN_LOAN_KINDS.has(loan.loan_kind)
+            ? t(`accounts.loanKinds.${loan.loan_kind}`)
+            : null
         return (
           <div key={loan.id} className="rounded-md bg-muted/40 p-3 space-y-2">
-            <div className="text-sm font-medium">{loan.display_name || loan.name}{propertyName ? <span className="ms-1 text-xs font-normal text-muted-foreground">· {propertyName}</span> : null}</div>
+            <div className="flex flex-wrap items-center gap-1.5 text-sm font-medium">
+              <span>{loan.display_name || loan.name}</span>
+              {propertyName ? (
+                <span className="text-xs font-normal text-muted-foreground">· {propertyName}</span>
+              ) : loanKindLabel ? (
+                <Badge variant="secondary" className="font-normal">
+                  {loanKindLabel}
+                </Badge>
+              ) : null}
+            </div>
             <div className="grid grid-cols-2 gap-3">
               <label htmlFor={`${id}-${loan.id}-principal`} className="text-xs text-muted-foreground">{t('transactions.mortgagePrincipal')}
               <Input id={`${id}-${loan.id}-principal`} type="number" min="0" step="0.01" value={value.principal} onKeyDown={e => { if (e.key === 'Enter') e.preventDefault() }} onChange={e => setDraftAmounts(prev => ({ ...(prev ?? amounts), [loan.id]: { ...value, principal: e.target.value } }))} />
@@ -2370,6 +2670,9 @@ function PendingAttachmentsSection({
   onDrop,
   onFileChange,
   onRemove,
+  canRead,
+  onRead,
+  reading = false,
 }: {
   files: File[]
   dragOver: boolean
@@ -2381,6 +2684,10 @@ function PendingAttachmentsSection({
   onDrop: (e: React.DragEvent) => void
   onFileChange: (e: React.ChangeEvent<HTMLInputElement>) => void
   onRemove: (index: number) => void
+  /** Whether a file can be read to fill in the form (document reading on). */
+  canRead?: (file: File) => boolean
+  onRead?: (file: File) => void
+  reading?: boolean
 }) {
   const { t } = useTranslation()
   const hasFiles = files.length > 0
@@ -2395,6 +2702,13 @@ function PendingAttachmentsSection({
           <span className="text-xs text-muted-foreground font-normal">({files.length})</span>
         )}
       </div>
+
+      {reading && (
+        <div className="flex items-center gap-2 rounded-lg border border-primary/20 bg-primary/5 px-3 py-2 text-xs text-foreground" data-testid="reading-attachment">
+          <ScanText size={14} className="animate-pulse text-primary" />
+          {t('documentAi.fill.reading')}
+        </div>
+      )}
 
       {hasFiles ? (
         <>
@@ -2434,6 +2748,18 @@ function PendingAttachmentsSection({
                   {/* Remove button */}
                   <div className="absolute start-0 end-0 bottom-[44px] flex items-center justify-center gap-1 px-2 py-1.5 opacity-0 translate-y-1 group-hover:opacity-100 group-hover:translate-y-0 transition-all duration-200">
                     <div className="flex items-center gap-1 bg-background/90 dark:bg-card/90 backdrop-blur-sm rounded-lg ring-1 ring-border/50 shadow-lg shadow-black/10 px-1 py-0.5">
+                      {onRead && canRead?.(file) && (
+                        <button
+                          type="button"
+                          className="p-1.5 rounded-md text-muted-foreground hover:text-primary hover:bg-primary/10 cursor-pointer transition-colors disabled:opacity-50"
+                          onClick={() => onRead(file)}
+                          disabled={reading}
+                          title={t('documentAi.fill.read')}
+                          aria-label={t('documentAi.fill.read')}
+                        >
+                          <ScanText size={14} />
+                        </button>
+                      )}
                       <button
                         type="button"
                         className="p-1.5 rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 cursor-pointer transition-colors"

@@ -1,6 +1,7 @@
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
-import { ArrowRight, Check, Minus, Plus, RotateCcw } from 'lucide-react'
+import { ArrowRight, Check, Minus, Monitor, Moon, Plus, RotateCcw, Sun, type LucideIcon } from 'lucide-react'
+import { useTheme } from 'next-themes'
 
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -9,9 +10,10 @@ import { useLayout } from '@/hooks/use-layout'
 import { useEntryAvailability } from '@/hooks/use-entry-availability'
 import { useAppTheme } from '@/hooks/use-app-theme'
 import { useFeatureFlags } from '@/hooks/use-feature-flags'
-import { usePluginReports } from '@/hooks/use-plugin-reports'
+import { usePluginReports, usePluginWidgets } from '@/hooks/use-plugin-reports'
 import { SURFACE_ENTRIES, type LibraryEntry, type LibraryKind, type Surface } from '@/lib/library'
 import { ThemePreview } from '@/components/theme-preview'
+import { THEME_CHOICES, THEME_LABEL_KEY, themeChoice, type ThemeChoice } from '@/lib/theme-choice'
 import { localized } from '@/lib/localized-text'
 import { cn } from '@/lib/utils'
 
@@ -61,6 +63,7 @@ export function LibraryDialog({
               <SurfaceItems surface="reports" />
             </TabsContent>
             <TabsContent value="themes" className="mt-0">
+              <ModePicker />
               <Themes />
             </TabsContent>
           </div>
@@ -90,9 +93,10 @@ export function LibraryDialog({
 /** Each item of a surface, added or not, with the switch that adds or removes it. */
 function SurfaceItems({ surface }: { surface: Surface }) {
   const { t, i18n } = useTranslation()
-  // The installed plugins' reports join Securo's own (ADR 0028).
+  // The installed plugins' reports and widgets join Securo's own (ADR 0028, 0034).
   const { entries: pluginReports } = usePluginReports()
-  const pluginEntries = surface === 'reports' ? pluginReports : []
+  const { entries: pluginWidgets } = usePluginWidgets()
+  const pluginEntries = surface === 'reports' ? pluginReports : pluginWidgets
   // Until the saved arrangement is in, a change would be made to the default and overwrite it.
   const { items, ids, save, reset, isCustom, ready } = useLayout(surface, pluginEntries)
   const unavailable = useEntryAvailability()
@@ -185,6 +189,41 @@ function EntryIcon({ entry }: { entry: LibraryEntry }) {
     <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
       <Icon size={18} />
     </span>
+  )
+}
+
+const MODE_ICONS: Record<ThemeChoice, LucideIcon> = { light: Sun, dark: Moon, system: Monitor }
+
+/** Light, dark or the system's: how the chosen theme is worn. */
+function ModePicker() {
+  const { t } = useTranslation()
+  const { theme, setTheme } = useTheme()
+  const current = themeChoice(theme)
+  return (
+    <div
+      role="group"
+      aria-label={t('library.appearance')}
+      className="mb-4 grid grid-cols-3 gap-1 rounded-lg bg-muted p-1 sm:w-fit"
+    >
+      {THEME_CHOICES.map((choice) => {
+        const Icon = MODE_ICONS[choice]
+        return (
+          <button
+            key={choice}
+            type="button"
+            aria-pressed={current === choice}
+            onClick={() => setTheme(choice)}
+            className={cn(
+              'inline-flex min-w-0 items-center justify-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+              current === choice ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground',
+            )}
+          >
+            <Icon size={15} className="shrink-0" />
+            <span className="truncate">{t(THEME_LABEL_KEY[choice])}</span>
+          </button>
+        )
+      })}
+    </div>
   )
 }
 

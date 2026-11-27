@@ -1,8 +1,9 @@
 import uuid
+from datetime import datetime
 from typing import TYPE_CHECKING, Optional
 
 from fastapi_users.db import SQLAlchemyBaseUserTableUUID
-from sqlalchemy import JSON, Boolean, String, UniqueConstraint
+from sqlalchemy import JSON, Boolean, DateTime, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -32,6 +33,16 @@ class User(SQLAlchemyBaseUserTableUUID, Base):
         is_active: Mapped[bool]
         is_superuser: Mapped[bool]
         is_verified: Mapped[bool]
+
+    # A change of login address an administrator asked for, waiting for the
+    # person whose account it is to accept it (ADR 0042, #556). The address is
+    # a recovery credential, so this request alone never lets anyone in: the
+    # account keeps its email, and the password recovery that goes with it,
+    # until the owner confirms from their own session.
+    pending_email: Mapped[Optional[str]] = mapped_column(String(255), nullable=True, default=None)
+    pending_email_requested_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True, default=None
+    )
 
     preferences: Mapped[Optional[dict]] = mapped_column(
         JSON,

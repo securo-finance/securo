@@ -29,6 +29,7 @@ from app.services.dashboard_service import (
 from app.services._query_filters import reporting_date_col, reporting_date_value
 from app.services.admin_service import get_credit_card_accounting_mode
 from app.services.fx_rate_service import convert as fx_convert
+from app.services.viewer_currency import ViewerCurrency, viewer_currency
 from app.services.recurring_transaction_service import (
     adjust_weekend_date,
     get_occurrences_in_range,
@@ -66,6 +67,9 @@ async def get_transaction_calendar(
 
     user = await session.get(User, user_id)
     primary_currency = user.primary_currency if user else get_settings().default_currency
+    # Another member's row is stamped in their display currency; the day
+    # panel shows it in the viewer's, like the list (#269, #440).
+    viewer = await viewer_currency(session, primary_currency)
     accounting_mode = (
         await get_credit_card_accounting_mode(session)
         if date_basis == "reporting"
@@ -137,9 +141,7 @@ async def get_transaction_calendar(
         if activity_date not in days:
             continue
         day = days[activity_date]
-        amount_primary = await _positive_primary_amount(
-            session, tx.amount, tx.currency, primary_currency, tx.amount_primary
-        )
+        amount_primary = await _viewer_primary_amount(session, viewer, tx, primary_currency)
 
         parts = _category_parts(tx)
         is_transfer = _is_transfer_item(tx, parts)
@@ -186,9 +188,7 @@ async def get_transaction_calendar(
         if activity_date not in days:
             continue
         day = days[activity_date]
-        amount_primary = await _positive_primary_amount(
-            session, tx.amount, tx.currency, primary_currency, tx.amount_primary
-        )
+        amount_primary = await _viewer_primary_amount(session, viewer, tx, primary_currency)
         parts = _category_parts(tx)
         is_transfer = _is_transfer_item(tx, parts)
         ignored = bool(tx.is_ignored or (tx.category and tx.category.is_ignored))
@@ -434,6 +434,26 @@ async def _positive_primary_amount(
     return float(converted)
 
 
+async def _viewer_primary_amount(
+    session: AsyncSession, viewer: ViewerCurrency, tx: Transaction, primary_currency: str
+) -> float:
+    """A row's amount in the viewer's currency, as the list shows it.
+
+    Another member's stamp is converted from their currency (#269), and a
+    row already in the viewer's currency reads as its own amount (#463).
+    """
+    if viewer.stamp_currency(tx.user_id) != viewer.currency:
+        shown = await viewer.convert(
+            session, tx.user_id, tx.amount_primary, tx.date,
+            currency=tx.currency, amount=tx.amount,
+        )
+        if shown is not None:
+            return float(abs(shown))
+    return await _positive_primary_amount(
+        session, tx.amount, tx.currency, primary_currency, tx.amount_primary
+    )
+
+
 async def _signed_balance_delta_primary(
     session: AsyncSession,
     tx: Transaction,
@@ -537,24 +557,18 @@ def _count_occurrences_before(recurring: RecurringTransaction, end: date) -> int
         )
         range_end = min(range_end, final_effective + timedelta(days=1))
 
-    count = 0
-    while range_start < range_end:
-        # Weekly is the shortest supported cadence. Two hundred-week chunks
-        # stay within the occurrence helper's collection limit while allowing
-        # an arbitrarily long carry horizon.
-        chunk_end = min(range_start + timedelta(weeks=200), range_end)
-        occurrences = get_occurrences_in_range(
-            start=nominal_start,
-            frequency=recurring.frequency,
-            end_date=recurring.end_date,
-            range_start=range_start,
-            range_end=chunk_end,
-            intended_day=recurring.day_of_month or recurring.start_date.day,
-            weekend_adjustment=recurring.weekend_adjustment,
-        )
-        count += len(occurrences)
-        range_start = chunk_end
-    return count
+    # The helper stops at the requested range, so a long carry horizon is read
+    # in one pass; it used to stop at 201 occurrences, which this chunked loop
+    # worked around and which quietly undercounted anything longer (#1904).
+    return len(get_occurrences_in_range(
+        start=nominal_start,
+        frequency=recurring.frequency,
+        end_date=recurring.end_date,
+        range_start=range_start,
+        range_end=range_end,
+        intended_day=recurring.day_of_month or recurring.start_date.day,
+        weekend_adjustment=recurring.weekend_adjustment,
+    ))
 
 
 async def _project_recurring_items(

@@ -331,6 +331,7 @@ async def list_budgets(
             "id": str(b.id),
             "category_id": str(b.category_id) if b.category_id else None,
             "amount": num(b.amount),
+            "currency": b.currency,
             "month": b.month.isoformat() if getattr(b, "month", None) else None,
             "is_recurring": bool(getattr(b, "is_recurring", False)),
         }

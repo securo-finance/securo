@@ -170,6 +170,50 @@ async def test_list_transactions_tx_type_filter(
     assert debits["total"] + credits["total"] >= len(debits["items"])  # sanity
 
 
+async def test_list_transactions_reads_all_and_aggregate_words(
+    session: AsyncSession, ctx: CallContext, test_transactions
+):
+    """The aggregate tool takes status='all' and tx_type='expense'; a model
+    passing the same here used to get an empty list, and kept retrying."""
+    handler = REGISTRY["list_transactions"].handler
+    everything = await handler(session=session, ctx=ctx)
+    assert (await handler(session=session, ctx=ctx, status="all"))["total"] == everything["total"] > 0
+    debits = await handler(session=session, ctx=ctx, tx_type="debit")
+    assert (await handler(session=session, ctx=ctx, tx_type="expense"))["total"] == debits["total"]
+    credits = await handler(session=session, ctx=ctx, tx_type="credit")
+    assert (await handler(session=session, ctx=ctx, tx_type="income"))["total"] == credits["total"]
+
+
+async def test_list_transactions_schema_lists_every_tx_type_word(
+    session: AsyncSession, ctx: CallContext, test_transactions
+):
+    """`expense` and `income` work as filters, so the schema has to offer
+    them; an enum with only debit/credit told the model they don't exist."""
+    schema = REGISTRY["list_transactions"].parameters["properties"]["tx_type"]
+    assert schema["enum"] == ["debit", "credit", "expense", "income"]
+    assert "expense" in schema["description"] and "income" in schema["description"]
+
+
+async def test_list_transactions_refuses_an_unknown_tx_type(
+    session: AsyncSession, ctx: CallContext, test_transactions
+):
+    import pytest
+
+    handler = REGISTRY["list_transactions"].handler
+    with pytest.raises(ValueError, match="debit, credit, expense, income"):
+        await handler(session=session, ctx=ctx, tx_type="transfer")
+
+
+async def test_list_transactions_refuses_an_unknown_status(
+    session: AsyncSession, ctx: CallContext, test_transactions
+):
+    import pytest
+
+    handler = REGISTRY["list_transactions"].handler
+    with pytest.raises(ValueError, match="posted, pending, all"):
+        await handler(session=session, ctx=ctx, status="settled")
+
+
 async def test_list_transactions_currency_filter_matches_native(
     session: AsyncSession, ctx: CallContext, test_transactions
 ):
@@ -564,6 +608,32 @@ async def test_propose_create_budget(
     assert result["kind"] == "create_budget"
     assert result["proposed"]["amount"] == 500.0
     assert result["proposed"]["month"] == "2026-05-01"  # snapped to month start
+
+
+async def test_propose_create_budget_refuses_a_limit_out_of_the_column(
+    session: AsyncSession, ctx: CallContext, test_categories
+):
+    """The preview answers what the save would, instead of proposing an amount
+    the POST then rejects (issue #406)."""
+    handler = REGISTRY["propose_create_budget"].handler
+
+    too_large = await handler(
+        session=session, ctx=ctx,
+        category_id=str(test_categories[0].id),
+        month="2026-05-15",
+        amount=1e13,
+        currency="BRL",
+    )
+    too_small = await handler(
+        session=session, ctx=ctx,
+        category_id=str(test_categories[0].id),
+        month="2026-05-15",
+        amount=0.005,
+        currency="BRL",
+    )
+
+    assert too_large == {"error": "The budget limit is too large"}
+    assert too_small == {"error": "The budget limit must be at least 0.01"}
 
 
 async def test_propose_create_transaction_full(

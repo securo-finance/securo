@@ -52,6 +52,8 @@ STATIC_PARAMS = {
     "provider": "pluggy",
     "key": "registration_enabled",
     "surface": "dashboard",
+    "kind": "budget_threshold",
+    "channel": "in_app",
 }
 
 # Parameters that identify a row, so the unknown_id variant swaps them out.
@@ -102,6 +104,13 @@ BODY_OVERRIDES: dict[tuple[str, str], Callable[[dict], Any]] = {
     },
 }
 
+# Routes that read the request body themselves instead of through a model, so
+# the OpenAPI spec declares no requestBody and the sweep would send none: an
+# empty body answers 400 there before the case reaches what it checks.
+MANUAL_JSON_BODIES: dict[tuple[str, str], Callable[[dict], Any]] = {
+    ("PUT", "/api/admin/email"): lambda world: {"templates": {}},
+}
+
 # Routes that need an issued (open) invoice rather than the world's draft.
 _ISSUED_INVOICE = {"invoice_id": "issued_invoice_id"}
 PARAM_WORLD_KEYS_BY_OPERATION: dict[tuple[str, str], dict[str, str]] = {
@@ -131,13 +140,7 @@ class KnownBug:
 
 # The baseline records the correct status; the case is a strict xfail until
 # the fix lands, at which point the unexpected pass forces this entry out.
-KNOWN_BUGS: dict[tuple[str, str, str], KnownBug] = {
-    (VARIANT_OK, "POST", "/api/agents/{agent_id}/knowledge"): KnownBug(
-        201,
-        "500 MissingGreenlet when the Celery dispatch fails: mark_status() commits, "
-        "expiring the doc that _serialize() then reads",
-    ),
-}
+KNOWN_BUGS: dict[tuple[str, str, str], KnownBug] = {}
 
 # Routes that answer 500 on purpose, by an explicit HTTPException. The 500
 # guard skips these; each one is a design choice worth revisiting, not a crash.
@@ -267,7 +270,11 @@ def request_kwargs(op: Operation, world: dict, empty_body: bool = False) -> dict
     query = query_for(op, world)
     if query:
         kwargs["params"] = query
-    if op.content_type == "application/json":
+    manual = MANUAL_JSON_BODIES.get((op.method, op.path))
+    if manual is not None:
+        if not empty_body:
+            kwargs["json"] = manual(world)
+    elif op.content_type == "application/json":
         if empty_body:
             kwargs["json"] = {}
         else:

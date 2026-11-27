@@ -147,6 +147,9 @@ async def oauth_callback(
                 reconnect_connection_id=data.reconnect_connection_id,
             )
         return connection
+    except HTTPException:
+        # A refusal already shaped for the client, such as the quota (ADR 0049).
+        raise
     except ProviderUserActionRequired as e:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -197,9 +200,14 @@ async def get_reauth_url(
 async def sync_connection(
     connection_id: uuid.UUID,
     request: Request,
+    retry_trade_import: bool = False,
     ctx: WorkspaceContext = Depends(current_writable_workspace),
     session: AsyncSession = Depends(get_async_session),
 ):
+    if retry_trade_import:
+        # Retrying spends provider requests on trade histories, which the
+        # owner turned on; an editor can sync but not ask for that.
+        ctx.require_owner()
     plugin_connection = await _plugin_connection(session, connection_id, ctx.workspace.id)
     if plugin_connection is not None:
         return await _sync_through_plugin(session, plugin_connection, connection_id)
@@ -215,6 +223,9 @@ async def sync_connection(
                 ctx.workspace.id,
                 ctx.user_id,
                 trigger_provider_refresh=True,
+                # Asked for from the Performance tab: fetch trade histories
+                # that did not add up last time, even if no position moved.
+                retry_trade_import=retry_trade_import,
             )
         result = BankConnectionRead.model_validate(connection)
         return {

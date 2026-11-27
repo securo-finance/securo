@@ -12,8 +12,10 @@ authorization URL can be generated, so `get_oauth_url` takes
 from __future__ import annotations
 
 import hashlib
+import json
 import logging
 import math
+import re
 import time
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
@@ -100,6 +102,11 @@ TERMINAL_SESSION_STATUSES = frozenset(
 # moved money, and a held or scheduled one has not settled yet.
 SKIPPED_TRANSACTION_STATUSES = frozenset({"CNCL", "RJCT"})
 PENDING_TRANSACTION_STATUSES = frozenset({"PDNG", "PENDING", "HOLD", "SCHD"})
+# "Other". Some banks (BNP Paribas Fortis) send a card authorization as OTHR
+# with no entry_reference, then the booked entry a day later as BOOK. An OTHR
+# entry without a reference has not settled, so it is pending; one with a
+# reference stays posted (#1918).
+UNSETTLED_WITHOUT_REFERENCE_STATUSES = frozenset({"OTHR"})
 # What `_iter_transactions` yields for a skipped entry: it is never imported.
 CANCELLED_STATUS = "cancelled"
 
@@ -267,6 +274,26 @@ def _join_remittance(value: Any) -> str:
     return (value or "").strip() if isinstance(value, str) else ""
 
 
+# ING Germany packs its SEPA fields into the remittance text as
+# "mandatereference:<ref>,creditorid:<id>,remittanceinformation:<text>",
+# empty keys included. Only the text after the last key reads as a
+# description.
+_ING_SEPA_PREFIX = re.compile(
+    r"^\s*mandatereference:.*?,\s*creditorid:[^,]*,\s*remittanceinformation:",
+    re.IGNORECASE,
+)
+
+
+def strip_sepa_prefix(text: str) -> str:
+    """`text` without ING's SEPA key prefix, for rows stored before it was dropped."""
+    return _ING_SEPA_PREFIX.sub("", text, count=1).strip()
+
+
+def _description_remittance(value: Any) -> str:
+    """The remittance text as a description, ING's SEPA key prefix removed."""
+    return strip_sepa_prefix(_join_remittance(value))
+
+
 def _counterparty_name(raw: dict, party: str) -> str:
     party_obj = raw.get(party)
     name = party_obj.get("name") if isinstance(party_obj, dict) else None
@@ -381,11 +408,32 @@ def _repeat_external_id(external_id: str, occurrence: int) -> str:
 
     Two same-amount purchases on one day that the bank lists with nothing
     else (a pending card purchase carries only amount, direction and date)
-    hash to the same id. Each repeat within a page gets its own id; the
-    first keeps the plain one, so rows already stored keep theirs.
+    hash to the same id. Each repeat within the fetch gets its own id; the
+    first keeps the plain one, so rows already stored keep theirs. The
+    booked spelling and the pending one count apart, since they may be the
+    same operation.
     """
     digest = hashlib.sha256(f"{external_id}#{occurrence}".encode("utf-8")).hexdigest()
     return digest[:32]
+
+
+def _page_signature(entries: list[tuple[dict, str]]) -> Optional[str]:
+    """Identity of one page's content, or None when the page is empty.
+
+    A cursor that serves a page already read is detected by its content
+    rather than by the cursor it hands back: the repeat may come with a new
+    cursor. The status the page was served under counts as content, so an
+    operation the feed first lists as pending and then as booked is a new
+    page even when its payload came back unchanged. Empty pages are left
+    out, so a feed that ends with a couple of them keeps paging to its real
+    end.
+    """
+    if not entries:
+        return None
+    payload = json.dumps(
+        [[raw, status] for raw, status in entries], sort_keys=True, default=str
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
 def _settlement_key(raw: dict) -> Optional[tuple[str, str, str, str]]:
@@ -1175,8 +1223,12 @@ class EnableBankingProvider(BankProvider):
                     continue
                 details = await self._request("GET", f"/accounts/{uid}/details")
                 cached_details[uid] = _details_summary(details)
+                # A balance that cannot be read is skipped like the cached
+                # path above, never synced as a 0.00 over the real one.
                 result.append(
-                    await self._build_account(details, stable_external_ids.get(uid))
+                    await self._build_account(
+                        details, stable_external_ids.get(uid), require_balance=True
+                    )
                 )
             except ProviderRateLimited as exc:
                 # PSD2 throttling is per-account: skipping this one and keeping
@@ -1438,7 +1490,13 @@ class EnableBankingProvider(BankProvider):
         pending_keys: dict[tuple[str, str, str, str], int] = {}
         continuation_key: Optional[str] = None
         seen_continuation_keys: set[str] = set()
-        seen_transaction_ids: set[str] = set()
+        # How many entries with a given base id the fetch has returned so far,
+        # counted apart for the booked ones and the rest. An identical pair can
+        # straddle two pages, so the count runs over the whole fetch; a page the
+        # cursor serves twice is dropped whole by its signature, before its
+        # entries could be counted again.
+        occurrences: dict[tuple[str, str], int] = {}
+        page_signatures: set[str] = set()
         self.cancelled_transaction_ids.pop(account_external_id, None)
         for _ in range(cap):
             params: dict[str, Any] = {"date_from": date_from}
@@ -1453,8 +1511,22 @@ class EnableBankingProvider(BankProvider):
                 f"/accounts/{account_external_id}/transactions",
                 params=params,
             )
-            page_occurrences: dict[str, int] = {}
-            for raw_txn, status in self._iter_transactions(page):
+            entries = list(self._iter_transactions(page))
+            signature = _page_signature(entries)
+            if signature is not None and signature in page_signatures:
+                # A broken cursor can serve a page already read, sometimes
+                # with a new cursor. Its entries are all here already, so
+                # reading them again would duplicate the rows.
+                logger.warning(
+                    "Enable Banking pagination loop detected for account %s "
+                    "(a page was repeated); stopping pagination",
+                    account_external_id,
+                )
+                self.truncated_account_ids.add(account_external_id)
+                break
+            if signature is not None:
+                page_signatures.add(signature)
+            for raw_txn, status in entries:
                 parsed = self._build_transaction(
                     account_external_id, raw_txn, status, payee_source
                 )
@@ -1464,11 +1536,18 @@ class EnableBankingProvider(BankProvider):
                     # for one the bank stopped listing.
                     self.truncated_account_ids.add(account_external_id)
                     continue
-                # Identical entries within one page are distinct transactions.
-                # Counting per page, not per fetch, keeps the ids stable when
-                # a broken cursor repeats a page.
-                occurrence = page_occurrences.get(parsed.external_id, 0)
-                page_occurrences[parsed.external_id] = occurrence + 1
+                # Identical entries are distinct transactions, listed with
+                # nothing to tell them apart. A pending entry and the booked
+                # entry it settles keep the same fingerprint, and both can be
+                # listed in one fetch: the booked ones count apart, so the
+                # booked spelling keeps the id it will have once the pending
+                # twin is gone. A cancelled entry counts with the pending ones,
+                # which is where it came from, so the survivor of a pair keeps
+                # the id it had while both were listed.
+                space = "posted" if status == "posted" else "pending"
+                slot = (space, parsed.external_id)
+                occurrence = occurrences.get(slot, 0)
+                occurrences[slot] = occurrence + 1
                 if occurrence:
                     parsed.external_id = _repeat_external_id(
                         parsed.external_id, occurrence
@@ -1480,17 +1559,11 @@ class EnableBankingProvider(BankProvider):
                         account_external_id, set()
                     ).add(parsed.external_id)
                     continue
-                # A broken pagination cursor can make Enable Banking return a
-                # page we have already consumed. Keep the result idempotent
-                # even before the repeated cursor is detected below.
-                if parsed.external_id in seen_transaction_ids:
-                    continue
                 key = _settlement_key(raw_txn)
                 if key is not None:
                     counts = pending_keys if parsed.status == "pending" else booked_keys
                     counts[key] = counts.get(key, 0) + 1
                 collected.append((parsed, key))
-                seen_transaction_ids.add(parsed.external_id)
 
             next_continuation_key = page.get("continuation_key") or None
             if not next_continuation_key:
@@ -1545,7 +1618,10 @@ class EnableBankingProvider(BankProvider):
                 raw_status = (raw.get("status") or "").upper()
                 if raw_status in SKIPPED_TRANSACTION_STATUSES:
                     yield raw, CANCELLED_STATUS
-                elif raw_status in PENDING_TRANSACTION_STATUSES:
+                elif raw_status in PENDING_TRANSACTION_STATUSES or (
+                    raw_status in UNSETTLED_WITHOUT_REFERENCE_STATUSES
+                    and not (raw.get("entry_reference") or "").strip()
+                ):
                     yield raw, "pending"
                 else:
                     yield raw, "posted"
@@ -1586,7 +1662,7 @@ class EnableBankingProvider(BankProvider):
             return None
         additional_value = raw.get("additional_information")
         additional = additional_value.strip() if isinstance(additional_value, str) else ""
-        description = _join_remittance(raw.get("remittance_information")) or additional
+        description = _description_remittance(raw.get("remittance_information")) or additional
         if not description:
             creditor = _counterparty_name(raw, "creditor")
             debtor = _counterparty_name(raw, "debtor")

@@ -183,6 +183,52 @@ async def test_income_expenses_basic_structure(session, test_user, test_workspac
         assert len(ct.series) == len(report.trend)
 
 
+async def test_income_expenses_views_ignore_unknown_transaction_type(
+    session, test_user, test_workspace
+):
+    """A stored type other than debit or credit is not part of the P&L.
+
+    The summary query sums expenses only for `debit` and income only for
+    `credit`. The category trend and the composition used to read every
+    non-credit row as spending, so three uncategorized rows saved with type
+    "expense" added R$ 150.00 to the donut and the sparkline while the
+    summary left them out (issue #345). A row stored as "income" was read as
+    an expense the same way.
+    """
+    acct = await _make_account(session, test_user.id, "Unknown Type Acct")
+    today = date.today()
+    booked = 900.00
+
+    await _add_txn(session, test_user.id, acct.id, booked, "debit", today)
+    for _ in range(3):
+        await _add_txn(session, test_user.id, acct.id, 50, "expense", today)
+    await _add_txn(session, test_user.id, acct.id, 70, "income", today)
+
+    report = await get_income_expenses_report(
+        session, test_workspace.id, test_user.id,
+        start_date=today.replace(day=1), end_date=today,
+    )
+
+    totals = {b.key: b.value for b in report.summary.breakdowns}
+    assert totals["expenses"] == pytest.approx(booked, abs=0.001)
+    assert totals["income"] == pytest.approx(0.0, abs=0.001)
+
+    expense_slices = [c for c in report.composition if c.group == "expenses"]
+    assert sum(c.value for c in expense_slices) == pytest.approx(booked, abs=0.001)
+    assert [c.key for c in expense_slices] == ["uncategorized"]
+    assert not [c for c in report.composition if c.group == "income"]
+
+    expense_trend = [ct for ct in report.category_trend if ct.group == "expenses"]
+    assert sum(ct.total for ct in expense_trend) == pytest.approx(booked, abs=0.001)
+    assert [ct.key for ct in expense_trend] == ["uncategorized"]
+    assert not [ct for ct in report.category_trend if ct.group == "income"]
+
+    point = next(p for p in report.trend if p.date == today.strftime("%Y-%m"))
+    assert point.breakdowns["expenses"] == pytest.approx(booked, abs=0.001)
+    point_slices = [c for c in point.composition if c.group == "expenses"]
+    assert sum(c.value for c in point_slices) == pytest.approx(booked, abs=0.001)
+
+
 async def test_income_expenses_uses_reporting_date_override(session, test_user, test_workspace):
     bank_date = date.today().replace(day=1)
     reporting_date = bank_date - timedelta(days=1)

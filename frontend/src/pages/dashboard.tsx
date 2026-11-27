@@ -11,6 +11,7 @@ import { toast } from 'sonner'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
 import { ProjectedTransactionBadge } from '@/components/projected-transaction-badge'
+import { PaybackBadge } from '@/components/payback-badge'
 import {
   Select,
   SelectContent,
@@ -65,12 +66,14 @@ import { formatCompactCurrency, formatCurrency, ltrAmount } from '@/lib/format'
 import { shouldShowPendingBadge } from '@/lib/transaction-status'
 import { readCalendarDateBasis } from '@/lib/transaction-calendar'
 import { listDate } from '@/lib/list-date'
+import { ReportingDateBadge } from '@/components/reporting-date-badge'
 import { WidgetGrid } from '@/components/widget-grid'
 import {
   AgingWidget,
   AssistantWidget,
   CreditCardsWidget,
   InvoicesDueWidget,
+  PluginWidget,
   FlaggedWidget,
   InvoiceTotalsWidget,
   MonthResultWidget,
@@ -80,8 +83,9 @@ import {
   UpcomingWidget,
   type DashboardScope,
 } from '@/components/dashboard-widgets'
-import { DASHBOARD_WIDGETS } from '@/lib/library'
+import { DASHBOARD_WIDGETS, type WidgetEntry } from '@/lib/library'
 import { useLayout } from '@/hooks/use-layout'
+import { usePluginWidgets } from '@/hooks/use-plugin-reports'
 import { useEntryAvailability } from '@/hooks/use-entry-availability'
 import { useLibrary } from '@/contexts/library-context'
 
@@ -143,13 +147,18 @@ export default function DashboardPage() {
   const displayName = user?.preferences?.display_name || ''
   const locale = useDisplayLocale()
   const dateLocale = useDateLocale()
-  const dashboardLayout = useLayout('dashboard')
+  // The installed plugins' widgets join Securo's own (ADR 0034).
+  const { entries: pluginWidgets } = usePluginWidgets()
+  const dashboardLayout = useLayout('dashboard', pluginWidgets)
   const { openLibrary } = useLibrary()
   const [editing, setEditing] = useState(false)
   // A widget this workspace can't run (invoices in a Personal one, the agent
   // with agents off) isn't drawn, but stays in the saved arrangement.
   const unavailable = useEntryAvailability()
-  const availableWidgets = DASHBOARD_WIDGETS.filter((entry) => unavailable(entry) === null)
+  const availableWidgets: WidgetEntry[] = [
+    ...DASHBOARD_WIDGETS.filter((entry) => unavailable(entry) === null),
+    ...(pluginWidgets ?? []),
+  ]
   const availableIds = new Set(availableWidgets.map((entry) => entry.id))
   const gridItems = dashboardLayout.items.filter((item) => availableIds.has(item.id))
   const keptItems = dashboardLayout.items.filter((item) => !availableIds.has(item.id))
@@ -769,6 +778,10 @@ export default function DashboardPage() {
     showPendingBadge: boolean
     /** Set when the row is split across categories, to label its parts. */
     splitSource: Transaction | null
+    /** Settlements a credit pays back, to mark it as a payback. */
+    settled_by: Transaction['settled_by']
+    /** Underlying real transaction when this row is not a virtual projection. */
+    txRef: Transaction | null
   }
 
   const [txPerPage, setTxPerPage] = useState<number>(() => {
@@ -821,6 +834,8 @@ export default function DashboardPage() {
         totalInstallments: tx.total_installments,
         showPendingBadge: shouldShowPendingBadge(tx),
         splitSource: isSplitByCategory(tx) ? tx : null,
+        settled_by: tx.settled_by,
+        txRef: tx,
       })
     }
     for (const pt of projectedTxs ?? []) {
@@ -851,6 +866,8 @@ export default function DashboardPage() {
         totalInstallments: null,
         showPendingBadge: false,
         splitSource: projectedSplit,
+        settled_by: undefined,
+        txRef: null,
       })
     }
     rows.sort((a, b) => txSortDesc ? b.date.localeCompare(a.date) : a.date.localeCompare(b.date))
@@ -896,6 +913,9 @@ export default function DashboardPage() {
     payables: <InvoiceTotalsWidget direction="payable" scope={widgetScope} />,
     'receivables-aging': <AgingWidget scope={widgetScope} />,
     'invoices-due': <InvoicesDueWidget />,
+    ...Object.fromEntries(
+      (pluginWidgets ?? []).map((entry) => [entry.id, <PluginWidget key={entry.id} entry={entry} scope={widgetScope} />]),
+    ),
     'recurring-revenue': <RecurringRevenueWidget scope={widgetScope} />,
     'overview': (
       // A container, so the indicators below lay out by the widget's width, not the screen's.
@@ -1148,6 +1168,10 @@ export default function DashboardPage() {
             onClick={() => setDrillDown({
               title: t('dashboard.drillDownUncategorized'),
               uncategorized: true,
+              // The counter above is this workspace's rows: a share of an
+              // expense from another workspace cannot be categorized from
+              // here, so it would sit in the queue forever (#469).
+              workspaceOnly: true,
             })}
           >
             <div className="flex items-center gap-2.5 min-w-0">
@@ -1660,7 +1684,7 @@ export default function DashboardPage() {
                         {/* Content */}
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center gap-1.5">
-                            <p className="text-sm font-semibold text-foreground truncate leading-tight">{row.description}</p>
+                            <p className="min-w-0 text-sm font-semibold text-foreground truncate leading-tight">{row.description}</p>
                             {row.splitSource && <CategorySplitBadge tx={row.splitSource} compact className="shrink-0 text-[9px] px-1" />}
                             {row.groupId && (
                               <span className="inline-flex items-center text-[9px] font-semibold uppercase tracking-wide text-violet-700 bg-violet-50 border border-violet-200 dark:bg-violet-950/40 dark:text-violet-300 dark:border-violet-900 px-1 py-0.5 rounded-full shrink-0">
@@ -1669,6 +1693,7 @@ export default function DashboardPage() {
                                   : row.groupName ?? t('splitGroups.sharedShortBadge')}
                               </span>
                             )}
+                            <PaybackBadge tx={row} />
                             {row.isProjected && (
                               <ProjectedTransactionBadge />
                             )}
@@ -1705,6 +1730,7 @@ export default function DashboardPage() {
                           {!row.accountId && (
                             <p className="text-xs text-muted-foreground mt-0.5">{formatDate(row.date, dateLocale)}</p>
                           )}
+                          {row.txRef && <ReportingDateBadge tx={row.txRef} locale={dateLocale} />}
                         </div>
 
                         {/* Amount */}
@@ -1770,14 +1796,15 @@ export default function DashboardPage() {
                           <TableCell className="py-2.5 ps-5 text-sm text-muted-foreground tabular-nums whitespace-nowrap hidden sm:table-cell">
                             {formatDate(row.date, dateLocale)}
                           </TableCell>
-                          <TableCell className="py-2.5 ps-5 sm:ps-0">
+                          {/* w-full max-w-0: the cell takes the free width and lets the description truncate in it */}
+                          <TableCell className="py-2.5 ps-5 sm:ps-0 w-full max-w-0">
                             <div className="flex items-center gap-3">
                               {row.splitSource
                                 ? <TransactionCategoryIcon tx={row.splitSource} size="lg" />
                                 : <CategoryIcon icon={row.categoryIcon} color={row.categoryColor} size="lg" />}
                               <div className="min-w-0">
                                 <div className="flex items-center gap-2">
-                                  <p className="text-sm font-semibold text-foreground truncate">{row.description}</p>
+                                  <p className="min-w-0 text-sm font-semibold text-foreground truncate">{row.description}</p>
                                   {row.splitSource && <CategorySplitBadge tx={row.splitSource} className="shrink-0" />}
                                   {row.groupId && (
                                     <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-violet-100 text-violet-700 dark:bg-violet-950/40 dark:text-violet-300 shrink-0 uppercase tracking-wide">
@@ -1786,6 +1813,7 @@ export default function DashboardPage() {
                                         : row.groupName ?? t('splitGroups.sharedShortBadge')}
                                     </span>
                                   )}
+                                  <PaybackBadge tx={row} />
                                   {row.isProjected && (
                                     <ProjectedTransactionBadge />
                                   )}
@@ -1813,6 +1841,7 @@ export default function DashboardPage() {
                                     <Paperclip size={12} className="text-muted-foreground shrink-0" />
                                   )}
                                 </div>
+                                {row.txRef && <ReportingDateBadge tx={row.txRef} locale={dateLocale} />}
                                 <p className="text-xs text-muted-foreground sm:hidden">{formatDate(row.date, dateLocale)}</p>
                               </div>
                             </div>
@@ -2070,6 +2099,7 @@ export default function DashboardPage() {
           type: a.type,
           currency: a.currency,
           secured_asset_id: a.secured_asset_id,
+          loan_kind: a.loan_kind,
         }))}
         onSave={(data, _recurring, _installment, _files, action) => {
           if (editingTx) updateMutation.mutate({ id: editingTx.id, ...data, action })
