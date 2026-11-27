@@ -397,6 +397,65 @@ async def test_a_bill_whose_account_moved_away_writes_nothing(stack, monkeypatch
     assert pointer == date(2026, 1, 1)
 
 
+async def test_recurring_job_links_a_manual_bill_charge_only_inside_its_workspace(stack, monkeypatch):
+    """A bill with auto_generate off is still visited, to link the charge that paid it.
+
+    Each workspace's charge goes to its own bill and nothing is generated. A bill
+    whose account moved to the other workspace links nothing, not even the
+    matching charge now on that account.
+    """
+    from app.tasks import recurring_tasks
+
+    owners = await _add_workspaces(stack)
+    table, accounts = TABLES["recurring_transactions"], TABLES["accounts"]
+    charges, bills = {}, {}
+    async with _unchecked(stack) as session:
+        for workspace, user in owners.items():
+            account = _row(accounts, workspace_id=workspace, user_id=user, type="checking", currency="USD")
+            await session.execute(insert(accounts).values(**account))
+            bill = _row(
+                table, workspace_id=workspace, user_id=user, account_id=account["id"], type="debit",
+                currency="USD", amount=Decimal("80"), description="Gym", frequency="monthly",
+                weekend_adjustment="none", is_active=True, auto_generate=False,
+                start_date=date(2026, 1, 5), day_of_month=5, next_occurrence=date(2026, 1, 5),
+                end_date=date(2026, 1, 31),
+            )
+            await session.execute(insert(table).values(**bill))
+            charge = _row(
+                TABLES["transactions"], workspace_id=workspace, user_id=user, account_id=account["id"],
+                type="debit", currency="USD", amount=Decimal("80"), description="Gym",
+                date=date(2026, 1, 5), source="sync", status="posted", is_ignored=False,
+            )
+            await session.execute(insert(TABLES["transactions"]).values(**charge))
+            charges[workspace], bills[workspace] = charge["id"], bill
+        # A's second bill points at B's account: the policy hides that account
+        # from A, so B's charge is left to B's bill. Started a day earlier, as
+        # two bills of one person with the same name and start are one bill.
+        moved = _row(
+            table, workspace_id=A, user_id=owners[A], account_id=bills[B]["account_id"], type="debit",
+            currency="USD", amount=Decimal("80"), description="Gym", frequency="monthly",
+            weekend_adjustment="none", is_active=True, auto_generate=False,
+            start_date=date(2026, 1, 4), day_of_month=5, next_occurrence=date(2026, 1, 5),
+            end_date=date(2026, 1, 31),
+        )
+        await session.execute(insert(table).values(**moved))
+
+    class Engine:
+        async def dispose(self):
+            pass
+
+    monkeypatch.setattr(recurring_tasks, "_make_session_maker", lambda: (Engine(), stack.app))
+    assert await recurring_tasks._generate_all() == 0
+    async with stack.owner() as session:
+        linked = dict((await session.execute(
+            select(Transaction.id, Transaction.recurring_transaction_id)
+        )).all())
+        pointers = dict((await session.execute(select(table.c.id, table.c.next_occurrence))).all())
+    assert linked == {charges[A]: bills[A]["id"], charges[B]: bills[B]["id"]}
+    assert pointers[bills[A]["id"]] == pointers[bills[B]["id"]] == date(2026, 2, 5)
+    assert pointers[moved["id"]] == date(2026, 1, 5)
+
+
 async def test_an_access_token_sees_nothing_shared(stack):
     """A token's request is bound without its creator, so the shared policy gives it nothing."""
     from types import SimpleNamespace
