@@ -15,6 +15,8 @@ ADR 0045 already separates the operator from the customer with one switch, `MANA
 
 ## Decision
 
+**This records the decision; the code comes with #1964.** Until #1964 is in the tree there is no `user_quotas`, no operator route and no check, so a managed instance enforces nothing. The rules below are what holds once it is in.
+
 **Four neutral numbers, nothing else.** The code keeps a table of limits per user — `user_quotas`: `user_id`, `max_personal_workspaces`, `max_business_workspaces`, `max_bank_connections`, `max_members_per_workspace`. The code attaches no meaning to them beyond the count it makes. A null counter means unbounded for that one, and a user with no row is unbounded on all four.
 
 **It only serves the managed instance.** Checks run only when `MANAGED_INSTANCE` is on (`managed_instance` in `backend/app/core/config.py`, ADR 0045), documented in `.env.example` beside the flag. Off, no code path reads the table and a self-hosted instance behaves exactly as today, which is the ADR 0004 rule.
