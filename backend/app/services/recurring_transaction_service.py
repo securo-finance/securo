@@ -29,6 +29,7 @@ from app.services.fx_rate_service import (
     stamp_primary_amount,
 )
 from app.services.rule_service import apply_rules_to_transaction
+from app.services.workspace_status_service import in_active_workspace
 
 
 class RecurringConflictError(Exception):
@@ -685,9 +686,11 @@ async def generate_pending(
     another workspace the user merely belongs to; unattended runs leave it
     unset and cover all of them.
     Returns the count of transactions generated."""
-    # Unattended runs only touch schedules that opted in to auto-generation.
-    generation_filter = (
-        true() if include_manual else RecurringTransaction.auto_generate == True
+    # Unattended runs only touch schedules that opted in to auto-generation,
+    # and nothing is written into a suspended workspace (ADR 0052).
+    generation_filter = and_(
+        true() if include_manual else RecurringTransaction.auto_generate == True,
+        in_active_workspace(RecurringTransaction.workspace_id),
     )
     if workspace_id is not None:
         generation_filter = and_(

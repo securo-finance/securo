@@ -185,6 +185,70 @@ describe('loading', () => {
     }
   })
 
+  it('picks up a status changed elsewhere when the tab comes back into view', async () => {
+    // Another administrator reactivates the workspace while the tab is in the
+    // background. The cached list still says suspended, so writes stay
+    // disabled until a reload — unless coming back into view refreshes it.
+    vi.useFakeTimers()
+    try {
+      workspacesApi.list
+        .mockResolvedValueOnce([makeWorkspace({ role: 'owner', status: 'suspended' })])
+        .mockResolvedValueOnce([makeWorkspace({ role: 'owner', status: 'active' })])
+      const { result } = renderHook(() => useWorkspace(), { wrapper })
+      await act(async () => { await vi.advanceTimersByTimeAsync(0) })
+      expect(result.current.canWrite).toBe(false)
+
+      await act(async () => { await vi.advanceTimersByTimeAsync(30_001) })
+      await act(async () => {
+        window.dispatchEvent(new Event('focus'))
+        await vi.advanceTimersByTimeAsync(0)
+      })
+
+      expect(result.current.canWrite).toBe(true)
+      expect(workspacesApi.list).toHaveBeenCalledTimes(2)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('stops loading when a background refresh overtakes the first load', async () => {
+    // A focus event while the first load is still in flight starts a refresh.
+    // The refresh is now the latest request, so the first response is dropped;
+    // if the refresh never clears the loading state, the shell keeps showing
+    // it for the rest of the session.
+    let resolveFirst: (list: Workspace[]) => void = () => {}
+    let resolveRefresh: (list: Workspace[]) => void = () => {}
+    workspacesApi.list
+      .mockReturnValueOnce(new Promise<Workspace[]>((resolve) => { resolveFirst = resolve }))
+      .mockReturnValueOnce(new Promise<Workspace[]>((resolve) => { resolveRefresh = resolve }))
+
+    const { result } = renderHook(() => useWorkspace(), { wrapper })
+    expect(result.current.isLoading).toBe(true)
+
+    await act(async () => { window.dispatchEvent(new Event('focus')) })
+    expect(workspacesApi.list).toHaveBeenCalledTimes(2)
+
+    await act(async () => { resolveRefresh([makeWorkspace()]) })
+    await act(async () => { resolveFirst([makeWorkspace({ name: 'Stale' })]) })
+
+    expect(result.current.isLoading).toBe(false)
+    expect(result.current.workspaces).toHaveLength(1)
+    expect(result.current.workspaces[0].name).toBe('Personal')
+  })
+
+  it('does not refresh on focus when the list was just loaded', async () => {
+    workspacesApi.list.mockResolvedValue([makeWorkspace()])
+
+    const { result } = await renderWorkspace()
+    expect(workspacesApi.list).toHaveBeenCalledTimes(1)
+
+    act(() => { window.dispatchEvent(new Event('focus')) })
+    await act(async () => {})
+
+    expect(workspacesApi.list).toHaveBeenCalledTimes(1)
+    expect(result.current.canWrite).toBe(true)
+  })
+
   it('stops the automatic loads when the provider unmounts', async () => {
     vi.useFakeTimers()
     try {
@@ -364,6 +428,15 @@ describe('roles', () => {
       expect(result.current.canWrite).toBe(canWrite)
     })
   }
+
+  it('lets nobody write into a suspended workspace', async () => {
+    workspacesApi.list.mockResolvedValue([makeWorkspace({ role: 'owner', status: 'suspended' })])
+
+    const { result } = await renderWorkspace()
+
+    expect(result.current.canManage).toBe(true)
+    expect(result.current.canWrite).toBe(false)
+  })
 
   it('grants nothing when there is no active workspace', async () => {
     workspacesApi.list.mockResolvedValue([])

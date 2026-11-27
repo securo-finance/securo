@@ -20,6 +20,9 @@ vi.mock('@/hooks/use-local-auth', () => ({ useLocalAuthEnabled: () => true }))
 vi.mock('@/components/timezone-settings', () => ({ TimezoneSettings: () => null }))
 vi.mock('@/components/provider-settings', () => ({ ProviderSettings: () => null }))
 vi.mock('@/components/email-settings', () => ({ EmailSettings: () => null }))
+// Reads the workspace context, which this page-level test does not mount; its
+// own test file covers it.
+vi.mock('@/components/workspace-status-settings', () => ({ WorkspaceStatusSettings: () => null }))
 
 const person = {
   id: 'owner', email: 'owner@example.com', is_active: true, is_superuser: false,

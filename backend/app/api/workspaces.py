@@ -33,6 +33,7 @@ from app.services import (
     module_service,
     quota_service,
     workspace_service,
+    workspace_status_service,
 )
 from app.services.primary_restamp_service import (
     fetch_missing_today_rates,
@@ -146,6 +147,7 @@ async def update_workspace(
     member = await workspace_service.require_membership(
         session, workspace_id, user.id, min_role="owner"
     )
+    await workspace_status_service.require_not_suspended(session, workspace_id)
     workspace = await session.get(Workspace, workspace_id)
     if workspace is None:
         raise HTTPException(status_code=404, detail="Workspace not found")
@@ -214,6 +216,7 @@ async def invite_member(
     await workspace_service.require_membership(
         session, workspace_id, user.id, min_role="owner"
     )
+    await workspace_status_service.require_not_suspended(session, workspace_id)
 
     # Find the account without regard to case, the way sign-in resolves the
     # address: an account stored as `Ana@example.com` must be found when the
@@ -318,6 +321,7 @@ async def change_member_role(
     await workspace_service.require_membership(
         session, workspace_id, user.id, min_role="owner"
     )
+    await workspace_status_service.require_not_suspended(session, workspace_id)
     member = await workspace_service.update_member_role(
         session, workspace_id, member_user_id, body.role
     )

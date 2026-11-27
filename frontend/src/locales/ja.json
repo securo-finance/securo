@@ -4436,6 +4436,9 @@
     "empty": "管理者操作は記録されていません。",
     "actionUpdate": "アカウントを更新しました",
     "actionDelete": "アカウントを削除しました",
+    "actionWorkspaceStatus": "ワークスペースの状態が変更されました",
+    "targetWorkspace": "ワークスペース: {{name}}",
+    "statusChange": "状態: {{from}} → {{to}}",
     "actionOther": "アカウントを更新しました",
     "by": "実行者: {{email}}",
     "target": "アカウント: {{email}}",
@@ -4457,5 +4460,28 @@
     "failed": "決定を記録できませんでした",
     "replaced": "管理者が新しいリクエストを送信しました。承諾する前に新しいアドレスを確認してください",
     "withdrawn": "リクエストは取り下げられました。アカウントは現在のアドレスを維持します"
+  }
+,
+  "workspaceStatus": {
+    "notice": "このワークスペースは停止中です。すべての閲覧とエクスポートはできますが、変更はできません。",
+    "error": "このワークスペースは停止中のため、閲覧とエクスポートはできますが変更はできません。",
+    "title": "ワークスペース",
+    "description": "停止中のワークスペースは閲覧とエクスポートのみ可能で、変更はできず、銀行連携の同期も止まります。",
+    "search": "名前または所有者のメールで検索...",
+    "empty": "ワークスペースが見つかりません",
+    "active": "有効",
+    "suspended": "停止中",
+    "suspend": "停止",
+    "reactivate": "再開",
+    "suspendNamed": "{{name}}を停止",
+    "reactivateNamed": "{{name}}を再開",
+    "confirmTitle": "{{name}}を停止しますか?",
+    "confirmDescription": "メンバーは引き続き閲覧とエクスポートができますが、再開するまで何も変更できません。予定された処理も止まります。",
+    "reasonLabel": "この変更の理由",
+    "reasonPlaceholder": "このワークスペースを変更する理由",
+    "reactivateTitle": "{{name}}を再開しますか?",
+    "reactivateDescription": "メンバーは再び変更できるようになり、予定された処理は止まったところから再開します。",
+    "showing": "{{total}}件中{{shown}}件を表示しています。残りは検索してください。",
+    "updated": "ワークスペースを更新しました"
   }
 }
