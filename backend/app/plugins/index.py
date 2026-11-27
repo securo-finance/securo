@@ -62,13 +62,15 @@ ICON_NAME = re.compile(r"[0-9a-f]{64}\.(?:png|webp)")
 #: Longest icon path an index entry takes, as every other copy's path.
 _ICON_PATH_MAX = 512
 
-def supported_contributions() -> frozenset[str]:
+def supported_contributions(runner_ready: bool | None = None) -> frozenset[str]:
     """What this instance can apply. Plugins with anything else are listed but
     can't be installed: code needs a plugin runner to run in."""
-    from app.plugins import runner
+    if runner_ready is None:
+        from app.plugins import runner
 
+        runner_ready = runner.configured()
     base = DATA_KINDS | UI_KINDS
-    return base | CODE_KINDS if runner.configured() else base
+    return base | CODE_KINDS if runner_ready else base
 
 
 class PluginIndexError(Exception):
@@ -136,17 +138,28 @@ class IndexEntry(BaseModel):
         return name if folder == "icons" and ICON_NAME.fullmatch(name) else None
 
     @property
-    def supported(self) -> bool:
+    def requires_runner(self) -> bool:
+        """Whether this plugin ships code and needs the plugin runner."""
+        return bool(self.archive) or bool({k for k, c in self.contributes.items() if c} & CODE_KINDS)
+
+    def is_supported(self, *, runner_ready: bool | None = None) -> bool:
         """Everything it contributes is something this Securo can apply.
 
         A plugin that ships code (its archive is in the catalog) needs the
         runner whatever it contributes: a code report runs there too.
         """
-        from app.plugins import runner
+        if runner_ready is None:
+            from app.plugins import runner
 
-        if self.archive and not runner.configured():
+            runner_ready = runner.configured()
+        if self.requires_runner and not runner_ready:
             return False
-        return {kind for kind, count in self.contributes.items() if count} <= supported_contributions()
+        return {kind for kind, count in self.contributes.items() if count} <= supported_contributions(runner_ready)
+
+    @property
+    def supported(self) -> bool:
+        """Everything it contributes is something this Securo can apply."""
+        return self.is_supported()
 
     @property
     def compatible(self) -> bool:

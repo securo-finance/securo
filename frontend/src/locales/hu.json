@@ -3799,6 +3799,7 @@
     "planIntro": "Ez változik ebben a munkaterületben:",
     "planFailed": "Nem sikerült betölteni, mi változna.",
     "planChanged": "Az előnézet óta valami megváltozott. Nézd át újra.",
+    "runnerUnavailable": "A bővítményfuttató nem érhető el. Győződj meg róla, hogy a bővítmények szolgáltatás fut, majd próbáld újra.",
     "privacy": "Ez a bővítmény csak adatokat ad ehhez a munkaterülethez. Semmi sem kerül elküldésre.",
     "history": "A tranzakciók megtartják a jelenlegi kategóriáikat.",
     "confirm": {

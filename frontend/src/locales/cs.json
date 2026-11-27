@@ -3993,6 +3993,7 @@
     "planIntro": "Toto se v tomto pracovním prostoru změní:",
     "planFailed": "Nepodařilo se načíst, co by se změnilo.",
     "planChanged": "Od tohoto náhledu se něco změnilo. Zkontrolujte ho znovu.",
+    "runnerUnavailable": "Spouštěč pluginů není dostupný. Ujistěte se, že služba pluginů běží, a zkuste to znovu.",
     "privacy": "Tento plugin pouze přidává data do tohoto pracovního prostoru. Nic se nikam neodesílá.",
     "history": "Transakce si ponechají své současné kategorie.",
     "confirm": {

@@ -68,7 +68,7 @@ def _catalog_read(item: service.CatalogItem) -> PluginCatalogRead:
         owner=entry.owner,
         icon_url=f"{_ICONS}{entry.icon_name}" if entry.icon_name else None,
         compatible=entry.compatible,
-        supported=entry.supported,
+        supported=item.supported,
         fits_workspace=item.fits_workspace,
         installed_version=item.installed.version if item.installed else None,
         update_available=item.update_available,
@@ -102,6 +102,8 @@ async def _guarded(call):
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only the workspace owner or a manager can add, update or remove a plugin with code",
         )
+    except service.PluginRunnerUnavailable as exc:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=f"Plugin unavailable: {exc}")
     except service.PluginUnavailable as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"Plugin unavailable: {exc}")
     except (service.PluginChanged, SyncPlanChanged):

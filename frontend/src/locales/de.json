@@ -3800,6 +3800,7 @@
     "planIntro": "Das ändert sich in diesem Workspace:",
     "planFailed": "Konnte nicht laden, was sich ändern würde.",
     "planChanged": "Seit dieser Vorschau hat sich etwas geändert. Prüfe sie erneut.",
+    "runnerUnavailable": "Der Plugin-Runner ist nicht erreichbar. Stelle sicher, dass der Plugins-Dienst läuft, und versuche es erneut.",
     "privacy": "Dieses Plugin fügt diesem Workspace nur Daten hinzu. Es wird nichts irgendwohin gesendet.",
     "history": "Transaktionen behalten ihre bisherigen Kategorien.",
     "confirm": {

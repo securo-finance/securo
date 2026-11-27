@@ -3814,6 +3814,7 @@
     "planIntro": "Esto es lo que cambia en este espacio de trabajo:",
     "planFailed": "No se pudo cargar lo que esto cambiaría.",
     "planChanged": "Algo cambió desde esta vista previa. Revísala de nuevo.",
+    "runnerUnavailable": "No se puede conectar con el ejecutor de plugins. Asegúrate de que el servicio de plugins esté en ejecución e inténtalo de nuevo.",
     "privacy": "Este plugin solo añade datos a este espacio de trabajo. No se envía nada a ningún sitio.",
     "history": "Las transacciones conservan las categorías que ya tienen.",
     "confirm": {

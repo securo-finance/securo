@@ -3943,6 +3943,7 @@
     "planIntro": "Oto co zmieni się w tym obszarze roboczym:",
     "planFailed": "Nie udało się wczytać, co by się zmieniło.",
     "planChanged": "Coś się zmieniło od tego podglądu. Sprawdź go ponownie.",
+    "runnerUnavailable": "Nie można połączyć się ze środowiskiem uruchomieniowym wtyczek. Upewnij się, że usługa wtyczek działa, i spróbuj ponownie.",
     "privacy": "Ta wtyczka tylko dodaje dane do tego obszaru roboczego. Nic nie jest nigdzie wysyłane.",
     "history": "Transakcje zachowują swoje obecne kategorie.",
     "confirm": {

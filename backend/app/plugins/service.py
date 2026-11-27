@@ -42,6 +42,10 @@ class PluginUnavailable(Exception):
     """The plugin can't be installed or updated here; the message says why."""
 
 
+class PluginRunnerUnavailable(PluginUnavailable):
+    """The plugin needs the plugin runner, which is configured but can't be reached."""
+
+
 class PluginForbidden(Exception):
     """Plugins with code run on the server: only the workspace's owner adds, updates or removes them."""
 
@@ -55,6 +59,11 @@ class CatalogItem:
     entry: index.IndexEntry
     installed: WorkspacePlugin | None
     workspace_kind: str | None = None
+    runner_ready: bool | None = None
+
+    @property
+    def supported(self) -> bool:
+        return self.entry.is_supported(runner_ready=self.runner_ready)
 
     @property
     def fits_workspace(self) -> bool:
@@ -114,7 +123,10 @@ async def catalog(session: AsyncSession, workspace_id: uuid.UUID) -> list[Catalo
     async with index.http_client() as client:
         entries = await index.fetch_index(client)
     kind = await _workspace_kind(session, workspace_id)
-    return [CatalogItem(entry, installed.get(entry.id), kind) for entry in entries]
+    runner_ready: bool | None = None
+    if any(entry.requires_runner for entry in entries):
+        runner_ready = await runner.reachable() if runner.configured() else False
+    return [CatalogItem(entry, installed.get(entry.id), kind, runner_ready) for entry in entries]
 
 
 async def icon(name: str) -> index.Icon | None:
@@ -135,13 +147,17 @@ async def details(session: AsyncSession, workspace_id: uuid.UUID, plugin_id: str
     such a manifest) rather than hiding what the catalog does know.
     """
     installed = (await installed_plugins(session, workspace_id)).get(plugin_id)
+    kind = await _workspace_kind(session, workspace_id)
     async with index.http_client() as client:
         entry = next((e for e in await index.fetch_index(client) if e.id == plugin_id), None)
         if entry is None:
             raise PluginNotFound
+        runner_ready: bool | None = None
+        if entry.requires_runner:
+            runner_ready = await runner.reachable() if runner.configured() else False
+        item = CatalogItem(entry, installed, kind, runner_ready)
         readme = await _optional(index.fetch_readme(client, entry))
-        manifest = await _optional(index.fetch_manifest(client, entry)) if entry.supported else None
-    item = CatalogItem(entry, installed, await _workspace_kind(session, workspace_id))
+        manifest = await _optional(index.fetch_manifest(client, entry)) if item.supported else None
     return PluginDetails(item, readme, contents(manifest) if manifest else None)
 
 
@@ -441,7 +457,8 @@ async def _install_code(entry: index.IndexEntry, manifest: Manifest) -> bool:
     try:
         return await install_on_runner(entry, manifest)
     except (runner.RunnerUnavailable, runner.RunnerRefused) as exc:
-        raise PluginUnavailable(str(exc)) from exc
+        runner.reset_reachability_cache()
+        raise PluginRunnerUnavailable(str(exc)) from exc
 
 
 async def install_on_runner(entry: index.IndexEntry, manifest: Manifest) -> bool:
@@ -504,7 +521,14 @@ async def _target(
             raise PluginUnavailable(f"revoked: {entry.revoked_reason or 'no reason given'}")
         if not entry.compatible:
             raise PluginUnavailable(f"needs Securo {entry.min_securo_version} or newer")
-        if not entry.supported:
+        if entry.requires_runner:
+            if not runner.configured():
+                raise PluginUnavailable("plugins with code need the plugin runner (the `plugins` profile)")
+            if not entry.is_supported(runner_ready=True):
+                raise PluginUnavailable("contributes something this Securo version can't apply")
+            if not await runner.reachable():
+                raise PluginRunnerUnavailable("the plugin runner can't be reached")
+        elif not entry.supported:
             raise PluginUnavailable("contributes something this Securo version can't apply")
         kind = await _workspace_kind(session, workspace_id)
         if not entry.fits(kind):

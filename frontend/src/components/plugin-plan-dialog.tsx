@@ -39,7 +39,7 @@ export function PluginPlanDialog({ target, onClose }: { target: PluginTarget; on
   const { canManage } = useWorkspace()
   const { user, updateUser } = useAuth()
 
-  const { data: plan, isFetching, isError, refetch } = useQuery({
+  const { data: plan, error: planError, isFetching, isError, refetch } = useQuery({
     queryKey: ['plugins', 'plan', target.id, target.action],
     queryFn: () => pluginsApi.plan(target.id, target.action),
     // Every opening starts from a fresh plan, never a cached one.
@@ -60,10 +60,12 @@ export function PluginPlanDialog({ target, onClose }: { target: PluginTarget; on
       onClose()
     },
     onError: (error: unknown) => {
-      const err = error as { response?: { status?: number } }
-      if (err?.response?.status === 403) {
+      const status = (error as { response?: { status?: number } })?.response?.status
+      if (status === 403) {
         toast.error(t('plugins.code.ownerOnly'))
-      } else if (err?.response?.status === 409) {
+      } else if (status === 503) {
+        toast.error(t('plugins.runnerUnavailable'))
+      } else if (status === 409) {
         // The plugin or the workspace changed since this plan: show the current one.
         toast.error(t('plugins.planChanged'))
         void refetch()
@@ -77,6 +79,7 @@ export function PluginPlanDialog({ target, onClose }: { target: PluginTarget; on
   // A failed refresh counts as failed even with an older plan on screen:
   // that plan is exactly what the server would refuse, so it isn't shown.
   const failed = isError && !isFetching
+  const planUnavailable = (planError as { response?: { status?: number } } | null)?.response?.status === 503
   const shown = !failed ? plan : undefined
   const addedThemes = (shown?.themes?.added ?? []).map((theme) => localized(theme.name, i18n.language))
   const removedThemes = shown?.themes?.removed ?? []
@@ -112,7 +115,7 @@ export function PluginPlanDialog({ target, onClose }: { target: PluginTarget; on
           <DialogTitle>{t(`plugins.planTitle.${target.action}`, { name: target.name })}</DialogTitle>
           <DialogDescription>
             {failed
-              ? t('plugins.planFailed')
+              ? t(planUnavailable ? 'plugins.runnerUnavailable' : 'plugins.planFailed')
               : !shown
                 ? t('common.loading')
                 : changes

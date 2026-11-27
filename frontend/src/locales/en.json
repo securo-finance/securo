@@ -3799,6 +3799,7 @@
     "planIntro": "This is what changes in this workspace:",
     "planFailed": "Couldn't load what this would change.",
     "planChanged": "Something changed since this preview. Review it again.",
+    "runnerUnavailable": "The plugin runner can't be reached. Make sure the plugins service is running and try again.",
     "privacy": "This plugin only adds data to this workspace. Nothing is sent anywhere.",
     "history": "Transactions keep the categories they already have.",
     "confirm": {
