@@ -71,19 +71,25 @@ async def get_defaults(session: AsyncSession) -> Optional[Limits]:
 
 
 async def set_defaults(session: AsyncSession, values: Optional[Mapping[str, Optional[int]]]) -> Optional[Limits]:
-    """Write the defaults, or clear them with None. No account is rewritten."""
-    setting = await session.get(AppSetting, DEFAULTS_KEY)
+    """Write the defaults, or clear them with None. No account is rewritten.
+
+    The write is one upsert, like `set_quota`: reading the setting and adding
+    it when missing let two first writes at once both insert the same key, and
+    the second failed on the primary key.
+    """
     if values is None:
+        setting = await session.get(AppSetting, DEFAULTS_KEY)
         if setting is not None:
             await session.delete(setting)
             await session.flush()
         return None
     limits = {c: values.get(c) for c in COUNTERS}
-    if setting is None:
-        session.add(AppSetting(key=DEFAULTS_KEY, value=json.dumps(limits)))
-    else:
-        setting.value = json.dumps(limits)
-    await session.flush()
+    value = json.dumps(limits)
+    insert = pg_insert if session.get_bind().dialect.name == "postgresql" else sqlite_insert
+    statement = insert(AppSetting).values(key=DEFAULTS_KEY, value=value)
+    await session.execute(statement.on_conflict_do_update(index_elements=[AppSetting.key], set_={"value": value}))
+    # A setting this session already loaded would still show the old value.
+    await session.get(AppSetting, DEFAULTS_KEY, populate_existing=True)
     return limits
 
 

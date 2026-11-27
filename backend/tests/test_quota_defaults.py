@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api import oidc_auth
 from app.core.config import get_settings
+from app.models.app_settings import AppSetting
 from app.models.user import User
 from app.models.user_quota import UserQuota
 from app.services import quota_service
@@ -73,6 +74,21 @@ async def test_no_default_is_unbounded(managed, session: AsyncSession, test_user
     )
     for _ in range(3):
         await quota_service.check_new_workspace(session, test_user.id, "personal")
+
+
+@pytest.mark.asyncio
+async def test_writing_the_defaults_twice_from_none_updates_one_setting(session: AsyncSession):
+    assert await quota_service.get_defaults(session) is None
+    await quota_service.set_defaults(session, ONE_PERSONAL)
+    await quota_service.set_defaults(session, {"max_bank_connections": 3})
+    await session.commit()
+
+    assert await quota_service.get_defaults(session) == {
+        **dict.fromkeys(quota_service.COUNTERS), "max_bank_connections": 3,
+    }
+    assert await session.scalar(
+        select(func.count()).select_from(AppSetting).where(AppSetting.key == quota_service.DEFAULTS_KEY)
+    ) == 1
 
 
 @pytest.mark.asyncio
