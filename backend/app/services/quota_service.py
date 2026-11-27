@@ -94,6 +94,14 @@ async def effective_limits(session: AsyncSession, user_id: uuid.UUID) -> tuple[L
     defaults when set; otherwise unbounded. Read at check time, so every
     path that creates a user follows without writing anything, and changing
     the defaults moves every account without a row at once.
+
+    The one exception is the bootstrap Personal workspace that is created
+    with the account (`create_personal_workspace_for_user`, on sign-up,
+    first OIDC login, admin-created users and instance setup): it is never
+    checked against `max_personal_workspaces`, so a limit of 0 cannot refuse
+    the account itself or leave it with no workspace. Once it exists it is
+    counted like any other personal workspace the user created; the limit
+    holds for the ones created after it.
     """
     quota = await get_quota(session, user_id)
     if quota is not None:
