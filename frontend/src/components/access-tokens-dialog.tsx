@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
-import { ArrowLeft, Check, Copy, KeySquare, Loader2, Plus, TriangleAlert, X } from 'lucide-react'
+import { ArrowLeft, Ban, Check, Copy, KeySquare, Loader2, Plus, TriangleAlert, X } from 'lucide-react'
 import { accessTokens, workspaces } from '@/lib/api'
 import { useAuth } from '@/contexts/auth-context'
 import { useWorkspace } from '@/contexts/workspace-context'
@@ -535,8 +535,11 @@ function AccessTokensSession({ open, onClose }: AccessTokensDialogProps) {
                       size="sm"
                       className="shrink-0 text-muted-foreground hover:text-destructive"
                       onClick={() => setConfirmRevokeId(token.id)}
+                      aria-label={t('accessTokens.revoke')}
+                      title={t('accessTokens.revoke')}
                     >
-                      {t('accessTokens.revoke')}
+                      <Ban size={14} className="sm:hidden" />
+                      <span className="hidden sm:inline">{t('accessTokens.revoke')}</span>
                     </Button>
                   )}
                 </div>
