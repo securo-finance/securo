@@ -66,6 +66,24 @@ _MINOR_UNIT_CURRENCIES: dict[str, tuple[str, float]] = {
 }
 
 
+def _close_to_cache(close: LatestClose) -> dict:
+    return {"price": str(close.price), "on": close.on.isoformat() if close.on else None}
+
+
+def _close_from_cache(raw: object) -> Optional[LatestClose]:
+    """A cached close, or ``None`` for a miss or anything unreadable."""
+    if not isinstance(raw, dict):
+        return None
+    try:
+        price = Decimal(raw["price"])
+        on = date.fromisoformat(raw["on"]) if raw.get("on") else None
+    except (KeyError, TypeError, ValueError, ArithmeticError):
+        return None
+    if not price.is_finite():
+        return None
+    return LatestClose(price, on)
+
+
 def _normalize_currency_and_price(currency: str, price: float) -> tuple[str, float]:
     conv = _MINOR_UNIT_CURRENCIES.get(currency)
     if conv is None:
@@ -240,9 +258,33 @@ class YFinanceProvider(MarketPriceProvider):
             return {}
 
         out: dict[str, Optional[LatestClose]] = {s: None for s in unique}
+        # The scheduled sweep asks once per workspace, and every workspace
+        # holding the same ticker would otherwise download it again. A close
+        # is public and the same for everyone, so it is shared through the
+        # cache for as long as a quote is.
+        missing: list[str] = []
+        for sym in unique:
+            hit = _close_from_cache(await market_data_guard.read("close", sym))
+            if hit is None:
+                missing.append(sym)
+            else:
+                out[sym] = hit
+        if not missing:
+            return out
+
         refused = False
-        for i in range(0, len(unique), self._BATCH_CHUNK_SIZE):
-            chunk = unique[i : i + self._BATCH_CHUNK_SIZE]
+        if await market_data_guard.cooling_down():
+            # Yahoo refused a moment ago: the cached closes are the answer
+            # and the rest waits for the next run instead of asking again.
+            missing = []
+            refused = True
+        for i in range(0, len(missing), self._BATCH_CHUNK_SIZE):
+            chunk = missing[i : i + self._BATCH_CHUNK_SIZE]
+            if not await market_data_guard.take_call_slot():
+                # The instance is out of call slots: a batch must not go
+                # around the throttle every other caller waits on.
+                refused = True
+                break
             try:
                 chunk_prices, chunk_refused = await asyncio.to_thread(
                     self._download_closes_sync, chunk
@@ -301,6 +343,11 @@ class YFinanceProvider(MarketPriceProvider):
             # The closes that did come back are part of the answer as soon as
             # they arrive: a refusal found below must not take them back.
             out.update(chunk_prices)
+            for sym, close in chunk_prices.items():
+                if close is not None:
+                    await market_data_guard.write(
+                        "close", sym, _close_to_cache(close), market_data_guard.PRICE_TTL_SECONDS
+                    )
 
             if chunk_refused:
                 # The batch itself reported a 429 for one of its tickers. The
@@ -462,8 +509,8 @@ class YFinanceProvider(MarketPriceProvider):
     ) -> tuple[dict[str, Optional[LatestClose]], bool]:
         """Run ``yf.download`` and extract the last close per symbol, with its day.
 
-        ``yf.download`` returns a pandas DataFrame: flat columns for a
-        single symbol, MultiIndex (symbol, field) for multiple. Period is
+        ``yf.download`` returns a pandas DataFrame with (symbol, field)
+        MultiIndex columns, one symbol or many. Period is
         ``"5d"`` so we span weekends and market holidays while still
         getting today's close once the market has ticked. Before the market
         opens, the last row is the previous trading day.
@@ -473,6 +520,7 @@ class YFinanceProvider(MarketPriceProvider):
         because the tickers this call did price are worth keeping, and only
         the caller knows how to stop there.
         """
+        import pandas as pd
         import yfinance as yf
 
         out: dict[str, Optional[LatestClose]] = {s: None for s in symbols}
@@ -513,11 +561,12 @@ class YFinanceProvider(MarketPriceProvider):
         if df is None or df.empty:
             return out, rate_limited
 
-        # Single-ticker downloads come back with flat columns — no MultiIndex.
-        # Multi-ticker downloads use group_by="ticker" → MultiIndex (sym, field).
-        if len(symbols) == 1:
-            close_series = df.get("Close") if "Close" in df.columns else None
-            out[symbols[0]] = _last_decimal_close(close_series)
+        # With group_by="ticker" the columns are a (sym, field) MultiIndex,
+        # for a single ticker too (``multi_level_index`` defaults to True).
+        # Flat columns are still read, for a yfinance that drops the level.
+        if not isinstance(df.columns, pd.MultiIndex):
+            if len(symbols) == 1 and "Close" in df.columns:
+                out[symbols[0]] = _last_decimal_close(df["Close"])
             return out, rate_limited
 
         level0 = set(df.columns.get_level_values(0))

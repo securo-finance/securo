@@ -174,10 +174,12 @@ async def _refresh_market_prices() -> dict[str, int]:
         for maker in await workspace_makers(session_maker):
             async with maker() as session, use_timezone(session, fresh=True):
                 done = await refresh_all_market_prices(session)
+            # A rate limit does not end the sweep: the workspaces after this
+            # one still get every close already in the shared cache, and the
+            # cooldown and the call throttle keep them from asking Yahoo for
+            # the rest while it refuses.
             for key, count in done.items():
                 total[key] = total.get(key, 0) + count
-            if done.get("rate_limited"):
-                break  # the provider is throttling: the next run picks up the rest
         return total
     finally:
         await engine.dispose()
