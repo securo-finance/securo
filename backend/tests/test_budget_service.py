@@ -596,7 +596,7 @@ async def test_rollover_first_month_and_cumulative_surplus_and_deficit(
 
     # Jan spend 300 -> surplus +200 -> Feb carryover +200, effective 700
     # Feb spend 400 -> cumulative +300 -> Mar carryover +300, effective 800
-    # Mar spend 1400 -> cumulative -600 -> Apr carryover -600, effective -100 (percentage_used is None)
+    # Mar spend 1400 -> raw -600 floored at -base (-500) -> Apr carryover -500, effective 0 (percentage_used is None)
     txs = [
         Transaction(
             id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
@@ -642,8 +642,8 @@ async def test_rollover_first_month_and_cumulative_surplus_and_deficit(
 
     apr = next(c for c in await get_budget_vs_actual(session, test_workspace.id, test_user.id, date(2025, 4, 1)) if c.category_id == cat.id)
     assert apr.budget_amount == Decimal("500.00")
-    assert apr.carryover_amount == Decimal("-600.00")
-    assert apr.effective_budget_amount == Decimal("-100.00")
+    assert apr.carryover_amount == Decimal("-500.00")
+    assert apr.effective_budget_amount == Decimal("0.00")
     assert apr.percentage_used is None
 
 
@@ -753,9 +753,12 @@ async def test_rollover_tombstone_and_opt_out_and_24_month_lookback_cap(
     mar = next(c for c in await get_budget_vs_actual(session, test_workspace.id, test_user.id, date(2025, 3, 1)) if c.category_id == cat_break.id)
     assert mar.carryover_amount == Decimal("0.00")
 
-    # Tombstone month excludes 0-amount category from rollover-summary
+    # Tombstone month still keeps its row in rollover-summary (preserving
+    # carryover-off parity) while breaking the carryover chain into March.
     feb_summary = await get_budget_rollover_summary(session, test_workspace.id, test_user.id, date(2025, 2, 1))
-    assert all(c["category_id"] != cat_break.id for c in feb_summary["categories"])
+    feb_cat = next(c for c in feb_summary["categories"] if c["category_id"] == cat_break.id)
+    assert feb_cat["budgeted"] == Decimal("0.00")
+    assert feb_cat["carryover_in"] == Decimal("0.00")
 
     # cat_cap: 26 months of 100/month recurring rollover with 0 spend -> capped at 24 * 100 = 2400
     target = date(2027, 3, 1)
@@ -1064,4 +1067,242 @@ async def test_get_budgets_projects_reset_rollover_false_on_inherited_months_wit
     mar_rows = await get_budgets(session, test_workspace.id, month=date(2025, 3, 1))
     mar_cat = next(b for b in mar_rows if b.category_id == cat.id)
     assert mar_cat.reset_rollover is True
+
+
+@pytest.mark.asyncio
+async def test_carryover_off_preserves_zero_budget_category_spending_in_summary_and_forecast(
+    session: AsyncSession, test_user, test_workspace, test_categories, monkeypatch
+):
+    """With carryover off, a category whose budget was cleared to 0.00 but still
+    has spending stays in rollover-summary and forecast totals (exact parity with main)."""
+    from app.models.budget import Budget
+    from app.services.budget_service import (
+        get_budget_rollover_summary,
+        get_multi_month_forecast,
+    )
+
+    monkeypatch.setattr("app.services.budget_service.app_today", lambda: date(2025, 5, 15))
+    monkeypatch.setattr("app.services._query_filters.app_today", lambda: date(2025, 5, 15))
+
+    cat_active = test_categories[0]
+    cat_zero = test_categories[1]
+    acc = Account(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        name="ParityAcc",
+        type="checking",
+        balance=Decimal("0"),
+        currency="BRL",
+    )
+    session.add(acc)
+    await session.flush()
+
+    session.add_all([
+        Budget(
+            user_id=test_user.id,
+            workspace_id=test_workspace.id,
+            category_id=cat_active.id,
+            amount=Decimal("500.00"),
+            currency="BRL",
+            month=date(2025, 5, 1),
+            is_recurring=False,
+            rollover=False,
+        ),
+        Budget(
+            user_id=test_user.id,
+            workspace_id=test_workspace.id,
+            category_id=cat_zero.id,
+            amount=Decimal("0.00"),
+            currency="BRL",
+            month=date(2025, 5, 1),
+            is_recurring=False,
+            rollover=False,
+        ),
+        Transaction(
+            id=uuid.uuid4(),
+            user_id=test_user.id,
+            workspace_id=test_workspace.id,
+            account_id=acc.id,
+            category_id=cat_active.id,
+            description="Active spend",
+            amount=Decimal("300.00"),
+            amount_primary=Decimal("300.00"),
+            date=date(2025, 5, 5),
+            type="debit",
+            source="manual",
+            currency="BRL",
+            status="posted",
+            created_at=datetime.now(timezone.utc),
+        ),
+        Transaction(
+            id=uuid.uuid4(),
+            user_id=test_user.id,
+            workspace_id=test_workspace.id,
+            account_id=acc.id,
+            category_id=cat_zero.id,
+            description="Zero-budget spend",
+            amount=Decimal("999.00"),
+            amount_primary=Decimal("999.00"),
+            date=date(2025, 5, 6),
+            type="debit",
+            source="manual",
+            currency="BRL",
+            status="posted",
+            created_at=datetime.now(timezone.utc),
+        ),
+    ])
+    await session.commit()
+
+    summary = await get_budget_rollover_summary(
+        session, test_workspace.id, test_user.id, date(2025, 5, 1)
+    )
+    assert summary["total_budgeted"] == Decimal("500.00")
+    assert summary["total_projected_spent"] == Decimal("1299.00")
+    assert summary["net_surplus"] == Decimal("-799.00")
+    assert {c["category_id"] for c in summary["categories"]} == {
+        cat_active.id,
+        cat_zero.id,
+    }
+
+    forecast = await get_multi_month_forecast(
+        session, test_workspace.id, test_user.id, start_month=date(2025, 5, 1), num_months=1
+    )
+    row = forecast["items"][0]
+    assert row["projected_budget"] == Decimal("500.00")
+    assert row["projected_spend"] == Decimal("1299.00")
+    assert row["projected_variance"] == Decimal("-799.00")
+
+
+@pytest.mark.asyncio
+async def test_negative_carryover_is_floored_and_get_never_fetches_fx_rates(
+    session: AsyncSession, test_user, test_workspace, test_categories, monkeypatch
+):
+    """Negative carryover floors at -base so effective_budget never drops below
+    0.00 even after a massive overspend, and carryover lookback / multi-month
+    forecast never call fx_rate_service.sync_rates during GET."""
+    from unittest.mock import patch
+    from app.models.budget import Budget
+    from app.services.budget_service import (
+        get_budget_rollover_summary,
+        get_multi_month_forecast,
+    )
+
+    monkeypatch.setattr("app.services.budget_service.app_today", lambda: date(2025, 6, 15))
+    monkeypatch.setattr("app.services._query_filters.app_today", lambda: date(2025, 6, 15))
+
+    test_user.preferences = {**(test_user.preferences or {}), "currency_display": "BRL"}
+    cat_huge = test_categories[0]
+    cat_fx = test_categories[1]
+    acc = Account(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        name="FloorAcc",
+        type="checking",
+        balance=Decimal("0"),
+        currency="BRL",
+    )
+    session.add(acc)
+    await session.flush()
+
+    session.add_all([
+        Budget(
+            user_id=test_user.id,
+            workspace_id=test_workspace.id,
+            category_id=cat_huge.id,
+            amount=Decimal("300.00"),
+            currency="BRL",
+            month=date(2025, 3, 1),
+            is_recurring=True,
+            rollover=True,
+        ),
+        # Lower April budget to 100 to also verify target-month clamping
+        Budget(
+            user_id=test_user.id,
+            workspace_id=test_workspace.id,
+            category_id=cat_huge.id,
+            amount=Decimal("100.00"),
+            currency="BRL",
+            month=date(2025, 4, 1),
+            is_recurring=False,
+            rollover=True,
+        ),
+        # Foreign-currency rollover budget across uncached historical months
+        Budget(
+            user_id=test_user.id,
+            workspace_id=test_workspace.id,
+            category_id=cat_fx.id,
+            amount=Decimal("200.00"),
+            currency="EUR",
+            month=date(2025, 1, 1),
+            is_recurring=True,
+            rollover=True,
+        ),
+        Transaction(
+            id=uuid.uuid4(),
+            user_id=test_user.id,
+            workspace_id=test_workspace.id,
+            account_id=acc.id,
+            category_id=cat_huge.id,
+            description="Massive one-off",
+            amount=Decimal("1000000000.00"),
+            amount_primary=Decimal("1000000000.00"),
+            date=date(2025, 3, 10),
+            type="debit",
+            source="manual",
+            currency="BRL",
+            status="posted",
+            created_at=datetime.now(timezone.utc),
+        ),
+    ])
+    await session.commit()
+
+    # April: lowered budget 100 -> carryover clamped to -100, effective 0.00
+    apr_cmp = next(
+        c
+        for c in await get_budget_vs_actual(
+            session, test_workspace.id, test_user.id, date(2025, 4, 1)
+        )
+        if c.category_id == cat_huge.id
+    )
+    assert apr_cmp.carryover_amount == Decimal("-100.00")
+    assert apr_cmp.effective_budget_amount == Decimal("0.00")
+
+    # Also check unlowered month (e.g. if March overspent on 300 recurring into May):
+    # April had eff 0, spend 0 -> May starts at 0 carryover, effective 300.
+    may_cmp = next(
+        c
+        for c in await get_budget_vs_actual(
+            session, test_workspace.id, test_user.id, date(2025, 5, 1)
+        )
+        if c.category_id == cat_huge.id
+    )
+    assert may_cmp.carryover_amount == Decimal("0.00")
+    assert may_cmp.effective_budget_amount == Decimal("300.00")
+
+    # Verify carryover lookback and multi-month forecast NEVER trigger FX sync
+    # on uncached past/future months during GET reads.
+    synced_dates: list[date] = []
+
+    async def spy_sync_rates(_db, target_date=None):
+        if target_date is not None:
+            synced_dates.append(target_date)
+        return 0
+
+    with patch("app.services.fx_rate_service.sync_rates", side_effect=spy_sync_rates):
+        forecast = await get_multi_month_forecast(
+            session, test_workspace.id, test_user.id, start_month=date(2025, 4, 1), num_months=3
+        )
+        assert len(forecast["items"]) == 3
+        assert synced_dates == []
+
+        summary = await get_budget_rollover_summary(
+            session, test_workspace.id, test_user.id, date(2025, 4, 1)
+        )
+        assert summary["month"] == date(2025, 4, 1)
+        # Historical carryover lookback months (Jan, Feb, Mar) must never hit the provider.
+        assert date(2025, 1, 1) not in synced_dates
+        assert date(2025, 2, 1) not in synced_dates
+        assert date(2025, 3, 1) not in synced_dates
 

@@ -42,7 +42,7 @@ from app.services.dashboard_service import (
     _get_forecast_transactions,
     _get_recurring_projections,
 )
-from app.services.fx_rate_service import convert
+from app.services.fx_rate_service import convert, stored_rates_only
 from app.core.config import get_settings
 
 MAX_ROLLOVER_LOOKBACK_MONTHS = 24
@@ -51,6 +51,12 @@ _CENT = Decimal("0.01")
 
 def _q(value: Decimal) -> Decimal:
     return value.quantize(_CENT, rounding=ROUND_HALF_UP)
+
+
+def _clamp_carryover_in(carry: Decimal, base: Decimal) -> Decimal:
+    """Floor negative carryover at ``-base`` so effective budget never goes below 0."""
+    floor = -base if base > 0 else Decimal("0.00")
+    return _q(max(carry, floor))
 
 
 async def _primary_currency(session: AsyncSession, user_id: uuid.UUID) -> str:
@@ -64,6 +70,8 @@ async def amount_in_currency(
     currency: Optional[str],
     target_currency: str,
     month: date,
+    *,
+    allow_fetch: bool = True,
 ) -> Decimal:
     """A budget limit in `target_currency`, at the rate of its month.
 
@@ -74,7 +82,12 @@ async def amount_in_currency(
     if not currency or currency == target_currency:
         return amount
     converted, _ = await convert(
-        session, amount, currency, target_currency, min(month, app_today())
+        session,
+        amount,
+        currency,
+        target_currency,
+        min(month, app_today()),
+        allow_fetch=allow_fetch,
     )
     return converted
 
@@ -685,7 +698,12 @@ async def get_budget_vs_actual(
                     session, amount, currency, primary_currency, month_start
                 )
             )
-        carryover_amount = _q(carryover_map.get(cat_id, Decimal("0.00")))
+        raw_carryover = _q(carryover_map.get(cat_id, Decimal("0.00")))
+        carryover_amount = (
+            _clamp_carryover_in(raw_carryover, budget_amount)
+            if budget_amount is not None and rollover and not reset_rollover
+            else Decimal("0.00")
+        )
         effective_budget_amount = (
             _q(budget_amount + carryover_amount) if budget_amount is not None else None
         )
@@ -937,7 +955,11 @@ async def _compute_monthly_spending_map(
                 continue
             cat_id = str(proj["category_id"])
             converted, _ = await convert(
-                session, Decimal(str(proj["amount"])), proj["currency"], primary_currency,
+                session,
+                Decimal(str(proj["amount"])),
+                proj["currency"],
+                primary_currency,
+                allow_fetch=False,
             )
             m_map = spending_by_month.setdefault(m_start, {})
             m_map[cat_id] = m_map.get(cat_id, Decimal("0")) + converted
@@ -969,7 +991,11 @@ async def _compute_monthly_spending_map(
                 converted = abs(Decimal(str(amount)))
             else:
                 converted, _ = await convert(
-                    session, Decimal(str(abs(tx.amount))), tx.currency, primary_currency,
+                    session,
+                    Decimal(str(abs(tx.amount))),
+                    tx.currency,
+                    primary_currency,
+                    allow_fetch=False,
                 )
             converted *= forecast_fractions.get(tx.id, 1)
             m_map = spending_by_month.setdefault(m_start, {})
@@ -1047,29 +1073,38 @@ async def _compute_carryover_map(
     if not all_needed_months:
         return {}
 
-    spending_by_month = await _compute_monthly_spending_map(
-        session,
-        workspace_id,
-        user_id,
-        all_needed_months,
-        category_by_id,
-        primary_currency,
-        accounting_mode,
-        viewer=viewer,
-    )
+    with stored_rates_only():
+        spending_by_month = await _compute_monthly_spending_map(
+            session,
+            workspace_id,
+            user_id,
+            all_needed_months,
+            category_by_id,
+            primary_currency,
+            accounting_mode,
+            viewer=viewer,
+        )
 
-    carryover_map: dict[str, Decimal] = {}
-    for cat_id, months_list in chain_by_cat.items():
-        carry = Decimal("0.00")
-        for m in reversed(months_list):
-            b_amt, _b_rec, b_cur, _b_rollover, _b_reset = budget_maps[m][cat_id]
-            base = _q(
-                await amount_in_currency(session, b_amt, b_cur, primary_currency, m)
-            )
-            spend = _q(spending_by_month.get(m, {}).get(cat_id, Decimal("0.00")))
-            carry = _q(carry + base - spend)
-        carryover_map[cat_id] = carry
-    return carryover_map
+        carryover_map: dict[str, Decimal] = {}
+        for cat_id, months_list in chain_by_cat.items():
+            carry = Decimal("0.00")
+            for m in reversed(months_list):
+                b_amt, _b_rec, b_cur, _b_rollover, _b_reset = budget_maps[m][cat_id]
+                base = _q(
+                    await amount_in_currency(
+                        session,
+                        b_amt,
+                        b_cur,
+                        primary_currency,
+                        m,
+                        allow_fetch=False,
+                    )
+                )
+                carry_in = _clamp_carryover_in(carry, base)
+                spend = _q(spending_by_month.get(m, {}).get(cat_id, Decimal("0.00")))
+                carry = _clamp_carryover_in(_q(base + carry_in - spend), base)
+            carryover_map[cat_id] = carry
+        return carryover_map
 
 
 def _add_months(d: date, n: int) -> date:
@@ -1441,10 +1476,10 @@ async def get_budget_rollover_summary(
     the recurring and planned transactions still due that month), so a month
     in progress or in the future isn't reported as mostly unspent.
 
-    Only categories with a positive budget that month are included, in the list
-    and in the totals: ``net_surplus`` is the headroom left across the effective
-    budget (base + carryover), so spending in unbudgeted categories or cleared
-    zero tombstones never turns it into a deficit.
+    Only categories with a budget that month are included, in the list and in
+    the totals: ``net_surplus`` is the headroom left across the effective
+    budget (base + carryover), so spending in unbudgeted categories never
+    turns it into a deficit.
     """
     vs_actuals = await get_budget_vs_actual(db, workspace_id, user_id, month)
     total_budgeted = Decimal("0.00")
@@ -1455,7 +1490,7 @@ async def get_budget_rollover_summary(
     categories_summary = []
 
     for item in vs_actuals:
-        if item.budget_amount is None or item.budget_amount <= 0:
+        if item.budget_amount is None:
             continue
         budgeted = _q(item.budget_amount)
         carryover_in = _q(item.carryover_amount)
@@ -1551,61 +1586,71 @@ async def get_multi_month_forecast(
     active_months = {
         m
         for m, bmap in horizon_budget_maps.items()
-        if any(entry[0] > 0 and cat_id in category_by_id for cat_id, entry in bmap.items())
+        if any(cat_id in category_by_id for cat_id in bmap)
     }
-    spending_by_month = await _compute_monthly_spending_map(
-        db,
-        workspace_id,
-        user_id,
-        active_months,
-        category_by_id,
-        primary_currency,
-        accounting_mode,
-        viewer=viewer,
-    )
+    with stored_rates_only():
+        spending_by_month = await _compute_monthly_spending_map(
+            db,
+            workspace_id,
+            user_id,
+            active_months,
+            category_by_id,
+            primary_currency,
+            accounting_mode,
+            viewer=viewer,
+        )
 
-    items = []
-    m_date = start
-    for _ in range(num_months):
-        bmap = horizon_budget_maps.get(m_date, {})
-        m_spend_map = spending_by_month.get(m_date, {})
-        total_base = Decimal("0.00")
-        total_carryover = Decimal("0.00")
-        total_effective = Decimal("0.00")
-        total_spend = Decimal("0.00")
-        next_carryover: dict[str, Decimal] = {}
+        items = []
+        m_date = start
+        for _ in range(num_months):
+            bmap = horizon_budget_maps.get(m_date, {})
+            m_spend_map = spending_by_month.get(m_date, {})
+            total_base = Decimal("0.00")
+            total_carryover = Decimal("0.00")
+            total_effective = Decimal("0.00")
+            total_spend = Decimal("0.00")
+            next_carryover: dict[str, Decimal] = {}
 
-        for cat_id, (base, _rec, base_cur, r_rollover, r_reset) in bmap.items():
-            if cat_id not in category_by_id or base <= 0:
-                continue
-            base_q = _q(
-                await amount_in_currency(db, base, base_cur, primary_currency, m_date)
-            )
-            carry_in = (
-                Decimal("0.00")
-                if (not r_rollover or r_reset)
-                else _q(running_carryover.get(cat_id, Decimal("0.00")))
-            )
-            eff = _q(base_q + carry_in)
-            spend = _q(m_spend_map.get(cat_id, Decimal("0.00")))
-            variance = _q(eff - spend)
-            total_base += base_q
-            total_carryover += carry_in
-            total_effective += eff
-            total_spend += spend
-            if r_rollover:
-                next_carryover[cat_id] = variance
+            for cat_id, (base, _rec, base_cur, r_rollover, r_reset) in bmap.items():
+                if cat_id not in category_by_id:
+                    continue
+                base_q = _q(
+                    await amount_in_currency(
+                        db,
+                        base,
+                        base_cur,
+                        primary_currency,
+                        m_date,
+                        allow_fetch=False,
+                    )
+                )
+                carry_in = (
+                    Decimal("0.00")
+                    if (not r_rollover or r_reset or base_q <= 0)
+                    else _clamp_carryover_in(
+                        running_carryover.get(cat_id, Decimal("0.00")), base_q
+                    )
+                )
+                eff = _q(base_q + carry_in)
+                spend = _q(m_spend_map.get(cat_id, Decimal("0.00")))
+                variance = _q(eff - spend)
+                total_base += base_q
+                total_carryover += carry_in
+                total_effective += eff
+                total_spend += spend
+                if r_rollover and base_q > 0:
+                    next_carryover[cat_id] = _clamp_carryover_in(variance, base_q)
 
-        running_carryover = next_carryover
-        items.append({
-            "month": m_date,
-            "projected_budget": _q(total_base),
-            "carryover_balance": _q(total_carryover),
-            "effective_budget": _q(total_effective),
-            "projected_spend": _q(total_spend),
-            "projected_variance": _q(total_effective - total_spend),
-        })
-        m_date = _add_months(m_date, 1)
+            running_carryover = next_carryover
+            items.append({
+                "month": m_date,
+                "projected_budget": _q(total_base),
+                "carryover_balance": _q(total_carryover),
+                "effective_budget": _q(total_effective),
+                "projected_spend": _q(total_spend),
+                "projected_variance": _q(total_effective - total_spend),
+            })
+            m_date = _add_months(m_date, 1)
 
     return {
         "forecast_months": num_months,

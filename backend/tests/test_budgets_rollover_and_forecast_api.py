@@ -445,8 +445,8 @@ async def test_forecast_chains_carryover_across_months_with_reset_and_tombstone_
         (date(2030, 2, 1), Decimal("500.00"), Decimal("880.00"), Decimal("1380.00"), Decimal("120.00"), Decimal("1260.00")),
         # Mar: reset_rollover=True -> carry 0, eff 500, spend 120 -> var +380
         (date(2030, 3, 1), Decimal("500.00"), Decimal("0.00"), Decimal("500.00"), Decimal("120.00"), Decimal("380.00")),
-        # Apr: 0 tombstone -> excluded from totals and breaks chain
-        (date(2030, 4, 1), Decimal("0.00"), Decimal("0.00"), Decimal("0.00"), Decimal("0.00"), Decimal("0.00")),
+        # Apr: 0 tombstone keeps its row/spend (main parity) and breaks rollover chain
+        (date(2030, 4, 1), Decimal("0.00"), Decimal("0.00"), Decimal("0.00"), Decimal("120.00"), Decimal("-120.00")),
         # May: falls back to recurring 500, but Apr tombstone broke chain -> carry 0
         (date(2030, 5, 1), Decimal("500.00"), Decimal("0.00"), Decimal("500.00"), Decimal("120.00"), Decimal("380.00")),
     ]
