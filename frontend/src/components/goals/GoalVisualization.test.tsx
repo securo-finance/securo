@@ -15,6 +15,7 @@ const mocks = vi.hoisted(() => ({
   privacy: false,
 }))
 vi.mock('@/lib/api', () => mocks)
+vi.mock('@/hooks/use-timezone', () => ({ useEffectiveTimezone: () => 'America/New_York' }))
 vi.mock('@/lib/goal-history', () => ({ loadGoalHistory: mocks.history }))
 vi.mock('@/hooks/use-display-locale', () => ({
   useDisplayLocale: () => 'en-US',
@@ -23,7 +24,8 @@ vi.mock('@/hooks/use-display-locale', () => ({
 vi.mock('@/contexts/auth-context', () => ({
   useAuth: () => ({ user: { preferences: { currency_display: 'USD' } } }),
 }))
-vi.mock('@/contexts/workspace-context', () => ({
+vi.mock('@/contexts/workspace-context', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/contexts/workspace-context')>()),
   useWorkspace: () => ({
     canWrite: mocks.writable,
     current: { id: 'ws-1', timezone: 'America/New_York' },
