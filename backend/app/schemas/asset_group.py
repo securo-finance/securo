@@ -3,10 +3,12 @@ from typing import Optional
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from app.schemas.category import ICON_MAX_LENGTH
+
 
 class AssetGroupBase(BaseModel):
     name: str
-    icon: str = "wallet"
+    icon: str = Field("wallet", max_length=ICON_MAX_LENGTH)
     color: str = "#0EA5E9"
     position: int = 0
 
@@ -17,7 +19,7 @@ class AssetGroupCreate(AssetGroupBase):
 
 class AssetGroupUpdate(BaseModel):
     name: Optional[str] = None
-    icon: Optional[str] = None
+    icon: Optional[str] = Field(None, max_length=ICON_MAX_LENGTH)
     color: Optional[str] = None
     position: Optional[int] = None
 
