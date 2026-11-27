@@ -1838,7 +1838,9 @@ async def test_asset_update_date_validation_and_atomic_rest_routes(
     )
     assert bad_archive.status_code == 422
     await session.refresh(manual_a)
+    await session.refresh(market_b)
     assert manual_a.is_archived is False
+    assert market_b.is_archived is False
 
     # Viewer forbidden on both new write routes
     assert (

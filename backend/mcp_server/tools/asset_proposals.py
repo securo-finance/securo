@@ -513,10 +513,11 @@ async def propose_update_asset(
             update_kwargs["growth_frequency"] = growth_frequency
             changes["growth_frequency"] = growth_frequency
 
-    effective_purchase = update_kwargs.get("purchase_date", asset.purchase_date)
-    effective_sell = update_kwargs.get("sell_date", asset.sell_date)
-    if effective_purchase is not None and effective_sell is not None and effective_purchase > effective_sell:
-        return {"error": "purchase_date cannot be after sell_date"}
+    if "purchase_date" in update_kwargs or "sell_date" in update_kwargs:
+        effective_purchase = update_kwargs.get("purchase_date", asset.purchase_date)
+        effective_sell = update_kwargs.get("sell_date", asset.sell_date)
+        if effective_purchase is not None and effective_sell is not None and effective_purchase > effective_sell:
+            return {"error": "purchase_date cannot be after sell_date"}
 
     if group_id is not None:
         current_group_name: str | None = None
@@ -677,7 +678,7 @@ async def propose_archive_assets(
             updated_count = await asset_service.set_assets_archived(
                 session,
                 ws_id,
-                [a.id for a in to_change],
+                [a.id for a in rows],
                 is_archived=target_state,
             )
         except ValueError as exc:
