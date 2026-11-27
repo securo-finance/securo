@@ -188,6 +188,8 @@ async def open_account(
         id=uuid.uuid4(),
         email=email.strip(),
         hashed_password=_unknown_password(),
+        # No password is set until the person picks one (#1967).
+        password_set_at=None,
         is_active=True,
         is_superuser=False,
         # Nobody has shown they read this mailbox yet: the operator typed it.
