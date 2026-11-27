@@ -9,7 +9,6 @@ from sqlalchemy.orm import selectinload
 
 from app.core.shared_scope import bound_workspace_id
 from app.models.group import Group, GroupMember
-from app.models.user import User
 from app.models.workspace import WorkspaceMember
 from app.schemas.group import (
     GroupCreate,
@@ -17,6 +16,7 @@ from app.schemas.group import (
     GroupMemberUpdate,
     GroupUpdate,
 )
+from app.services import account_lookup_service
 
 
 def _tag_owner(group: Group, user_id: uuid.UUID) -> Group:
@@ -69,10 +69,8 @@ async def _resolve_member_email(
     Otherwise return None — the member is created as a shadow row."""
     if not email:
         return None
-    result = await session.execute(
-        select(User.id).where(func.lower(User.email) == email.strip().lower())
-    )
-    return result.scalar_one_or_none()
+    account = await account_lookup_service.find_account_by_email(session, email)
+    return account.id if account is not None else None
 
 
 def _visible_predicate(workspace_id: uuid.UUID, user_id: uuid.UUID):

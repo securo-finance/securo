@@ -12,6 +12,7 @@ import { shouldShowPendingBadge } from '@/lib/transaction-status'
 import { isTransferTransaction } from '@/lib/transaction-transfer'
 import { transactionDescription } from '@/lib/transaction-description'
 import { ReportingDateBadge } from '@/components/reporting-date-badge'
+import { PaybackBadge } from '@/components/payback-badge'
 
 /** Keep long merchant references on one line when there are no word breaks. */
 function hasWordBreaks(text: string): boolean {
@@ -86,6 +87,7 @@ export function MobileTransactionRow({
   // Badges that ride under the description. They are listed once here so the
   // row only renders the badge line when at least one of them is on.
   const showGroupBadge = !!tx.group_id
+  const showPaybackBadge = !!tx.settled_by?.length
   const showUnreadDot = showUnread && tx.is_read === false && !tx.is_shared
   const showSplitBadge = isSplitByCategory(tx)
   const showTransferIcon = isTransferTransaction(tx)
@@ -99,6 +101,7 @@ export function MobileTransactionRow({
   const hasBadges =
     pocketCount > 0 ||
     showGroupBadge ||
+    showPaybackBadge ||
     showUnreadDot ||
     showSplitBadge ||
     showTransferIcon ||
@@ -165,6 +168,7 @@ export function MobileTransactionRow({
                 {tx.is_shared && tx.parent_owner_name ? tx.parent_owner_name : t('splitGroups.ownerRowBadge', { group: groupName ?? '' })}
               </span>
             )}
+            {showPaybackBadge && <PaybackBadge tx={tx} />}
             {showUnreadDot && (
               <span
                 className="h-1.5 w-1.5 shrink-0 rounded-full bg-sky-500"

@@ -187,8 +187,41 @@ def _opening_balance_values(account_type: str, balance: Decimal) -> tuple[Decima
     return amount, "credit" if is_credit else "debit"
 
 
-def _balance_subqueries(today: _Date):
+async def _account_ids_in_scope(
+    session: AsyncSession,
+    workspace_id: uuid.UUID,
+    *,
+    include_closed: bool = True,
+    account_id: Optional[uuid.UUID] = None,
+) -> list[uuid.UUID]:
+    """Ids of the accounts a workspace sees: its own, plus the ones fed by its connections.
+
+    Read before the balances, as two plain lookups. Written as an OR over the
+    outer join to bank_connections, the rule left the planner guessing how many
+    accounts match, and on a large instance it guessed high enough to scan
+    every transaction on it. With the ids in hand it estimates per account.
+    """
+    owned = select(Account.id).where(Account.workspace_id == workspace_id)
+    linked = (
+        select(Account.id)
+        .join(BankConnection, Account.connection_id == BankConnection.id)
+        .where(BankConnection.workspace_id == workspace_id)
+    )
+    if not include_closed:
+        owned = owned.where(Account.is_closed == False)
+        linked = linked.where(Account.is_closed == False)
+    if account_id is not None:
+        owned = owned.where(Account.id == account_id)
+        linked = linked.where(Account.id == account_id)
+    return list((await session.execute(owned.union(linked))).scalars())
+
+
+def _balance_subqueries(today: _Date, account_ids: list[uuid.UUID]):
     """Per-account current and previous balances, as two subqueries.
+
+    Each one reads only the accounts the caller will return, or its cost grows
+    with every other workspace on the instance. The filter is on the account,
+    not on the row's own workspace: a balance counts every row of its account.
 
     Shared by the list and the single-account read so both report the same
     number for the same account: the detail endpoint used to serialize with no
@@ -208,6 +241,7 @@ def _balance_subqueries(today: _Date):
         .join(Account, Transaction.account_id == Account.id)
         .outerjoin(Category, Transaction.category_id == Category.id)
         .where(
+            Transaction.account_id.in_(account_ids),
             counts_in_current_balance(today),
             Transaction.is_ignored == False,
             or_(
@@ -231,6 +265,7 @@ def _balance_subqueries(today: _Date):
         .join(Account, Transaction.account_id == Account.id)
         .outerjoin(Category, Transaction.category_id == Category.id)
         .where(
+            Transaction.account_id.in_(account_ids),
             Transaction.date <= prev_month_end,
             Transaction.status == "posted",
             Transaction.is_ignored == False,
@@ -254,6 +289,7 @@ def _balance_subqueries(today: _Date):
         .join(Account, Transaction.account_id == Account.id)
         .outerjoin(Category, Transaction.category_id == Category.id)
         .where(
+            Transaction.account_id.in_(account_ids),
             Account.type == "credit_card",
             Transaction.type == "debit",
             Transaction.date > today,
@@ -284,6 +320,7 @@ def _balance_subqueries(today: _Date):
         )
         .join(Account, CreditCardBill.account_id == Account.id)
         .where(
+            CreditCardBill.account_id.in_(account_ids),
             Account.type == "credit_card",
             Account.shared_balance_group.isnot(None),
             CreditCardBill.due_date >= today,
@@ -295,8 +332,17 @@ def _balance_subqueries(today: _Date):
 
 
 def _accounts_with_balances_query(
-    workspace_id: uuid.UUID, balance_sq, prev_balance_sq, future_charges_sq, open_bill_sq
+    workspace_id: uuid.UUID, account_ids: list[uuid.UUID], today: _Date
 ):
+    """The accounts with their balances, still checked against the workspace.
+
+    The ids come from an earlier statement, and a sync can move an account to
+    another workspace in between: keeping the workspace rule here means the
+    workspace that lost it stops seeing it in this same request.
+    """
+    balance_sq, prev_balance_sq, future_charges_sq, open_bill_sq = _balance_subqueries(
+        today, account_ids
+    )
     return (
         select(
             Account,
@@ -306,11 +352,17 @@ def _accounts_with_balances_query(
             func.coalesce(future_charges_sq.c.future_charges, 0).label("future_charges"),
             open_bill_sq.c.total_amount.label("open_bill_total"),
             # The opening balance's date, so the edit form can show it and
-            # leave it alone (issue #1204).
+            # leave it alone (issue #1204). Upper-cased on both sides here
+            # and at the other four sites that match the account currency:
+            # a sync stores the provider's code as it comes, so a row and
+            # its account can name one currency in two cases. Comparing
+            # them exactly would miss the opening and the update path would
+            # add a second one. Same rule as `amount_in_account_currency`.
             select(func.min(Transaction.date))
             .where(
                 Transaction.account_id == Account.id,
                 Transaction.source == "opening_balance",
+                func.upper(Transaction.currency) == func.upper(Account.currency),
             )
             .correlate(Account)
             .scalar_subquery()
@@ -325,19 +377,24 @@ def _accounts_with_balances_query(
             and_(Account.id == open_bill_sq.c.account_id, open_bill_sq.c.rn == 1),
         )
         .where(
+            Account.id.in_(account_ids),
             or_(
                 Account.workspace_id == workspace_id,
                 BankConnection.workspace_id == workspace_id,
-            )
+            ),
         )
     )
 
 
 async def get_accounts(session: AsyncSession, workspace_id: uuid.UUID, include_closed: bool = False) -> list[dict]:
-    query = _accounts_with_balances_query(workspace_id, *_balance_subqueries(app_today()))
-    if not include_closed:
-        query = query.where(Account.is_closed == False)
-    query = query.order_by(Account.name)
+    account_ids = await _account_ids_in_scope(
+        session, workspace_id, include_closed=include_closed
+    )
+    if not account_ids:
+        return []
+    query = _accounts_with_balances_query(
+        workspace_id, account_ids, app_today()
+    ).order_by(Account.name)
     result = await session.execute(query)
     return [
             serialize_account(
@@ -365,9 +422,10 @@ async def get_account_with_balances(
     session: AsyncSession, account_id: uuid.UUID, workspace_id: uuid.UUID
 ) -> Optional[dict]:
     """One account, serialized with the same balances the list reports."""
-    query = _accounts_with_balances_query(
-        workspace_id, *_balance_subqueries(app_today())
-    ).where(Account.id == account_id)
+    account_ids = await _account_ids_in_scope(session, workspace_id, account_id=account_id)
+    if not account_ids:
+        return None
+    query = _accounts_with_balances_query(workspace_id, account_ids, app_today())
     row = (await session.execute(query)).first()
     if row is None:
         return None
@@ -767,6 +825,7 @@ async def update_account(
             .where(
                 Transaction.account_id == account_id,
                 Transaction.source == "opening_balance",
+                func.upper(Transaction.currency) == func.upper(account.currency),
             )
             .with_for_update(key_share=True)
             .execution_options(populate_existing=True)
@@ -808,6 +867,7 @@ async def update_account(
             select(Transaction).where(
                 Transaction.account_id == account_id,
                 Transaction.source == "opening_balance",
+                func.upper(Transaction.currency) == func.upper(account.currency),
             )
             .with_for_update(key_share=True)
             .execution_options(populate_existing=True)
@@ -945,7 +1005,13 @@ async def sync_opening_balance_for_connected_account(
     sum_result = await session.execute(
         select(func.coalesce(func.sum(signed_amount), 0)).where(
             Transaction.account_id == account.id,
-            Transaction.source != "opening_balance",
+            # Every row but the opening this call is about to rewrite. An
+            # opening in another currency has to be counted here, or the
+            # offset below leaves the account short by exactly its amount.
+            or_(
+                Transaction.source != "opening_balance",
+                func.upper(Transaction.currency) != func.upper(account.currency),
+            ),
             Transaction.date <= balance_cutoff,
             Transaction.is_ignored == False,
             or_(
@@ -969,6 +1035,7 @@ async def sync_opening_balance_for_connected_account(
         .where(
             Transaction.account_id == account.id,
             Transaction.source == "opening_balance",
+            func.upper(Transaction.currency) == func.upper(account.currency),
         )
         .order_by(Transaction.created_at.desc(), Transaction.id.desc())
         .with_for_update(key_share=True)
@@ -1085,7 +1152,11 @@ async def keep_balance_as_manual(
     if abs(offset) < Decimal("0.01"):
         return None
     opening = await session.scalar(
-        select(Transaction).where(Transaction.account_id == account.id, Transaction.source == "opening_balance")
+        select(Transaction).where(
+            Transaction.account_id == account.id,
+            Transaction.source == "opening_balance",
+            func.upper(Transaction.currency) == func.upper(account.currency),
+        )
     )
     if opening is None:
         oldest = await session.scalar(select(func.min(Transaction.date)).where(Transaction.account_id == account.id))
@@ -1679,16 +1750,24 @@ async def get_period_opening_balance(
 async def _account_balance_at(
     session: AsyncSession, account_id: uuid.UUID, cutoff: _Date,
     account_currency: str = "",
+    *,
+    include_pending: bool = False,
 ) -> float:
     """Get balance for a single account at a specific date.
-    Excludes ignored transactions from the balance calculation."""
+    Excludes ignored transactions from the balance calculation.
+
+    ``include_pending`` keeps authorized rows in the sum. A credit card's
+    current balance counts them (``counts_in_current_balance``), so its
+    history must too, or its last point disagrees with the accounts list.
+    """
+    status_filter = [] if include_pending else [Transaction.status == "posted"]
     result = await session.execute(
         select(func.coalesce(func.sum(signed_amount_expr(account_currency)), 0))
         .outerjoin(Category, Transaction.category_id == Category.id)
         .where(
             Transaction.account_id == account_id,
             Transaction.date <= min(cutoff, app_today()),
-            Transaction.status == "posted",
+            *status_filter,
             Transaction.is_ignored == False,
             or_(
                 Transaction.category_id.is_(None),
@@ -1703,14 +1782,25 @@ async def _account_daily_balance_series(
     session: AsyncSession, account_id: uuid.UUID,
     date_from: _Date, date_to: _Date,
     account_currency: str = "",
+    *,
+    include_pending: bool = False,
 ) -> list[dict]:
     """Build daily balance series for [date_from, date_to] inclusive.
-    Excludes ignored transactions from balance calculations."""
+    Excludes ignored transactions from balance calculations.
+
+    ``include_pending`` is for credit cards, whose current balance keeps
+    authorized purchases: the series then ends on the same number the
+    accounts list reports.
+    """
     # Get balance at end of day before range start
-    start_balance = await _account_balance_at(session, account_id, date_from - timedelta(days=1), account_currency)
+    start_balance = await _account_balance_at(
+        session, account_id, date_from - timedelta(days=1), account_currency,
+        include_pending=include_pending,
+    )
 
     # Get daily deltas within range: group by actual date
     # Exclude ignored transactions from daily deltas
+    status_filter = [] if include_pending else [Transaction.status == "posted"]
     result = await session.execute(
         select(
             Transaction.date,
@@ -1722,7 +1812,7 @@ async def _account_daily_balance_series(
             Transaction.date >= date_from,
             Transaction.date <= date_to,
             Transaction.date <= app_today(),
-            Transaction.status == "posted",
+            *status_filter,
             Transaction.is_ignored == False,
             or_(
                 Transaction.category_id.is_(None),
@@ -1761,7 +1851,14 @@ async def get_account_balance_history(
 
     sign = -1.0 if (account.type in LIABILITY_ACCOUNT_TYPES and account.connection_id) else 1.0
 
-    series = await _account_daily_balance_series(session, account_id, date_from, date_to, account.currency)
+    series = await _account_daily_balance_series(
+        session, account_id, date_from, date_to, account.currency,
+        # A manual card's current balance counts authorized purchases, so the
+        # last point of its history has to match the accounts list. A
+        # connected card's list balance is the provider snapshot, which never
+        # saw our recurring placeholders, so its history stays posted-only.
+        include_pending=account.type == "credit_card" and not account.connection_id,
+    )
 
     if sign != 1.0:
         for point in series:

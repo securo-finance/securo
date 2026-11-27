@@ -210,6 +210,9 @@ async def import_transactions(
             detect_duplicates=data.detect_duplicates,
             before_commit=before_commit,
         )
+    except import_service.ImportCategoryNotFound as e:
+        # Checked before anything is written: the whole batch is refused.
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     except MoneyOutOfRange as e:
         # A row whose conversion does not fit the column (issue #422): the
         # import commits once at the end, so nothing of it was saved.

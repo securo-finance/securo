@@ -976,7 +976,7 @@ async def test_deleting_allocation_actor_preserves_reservations(
         ]
     )
     await session.commit()
-    assert await delete_user(session, editor.id, user.id)
+    assert await delete_user(session, editor.id, user.id, reason="test")
     async with postgres_sessions() as fresh:
         allocation = await fresh.scalar(
             select(GoalAllocation).where(GoalAllocation.goal_id == goal.id)
@@ -987,9 +987,10 @@ async def test_deleting_allocation_actor_preserves_reservations(
         assert await fresh.get(User, editor.id) is None
 
 
-async def test_deleting_user_cannot_leave_pocket_funded_by_their_deposit_negative(
+async def test_deleting_a_member_keeps_their_deposit_that_funds_a_pocket(
     session, postgres_sessions, pocket_state
 ):
+    """A removed member's rows in a shared workspace stay, assignments with them."""
     user, workspace, account, goal, _ = pocket_state
     editor = User(email="pocket-depositor@example.com", hashed_password="unused")
     session.add(editor)
@@ -1022,34 +1023,21 @@ async def test_deleting_user_cannot_leave_pocket_funded_by_their_deposit_negativ
             [GoalAllocationInput(goal_id=goal.id, amount=amount)],
         )
     await session.commit()
-    editor_id, deposit_id, spending_id, goal_id = editor.id, deposit.id, spending.id, goal.id
-    owner_id = user.id
+    editor_id, deposit_id, goal_id = editor.id, deposit.id, goal.id
 
-    with pytest.raises(ValueError):
-        await delete_user(session, editor_id, owner_id)
-    await session.rollback()
+    assert await delete_user(session, editor_id, user.id, reason="test")
     async with postgres_sessions() as fresh:
-        assert await fresh.get(User, editor_id) is not None
         assert await fresh.get(Transaction, deposit_id) is not None
         assert await _pocket_current_amount(fresh, goal_id) == 40
 
-    await session.execute(
-        delete(GoalAllocation).where(GoalAllocation.transaction_id == spending_id)
-    )
-    await session.commit()
-    assert await delete_user(session, editor_id, owner_id)
-    async with postgres_sessions() as fresh:
-        assert await fresh.get(Transaction, deposit_id) is None
-        assert await _pocket_current_amount(fresh, goal_id) == 0
-
 
 def _migrate(connection, direction):
-    path = Path(__file__).resolve().parent.parent / "alembic/versions/132_goal_pockets.py"
+    path = Path(__file__).resolve().parent.parent / "alembic/versions/136_goal_pockets.py"
     spec = importlib.util.spec_from_file_location("goal_pockets_migration", path)
     assert spec is not None and spec.loader is not None
     migration = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(migration)
-    assert (migration.revision, migration.down_revision) == ("132", "131")
+    assert (migration.revision, migration.down_revision) == ("136", "135")
     with Operations.context(MigrationContext.configure(connection)):
         getattr(migration, direction)()
 
@@ -1237,68 +1225,3 @@ async def test_transaction_edit_waits_for_running_manual_account_delete(
         assert await fresh.get(Account, account.id) is None
         assert await fresh.get(Goal, goal.id) is None
 
-
-async def test_deleting_user_waits_for_an_assignment_to_their_unassigned_deposit(
-    session, postgres_sessions, pocket_state
-):
-    """The race CodeRabbit found: the deposit had no assignment when the
-    deletion started, and another member assigns and spends it meanwhile."""
-    user, workspace, account, goal, _ = pocket_state
-    editor = User(email="late-depositor@example.com", hashed_password="unused")
-    session.add(editor)
-    await session.flush()
-    session.add(WorkspaceMember(workspace_id=workspace.id, user_id=editor.id, role="editor"))
-
-    def entry(owner, description, amount, type_):
-        return Transaction(
-            user_id=owner.id,
-            workspace_id=workspace.id,
-            account_id=account.id,
-            description=description,
-            amount=Decimal(amount),
-            currency=account.currency,
-            date=date(2026, 1, 1),
-            type=type_,
-            source="manual",
-        )
-
-    deposit = entry(editor, "Editor deposit", "100", "credit")
-    spending = entry(user, "Owner spending", "60", "debit")
-    session.add_all([deposit, spending])
-    await session.commit()
-    ids = (editor.id, user.id, workspace.id, account.id, goal.id, deposit.id, spending.id)
-    editor_id, owner_id, workspace_id, account_id, goal_id, deposit_id, spending_id = ids
-
-    async with postgres_sessions() as assigner, postgres_sessions() as deleter:
-        await assigner.execute(
-            select(Account).where(Account.id == account_id).with_for_update(key_share=True)
-        )
-        deleter_pid = await _backend_pid(deleter)
-        outcome: list[BaseException | bool] = []
-
-        async def remove():
-            try:
-                outcome.append(await delete_user(deleter, editor_id, owner_id))
-            except ValueError as exc:
-                outcome.append(exc)
-                await deleter.rollback()
-
-        async with asyncio.TaskGroup() as tasks:
-            tasks.create_task(remove())
-            await _wait_for_lock(assigner, deleter_pid)
-            for transaction_id, amount in ((deposit_id, 100), (spending_id, 60)):
-                row = await assigner.get(Transaction, transaction_id)
-                assert row is not None
-                await replace_transaction_allocations(
-                    assigner,
-                    workspace_id,
-                    owner_id,
-                    row,
-                    [GoalAllocationInput(goal_id=goal_id, amount=amount)],
-                )
-            await assigner.commit()
-
-    assert len(outcome) == 1 and isinstance(outcome[0], ValueError)
-    async with postgres_sessions() as fresh:
-        assert await fresh.get(User, editor_id) is not None
-        assert await _pocket_current_amount(fresh, goal_id) == 40

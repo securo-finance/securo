@@ -2,6 +2,7 @@ import { useId, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { cn } from '@/lib/utils'
 import { differenceInCalendarDays, parseISO } from 'date-fns'
+import { GoalVisualization } from '@/components/goals/GoalVisualization'
 import { getAccountName, sortAccountsByDisplayName } from '@/lib/account-utils'
 import { useTranslation } from 'react-i18next'
 import { useDisplayLocale, useDateLocale } from '@/hooks/use-display-locale'
@@ -194,7 +195,7 @@ export default function GoalsPage() {
 
   const { data: walletsList } = useQuery({
     queryKey: ['asset-groups'],
-    queryFn: assetGroupsApi.list,
+    queryFn: () => assetGroupsApi.list(),
   })
 
   const { data: supportedCurrencies } = useQuery({
@@ -511,6 +512,7 @@ export default function GoalsPage() {
                       </div>
                     )}
                   </div>
+                  {goal.tracking_type !== 'manual' && <GoalVisualization goal={goal} />}
                 </div>
               )
             })}

@@ -23,6 +23,9 @@ spec:
         - name: postgresql
           image: "{{ .Values.postgresql.image.repository }}:{{ .Values.postgresql.image.tag }}"
           imagePullPolicy: {{ .Values.postgresql.image.pullPolicy }}
+          args:
+            - -c
+            - jit={{ .Values.postgresql.jit | default "off" }}
           ports:
             - name: tcp-postgresql
               containerPort: 5432

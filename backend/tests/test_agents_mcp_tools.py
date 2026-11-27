@@ -184,6 +184,26 @@ async def test_list_transactions_reads_all_and_aggregate_words(
     assert (await handler(session=session, ctx=ctx, tx_type="income"))["total"] == credits["total"]
 
 
+async def test_list_transactions_schema_lists_every_tx_type_word(
+    session: AsyncSession, ctx: CallContext, test_transactions
+):
+    """`expense` and `income` work as filters, so the schema has to offer
+    them; an enum with only debit/credit told the model they don't exist."""
+    schema = REGISTRY["list_transactions"].parameters["properties"]["tx_type"]
+    assert schema["enum"] == ["debit", "credit", "expense", "income"]
+    assert "expense" in schema["description"] and "income" in schema["description"]
+
+
+async def test_list_transactions_refuses_an_unknown_tx_type(
+    session: AsyncSession, ctx: CallContext, test_transactions
+):
+    import pytest
+
+    handler = REGISTRY["list_transactions"].handler
+    with pytest.raises(ValueError, match="debit, credit, expense, income"):
+        await handler(session=session, ctx=ctx, tx_type="transfer")
+
+
 async def test_list_transactions_refuses_an_unknown_status(
     session: AsyncSession, ctx: CallContext, test_transactions
 ):

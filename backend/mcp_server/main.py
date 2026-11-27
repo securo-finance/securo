@@ -28,7 +28,7 @@ from app.core.database import async_session_maker
 from mcp_server import protocol as p
 from mcp_server import tools as _tools_pkg  # noqa: F401  triggers tool registration
 from mcp_server.auth import CallContext, ToolAccessDenied, verify_request
-from mcp_server.registry import REGISTRY, call_tool, list_tools
+from mcp_server.registry import REGISTRY, ToolInputError, call_tool, list_tools
 
 logger = logging.getLogger(__name__)
 
@@ -321,6 +321,16 @@ async def _call_tool(
         logger.info("MCP tool denied: %s: %s", name, exc)
         payload = {
             "content": [{"type": "text", "text": f"Access denied: {exc}"}],
+            "isError": True,
+        }
+    except ToolInputError as exc:
+        # Expected too: the model sent a value the filter does not know, often
+        # because its provider ignores the schema enum. A traceback here would
+        # read as a server bug in the logs; the message already tells the model
+        # which values work.
+        logger.info("MCP tool rejected an argument: %s: %s", name, exc)
+        payload = {
+            "content": [{"type": "text", "text": f"Invalid argument: {exc}"}],
             "isError": True,
         }
     except Exception as exc:  # noqa: BLE001

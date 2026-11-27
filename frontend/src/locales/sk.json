@@ -751,6 +751,16 @@
     "email": "E-mail",
     "password": "Heslo",
     "forgotPassword": "Zabudnuté heslo?",
+    "forgotPasswordDescription": "Zadajte e-mail svojho účtu a pošleme vám odkaz na výber nového hesla.",
+    "sendResetLink": "Odoslať odkaz na obnovenie",
+    "resetSentTitle": "Skontrolujte svoj e-mail",
+    "resetSentBody": "Ak účet pre {{email}} existuje, odkaz na obnovenie je na ceste. Čoskoro vyprší.",
+    "resetUnavailable": "Obnovenie hesla e-mailom nie je v tejto inštancii zapnuté. Obráťte sa na správcu.",
+    "resetRequestError": "Odkaz na obnovenie sa nepodarilo odoslať. Skúste to znova.",
+    "resetPasswordDescription": "Zvoľte nové heslo pre svoj účet.",
+    "resetPasswordRejected": "Nové heslo nebolo prijaté. Použite aspoň 8 znakov a skúste to znova.",
+    "resetTokenMissing": "Tento odkaz je neúplný. Otvorte znova odkaz z e-mailu na obnovenie alebo požiadajte o nový.",
+    "resetTokenInvalid": "Tento odkaz na obnovenie je neplatný alebo vypršal. Požiadajte o nový.",
     "loginDescription": "Prihlás sa do svojho účtu",
     "invalidCredentials": "Nesprávny e-mail alebo heslo",
     "serverError": "Nepodarilo sa pripojiť k serveru. Skontroluj pripojenie alebo či beží backend a skús to znova.",
@@ -761,6 +771,8 @@
     "changePassword": "Zmeniť heslo",
     "newPassword": "Nové heslo",
     "passwordTooShort": "Heslo musí mať aspoň 8 znakov",
+    "passwordTooLong": "Heslo môže mať najviac 72 znakov",
+    "resetPassword": "Obnoviť heslo",
     "currentPassword": "Aktuálne heslo",
     "currentPasswordWrong": "Aktuálne heslo je nesprávne",
     "passwordChanged": "Heslo bolo zmenené",
@@ -913,19 +925,19 @@
   },
   "transactions": {
     "title": "Transakcie",
-    "mortgageAllocation": "Rozpis splátky hypotéky",
+    "mortgageAllocation": "Rozpis splátky úveru",
     "mortgagePrincipal": "Splátka istiny",
     "mortgageInterest": "Úrok",
     "mortgageCurrencyHint": "Zadajte všetky časti v {{currency}}.",
     "mortgageSplitPercentages": "Rozdelenie splátky: {{principal}}% istina / {{interest}}% úrok",
     "mortgagePaymentTotal": "Súčet častí: {{currency}} {{total}}; splátka: {{currency}} {{payment}}",
-    "saveMortgageAllocation": "Uložiť rozpis hypotéky",
-    "mortgageSaved": "Rozpis hypotéky uložený",
-    "mortgageRemoved": "Rozpis hypotéky odstránený",
+    "saveMortgageAllocation": "Uložiť rozpis úveru",
+    "mortgageSaved": "Rozpis úveru uložený",
+    "mortgageRemoved": "Rozpis úveru odstránený",
     "removeMortgageAllocation": "Odstrániť rozpis",
-    "mortgageSaveError": "Rozpis hypotéky sa nepodarilo uložiť. Skontrolujte, či sa časti rovnajú splátke.",
+    "mortgageSaveError": "Rozpis úveru sa nepodarilo uložiť. Skontrolujte, či sa časti rovnajú splátke.",
     "mortgageSavedSummary": "Uložené súčty: {{currency}} {{principal}} istina ({{principalPercentage}}%) a {{currency}} {{interest}} úrok ({{interestPercentage}}%)",
-    "mortgageHistoricalNote": "Táto splátka predchádza zaznamenanému zostatku hypotéky. Rozdelenie sa uloží, dlh sa však znova neznižuje.",
+    "mortgageHistoricalNote": "Táto splátka predchádza zaznamenanému zostatku úveru. Rozdelenie sa uloží, dlh sa však znova neznižuje.",
     "mortgageBankManagedNote": "Zostatok tohto úveru hlási vaša banka, preto sa rozdelenie uloží bez opätovného zaúčtovania istiny.",
     "section": "Financie",
     "monthPrevious": "Predchádzajúci mesiac",
@@ -1294,6 +1306,7 @@
     "calendarActivityTrend": "Denná aktivita",
     "calendarNoActivity": "Tento mesiac žiadna aktivita",
     "calendarNoMovements": "Žiadne pohyby",
+    "calendarMonthOutOfRange": "Tento mesiac je príliš ďaleko od dneška.",
     "calendarActualNet": "Skutočné netto",
     "calendarTransfersExcluded": "Prevody sa nepočítajú ako príjem ani výdavok",
     "invoiceBadge": "Faktúra {{number}}",
@@ -1915,6 +1928,14 @@
     "sectionHint": "Ako kategorizovať transakcie.",
     "resetAndReapplyAll": "Resetovať a znovu aplikovať",
     "confirmResetAndReapplyAll": "Resetovať kategórie, poznámky a popisy spravované pravidlami pri zodpovedajúcich transakciách a potom znovu aplikovať všetky aktívne pravidlá?",
+    "scanForTransfers": "Hľadať prevody",
+    "scanningForTransfers": "Hľadanie...",
+    "confirmScanForTransfers": "Prehľadať celú históriu a spárovať prevody medzi rôznymi účtami? Prevody, ktoré ste rozpojili ručne, sa môžu spárovať znova. Pri veľkej histórii to môže chvíľu trvať.",
+    "transferScanCreated_one": "Vytvorený {{count}} pár prevodov",
+    "transferScanCreated_few": "Vytvorené {{count}} páry prevodov",
+    "transferScanCreated_many": "Vytvorené {{count}} párov prevodov",
+    "transferScanCreated_other": "Vytvorené {{count}} párov prevodov",
+    "transferScanNone": "Nenašli sa žiadne nové páry prevodov",
     "add": "Pridať",
     "created": "Pravidlo vytvorené",
     "createdAndApplied": "Pravidlo vytvorené a aplikované na {{count}} transakcií",
@@ -2398,6 +2419,14 @@
     "colReturn": "Výnos",
     "colBalance": "Spolu",
     "colPortfolioPct": "% port.",
+    "colDates": "Obdobie",
+    "colAvgBuyPrice": "Priem. nákup",
+    "colAvgSellPrice": "Priem. predaj",
+    "colInvested": "Investované",
+    "colProceeds": "Tržby",
+    "colResult": "Výsledok",
+    "soldRealized": "Realizované",
+    "soldTotalsTitle": "Realizovaný výsledok pri priemernej cene, spočítaný po menách bez prepočtu",
     "addBuys": "pridať nákupy",
     "ledgerTitle": "Transakcie",
     "noLedgerYet": "Táto pozícia zatiaľ nemá žiadne transakcie.",
@@ -2412,6 +2441,7 @@
     "txSell": "Predaj",
     "txSplit": "Split",
     "txFee": "Poplatok",
+    "txSyncedHint": "Importované z vašej banky. Synchronizácia tento obchod udržiava aktuálny, preto ho tu nemožno upraviť.",
     "txSaved": "Transakcia uložená",
     "txDeleted": "Transakcia vymazaná",
     "editTransaction": "Upraviť transakciu",
@@ -2518,6 +2548,9 @@
     "newWallet": "Nová peňaženka",
     "editWallet": "Upraviť peňaženku",
     "deleteWallet": "Vymazať peňaženku",
+    "reorderWallet": "Potiahnutím zmeníte poradie: {{name}}",
+    "moveWalletUp": "Posunúť nahor",
+    "moveWalletDown": "Posunúť nadol",
     "walletName": "Názov",
     "walletNamePlaceholder": "napr. Americké akcie, Dlhodobé dlhopisy",
     "walletColor": "Farba",
@@ -2545,6 +2578,66 @@
     "confirmRegenerateTitle": "Prepočítať hodnoty?",
     "confirmRegenerate": "Parametre rastu sa zmenili. Všetky automaticky vygenerované hodnoty sa vymažú a prepočítajú. Manuálne hodnoty zostanú zachované.",
     "regenerate": "Prepočítať",
+    "tabPerformance": "Výkonnosť",
+    "performanceTitle": "Výkonnosť portfólia",
+    "performanceDescription": "Pozrite si, ako sa vašim investíciám darilo v priebehu času.",
+    "performancePeriod": "Obdobie",
+    "performanceCompare": "Porovnať",
+    "performanceMethodology": "Ako sa počítajú výnosy",
+    "performanceRemoveBenchmark": "Odstrániť {{name}}",
+    "performancePercentagePoints": "{{value}} p. b.",
+    "performanceExcessLabel": "Portfólio v porovnaní s indexom",
+    "performanceSelectionCount": "Vybrané: {{count}}",
+    "performanceScope": "Rozsah portfólia",
+    "performanceAllAssets": "Celé portfólio",
+    "performanceCustomAssets": "Peňaženky alebo aktíva",
+    "performanceSelectAssets": "Vyberte peňaženky a aktíva",
+    "performanceBenchmarks": "Referenčné indexy",
+    "performanceAddBenchmark": "Vyhľadajte a pridajte ďalší benchmark.",
+    "performanceBenchmarkLimit": "Naraz možno porovnať najviac päť benchmarkov.",
+    "performanceNoSelection": "Na výpočet výkonnosti vyberte aspoň jednu peňaženku alebo aktívum.",
+    "performanceExcessVs": "Nadvýnos",
+    "benchmarkSearchPlaceholder": "Vyhľadať index, ETF, akciu alebo kryptomenu podľa názvu alebo symbolu…",
+    "benchmarkSearchHint": "Porovnajte svoje portfólio s indexmi, ETF, fondmi, akciami alebo kryptomenami, ako sú S&P 500, Ibovespa alebo Bitcoin.",
+    "benchmarkNoResults": "Nenašli sa žiadne zodpovedajúce benchmarky.",
+    "changeBenchmark": "Zmeniť referenčný index",
+    "portfolioReturn": "Hrubý výnos portfólia",
+    "benchmarkReturn": "Výnos referenčného indexu",
+    "excessReturn": "Nadvýnos",
+    "performanceNoData": "Pre toto obdobie nie je k dispozícii dostatočná história portfólia.",
+    "performanceNoPortfolio": "Aktívna kolekcia nemá žiadne investičné peňaženky na porovnanie.",
+    "performanceLoadError": "Nepodarilo sa načítať údaje o výkonnosti.",
+    "performanceSourceError": "Chyba v zdroji údajov. Skúste to znova.",
+    "performanceSourceRateLimited": "Zdroj údajov obmedzuje požiadavky. Skúste to znova neskôr.",
+    "performanceSourceNoData": "Zdroj údajov nevrátil históriu pre toto obdobie.",
+    "performanceSourceNoFxRate": "Zatiaľ nie je uložený žiadny výmenný kurz na prevod tohto indexu na menu vášho portfólia.",
+    "performanceRetryBenchmark": "Skúsiť znova: {{name}}",
+    "performanceViewSave": "Uložiť zobrazenie",
+    "performanceViewNamePlaceholder": "Pomenujte tento výber (napr. Dôchodok)",
+    "performanceViewUpdate": "Aktualizovať „{{name}}“",
+    "performanceViewDelete": "Odstrániť „{{name}}“",
+    "performanceViewSaved": "Zobrazenie „{{name}}“ uložené",
+    "performanceViewDeleted": "Zobrazenie „{{name}}“ odstránené",
+    "performanceViewSaveError": "Zobrazenie sa nepodarilo uložiť",
+    "performanceViewGone": "Zobrazenie „{{name}}“ už neexistuje. Výber zostal zachovaný, môžete ho uložiť ako nové zobrazenie.",
+    "performanceSelectedPeriod": "Vybrané obdobie",
+    "performanceClearSelection": "Zrušiť výber",
+    "performanceDragHint": "Potiahnutím po grafe zobrazíte výnos za ľubovoľné obdobie.",
+    "performanceChartLabel": "Graf výkonnosti portfólia",
+    "performanceKeyboardHint": "Keď je graf aktívny, šípkami meníte dátum, klávesom Enter alebo medzerníkom označíte začiatok a potom koniec obdobia a klávesom Esc výber zrušíte.",
+    "performanceRangeStartMarked": "Začiatok obdobia označený k {{date}}. Prejdite na koncový dátum a stlačte Enter alebo medzerník.",
+    "performanceBenchmarkFrom": "od {{date}}",
+    "performanceCashFlowHint": "Časovo vážený hrubý výnos: zmena v každom období očistená o vklady a výbery, zložená. Vklady a výbery sa nikdy nepočítajú ako zisk ani strata.",
+    "performanceDashboardHint": "Minulé hodnoty sa tu môžu líšiť od prehľadu. Po importe obchodov z nich stránka Aktíva znova zostaví históriu prepojenej investície a táto karta meria hrubé hodnoty pred daňou z príjmu. Prehľad ponecháva zostatky, ktoré banka nahlásila k jednotlivým dňom.",
+    "performanceBenchmarkCurrencyHint": "Indexy kótované v inej mene sa prepočítavajú na menu vášho portfólia kurzom daného dňa, takže ich výnos zahŕňa pohyb meny, rovnako ako pri vašich vlastných zahraničných investíciách.",
+    "performanceTradeImportHint": "Importujte históriu nákupov a odkupov svojich prepojených investícií, aby výnos presne sledoval každý obchod. Import sa začne pri ďalšej synchronizácii a pridá požiadavky k vašim bankovým pripojeniam.",
+    "performanceTradeImportAction": "Importovať obchody",
+    "performanceTradeImportEnabled": "Obchody sa naimportujú pri ďalšej synchronizácii.",
+    "performanceTradeImportError": "Import obchodov sa nepodarilo zapnúť.",
+    "performanceTradeImportIssues": "Transakcie týchto investícií sa nepodarilo importovať, preto sa ich výnos odhaduje z hodnôt, ktoré hlási banka:",
+    "performanceTradeImportIncomplete": "Neúplná história",
+    "performanceTradeImportNoHistory": "Banka neposkytla históriu",
+    "performanceTradeImportRetry": "Skúsiť znova",
     "linkedLoans": "Prepojené úvery",
     "propertyEquity": "Hodnota {{value}} · Dlh {{debt}} · Vlastný kapitál {{equity}}"
   },
@@ -2560,6 +2653,8 @@
     "rangeYtd": "YTD",
     "range12m": "12M",
     "range2y": "2R",
+    "range3y": "3R",
+    "range5y": "5R",
     "rangeThisMonth": "Tento mesiac",
     "rangeLastMonth": "Minulý mesiac",
     "periodPrev": "Predchádzajúce obdobie",
@@ -2830,6 +2925,7 @@
     "create": "Vytvoriť",
     "loading": "Načítava sa...",
     "retry": "Skúsiť znova",
+    "databaseBusy": "Inštancia dosiahla limit databázových pripojení. Skúste to o chvíľu znova.",
     "error": "Chyba",
     "success": "Hotovo",
     "noIconsFound": "Nenašli sa žiadne ikony",
@@ -2953,6 +3049,10 @@
     "searchTransaction": "Hľadať transakcie podľa popisu...",
     "selectedTransaction": "Vybraná",
     "settled": "Vyrovnanie zaznamenané",
+    "linkableHint": "Prepojiť sa dá len tá časť prichádzajúcej platby, ktorá ešte nebola vrátená.",
+    "errorExceedsAmount": "Vyrovnania prepojené s touto prichádzajúcou platbou by presiahli jej sumu.",
+    "errorOnlyReceiver": "Prichádzajúcu transakciu môže prepojiť len ten, kto peniaze prijíma.",
+    "errorReceiverCurrency": "Vyberte svoju vlastnú prichádzajúcu transakciu v mene vyrovnania.",
     "settlements": "Vyrovnania",
     "recordSettlement": "Zaznamenať vyrovnanie",
     "noSettlements": "Zatiaľ žiadne vyrovnania.",
@@ -3139,6 +3239,33 @@
     "menuItem": "Skontrolovať aktualizácie"
   },
   "admin": {
+    "email": {
+      "title": "E-mail",
+      "enabled": "E-mail je zapnutý",
+      "disabled": "E-mail je vypnutý",
+      "description": "Ako odchádzajú e-maily na obnovenie hesla. Poskytovateľ a odosielateľ pochádzajú z konfigurácie servera.",
+      "disabledNote": "Zapnite EMAIL_ENABLED na serveri, aby sa posielali odkazy na obnovenie.",
+      "provider": "Poskytovateľ",
+      "providerSmtp": "Server SMTP",
+      "providerResend": "Resend",
+      "sender": "Odosielateľ",
+      "senderMissing": "Nenastavené",
+      "templatesTitle": "Správa na obnovenie",
+      "templatesDescription": "To, čo človek číta. Premenné: {app_name}, {link} a {minutes}; {link} musí byť sám na vlastnom riadku a nič iné nesmie byť odkaz.",
+      "subject": "Predmet",
+      "body": "Telo",
+      "linkRequired": "Telo musí obsahovať {link}.",
+      "linkInSubject": "Predmet nesmie obsahovať {link} ani adresu.",
+      "linkOnce": "Telo musí obsahovať {link} presne raz.",
+      "linkAlone": "Premenná {link} musí byť sama na vlastnom riadku.",
+      "otherLink": "Správa nesmie viesť nikam inam než na {link}.",
+      "restoreDefault": "Obnoviť predvolený text",
+      "save": "Uložiť šablóny",
+      "saved": "Šablóny uložené",
+      "saveFailed": "Šablóny sa nepodarilo uložiť",
+      "languageEn": "Angličtina",
+      "languagePt": "Portugalčina"
+    },
     "users": {
       "title": "Správa používateľov",
       "searchPlaceholder": "Hľadať používateľov...",
@@ -3157,16 +3284,24 @@
       "updated": "Používateľ aktualizovaný",
       "deleted": "Používateľ vymazaný",
       "confirmDeleteTitle": "Vymazať používateľa?",
-      "confirmDeleteDesc": "Používateľ {{email}} a všetky jeho dáta budú natrvalo vymazané. Túto akciu nie je možné vrátiť späť.",
-      "resetPassword": "Resetovať heslo",
-      "resetPasswordPlaceholder": "Nechaj prázdne pre zachovanie aktuálneho",
+      "confirmDeleteDesc": "Používateľ {{email}} a pracovné priestory, ku ktorým má prístup iba on, budú natrvalo vymazané. To, čo pridal do pracovných priestorov iných ľudí, zostane zachované. Túto akciu nie je možné vrátiť späť.",
+      "soleOwner": "„{{workspace}}“ má ďalších členov a žiadneho ďalšieho vlastníka. Pred vymazaním tohto používateľa urob jedného z nich vlastníkom alebo ich odstráň.",
+      "reason": "Dôvod",
+      "reasonPlaceholder": "Prečo sa táto zmena robí?",
+      "reasonHint": "Zaznamená sa do protokolu prístupov a zobrazí sa dotknutému účtu.",
       "addDesc": "Vytvor nový používateľský účet s prístupom do aplikácie.",
       "adminRole": "Administrátorské oprávnenia",
       "enabled": "Zapnuté",
-      "disabled": "Vypnuté"
+      "disabled": "Vypnuté",
+      "pending": "Čaká",
+      "pendingEmail": "Požadované {{email}}, čaká na majiteľa",
+      "emailPendingHint": "Adresa sa zmení až po potvrdení majiteľom."
     },
     "settings": {
       "title": "Nastavenia administrátora",
+      "managedTitle": "Túto inštanciu spravuje Securo",
+      "managedDesc": "Nastavenia inštancie na tejto stránke určuje prevádzkovateľ inštancie. Platia pre všetkých a nedajú sa tu meniť.",
+      "managedReadOnly": "Nastavené Securo",
       "registrationTitle": "Registrácia",
       "registration": "Povoliť registráciu používateľov",
       "registrationDesc": "Keď je vypnuté, nové používateľské účty môžu vytvárať len administrátori.",
@@ -3283,8 +3418,8 @@
       "chat": "Chat"
     },
     "globalChat": {
-      "title": "Chat",
-      "openHint": "Otvoriť chat",
+      "title": "Agent",
+      "openHint": "Otvoriť agenta",
       "history": "Nedávne konverzácie",
       "selectAgent": "Vybrať agenta",
       "openSettings": "Nastavenia agenta",
@@ -3845,7 +3980,7 @@
       "notSplittable": "Túto transakciu nemožno rozdeliť do kategórií.",
       "noAmount": "Transakciu bez sumy nemožno rozdeliť.",
       "hasGroupSplit": "Pred rozdelením do kategórií odoberte rozdelenie medzi osoby.",
-      "hasMortgage": "Pred rozdelením do kategórií odoberte rozpis hypotéky.",
+      "hasMortgage": "Pred rozdelením do kategórií odoberte rozpis úveru.",
       "installments": "Sériu splátok zatiaľ nemožno rozdeliť do kategórií.",
       "installmentScope": "Splátka v tejto sérii je rozdelená do kategórií; upravte ju samostatne.",
       "categoryAndLines": "Vyberte jednu kategóriu alebo rozdelenie do kategórií, nie oboje.",
@@ -3853,7 +3988,7 @@
       "amountNeedsLines": "Upravte časti spolu so sumou.",
       "undoFirstTransfer": "Pred prepojením ako prevod zrušte rozdelenie.",
       "undoFirstGroupSplit": "Pred rozdelením medzi osoby zrušte rozdelenie.",
-      "undoFirstMortgage": "Pred pridaním rozpisu hypotéky zrušte rozdelenie.",
+      "undoFirstMortgage": "Pred pridaním rozpisu úveru zrušte rozdelenie.",
       "categoryInUse": "Táto kategória obsahuje časti rozdelených transakcií. Najprv upravte tieto rozdelenia.",
       "destinationInvalid": "Časti rozdelených transakcií nemôžu prejsť do ignorovanej ani skrytej kategórie.",
       "mergeNeedsRate": "Tieto rozpočty sú v rôznych menách a pre ich mesiac nie je kurz, ktorým ich spojiť."
@@ -4315,6 +4450,25 @@
     "title": "Server je nedostupný",
     "description": "Ste offline alebo sa Securo reštartuje. Vaše údaje sú v bezpečí a nič sa nezmenilo. Hneď ako server odpovie, automaticky sa znova pripojíme."
   },
+  "goalChart": {
+    "region": "Pokrok cieľa {{name}}",
+    "title": "História a prognóza",
+    "historyFailed": "Históriu sa nepodarilo načítať. Prognóza používa aktuálnu sumu cieľa.",
+    "retry": "Skúsiť znova",
+    "loading": "Načítava sa história…",
+    "hidden": "Graf je v režime súkromia skrytý",
+    "chartLabel": "História a prognóza cieľa {{name}} v mene {{currency}}",
+    "target": "Cieľová suma",
+    "today": "Dnes",
+    "deadline": "Termín",
+    "actual": "Historická suma",
+    "projected": "Prognóza",
+    "current": "Aktuálna suma",
+    "notes": {
+      "missing": "Pre toto obdobie nebola vrátená žiadna použiteľná história.",
+      "currency": "História nie je dostupná v mene tohto cieľa. Prognóza používa aktuálnu sumu cieľa; nepredpokladá sa žiadny výmenný kurz."
+    }
+  },
   "documentAi": {
     "reading": "Čítame dokument…",
     "readingHint": "{{model}} ho práve číta. Môže to trvať minútu.",
@@ -4415,5 +4569,132 @@
       "turnedOff": "Čítanie dokumentov vypnuté"
     },
     "unreadPages": "Neprečítané strany (skeny, a model nečíta obrázky): {{pages}}. Ich riadky v tejto kontrole chýbajú."
+  },
+  "notifications": {
+    "title": "Oznámenia",
+    "unread": "Neprečítané",
+    "unreadLabel": "Oznámenia, neprečítaných: {{number}}",
+    "markAllRead": "Označiť všetko ako prečítané",
+    "empty": "Nič nevyžaduje vašu pozornosť.",
+    "loadError": "Oznámenia sa nepodarilo načítať.",
+    "connection": {
+      "title": "Synchronizácia sa zastavila: {{name}}",
+      "rateLimited": "Banka opakovane dosahuje denný limit."
+    },
+    "recurring": {
+      "title": "Nevytvorené: {{name}}",
+      "detail": "Splatnosť bola {{date}}. Skontrolujte účet a nastavenia."
+    },
+    "budget": {
+      "close": "{{name}}: využitých {{percent}} % rozpočtu",
+      "reached": "{{name}}: rozpočet vyčerpaný",
+      "detail": "{{actual}} z {{budget}}"
+    },
+    "backup": {
+      "title": "Plánovaná záloha zlyhala",
+      "detail": "Posledný pokus bol {{date}}. Securo to skúsi znova."
+    },
+    "seeAll": "Zobraziť všetky oznámenia",
+    "markRead": "Označiť ako prečítané",
+    "loadMore": "Načítať ďalšie",
+    "filter": {
+      "all": "Všetky",
+      "unread": "Neprečítané"
+    },
+    "emptyFilter": {
+      "all": "Zatiaľ žiadne oznámenia.",
+      "unread": "Nie je čo čítať."
+    },
+    "flag": {
+      "title": "Zmeškané pripomienky: {{number}}",
+      "detail": "Označené transakcie po dátume pripomienky."
+    },
+    "match": {
+      "title": "Zhody na kontrolu: {{number}}",
+      "detail": "Securo našlo možné zhody a potrebuje vašu odpoveď."
+    },
+    "invoice": {
+      "title": "{{name}}: faktúra po splatnosti",
+      "detail": "{{amount}}, splatnosť {{date}}."
+    },
+    "preferences": {
+      "title": "Predvoľby",
+      "hint": "Vyberte, o čom chcete v tomto priestore vedieť. Ostatní členovia si ponechajú vlastné voľby.",
+      "saveError": "Voľbu sa nepodarilo uložiť.",
+      "loadError": "Predvoľby sa nepodarilo načítať."
+    },
+    "kind": {
+      "connection_error": {
+        "label": "Pripojenia",
+        "hint": "Banka alebo plugin sa prestali synchronizovať."
+      },
+      "budget_threshold": {
+        "label": "Rozpočty",
+        "hint": "Rozpočet dosiahol 80 % alebo 100 %."
+      },
+      "recurring_failed": {
+        "label": "Opakované",
+        "hint": "Opakovaná transakcia nebola vytvorená."
+      },
+      "flag_overdue": {
+        "label": "Pripomienky",
+        "hint": "Označená transakcia prekročila dátum pripomienky."
+      },
+      "reconciliation_pending": {
+        "label": "Zhody na kontrolu",
+        "hint": "Securo našlo možné zhody a potrebuje vašu odpoveď."
+      },
+      "invoice_overdue": {
+        "label": "Faktúry",
+        "hint": "Faktúra klientovi je po splatnosti."
+      },
+      "group_expense": {
+        "label": "Zdieľané výdavky",
+        "hint": "Niekto pridá alebo zmení výdavok zdieľaný s vami v skupine."
+      },
+      "group_settlement": {
+        "label": "Platby v skupinách",
+        "hint": "Niekto v skupine zaznamená platbu vám alebo od vás."
+      },
+      "backup_failed": {
+        "label": "Zálohy",
+        "hint": "Plánovaná záloha zlyhala."
+      }
+    },
+    "group": {
+      "added": "{{actor}}: pridané {{name}}",
+      "changed": "{{actor}}: zmenené {{name}}",
+      "batch": "{{actor}}: pridané zdieľané výdavky: {{number}}",
+      "share": "Váš podiel v skupine {{group}}: {{amount}}",
+      "paid": "{{actor}}: zaznamenaná platba"
+    }
+  },
+  "accessLog": {
+    "title": "Protokol prístupov",
+    "description": "Každá administratívna akcia na vašom účte a na členoch pracovných priestorov, ktoré vlastníte.",
+    "empty": "Nie sú zaznamenané žiadne administratívne akcie.",
+    "actionUpdate": "Účet zmenený",
+    "actionDelete": "Účet odstránený",
+    "actionOther": "Účet zmenený",
+    "by": "Vykonal {{email}}",
+    "target": "Účet {{email}}",
+    "ip": "IP {{ip}}",
+    "loadMore": "Načítať ďalšie",
+    "loadError": "Protokol prístupov sa nepodarilo načítať.",
+    "emailChange": "Adresa {{from}} → {{to}}",
+    "emailPending": "čaká na potvrdenie majiteľa účtu",
+    "otherChanges": "Zmenené aj: {{fields}}"
+  },
+  "emailChange": {
+    "title": "Zmena e-mailovej adresy",
+    "description": "Správca požiadal o zmenu adresy vášho účtu na {{email}}. Kým nepotvrdíte, účet si ponechá aktuálnu adresu.",
+    "accept": "Prijať novú adresu",
+    "decline": "Ponechať aktuálnu adresu",
+    "accepted": "Váš účet teraz používa {{email}}",
+    "declined": "Účet si ponechá aktuálnu adresu",
+    "unavailable": "Táto adresa už nie je dostupná",
+    "failed": "Vaše rozhodnutie sa nepodarilo uložiť",
+    "replaced": "Administrátor poslal novú žiadosť. Pred prijatím skontrolujte novú adresu",
+    "withdrawn": "Žiadosť bola stiahnutá. Váš účet si ponechá aktuálnu adresu"
   }
 }

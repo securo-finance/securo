@@ -37,3 +37,36 @@ def parse_supported_currency(code: str) -> str:
     if normalized not in supported_currency_codes():
         raise ValueError(f"unsupported currency code: {code.strip()!r}")
     return normalized
+
+
+class UnsupportedCurrency(ValueError):
+    """A transaction moved to a code the instance does not support. Routes
+    answer it with 422, like a bad value in the request body."""
+
+
+def check_transaction_currency(code: str, kept: Optional[str]) -> str:
+    """The code a transaction is written with.
+
+    A new code must be in ``SUPPORTED_CURRENCIES``. ``kept`` (the row's own
+    currency on an edit, the account's on a create) is accepted as it is:
+    a row synced or imported in another currency still saves when the form
+    sends its currency back unchanged.
+    """
+    normalized = code.strip().upper()
+    if same_currency(normalized, kept) or normalized in supported_currency_codes():
+        return normalized
+    raise UnsupportedCurrency(f"unsupported currency code: {code.strip()!r}")
+
+
+def clean_currency_input(value: object, *, allow_null: bool) -> object:
+    """Schema-side check of a currency a client sent: trimmed and upper-case,
+    never empty, and null only where it means "the account's currency"."""
+    if value is None:
+        if allow_null:
+            return None
+        raise ValueError("currency cannot be null")
+    if isinstance(value, str):
+        value = value.strip().upper()
+        if not value:
+            raise ValueError("currency cannot be empty")
+    return value

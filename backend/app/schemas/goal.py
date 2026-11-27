@@ -5,6 +5,8 @@ from typing import Any, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from app.schemas.category import ICON_MAX_LENGTH
+
 
 class GoalAllocationInput(BaseModel):
     goal_id: uuid.UUID
@@ -45,7 +47,7 @@ class GoalCreate(BaseModel):
     account_id: Optional[uuid.UUID] = None
     asset_id: Optional[uuid.UUID] = None
     asset_group_id: Optional[uuid.UUID] = None
-    icon: Optional[str] = None
+    icon: Optional[str] = Field(None, max_length=ICON_MAX_LENGTH)
     color: Optional[str] = None
     metadata_json: Optional[Any] = None
     initial_allocation: Decimal = Field(
@@ -73,7 +75,7 @@ class GoalUpdate(BaseModel):
     asset_id: Optional[uuid.UUID] = None
     asset_group_id: Optional[uuid.UUID] = None
     status: Optional[str] = None
-    icon: Optional[str] = None
+    icon: Optional[str] = Field(None, max_length=ICON_MAX_LENGTH)
     color: Optional[str] = None
     position: Optional[int] = None
     metadata_json: Optional[Any] = None

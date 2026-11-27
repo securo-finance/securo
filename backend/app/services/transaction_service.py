@@ -22,7 +22,7 @@ from sqlalchemy.orm import selectinload
 from sqlalchemy.orm.attributes import set_committed_value
 
 from app.core.app_clock import app_today
-from app.core.currency import same_currency
+from app.core.currency import check_transaction_currency, same_currency
 from app.core.money import (
     MoneyOutOfRange,
     bounded_conversion,
@@ -57,13 +57,14 @@ from app.schemas.transaction import (
     TransferCreate,
 )
 from app.schemas.transaction_split import TransactionSplitInput, TransactionSplitsInput
-from app.services import category_line_service, reconciliation_service, split_service
+from app.services import category_line_service, notification_service, reconciliation_service, split_service
 from app.services.account_service import get_account, get_running_balances
 from app.services.primary_restamp_service import typed_primary_amount
 from app.services.credit_card_service import apply_effective_date, cc_cycle_bill_due_dates
 from app.services.rule_service import apply_rules_to_transaction
 from app.services.transfer_detection_service import detect_transfer_pairs
 from app.services.fx_rate_service import (
+    ACCOUNT_AMOUNT_FROM_BANK,
     ACCOUNT_AMOUNT_FROM_USER,
     convert as fx_convert,
     stamp_account_amount,
@@ -83,6 +84,7 @@ from app.services._query_filters import (
     reporting_date_col,
     reporting_date_value,
     with_category_lines,
+    member_shares,
 )
 from app.services.recurring_transaction_service import _advance_date
 from app.services import goal_allocation_service
@@ -805,9 +807,11 @@ async def get_transactions(
         # another workspace counts the viewer's split share; a split row
         # the viewer paid counts what the other members' shares leave of
         # the amount it has now, because the bank sync rewrites `amount`
-        # without touching the splits. A row of this workspace that another
-        # member created (shared workspace) counts whole, as it does in the
-        # dashboard. Rows without splits count whole. `share_amount` is in
+        # without touching the splits. An expense of this workspace that another
+        # member paid counts the viewer's share when they are part of its
+        # split, and whole when they are not or under an account filter, as in
+        # the dashboard.
+        # Rows without splits count whole. `share_amount` is in
         # the row's own currency, so the ratio rides the FX stamp already
         # stored on the row.
         from app.models.transaction_split import TransactionSplit
@@ -833,8 +837,30 @@ async def get_transactions(
             )
             .scalar_subquery()
         )
+        member_share = member_shares(user_id)
+        own_member_share = (
+            select(member_share.c.share)
+            .where(member_share.c.transaction_id == Transaction.id)
+            .correlate(Transaction)
+            .scalar_subquery()
+        )
+        # Under an account filter it counts whole, as in the reports and the
+        # dashboard, which drop the split rules there.
+        account_filtered = bool(account_ids) or account_id is not None
         viewer_share_fraction = case(
-            # Another member's row of this workspace is native here.
+            # Another member's expense of this workspace: the viewer's share
+            # when they are in its split.
+            (
+                and_(
+                    literal(not account_filtered),
+                    Transaction.workspace_id == workspace_id,
+                    Transaction.user_id != user_id,
+                    Transaction.type == "debit",
+                    own_member_share.is_not(None),
+                ),
+                own_member_share / func.nullif(func.abs(Transaction.amount), 0),
+            ),
+            # Any other row of theirs is native here.
             (
                 and_(
                     Transaction.workspace_id == workspace_id,
@@ -1127,6 +1153,18 @@ async def flagged_summary(session: AsyncSession, workspace_id: uuid.UUID) -> dic
     return {"flagged": row[0], "overdue": row[1], "due_soon": row[2]}
 
 
+async def overdue_flags(session: AsyncSession, workspace_id: uuid.UUID) -> tuple[int, Optional[date]]:
+    """How many flagged rows are past their reminder date, and the latest of those dates."""
+    row = (
+        await session.execute(
+            select(func.count(), func.max(Transaction.flag_due_date)).where(
+                _flagged_in_workspace(workspace_id), Transaction.flag_due_date < app_today()
+            )
+        )
+    ).one()
+    return row[0], row[1]
+
+
 def _normalize_flag_update(tx: Transaction, update_data: dict) -> None:
     """Keep the flag and its reminder consistent within one edit.
 
@@ -1399,7 +1437,11 @@ async def create_transaction(
         raise ValueError("Choose either a category or a split across categories")
 
     # Resolve currency: explicit value > account currency
-    currency = data.currency or account.currency
+    currency = (
+        check_transaction_currency(data.currency, account.currency)
+        if data.currency
+        else account.currency
+    )
 
     transaction = Transaction(
         user_id=user_id,
@@ -1455,6 +1497,8 @@ async def create_transaction(
 
     if data.splits is not None:
         await split_service.replace_splits(session, transaction, data.splits, user_id)
+        await session.flush()
+        await notification_service.expenses_shared(session, user_id, [transaction])
 
     if data.goal_allocations is not None:
         await goal_allocation_service.replace_transaction_allocations(
@@ -1526,7 +1570,12 @@ async def create_installment_series(
     await _ensure_payee_in_workspace(session, workspace_id, base.payee_id)
 
     total = base.amount * n
-    currency = base.currency or account.currency
+    # Same rule as create_transaction, checked before any row is written.
+    currency = (
+        check_transaction_currency(base.currency, account.currency)
+        if base.currency
+        else account.currency
+    )
     purchase_date = base.date
     intended_day = base.date.day
     series_id = uuid.uuid4()
@@ -1590,6 +1639,10 @@ async def create_installment_series(
             await stamp_primary_amount(session, user_id, tx)
         if base.splits is not None:
             await split_service.replace_splits(session, tx, base.splits, user_id)
+
+    if base.splits is not None:
+        await session.flush()
+        await notification_service.expenses_shared(session, user_id, created)
 
     await session.commit()
     for tx in created:
@@ -2241,6 +2294,7 @@ async def _apply_update_to_row(
         key in update_data and update_data[key] != getattr(tx, key)
         for key in ("amount", "currency")
     )
+    currency_changed = "currency" in update_data and update_data["currency"] != tx.currency
     # A move of the date restamps the account amount too, but it does not
     # invalidate a typed conversion: that figure is about the amount, and the
     # dialog sends it back unchanged when only the date moved (#444).
@@ -2297,6 +2351,16 @@ async def _apply_update_to_row(
         # a change of amount, currency, date or account.
         if money_inputs_changed or account_moved:
             _drop_typed_primary(tx)
+        if currency_changed:
+            # The stamp converted the old currency. With no rate for the new
+            # one the stamp below leaves the fields as they are, which counted
+            # 1,500 JPY as the old R$ 500 without a warning (#496): start from
+            # unconverted, as a new row in that currency does.
+            tx.amount_primary = None
+            tx.fx_rate_used = None
+            if tx.amount_account_source != ACCOUNT_AMOUNT_FROM_BANK:
+                tx.amount_account = None
+                tx.amount_account_source = None
         await stamp_primary_amount(
             session, stamp_user_id, tx, restamp_account=account_inputs_changed or account_moved
         )
@@ -2376,7 +2440,10 @@ async def _apply_update_to_row(
                 apply_effective_date(paired_tx, paired_account)
 
     if splits_payload is not None:
+        before = await notification_service.shares_of(session, tx.id)
         await split_service.replace_splits(session, tx, splits_payload, user_id)
+        await session.flush()
+        await notification_service.expenses_shared(session, user_id, [tx], before=before)
 
 
 # Columns that decide how a transaction moves a balance. Changing any of them
@@ -2603,6 +2670,12 @@ async def update_transaction(
     # Mortgage principal entries remain owned by their payment breakdown.
     for row in rows:
         row_update = update_data if row.id == transaction.id else scoped_update or {}
+        # Here and not while applying: an FX lookup for an earlier row can
+        # commit, which would keep half of an edit a later row refuses.
+        if row_update.get("currency") is not None:
+            row_update["currency"] = check_transaction_currency(
+                row_update["currency"], row.currency
+            )
         if row.source == "sync":
             for field in ("amount", "date"):
                 if (
@@ -3147,16 +3220,20 @@ async def bulk_add_to_group(
 
     updated = 0
     skipped = 0
+    shared: list[Transaction] = []
     for tx in txs:
         if tx.transfer_pair_id is not None or tx.splits or tx.has_category_lines:
             skipped += 1
             continue
         await split_service.replace_splits(session, tx, payload, user_id)
+        shared.append(tx)
         updated += 1
 
     # Account for ids that didn't match (wrong user, deleted, etc.)
     skipped += len(set(transaction_ids)) - len(txs)
 
+    await session.flush()
+    await notification_service.expenses_shared(session, user_id, shared)
     await session.commit()
     return {"updated": updated, "skipped": skipped}
 

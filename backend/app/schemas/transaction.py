@@ -12,7 +12,7 @@ from pydantic import (
     model_validator,
 )
 
-from app.core.currency import normalize_currency_code
+from app.core.currency import clean_currency_input, normalize_currency_code
 from app.core.money import bounded_fx_rate, bounded_money, check_zero_rate
 from app.schemas.category import CategoryRead
 from app.schemas.transaction_category_line import (
@@ -66,6 +66,15 @@ class TransactionBase(BaseModel):
 
 class TransactionCreate(TransactionBase):
     account_id: uuid.UUID
+
+    # Null (or left out) means the account's currency; an empty code is a
+    # 422. Whether the code is supported is checked against the account in
+    # the service (#497).
+    @field_validator("currency", mode="before")
+    @classmethod
+    def check_currency(cls, value: object) -> object:
+        return clean_currency_input(value, allow_null=True)
+
     category_id: Optional[uuid.UUID] = None
     payee_id: Optional[uuid.UUID] = None
     currency: Optional[str] = None
@@ -228,10 +237,12 @@ class TransactionUpdate(BaseModel):
     # transaction has no installment fingerprint.
     apply_to: Literal["this", "future", "all"] = "this"
 
+    # The column is NOT NULL: an explicit null or an empty code is a 422,
+    # not a 500 later on (#497). Leaving it out changes nothing.
     @field_validator("currency", mode="before")
     @classmethod
-    def normalize_currency(cls, value: Optional[str]) -> Optional[str]:
-        return normalize_currency_code(value)
+    def normalize_currency(cls, value: object) -> object:
+        return clean_currency_input(value, allow_null=False)
 
     @field_validator("amount", "amount_primary", "fx_rate_used", "amount_primary_shown")
     @classmethod

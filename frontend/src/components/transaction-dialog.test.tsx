@@ -562,6 +562,117 @@ it('reopens a payback with its payers, and replaces it only when it changes', as
   expect(onSave.mock.calls[1][0].payback).toEqual({ payers: [] })
 })
 
+function renderPayback(transaction: Partial<Transaction>) {
+  vi.spyOn(currencies, 'list').mockResolvedValue([])
+  vi.spyOn(payees, 'list').mockResolvedValue([])
+  const member = (id: string, name: string, is_self = false) => ({ id, name, is_self })
+  const trip = { id: 'g1', name: 'Trip', is_owner: true, members: [member('m-me', 'Me', true), member('m-jara', 'Jara'), member('m-alatz', 'Alatz')] }
+  vi.spyOn(groups, 'list').mockResolvedValue([trip] as never)
+  vi.spyOn(groups, 'get').mockResolvedValue(trip as never)
+  const onSave = vi.fn()
+  const rendered = renderWithProviders(
+    <TransactionDialog
+      open
+      onClose={vi.fn()}
+      transaction={transferLegFixture('unused', {
+        id: 'tx-in', type: 'credit', amount: 66.01, source: 'sync', transfer_pair_id: null, ...transaction,
+      })}
+      categories={[]}
+      categoryGroups={[]}
+      accounts={accountFixtures}
+      onSave={onSave}
+      loading={false}
+      error={null}
+    />,
+  )
+  return { ...rendered, onSave }
+}
+
+it('records a payback with its own amount for each payer, the rest shared equally', async () => {
+  const { user, onSave } = renderPayback({})
+
+  await user.click(screen.getByRole('checkbox', { name: t('splitGroups.splitTransaction') }))
+  await user.selectOptions(await screen.findByDisplayValue(t('splitGroups.shareEqual')), 'settlement')
+  await user.click(await screen.findByRole('checkbox', { name: 'Jara' }))
+  await user.click(screen.getByRole('checkbox', { name: 'Alatz' }))
+  // Jara paid for two; Alatz, left blank, takes what is left of the credit.
+  await user.type(screen.getByRole('spinbutton', { name: 'Jara' }), '40')
+  await user.click(screen.getByRole('button', { name: t('common.save') }))
+
+  await vi.waitFor(() => expect(onSave).toHaveBeenCalled())
+  expect(onSave.mock.calls[0][0].payback.payers).toEqual([
+    { member_id: 'm-jara', amount: 40 },
+    { member_id: 'm-alatz', amount: 26.01 },
+  ])
+})
+
+it('does not save a payback larger than the credit', async () => {
+  const { user, onSave } = renderPayback({})
+
+  await user.click(screen.getByRole('checkbox', { name: t('splitGroups.splitTransaction') }))
+  await user.selectOptions(await screen.findByDisplayValue(t('splitGroups.shareEqual')), 'settlement')
+  await user.click(await screen.findByRole('checkbox', { name: 'Jara' }))
+  await user.type(screen.getByRole('spinbutton', { name: 'Jara' }), '70')
+  await user.click(screen.getByRole('button', { name: t('common.save') }))
+
+  expect(onSave).not.toHaveBeenCalled()
+})
+
+it('reopens a payback with the amount each payer paid, and keeps it when saved unchanged', async () => {
+  const { user, onSave } = renderPayback({
+    amount: 50,
+    // Two settlements from the same member count as one payer with their sum.
+    settled_by: [
+      { id: 'set-1', group_id: 'g1', from_member_id: 'm-jara', amount: 20 },
+      { id: 'set-2', group_id: 'g1', from_member_id: 'm-jara', amount: 10 },
+      { id: 'set-3', group_id: 'g1', from_member_id: 'm-alatz', amount: 15 },
+    ],
+  })
+
+  expect(await screen.findByRole('spinbutton', { name: 'Jara' })).toHaveValue(30)
+  expect(screen.getByRole('spinbutton', { name: 'Alatz' })).toHaveValue(15)
+  await user.click(screen.getByRole('button', { name: t('common.save') }))
+  await vi.waitFor(() => expect(onSave).toHaveBeenCalledTimes(1))
+  expect(onSave.mock.calls[0][0]).not.toHaveProperty('payback')
+
+  // A changed amount replaces the payback with the new parts.
+  await user.clear(screen.getByRole('spinbutton', { name: 'Alatz' }))
+  await user.type(screen.getByRole('spinbutton', { name: 'Alatz' }), '20')
+  await user.click(screen.getByRole('button', { name: t('common.save') }))
+  await vi.waitFor(() => expect(onSave).toHaveBeenCalledTimes(2))
+  expect(onSave.mock.calls[1][0].payback.payers).toEqual([
+    { member_id: 'm-jara', amount: 30 },
+    { member_id: 'm-alatz', amount: 20 },
+  ])
+})
+
+it('reopens equal parts blank, and keeps a cent that went to a later payer', async () => {
+  // Equal parts, the leftover cent to the first payer: they reopen blank.
+  const equal = renderPayback({
+    settled_by: [
+      { id: 'set-1', group_id: 'g1', from_member_id: 'm-jara', amount: 33.01 },
+      { id: 'set-2', group_id: 'g1', from_member_id: 'm-alatz', amount: 33 },
+    ],
+  })
+  expect(await screen.findByRole('spinbutton', { name: 'Jara' })).toHaveValue(null)
+  expect(screen.getByRole('spinbutton', { name: 'Alatz' })).toHaveValue(null)
+  equal.unmount()
+
+  // Jara typed 10, Alatz took the rest with the extra cent: both come back as recorded.
+  const { user, onSave } = renderPayback({
+    amount: 20.01,
+    settled_by: [
+      { id: 'set-1', group_id: 'g1', from_member_id: 'm-jara', amount: 10 },
+      { id: 'set-2', group_id: 'g1', from_member_id: 'm-alatz', amount: 10.01 },
+    ],
+  })
+  expect(await screen.findByRole('spinbutton', { name: 'Jara' })).toHaveValue(10)
+  expect(screen.getByRole('spinbutton', { name: 'Alatz' })).toHaveValue(10.01)
+  await user.click(screen.getByRole('button', { name: t('common.save') }))
+  await vi.waitFor(() => expect(onSave).toHaveBeenCalled())
+  expect(onSave.mock.calls[0][0]).not.toHaveProperty('payback')
+})
+
 it('leaves the payback of a credit a settlement created alone when it is saved', async () => {
   vi.spyOn(currencies, 'list').mockResolvedValue([])
   vi.spyOn(payees, 'list').mockResolvedValue([])
@@ -1400,4 +1511,171 @@ describe('TransactionDialog duplicate draft conversion (#481)', () => {
       fx_rate_used: 0.208,
     })
   })
+})
+
+it('renders loan breakdown and localized loan_kind badge for an unsecured student loan and saves allocation', async () => {
+  vi.spyOn(currencies, 'list').mockResolvedValue([])
+  vi.spyOn(payees, 'list').mockResolvedValue([])
+  vi.spyOn(groups, 'list').mockResolvedValue([])
+  const listAssets = vi.spyOn(assets, 'list').mockResolvedValue([])
+  vi.spyOn(mortgagePayments, 'get').mockResolvedValue({
+    payment_transaction_id: 'tx-1160-leg',
+    payment_amount: 250,
+    currency: 'USD',
+    payment_account_name: 'Zeta Bank',
+    allocations: [],
+    principal_total: 0,
+    interest_total: 0,
+    principal_percentage: 0,
+    interest_percentage: 0,
+  })
+  const replaceAllocations = vi.spyOn(mortgagePayments, 'replace').mockResolvedValue({
+    payment_transaction_id: 'tx-1160-leg',
+    payment_amount: 250,
+    currency: 'USD',
+    payment_account_name: 'Zeta Bank',
+    allocations: [],
+    principal_total: 200,
+    interest_total: 50,
+    principal_percentage: 80,
+    interest_percentage: 20,
+  })
+  const studentLoan = {
+    id: 'loan-student',
+    name: 'College Debt',
+    type: 'loan',
+    currency: 'USD',
+    secured_asset_id: null,
+    loan_kind: 'student',
+  } as Account
+
+  const { user } = renderWithProviders(
+    <TransactionDialog
+      open
+      onClose={vi.fn()}
+      transaction={transferLegFixture('pair-1160', { source: 'sync', transfer_pair_id: null })}
+      categories={[]}
+      categoryGroups={[]}
+      accounts={[...accountFixtures, studentLoan]}
+      onSave={vi.fn()}
+      loading={false}
+      error={null}
+    />,
+  )
+
+  await user.click(await screen.findByRole('button', { name: t('transactions.mortgageAllocation') }))
+
+  const breakdownSection = screen
+    .getByRole('button', { name: t('transactions.mortgageAllocation') })
+    .closest('section')!
+  expect(within(breakdownSection).getByText('College Debt')).toBeInTheDocument()
+  expect(within(breakdownSection).getByText(t('accounts.loanKinds.student'))).toBeInTheDocument()
+  expect(listAssets).not.toHaveBeenCalled()
+
+  await user.type(within(breakdownSection).getByLabelText(t('transactions.mortgagePrincipal')), '200')
+  await user.type(within(breakdownSection).getByLabelText(t('transactions.mortgageInterest')), '50')
+  await user.click(within(breakdownSection).getByRole('button', { name: t('transactions.saveMortgageAllocation') }))
+
+  expect(replaceAllocations).toHaveBeenCalledWith('tx-1160-leg', [
+    { loan_account_id: 'loan-student', principal_amount: 200, interest_amount: 50 },
+  ])
+})
+
+it('hides loan breakdown and skips mortgagePayments.get when loans use a different currency', () => {
+  vi.spyOn(currencies, 'list').mockResolvedValue([])
+  vi.spyOn(payees, 'list').mockResolvedValue([])
+  vi.spyOn(groups, 'list').mockResolvedValue([])
+  const getAllocations = vi.spyOn(mortgagePayments, 'get').mockResolvedValue({
+    payment_transaction_id: 'tx-1160-leg',
+    payment_amount: 250,
+    currency: 'USD',
+    payment_account_name: 'Zeta Bank',
+    allocations: [],
+    principal_total: 0,
+    interest_total: 0,
+    principal_percentage: 0,
+    interest_percentage: 0,
+  })
+  const eurStudentLoan = {
+    id: 'loan-student-eur',
+    name: 'Euro Student Loan',
+    type: 'loan',
+    currency: 'EUR',
+    secured_asset_id: null,
+    loan_kind: 'student',
+  } as Account
+
+  renderWithProviders(
+    <TransactionDialog
+      open
+      onClose={vi.fn()}
+      transaction={transferLegFixture('pair-1160', { source: 'sync', transfer_pair_id: null })}
+      categories={[]}
+      categoryGroups={[]}
+      accounts={[...accountFixtures, eurStudentLoan]}
+      onSave={vi.fn()}
+      loading={false}
+      error={null}
+    />,
+  )
+
+  expect(screen.queryByRole('button', { name: t('transactions.mortgageAllocation') })).not.toBeInTheDocument()
+  expect(getAllocations).not.toHaveBeenCalled()
+})
+
+it('shows propertyName for a secured loan and loan_kind badge for an unsecured loan together', async () => {
+  vi.spyOn(currencies, 'list').mockResolvedValue([])
+  vi.spyOn(payees, 'list').mockResolvedValue([])
+  vi.spyOn(groups, 'list').mockResolvedValue([])
+  vi.spyOn(assets, 'list').mockResolvedValue([{ id: 'property-1', name: 'Main House' } as never])
+  vi.spyOn(mortgagePayments, 'get').mockResolvedValue({
+    payment_transaction_id: 'tx-1160-leg',
+    payment_amount: 250,
+    currency: 'USD',
+    payment_account_name: 'Zeta Bank',
+    allocations: [],
+    principal_total: 0,
+    interest_total: 0,
+    principal_percentage: 0,
+    interest_percentage: 0,
+  })
+  const securedLoan = {
+    id: 'loan-1',
+    name: 'Mortgage',
+    type: 'loan',
+    currency: 'USD',
+    secured_asset_id: 'property-1',
+    loan_kind: 'mortgage',
+  } as Account
+  const personalLoan = {
+    id: 'loan-2',
+    name: 'Personal Credit',
+    type: 'loan',
+    currency: 'USD',
+    secured_asset_id: null,
+    loan_kind: 'personal',
+  } as Account
+
+  const { user } = renderWithProviders(
+    <TransactionDialog
+      open
+      onClose={vi.fn()}
+      transaction={transferLegFixture('pair-1160', { source: 'sync', transfer_pair_id: null })}
+      categories={[]}
+      categoryGroups={[]}
+      accounts={[...accountFixtures, securedLoan, personalLoan]}
+      onSave={vi.fn()}
+      loading={false}
+      error={null}
+    />,
+  )
+
+  await user.click(await screen.findByRole('button', { name: t('transactions.mortgageAllocation') }))
+
+  const breakdownSection = screen
+    .getByRole('button', { name: t('transactions.mortgageAllocation') })
+    .closest('section')!
+  expect(await within(breakdownSection).findByText(/Main House/)).toBeInTheDocument()
+  expect(within(breakdownSection).getByText(t('accounts.loanKinds.personal'))).toBeInTheDocument()
+  expect(within(breakdownSection).queryByText(t('accounts.loanKinds.mortgage'))).not.toBeInTheDocument()
 })

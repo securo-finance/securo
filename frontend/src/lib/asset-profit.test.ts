@@ -59,4 +59,13 @@ describe('getAssetProfit', () => {
       sell_price: 1250,
     })).toEqual({ amount: 250, percentage: 25 })
   })
+
+  it('uses the sold cost for a sold ledger asset without a held cost basis', () => {
+    expect(getAssetProfit({
+      ...baseAsset,
+      realized_gain: 250,
+      sell_date: '2025-11-07',
+      sold_cost: 1000,
+    })).toEqual({ amount: 250, percentage: 25 })
+  })
 })

@@ -743,6 +743,16 @@
     "email": "メールアドレス",
     "password": "パスワード",
     "forgotPassword": "パスワードをお忘れですか?",
+    "forgotPasswordDescription": "アカウントのメールアドレスを入力すると、新しいパスワードを選ぶためのリンクをお送りします。",
+    "sendResetLink": "回復リンクを送信",
+    "resetSentTitle": "メールをご確認ください",
+    "resetSentBody": "{{email}} のアカウントがある場合、回復リンクを送信しました。有効期限はまもなく切れます。",
+    "resetUnavailable": "このインスタンスではメールによるパスワード回復が有効になっていません。管理者にご確認ください。",
+    "resetRequestError": "回復リンクを送信できませんでした。もう一度お試しください。",
+    "resetPasswordDescription": "アカウントの新しいパスワードを選んでください。",
+    "resetPasswordRejected": "新しいパスワードが受け付けられませんでした。8文字以上で、もう一度お試しください。",
+    "resetTokenMissing": "このリンクは不完全です。回復メールのリンクをもう一度開くか、新しいリンクを請求してください。",
+    "resetTokenInvalid": "この回復リンクは無効か、有効期限が切れています。新しいリンクを請求してください。",
     "loginDescription": "サインインしてアカウントにアクセス",
     "invalidCredentials": "メールアドレスまたはパスワードが正しくありません",
     "serverError": "サーバーに接続できませんでした。接続を確認するか、バックエンドが起動していることを確認して、もう一度お試しください。",
@@ -753,6 +763,8 @@
     "changePassword": "パスワード変更",
     "newPassword": "新しいパスワード",
     "passwordTooShort": "パスワードは8文字以上にしてください",
+    "passwordTooLong": "パスワードは72文字以内にしてください",
+    "resetPassword": "パスワードを再設定",
     "currentPassword": "現在のパスワード",
     "currentPasswordWrong": "現在のパスワードが正しくありません",
     "passwordChanged": "パスワードを変更しました",
@@ -899,19 +911,19 @@
   },
   "transactions": {
     "title": "取引",
-    "mortgageAllocation": "住宅ローン返済の内訳",
+    "mortgageAllocation": "ローン返済の内訳",
     "mortgagePrincipal": "元金返済",
     "mortgageInterest": "利息",
     "mortgageCurrencyHint": "すべての内訳を {{currency}} で入力してください。",
     "mortgageSplitPercentages": "返済の内訳: 元金 {{principal}}% / 利息 {{interest}}%",
     "mortgagePaymentTotal": "内訳の合計: {{currency}} {{total}}、返済額: {{currency}} {{payment}}",
     "saveMortgageAllocation": "内訳を保存",
-    "mortgageSaved": "住宅ローンの内訳を保存しました",
-    "mortgageRemoved": "住宅ローンの内訳を削除しました",
+    "mortgageSaved": "ローンの内訳を保存しました",
+    "mortgageRemoved": "ローンの内訳を削除しました",
     "removeMortgageAllocation": "内訳を削除",
     "mortgageSaveError": "内訳を保存できませんでした。内訳の合計が返済額と一致しているか確認してください。",
     "mortgageSavedSummary": "保存した合計: 元金 {{currency}} {{principal}} ({{principalPercentage}}%)、利息 {{currency}} {{interest}} ({{interestPercentage}}%)",
-    "mortgageHistoricalNote": "この返済は記録されている住宅ローン残高より前のものです。内訳は保存されますが、残債は再度減額されません。",
+    "mortgageHistoricalNote": "この返済は記録されているローン残高より前のものです。内訳は保存されますが、残債は再度減額されません。",
     "mortgageBankManagedNote": "このローンの残高は銀行から取得しているため、元金を再度計上せずに内訳のみを保存します。",
     "section": "財務",
     "monthPrevious": "前月",
@@ -1240,6 +1252,7 @@
     "calendarActivityTrend": "日別の活動",
     "calendarNoActivity": "今月の活動はありません",
     "calendarNoMovements": "変動なし",
+    "calendarMonthOutOfRange": "この月は今日から離れすぎています。",
     "calendarActualNet": "実際の純額",
     "calendarTransfersExcluded": "振替は収入・支出にカウントされません",
     "invoiceBadge": "請求書 {{number}}",
@@ -1814,6 +1827,12 @@
     "sectionTitle": "分類ルール",
     "resetAndReapplyAll": "リセットして再適用",
     "confirmResetAndReapplyAll": "取引のカテゴリ、メモ、ルール管理の摘要をリセットして、すべての有効なルールを再適用しますか?",
+    "scanForTransfers": "振替を検索",
+    "scanningForTransfers": "検索中...",
+    "confirmScanForTransfers": "すべての履歴を検索して、異なる口座間の振替をペアにしますか？手動で解除した振替は再びペアにされることがあります。履歴が多いと少し時間がかかることがあります。",
+    "transferScanCreated_one": "{{count}}件の振替ペアを作成しました",
+    "transferScanCreated_other": "{{count}}件の振替ペアを作成しました",
+    "transferScanNone": "新しい振替ペアは見つかりませんでした",
     "add": "追加",
     "created": "ルールを作成しました",
     "createdAndApplied": "ルールを作成し、{{count}}件の取引に適用しました",
@@ -2270,6 +2289,14 @@
     "colReturn": "リターン",
     "colBalance": "合計",
     "colPortfolioPct": "組入%",
+    "colDates": "保有期間",
+    "colAvgBuyPrice": "平均買値",
+    "colAvgSellPrice": "平均売値",
+    "colInvested": "投資額",
+    "colProceeds": "売却額",
+    "colResult": "損益",
+    "soldRealized": "実現",
+    "soldTotalsTitle": "平均原価での実現損益。通貨ごとに換算せず合算",
     "addBuys": "買付を追加",
     "ledgerTitle": "取引",
     "noLedgerYet": "この保有の取引はまだありません。",
@@ -2284,6 +2311,7 @@
     "txSell": "売却",
     "txSplit": "株式分割",
     "txFee": "手数料",
+    "txSyncedHint": "銀行から取り込まれた取引です。同期によって最新の状態に保たれるため、ここでは編集できません。",
     "txSaved": "取引を保存しました",
     "txDeleted": "取引を削除しました",
     "editTransaction": "取引を編集",
@@ -2384,6 +2412,9 @@
     "newWallet": "新規ウォレット",
     "editWallet": "ウォレットを編集",
     "deleteWallet": "ウォレットを削除",
+    "reorderWallet": "ドラッグして並べ替え: {{name}}",
+    "moveWalletUp": "上へ移動",
+    "moveWalletDown": "下へ移動",
     "walletName": "名前",
     "walletNamePlaceholder": "例: 米国株、長期債券",
     "walletColor": "色",
@@ -2411,6 +2442,66 @@
     "confirmRegenerateTitle": "価値を再生成しますか?",
     "confirmRegenerate": "増加パラメータが変更されました。自動生成されたすべての価値が削除され再計算されます。手動入力の価値は保持されます。",
     "regenerate": "再生成",
+    "tabPerformance": "パフォーマンス",
+    "performanceTitle": "ポートフォリオ・パフォーマンス",
+    "performanceDescription": "投資のパフォーマンスの推移を確認できます。",
+    "performancePeriod": "期間",
+    "performanceCompare": "比較",
+    "performanceMethodology": "リターンの計算方法",
+    "performanceRemoveBenchmark": "{{name}}を削除",
+    "performancePercentagePoints": "{{value}}ポイント",
+    "performanceExcessLabel": "ポートフォリオとベンチマークの差",
+    "performanceSelectionCount": "{{count}}件を選択中",
+    "performanceScope": "ポートフォリオの範囲",
+    "performanceAllAssets": "ポートフォリオ全体",
+    "performanceCustomAssets": "ウォレットまたは資産",
+    "performanceSelectAssets": "ウォレットと資産を選択",
+    "performanceBenchmarks": "ベンチマーク",
+    "performanceAddBenchmark": "検索して別のベンチマークを追加します。",
+    "performanceBenchmarkLimit": "一度に最大5つのベンチマークを比較できます。",
+    "performanceNoSelection": "パフォーマンスを計算するには、少なくとも1つのウォレットまたは資産を選択してください。",
+    "performanceExcessVs": "超過",
+    "benchmarkSearchPlaceholder": "名前またはシンボルで指数・ETF・株式・暗号資産を検索…",
+    "benchmarkSearchHint": "S&P 500、Ibovespa、ビットコインなどの指数・ETF・ファンド・株式・暗号資産とポートフォリオを比較できます。",
+    "benchmarkNoResults": "一致するベンチマークが見つかりません。",
+    "changeBenchmark": "ベンチマークを変更",
+    "portfolioReturn": "ポートフォリオ総リターン",
+    "benchmarkReturn": "ベンチマークリターン",
+    "excessReturn": "超過リターン",
+    "performanceNoData": "この期間のポートフォリオ履歴が不足しています。",
+    "performanceNoPortfolio": "アクティブなコレクションに比較できる投資ウォレットがありません。",
+    "performanceLoadError": "パフォーマンスデータを読み込めませんでした。",
+    "performanceSourceError": "データソースでエラーが発生しました。再試行してください。",
+    "performanceSourceRateLimited": "データソースがリクエストを制限しています。後で再試行してください。",
+    "performanceSourceNoData": "データソースからこの期間の履歴が返されませんでした。",
+    "performanceSourceNoFxRate": "この指数をポートフォリオの通貨に換算するための為替レートがまだ保存されていません。",
+    "performanceRetryBenchmark": "{{name}}を再試行",
+    "performanceViewSave": "ビューを保存",
+    "performanceViewNamePlaceholder": "この選択に名前を付ける(例:老後資金)",
+    "performanceViewUpdate": "「{{name}}」を更新",
+    "performanceViewDelete": "「{{name}}」を削除",
+    "performanceViewSaved": "ビュー「{{name}}」を保存しました",
+    "performanceViewDeleted": "ビュー「{{name}}」を削除しました",
+    "performanceViewSaveError": "ビューを保存できませんでした",
+    "performanceViewGone": "ビュー「{{name}}」はもう存在しません。選択内容はそのまま残っているので、新しいビューとして保存できます。",
+    "performanceSelectedPeriod": "選択した期間",
+    "performanceClearSelection": "選択を解除",
+    "performanceDragHint": "グラフ上をドラッグすると、任意の期間のリターンを表示します。",
+    "performanceChartLabel": "ポートフォリオのパフォーマンスグラフ",
+    "performanceKeyboardHint": "グラフにフォーカスがあるとき、矢印キーで日付を移動し、Enter または Space で期間の開始、続けて終了を指定します。Esc で解除します。",
+    "performanceRangeStartMarked": "期間の開始を {{date}} に設定しました。終了日に移動して Enter または Space を押してください。",
+    "performanceBenchmarkFrom": "{{date}} から",
+    "performanceCashFlowHint": "時間加重の総リターン:各期間の変動から入出金を除き、複利で積み上げたもの。入金や出金が利益や損失として計上されることはありません。",
+    "performanceDashboardHint": "ここでの過去の値はダッシュボードと異なる場合があります。取引を取り込むと、資産ページは連携中の投資の履歴をその取引から再構成し、このタブは所得税控除前の総額で計測します。ダッシュボードは各日に銀行が報告した残高を保持します。",
+    "performanceBenchmarkCurrencyHint": "他の通貨建ての指数は、各日の為替レートでポートフォリオの通貨に換算されます。そのため、ご自身の外貨建て資産と同様に、リターンには為替の変動が含まれます。",
+    "performanceTradeImportHint": "連携中の投資の購入・解約履歴を取り込むと、リターンが各取引を正確に反映します。次回の同期から始まり、銀行連携へのリクエストが増えます。",
+    "performanceTradeImportAction": "取引を取り込む",
+    "performanceTradeImportEnabled": "取引は次回の同期で取り込まれます。",
+    "performanceTradeImportError": "取引の取り込みを有効にできませんでした。",
+    "performanceTradeImportIssues": "これらの保有資産の取引をインポートできなかったため、リターンは銀行が報告する評価額から推定しています:",
+    "performanceTradeImportIncomplete": "履歴が不完全です",
+    "performanceTradeImportNoHistory": "銀行に履歴がありません",
+    "performanceTradeImportRetry": "再試行",
     "linkedLoans": "紐付けたローン",
     "propertyEquity": "評価額 {{value}} · 負債 {{debt}} · 純資産 {{equity}}"
   },
@@ -2426,6 +2517,8 @@
     "rangeYtd": "年初から",
     "range12m": "12ヶ月",
     "range2y": "2年",
+    "range3y": "3年",
+    "range5y": "5年",
     "rangeThisMonth": "今月",
     "rangeLastMonth": "先月",
     "periodPrev": "前の期間",
@@ -2688,6 +2781,7 @@
     "create": "作成",
     "loading": "読み込み中...",
     "retry": "再試行",
+    "databaseBusy": "インスタンスがデータベース接続の上限に達しました。しばらくしてからもう一度お試しください。",
     "error": "エラー",
     "success": "成功",
     "noIconsFound": "アイコンが見つかりません",
@@ -2799,6 +2893,10 @@
     "searchTransaction": "摘要で取引を検索...",
     "selectedTransaction": "選択中",
     "settled": "精算を記録しました",
+    "linkableHint": "クレジットのうち、まだ返済されていない分だけをリンクできます。",
+    "errorExceedsAmount": "このクレジットにリンクされた精算が金額を超えてしまいます。",
+    "errorOnlyReceiver": "入金取引をリンクできるのは、お金を受け取る本人だけです。",
+    "errorReceiverCurrency": "精算と同じ通貨の自分の入金取引を選んでください。",
     "settlements": "精算",
     "recordSettlement": "精算を記録",
     "noSettlements": "精算はまだありません。",
@@ -2973,6 +3071,33 @@
     "menuItem": "更新を確認"
   },
   "admin": {
+    "email": {
+      "title": "メール",
+      "enabled": "メールは有効です",
+      "disabled": "メールは無効です",
+      "description": "パスワード再設定メールの送信方法です。プロバイダーと送信者はサーバー設定から読み取ります。",
+      "disabledNote": "再設定リンクを送るには、サーバーで EMAIL_ENABLED を有効にしてください。",
+      "provider": "プロバイダー",
+      "providerSmtp": "SMTP サーバー",
+      "providerResend": "Resend",
+      "sender": "送信者",
+      "senderMissing": "未設定",
+      "templatesTitle": "再設定メッセージ",
+      "templatesDescription": "相手が読む内容です。変数: {app_name}、{link}、{minutes}。{link} は独立した行に単独で置き、それ以外はリンクにできません。",
+      "subject": "件名",
+      "body": "本文",
+      "linkRequired": "本文に {link} が必要です。",
+      "linkInSubject": "件名には {link} もアドレスも含められません。",
+      "linkOnce": "本文には {link} をちょうど 1 回だけ含めてください。",
+      "linkAlone": "{link} は独立した行に単独で置いてください。",
+      "otherLink": "メッセージは {link} 以外のどこにも誘導できません。",
+      "restoreDefault": "既定の文面に戻す",
+      "save": "テンプレートを保存",
+      "saved": "テンプレートを保存しました",
+      "saveFailed": "テンプレートを保存できませんでした",
+      "languageEn": "英語",
+      "languagePt": "ポルトガル語"
+    },
     "users": {
       "title": "ユーザー管理",
       "searchPlaceholder": "ユーザーを検索...",
@@ -2991,16 +3116,24 @@
       "updated": "ユーザーを更新しました",
       "deleted": "ユーザーを削除しました",
       "confirmDeleteTitle": "ユーザーを削除しますか?",
-      "confirmDeleteDesc": "{{email}}とそのすべてのデータを完全に削除します。この操作は取り消せません。",
-      "resetPassword": "パスワードをリセット",
-      "resetPasswordPlaceholder": "空欄で現在のパスワードを保持",
+      "confirmDeleteDesc": "{{email}}と、このユーザーだけがアクセスできるワークスペースを完全に削除します。他の人のワークスペースに追加した内容は残ります。この操作は取り消せません。",
+      "soleOwner": "「{{workspace}}」には他のメンバーがいますが、他にオーナーがいません。このユーザーを削除する前に、メンバーの1人をオーナーにするか、メンバーを削除してください。",
+      "reason": "理由",
+      "reasonPlaceholder": "この変更を行う理由は何ですか?",
+      "reasonHint": "アクセスログに記録され、対象アカウントに表示されます。",
       "addDesc": "アプリケーションにアクセスできる新しいユーザーアカウントを作成します。",
       "adminRole": "管理者権限",
       "enabled": "オン",
-      "disabled": "オフ"
+      "disabled": "オフ",
+      "pending": "確認待ち",
+      "pendingEmail": "{{email}} を申請済み、所有者の確認待ち",
+      "emailPendingHint": "アドレスは所有者が確認した後にのみ変更されます。"
     },
     "settings": {
       "title": "管理者設定",
+      "managedTitle": "このインスタンスは Securo が管理しています",
+      "managedDesc": "このページのインスタンス設定はインスタンスの運営者が決めます。すべての利用者に適用され、ここでは変更できません。",
+      "managedReadOnly": "Securo により設定済み",
       "registrationTitle": "登録",
       "registration": "ユーザー登録を許可",
       "registrationDesc": "無効にすると、管理者のみが新しいユーザーアカウントを作成できます。",
@@ -3117,8 +3250,8 @@
       "chat": "チャット"
     },
     "globalChat": {
-      "title": "チャット",
-      "openHint": "チャットを開く",
+      "title": "エージェント",
+      "openHint": "エージェントを開く",
       "history": "最近の会話",
       "selectAgent": "エージェントを選択",
       "openSettings": "エージェント設定",
@@ -3667,7 +3800,7 @@
       "notSplittable": "この取引はカテゴリーで分割できません。",
       "noAmount": "金額のない取引は分割できません。",
       "hasGroupSplit": "カテゴリーで分割する前に、人との割り勘を解除してください。",
-      "hasMortgage": "カテゴリーで分割する前に、住宅ローンの内訳を削除してください。",
+      "hasMortgage": "カテゴリーで分割する前に、ローンの内訳を削除してください。",
       "installments": "分割払いのシリーズはまだカテゴリーで分割できません。",
       "installmentScope": "このシリーズの分割払いはカテゴリーで分割されています。個別に編集してください。",
       "categoryAndLines": "1つのカテゴリーかカテゴリー分割のどちらかを選んでください。",
@@ -3675,7 +3808,7 @@
       "amountNeedsLines": "金額と一緒に内訳も変更してください。",
       "undoFirstTransfer": "振替としてリンクする前に分割を取り消してください。",
       "undoFirstGroupSplit": "人と割り勘する前に分割を取り消してください。",
-      "undoFirstMortgage": "住宅ローンの内訳を追加する前に分割を取り消してください。",
+      "undoFirstMortgage": "ローンの内訳を追加する前に分割を取り消してください。",
       "categoryInUse": "このカテゴリーには分割された取引の内訳があります。先にそれらの分割を変更してください。",
       "destinationInvalid": "分割された取引の内訳は、無視または非表示のカテゴリーに移せません。",
       "mergeNeedsRate": "これらの予算は通貨が異なり、その月の為替レートがないため統合できません。"
@@ -4123,6 +4256,25 @@
     "title": "サーバーに接続できません",
     "description": "オフラインか、Securo が再起動中です。データは安全で、何も変更されていません。サーバーが応答し次第、自動的に再接続します。"
   },
+  "goalChart": {
+    "region": "{{name}}の進捗",
+    "title": "履歴と予測",
+    "historyFailed": "履歴を読み込めませんでした。予測には目標の現在の金額を使用します。",
+    "retry": "再試行",
+    "loading": "履歴を読み込み中…",
+    "hidden": "プライバシーモードではグラフが非表示になります",
+    "chartLabel": "{{name}}の履歴と予測（{{currency}}）",
+    "target": "目標",
+    "today": "今日",
+    "deadline": "期限",
+    "actual": "過去の金額",
+    "projected": "予測",
+    "current": "現在の金額",
+    "notes": {
+      "missing": "この期間の利用可能な履歴データが返されませんでした。",
+      "currency": "この目標の通貨では履歴を利用できません。予測には目標の現在の金額を使用し、為替レートは仮定しません。"
+    }
+  },
   "documentAi": {
     "reading": "ドキュメントを読み取り中…",
     "readingHint": "{{model}} が読み取っています。1分ほどかかる場合があります。",
@@ -4219,5 +4371,132 @@
       "turnedOff": "ドキュメントの読み取りをオフにしました"
     },
     "unreadPages": "読み取れなかったページ (スキャンで、モデルが画像を読めません): {{pages}}。これらの行はこの確認に含まれていません。"
+  },
+  "notifications": {
+    "title": "通知",
+    "unread": "未読",
+    "unreadLabel": "通知、未読{{number}}件",
+    "markAllRead": "すべて既読にする",
+    "empty": "対応が必要なものはありません。",
+    "loadError": "通知を読み込めませんでした。",
+    "connection": {
+      "title": "{{name}}の同期が停止しました",
+      "rateLimited": "銀行の1日の上限に達する状態が続いています。"
+    },
+    "recurring": {
+      "title": "{{name}}が作成されませんでした",
+      "detail": "期日は{{date}}でした。口座と設定を確認してください。"
+    },
+    "budget": {
+      "close": "{{name}}：予算の{{percent}}%を使用",
+      "reached": "{{name}}：予算を使い切りました",
+      "detail": "{{budget}}のうち{{actual}}"
+    },
+    "backup": {
+      "title": "スケジュールされたバックアップに失敗しました",
+      "detail": "最後の試行は{{date}}です。Securoが再試行します。"
+    },
+    "seeAll": "すべての通知を見る",
+    "markRead": "既読にする",
+    "loadMore": "さらに読み込む",
+    "filter": {
+      "all": "すべて",
+      "unread": "未読"
+    },
+    "emptyFilter": {
+      "all": "通知はまだありません。",
+      "unread": "未読の通知はありません。"
+    },
+    "flag": {
+      "title": "期限切れのリマインダー：{{number}}",
+      "detail": "リマインダーの日付を過ぎたフラグ付き取引があります。"
+    },
+    "match": {
+      "title": "確認待ちの照合：{{number}}",
+      "detail": "照合の候補が見つかりました。回答が必要です。"
+    },
+    "invoice": {
+      "title": "{{name}}：請求書の期限切れ",
+      "detail": "{{amount}}、期日は{{date}}でした。"
+    },
+    "preferences": {
+      "title": "設定",
+      "hint": "このワークスペースで受け取る通知を選びます。他のメンバーの選択には影響しません。",
+      "saveError": "選択を保存できませんでした。",
+      "loadError": "設定を読み込めませんでした。"
+    },
+    "kind": {
+      "connection_error": {
+        "label": "接続",
+        "hint": "銀行またはプラグインの同期が停止したとき。"
+      },
+      "budget_threshold": {
+        "label": "予算",
+        "hint": "予算が80%または100%に達したとき。"
+      },
+      "recurring_failed": {
+        "label": "定期取引",
+        "hint": "定期取引が作成されなかったとき。"
+      },
+      "flag_overdue": {
+        "label": "リマインダー",
+        "hint": "フラグ付き取引がリマインダーの日付を過ぎたとき。"
+      },
+      "reconciliation_pending": {
+        "label": "確認待ちの照合",
+        "hint": "照合の候補が見つかりました。回答が必要です。"
+      },
+      "invoice_overdue": {
+        "label": "請求書",
+        "hint": "顧客への請求書が期限を過ぎたとき。"
+      },
+      "group_expense": {
+        "label": "共有支出",
+        "hint": "グループであなたと分担する支出が追加または変更されたとき。"
+      },
+      "group_settlement": {
+        "label": "グループの支払い",
+        "hint": "グループであなた宛て、またはあなたからの支払いが記録されたとき。"
+      },
+      "backup_failed": {
+        "label": "バックアップ",
+        "hint": "スケジュールされたバックアップに失敗したとき。"
+      }
+    },
+    "group": {
+      "added": "{{actor}}が{{name}}を追加しました",
+      "changed": "{{actor}}が{{name}}を変更しました",
+      "batch": "{{actor}}が共有支出を追加しました：{{number}}件",
+      "share": "{{group}}でのあなたの負担：{{amount}}",
+      "paid": "{{actor}}が支払いを記録しました"
+    }
+  },
+  "accessLog": {
+    "title": "アクセスログ",
+    "description": "あなたのアカウントと、あなたが所有するワークスペースのメンバーに対するすべての管理者操作。",
+    "empty": "管理者操作は記録されていません。",
+    "actionUpdate": "アカウントを更新しました",
+    "actionDelete": "アカウントを削除しました",
+    "actionOther": "アカウントを更新しました",
+    "by": "実行者: {{email}}",
+    "target": "アカウント: {{email}}",
+    "ip": "IP {{ip}}",
+    "loadMore": "さらに読み込む",
+    "loadError": "アクセスログを読み込めませんでした。",
+    "emailChange": "アドレス {{from}} → {{to}}",
+    "emailPending": "アカウント所有者の確認待ち",
+    "otherChanges": "ほかの変更: {{fields}}"
+  },
+  "emailChange": {
+    "title": "メールアドレスの変更",
+    "description": "管理者がアカウントのアドレスを {{email}} に変更するよう申請しました。確認するまで、アカウントは現在のアドレスを保持します。",
+    "accept": "新しいアドレスを承認",
+    "decline": "現在のアドレスを保持",
+    "accepted": "アカウントは {{email}} を使用するようになりました",
+    "declined": "アカウントは現在のアドレスを保持します",
+    "unavailable": "そのアドレスは利用できなくなりました",
+    "failed": "決定を記録できませんでした",
+    "replaced": "管理者が新しいリクエストを送信しました。承諾する前に新しいアドレスを確認してください",
+    "withdrawn": "リクエストは取り下げられました。アカウントは現在のアドレスを維持します"
   }
 }

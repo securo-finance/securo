@@ -1,6 +1,7 @@
 # backend/app/services/rule_service.py
 import uuid
 from collections.abc import Iterable
+from dataclasses import dataclass
 from typing import Optional
 
 from sqlalchemy import delete, select
@@ -749,6 +750,7 @@ async def preview_rules_for_transaction(
     *,
     skip_description: bool = False,
     skip_payee: bool = False,
+    workspace_rules: "WorkspaceRules | None" = None,
 ) -> Transaction:
     """Apply active rules to a detached preview and return it without persistence."""
     preview = _rule_preview(transaction)
@@ -759,6 +761,7 @@ async def preview_rules_for_transaction(
         skip_category_rules=skip_category_rules,
         skip_description=skip_description,
         skip_payee=skip_payee,
+        workspace_rules=workspace_rules,
     )
     return preview
 
@@ -910,12 +913,49 @@ async def get_transfer_unsafe_category_ids(
     return set(result.scalars().all())
 
 
+@dataclass(frozen=True)
+class WorkspaceRules:
+    """What every rule pass in one workspace reads, loaded once for a batch.
+
+    A batch (an import) runs the rules on each of its rows, and the rules,
+    the payees they name and the categories they may file under do not
+    change between rows; asking for them again per row was most of an
+    import's queries (#1919).
+    """
+
+    workspace_id: uuid.UUID
+    rules: tuple[Rule, ...]
+    existing_payee_ids: frozenset[uuid.UUID]
+    assignable_category_ids: frozenset[uuid.UUID]
+
+
+async def load_workspace_rules(
+    session: AsyncSession, workspace_id: uuid.UUID
+) -> WorkspaceRules:
+    """The active rules of a workspace and what they check, for a batch."""
+    result = await session.execute(
+        select(Rule)
+        .where(Rule.workspace_id == workspace_id, Rule.is_active == True)
+        .order_by(Rule.priority, Rule.id)
+    )
+    rules = tuple(result.scalars().all())
+    return WorkspaceRules(
+        workspace_id=workspace_id,
+        rules=rules,
+        existing_payee_ids=frozenset(await get_existing_rule_payee_ids(session, rules)),
+        assignable_category_ids=frozenset(
+            await get_assignable_category_ids(session, workspace_id)
+        ),
+    )
+
+
 async def apply_rules_to_transaction(
     session: AsyncSession, user_id: uuid.UUID, transaction: Transaction,
     skip_category_rules: bool = False,
     *,
     skip_description: bool = False,
     skip_payee: bool = False,
+    workspace_rules: WorkspaceRules | None = None,
 ) -> None:
     """Apply all active rules to a transaction, modifying it in-place. Commits nothing.
 
@@ -923,17 +963,33 @@ async def apply_rules_to_transaction(
     haven't been migrated to pass workspace_id directly; rules are scoped by
     workspace via the transaction's own workspace_id when available, falling
     back to the legacy user filter so historical rows still match.
+
+    `workspace_rules`, from `load_workspace_rules` for the transaction's own
+    workspace, spares a batch the same lookups on every row.
     """
-    rule_filter = Rule.user_id == user_id
-    if getattr(transaction, "workspace_id", None) is not None:
-        rule_filter = Rule.workspace_id == transaction.workspace_id
-    result = await session.execute(
-        select(Rule)
-        .where(rule_filter, Rule.is_active == True)
-        .order_by(Rule.priority, Rule.id)
-    )
-    rules = result.scalars().all()
-    existing_payees = await get_existing_rule_payee_ids(session, rules)
+    workspace_id = getattr(transaction, "workspace_id", None)
+    if workspace_rules is not None and workspace_rules.workspace_id == workspace_id:
+        rules = workspace_rules.rules
+        existing_payees = workspace_rules.existing_payee_ids
+        assignable_categories = workspace_rules.assignable_category_ids
+    else:
+        rule_filter = Rule.user_id == user_id
+        if workspace_id is not None:
+            rule_filter = Rule.workspace_id == workspace_id
+        result = await session.execute(
+            select(Rule)
+            .where(rule_filter, Rule.is_active == True)
+            .order_by(Rule.priority, Rule.id)
+        )
+        rules = result.scalars().all()
+        existing_payees = await get_existing_rule_payee_ids(session, rules)
+        # None means "do not filter": a transaction with no workspace at hand
+        # has no category list to check against.
+        assignable_categories = (
+            await get_assignable_category_ids(session, workspace_id)
+            if workspace_id is not None
+            else None
+        )
 
     # A row split across categories is categorized: its lines hold the
     # categories and its own category_id stays null.
@@ -941,13 +997,6 @@ async def apply_rules_to_transaction(
         transaction.category_id is not None
         or transaction.has_category_lines
         or skip_category_rules
-    )
-    # None means "do not filter": a transaction with no workspace at hand
-    # has no category list to check against.
-    assignable_categories = (
-        await get_assignable_category_ids(session, transaction.workspace_id)
-        if getattr(transaction, "workspace_id", None) is not None
-        else None
     )
     transfer_unsafe_categories = await get_transfer_unsafe_category_ids(
         session, getattr(transaction, "workspace_id", None), [transaction]

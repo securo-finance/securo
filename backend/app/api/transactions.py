@@ -12,7 +12,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.app_clock import app_today
-from app.core.currency import normalize_currency_code
+from app.core.currency import UnsupportedCurrency, normalize_currency_code
 from app.core.database import get_async_session
 from app.core.money import MoneyOutOfRange
 from app.core.workspace_context import (
@@ -34,6 +34,13 @@ from app.services._query_filters import reporting_date_value
 from app.services.viewer_currency import viewer_currency
 
 router = APIRouter(prefix="/api/transactions", tags=["transactions"])
+
+# The month grid builds its edges with date arithmetic and, for a future
+# month, carries every recurring occurrence since today. The farther the
+# requested month, the longer one worker stays on the request, and a month at
+# the ends of the supported calendar overflows the date math. Fifty years past
+# today is beyond any planning horizon and keeps that walk short (#598).
+_MAX_CALENDAR_MONTH_YEARS = 50
 
 # Text columns go through `_csv_safe` (app.services.csv_safety): a spreadsheet
 # evaluates any cell that starts with a formula leader, so a description like
@@ -349,6 +356,19 @@ async def transaction_calendar(
     ctx: WorkspaceContext = Depends(current_workspace),
     session: AsyncSession = Depends(get_async_session),
 ):
+    if month is not None:
+        # Refuse before any date math or occurrence walk: a month at the ends
+        # of the calendar used to overflow into a 500, and a far future month
+        # kept the worker counting for minutes. Compared by year, since the
+        # grid ignores the day (#598).
+        today = app_today()
+        if abs(month.year - today.year) > _MAX_CALENDAR_MONTH_YEARS:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"month must be within {_MAX_CALENDAR_MONTH_YEARS} years of today"
+                ),
+            )
     return await get_transaction_calendar(
         session,
         ctx.workspace.id,
@@ -691,6 +711,8 @@ async def create_installment_series(
         created = await transaction_service.create_installment_series(
             session, ctx.workspace.id, ctx.user_id, data
         )
+    except UnsupportedCurrency as e:
+        raise HTTPException(status_code=422, detail=str(e))
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     return await _read_all_in_viewer_currency(
@@ -711,7 +733,7 @@ async def create_transaction(
         full_tx = await transaction_service.get_transaction(session, transaction.id, ctx.workspace.id)
         primary_currency = ctx.user.primary_currency
         return await _read_in_viewer_currency(session, primary_currency, full_tx)
-    except MoneyOutOfRange as e:
+    except (MoneyOutOfRange, UnsupportedCurrency) as e:
         raise HTTPException(status_code=422, detail=str(e))
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
@@ -730,7 +752,7 @@ async def update_transaction(
         )
     except PermissionError as e:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
-    except MoneyOutOfRange as e:
+    except (MoneyOutOfRange, UnsupportedCurrency) as e:
         raise HTTPException(status_code=422, detail=str(e))
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))

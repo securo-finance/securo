@@ -21,6 +21,14 @@ class FxProviderNotConfigured(ValueError):
     """
 
 
+class FxProviderQuotaExceeded(ValueError):
+    """The provider answered 429: the plan's request quota is spent.
+
+    Its own type lets the caller back off for a while and say so once,
+    instead of retrying the same request on every conversion (issue #624).
+    """
+
+
 class _RedactAppId(logging.Filter):
     def filter(self, record: logging.LogRecord) -> bool:
         if isinstance(record.args, tuple):
@@ -71,6 +79,8 @@ class OpenExchangeRatesProvider(FxRateProvider):
         try:
             async with httpx.AsyncClient(timeout=30) as client:
                 resp = await client.get(f"{BASE_URL}/{path}", params=params)
+                if resp.status_code == 429:
+                    raise FxProviderQuotaExceeded("exchange-rate provider quota exceeded")
                 resp.raise_for_status()
                 data = resp.json()
         except httpx.HTTPError:

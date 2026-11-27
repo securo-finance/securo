@@ -9,7 +9,7 @@ from app.models.group import GroupMember
 from app.services import transaction_service
 from app.services._query_filters import reporting_date_value
 from mcp_server.auth import CallContext
-from mcp_server.registry import tool
+from mcp_server.registry import ToolInputError, tool
 from mcp_server.tools._helpers import num, parse_date, parse_uuid, parse_uuid_list, resolve_workspace_id
 
 
@@ -22,7 +22,7 @@ def _normalize_status(status: str | None) -> str | None:
         return None
     key = status.strip().lower()
     if key not in _STATUS_ALIASES:
-        raise ValueError("status must be one of: posted, pending, all")
+        raise ToolInputError("status must be one of: posted, pending, all")
     return _STATUS_ALIASES[key]
 
 
@@ -31,7 +31,7 @@ def _normalize_tx_type(tx_type: str | None) -> str | None:
         return None
     key = tx_type.strip().lower()
     if key not in _TX_TYPE_ALIASES:
-        raise ValueError("tx_type must be one of: debit, credit")
+        raise ToolInputError("tx_type must be one of: debit, credit, expense, income")
     return _TX_TYPE_ALIASES[key]
 
 
@@ -93,7 +93,11 @@ def _normalize_tx_type(tx_type: str | None) -> str | None:
                 "exclusiveMinimum": 0,
                 "description": "Maximum absolute amount (primary-currency view).",
             },
-            "tx_type": {"type": "string", "enum": ["debit", "credit"], "description": "debit = expense, credit = income"},
+            "tx_type": {
+                "type": "string",
+                "enum": ["debit", "credit", "expense", "income"],
+                "description": "debit (or expense) = money out, credit (or income) = money in.",
+            },
             "status": {"type": "string", "enum": ["posted", "pending", "all"], "description": "Filter by posting status: posted = settled, pending = not yet settled, all (or omitted) = both."},
             "uncategorized": {"type": "boolean", "default": False, "description": "Only transactions without a category"},
             "exclude_transfers": {"type": "boolean", "default": False, "description": "Exclude transfers between user's own accounts"},

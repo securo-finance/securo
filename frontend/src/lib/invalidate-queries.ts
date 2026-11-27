@@ -22,6 +22,7 @@ export function invalidateFinancialQueries(queryClient: QueryClient) {
   queryClient.invalidateQueries({ queryKey: ['accounts'] })
   queryClient.invalidateQueries({ queryKey: ['budgets'] })
   queryClient.invalidateQueries({ queryKey: ['reports'] })
+  queryClient.invalidateQueries({ queryKey: ['goals'] })
   queryClient.invalidateQueries({ queryKey: ['drill-down'] })
   queryClient.invalidateQueries({ queryKey: ['goals'] })
   // Recurring price history is derived from linked transaction rows, so a
@@ -33,9 +34,24 @@ export function invalidateFinancialQueries(queryClient: QueryClient) {
   queryClient.invalidateQueries({ queryKey: ['recurring', 'price-history'] })
 }
 
-/** What a bank sync can change: its connections, the money views and the assets it holds. */
+// A bank sync (native, plugin or a new connection) can change its connections,
+// the money views and the investment side: holdings, their values and, once
+// trades are mirrored, each holding's trade ledger and the Performance tab
+// built from it. Refresh all of them so nothing waits for staleTime or a reload.
 export function invalidateSyncedRecords(queryClient: QueryClient) {
-  queryClient.invalidateQueries({ queryKey: ['connections'] })
-  queryClient.invalidateQueries({ queryKey: ['assets'] })
   invalidateFinancialQueries(queryClient)
+  for (const key of [
+    'connections',
+    'assets',
+    'asset-groups',
+    'asset-values',
+    'asset-trend',
+    'asset-transactions',
+    'portfolio-trend',
+    'asset-performance',
+    'holding-trade-import',
+    'import-logs',
+  ]) {
+    queryClient.invalidateQueries({ queryKey: [key] })
+  }
 }
