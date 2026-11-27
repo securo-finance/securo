@@ -55,10 +55,10 @@ describe('usePrivacyMode', () => {
 
     act(() => result.current.togglePrivacyMode())
 
-    expect(result.current.mask('R$ 12.480,00')).toBe(result.current.MASK)
-    expect(result.current.mask('-R$ 3,20')).toBe(result.current.MASK)
     // The mask must not leak the length of what it hides.
-    expect(result.current.mask('R$ 1,00')).toBe(result.current.mask('R$ 999.999,00'))
+    expect(result.current.mask('R$ 12.480,00')).toBe('\u2022\u2022\u2022\u2022\u2022')
+    expect(result.current.mask('-R$ 3,20')).toBe('\u2022\u2022\u2022\u2022\u2022')
+    expect(result.current.mask('R$ 1,00')).toBe('\u2022\u2022\u2022\u2022\u2022')
   })
 
   it('keeps every subscriber in step, so one toggle hides the whole screen', () => {

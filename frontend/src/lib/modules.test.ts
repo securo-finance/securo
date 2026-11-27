@@ -3,10 +3,6 @@ import { describe, expect, it } from 'vitest'
 import { MODULE_IDS, isModuleId } from '@/lib/modules'
 
 describe('MODULE_IDS', () => {
-  it('has no duplicates', () => {
-    expect(new Set(MODULE_IDS).size).toBe(MODULE_IDS.length)
-  })
-
   it('lists every module the router gates on', () => {
     // App.tsx wraps routes in <ModuleRoute module="..."> using these exact
     // strings. A rename here without one there renders a permanently

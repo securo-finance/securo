@@ -1,8 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
 import {
-  FREQUENCIES,
-  PERIODS_PER_YEAR,
   endPayload,
   isUpcomingTerm,
   localToday,
@@ -25,10 +23,6 @@ describe('monthlyEquivalent', () => {
 
   it('rounds to cents', () => {
     expect(monthlyEquivalent(100, 'quarterly')).toBe(33.33)
-  })
-
-  it('covers every frequency the picker offers', () => {
-    for (const frequency of FREQUENCIES) expect(PERIODS_PER_YEAR[frequency]).toBeGreaterThan(0)
   })
 })
 

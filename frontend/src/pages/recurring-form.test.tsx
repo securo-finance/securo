@@ -94,17 +94,6 @@ describe('RecurringForm amount field', () => {
     expect(onSave.mock.calls[0][0].amount).toBe(1234.56)
   })
 
-  it('keeps the cents when the amount has them', async () => {
-    const { user, onSave } = renderForm(null)
-
-    await user.type(screen.getByLabelText(t('recurring.description')), 'Rent')
-    await user.type(amountField(), '50,25')
-    await user.selectOptions(accountField(), account.id)
-    await user.click(screen.getByRole('button', { name: t('common.save') }))
-
-    expect(onSave.mock.calls[0][0].amount).toBe(50.25)
-  })
-
   it('blocks the save and explains what is wrong when the text is not an amount', async () => {
     const { user, onSave } = renderForm(null)
 

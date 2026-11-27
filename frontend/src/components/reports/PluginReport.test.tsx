@@ -185,6 +185,7 @@ describe('PluginReport', () => {
     renderWithProviders(
       <PluginReport entry={entry({ code: true })} startDate="2026-01-01" endDate="2026-11-20" accountIds={undefined} />,
     )
-    expect(await screen.findByRole('button', { name: t('common.retry') })).toBeInTheDocument()
+    expect(await screen.findByText("RuntimeError: the numbers don't add up")).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: t('common.retry') })).toBeInTheDocument()
   })
 })

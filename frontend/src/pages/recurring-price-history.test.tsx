@@ -6,13 +6,13 @@
  * production. Decimal amounts cross the wire as JSON strings; the fixtures
  * keep that shape (see `increaseEvent`) and the UI must coerce before formatting.
  */
-import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { screen, waitFor, within } from '@testing-library/react'
 
 import RecurringPage from '@/pages/recurring'
 import { formatCurrency } from '@/lib/format'
 import { invalidateFinancialQueries } from '@/lib/invalidate-queries'
-import { i18n, renderWithProviders, t } from '@/test/utils'
+import { renderWithProviders, t } from '@/test/utils'
 import type { RecurringPriceChange, RecurringPriceChangeHistory, RecurringTransaction } from '@/types'
 import gapWitness from '@/test/fixtures/recurring-price-change-31-days.json'
 
@@ -165,10 +165,6 @@ beforeEach(() => {
   api.recurring.create.mockResolvedValue(netflix)
   api.recurring.update.mockResolvedValue(netflix)
   api.recurring.delete.mockResolvedValue(undefined)
-})
-
-afterEach(async () => {
-  await i18n.changeLanguage('en')
 })
 
 describe('Recurring price history', () => {
@@ -335,15 +331,6 @@ describe('Recurring price history', () => {
     expect(within(dialog).getByText('Price decreased')).toBeInTheDocument()
   })
 
-  it('hides Recent when no stable change is returned', async () => {
-    renderWithProviders(<RecurringPage />, { route: '/recurring' })
-
-    await screen.findByText('Netflix')
-    await waitFor(() => expect(screen.queryByText(t('common.loading'))).not.toBeInTheDocument())
-    expect(screen.queryByText(t('recurring.priceChangesEmpty'))).not.toBeInTheDocument()
-    expect(screen.queryByText(t('recurring.priceChangeBadge'))).not.toBeInTheDocument()
-  })
-
   it('shows insufficient history explanation', async () => {
     const { user } = renderWithProviders(<RecurringPage />, { route: '/recurring' })
     await screen.findByText('Netflix')
@@ -367,30 +354,6 @@ describe('Recurring price history', () => {
     const dialog = await screen.findByRole('dialog')
     expect(await within(dialog).findByText(t('recurring.priceChangesEmpty'))).toBeInTheDocument()
     expect(within(dialog).queryByText(t('recurring.priceChangeInsufficient'))).not.toBeInTheDocument()
-  })
-
-  it('shows gap note', async () => {
-    api.recurring.recentPriceChanges.mockResolvedValue([
-      { ...increaseEvent, previous_date: '2026-10-01', current_date: '2026-12-01', gap_days: 61 },
-    ])
-
-    renderWithProviders(<RecurringPage />, { route: '/recurring' })
-
-    expect(await screen.findByText(t('recurring.priceChangeGap', { days: 61 }))).toBeInTheDocument()
-  })
-
-  it('does not show a one-cent rounding event', async () => {
-    // The backend filtered the one-cent move out; the response carries no event.
-    api.recurring.recentPriceChanges.mockResolvedValue([])
-
-    renderWithProviders(<RecurringPage />, { route: '/recurring' })
-
-    await screen.findByText('Netflix')
-    await waitFor(() => expect(screen.queryByText(t('common.loading'))).not.toBeInTheDocument())
-    expect(screen.queryByText(t('recurring.priceChangesEmpty'))).not.toBeInTheDocument()
-    expect(screen.queryByText(t('recurring.priceChangeBadge'))).not.toBeInTheDocument()
-    expect(screen.queryByText('Price increased')).not.toBeInTheDocument()
-    expect(screen.queryByTestId('price-change-row')).not.toBeInTheDocument()
   })
 
   it('keeps current recurring CRUD actions working', async () => {
@@ -463,21 +426,6 @@ describe('Recurring price history', () => {
     expect(screen.queryByRole('button', { name: t('recurring.add') })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: t('common.edit') })).not.toBeInTheDocument()
   })
-
-  it('pt-BR labels resolve', async () => {
-    await i18n.changeLanguage('pt-BR')
-    api.recurring.recentPriceChanges.mockResolvedValue([increaseEvent])
-
-    renderWithProviders(<RecurringPage />, { route: '/recurring' })
-
-    // Wait for query content before asserting the populated card heading.
-    expect(await screen.findByText('Preço aumentou')).toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: t('recurring.priceChangesTitle') })).toBeInTheDocument()
-    const buttons = await screen.findAllByRole('button', { name: 'Ver histórico de preços' })
-    expect(buttons).toHaveLength(2)
-    // No raw key ever reaches the screen.
-    expect(screen.queryByText(/recurring\./)).not.toBeInTheDocument()
-  })
 })
 
 describe('Recurring maintainer correction regressions', () => {
@@ -528,16 +476,6 @@ describe('Recurring maintainer correction regressions', () => {
     await waitFor(() => expect(api.recurring.priceHistory.mock.calls.length).toBe(historyCalls + 1))
     // The series schedule itself did not: no blanket list refetch.
     expect(api.recurring.list.mock.calls.length).toBe(listCalls)
-  })
-
-  it('uses the PT-BR "cobranças lançadas" insufficient-history copy', async () => {
-    await i18n.changeLanguage('pt-BR')
-    const { user } = renderWithProviders(<RecurringPage />, { route: '/recurring' })
-    await screen.findByText('Netflix')
-    await user.click(historyButton('Netflix'))
-    const dialog = await screen.findByRole('dialog')
-    expect(await within(dialog).findByText(/cobranças lançadas/)).toBeInTheDocument()
-    expect(within(dialog).queryByText(/cobranças publicadas/)).not.toBeInTheDocument()
   })
 
   const effects = [

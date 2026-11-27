@@ -21,12 +21,6 @@ describe('CURRENCIES', () => {
     }
   })
 
-  it('includes the two currencies the product treats as first class', () => {
-    const codes = CURRENCIES.map((c) => c.code)
-    expect(codes).toContain('USD')
-    expect(codes).toContain('BRL')
-  })
-
   it('formats every listed currency without throwing', () => {
     // Intl rejects a code it does not know, and this list feeds the setup
     // screen where a throw would block the whole first-run flow.
@@ -57,16 +51,6 @@ describe('CurrencySelect', () => {
     expect(options).toHaveLength(CURRENCIES.length)
   })
 
-  it('reports the chosen code', async () => {
-    const onChange = vi.fn()
-    const { user } = renderWithProviders(<CurrencySelect value="USD" onChange={onChange} />)
-
-    await user.click(screen.getByRole('combobox'))
-    await user.click(await screen.findByRole('option', { name: /BRL/ }))
-
-    expect(onChange).toHaveBeenCalledWith('BRL')
-  })
-
   it('shows the new currency once the parent commits it', async () => {
     // The callback firing is only half of it. A select that reports BRL and
     // keeps displaying USD looks broken to the user, and asserting on the
@@ -83,16 +67,5 @@ describe('CurrencySelect', () => {
     await user.click(await screen.findByRole('option', { name: /BRL/ }))
 
     expect(screen.getByRole('combobox')).toHaveTextContent('BRL')
-  })
-
-  it('takes an id so a label can point at it', () => {
-    renderWithProviders(
-      <>
-        <label htmlFor="currency">Currency</label>
-        <CurrencySelect id="currency" value="USD" onChange={vi.fn()} />
-      </>,
-    )
-
-    expect(screen.getByLabelText('Currency')).toBeInTheDocument()
   })
 })

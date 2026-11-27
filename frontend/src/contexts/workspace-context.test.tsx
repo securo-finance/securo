@@ -78,14 +78,6 @@ describe('loading', () => {
     expect(workspacesApi.list).not.toHaveBeenCalled()
   })
 
-  it('survives a failed fetch without getting stuck loading', async () => {
-    workspacesApi.list.mockRejectedValue(new Error('network'))
-
-    const { result } = await renderWorkspace()
-
-    expect(result.current.workspaces).toEqual([])
-  })
-
   it('flags a failed fetch as unreachable, not as "no workspaces"', async () => {
     // Issue #292: an empty list made hasModule() false and sent module routes
     // home. The flag tells the shell the workspace is unknown, not empty.
@@ -95,6 +87,7 @@ describe('loading', () => {
 
     expect(result.current.loadFailed).toBe(true)
     expect(result.current.current).toBeNull()
+    expect(result.current.workspaces).toEqual([])
   })
 
   it('does not flag a successful fetch', async () => {

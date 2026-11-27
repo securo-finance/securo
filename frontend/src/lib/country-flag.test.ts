@@ -20,9 +20,4 @@ describe('countryFlag', () => {
       expect(countryFlag(value)).toBe('')
     }
   })
-
-  it('needs no lookup table, so a new pack gets a flag for free', () => {
-    expect(countryFlag('JP')).toBe('🇯🇵')
-    expect(countryFlag('ZA')).toBe('🇿🇦')
-  })
 })

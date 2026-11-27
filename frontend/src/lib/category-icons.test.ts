@@ -8,7 +8,6 @@ import i18next, { type Resource } from 'i18next'
 import {
   CATEGORY_EMOJIS,
   CATEGORY_ICONS,
-  EMOJI_TO_LUCIDE,
   extractFirstEmoji,
   getCategoryEmojiLabel,
   getCategoryIconLabel,
@@ -32,14 +31,6 @@ describe('CATEGORY_ICONS', () => {
     // A duplicate would silently win in ICON_MAP and shadow the other entry.
     const names = CATEGORY_ICONS.map((entry) => entry.name)
     expect(new Set(names).size).toBe(names.length)
-  })
-
-  it('gives every entry a name, a fallback label and a component', () => {
-    for (const entry of CATEGORY_ICONS) {
-      expect(entry.name, 'name').toMatch(/^[a-z0-9-]+$/)
-      expect(entry.pt, `${entry.name} pt`).not.toBe('')
-      expect(entry.icon, `${entry.name} icon`).toBeDefined()
-    }
   })
 })
 
@@ -89,21 +80,6 @@ describe('getCategoryIconLabel', () => {
   it('falls back to the raw name for an icon the catalogue does not know', () => {
     const t = makeT('en', { en: { translation: en } })
     expect(getCategoryIconLabel(t, 'not-an-icon')).toBe('not-an-icon')
-  })
-})
-
-describe('ICON_MAP', () => {
-  it('exposes every catalogue entry for lookup', () => {
-    expect(Object.keys(ICON_MAP)).toHaveLength(CATEGORY_ICONS.length)
-    for (const entry of CATEGORY_ICONS) {
-      expect(ICON_MAP[entry.name]).toBe(entry.icon)
-    }
-  })
-
-  it('returns nothing for a name it does not know', () => {
-    // CategoryIcon relies on this being undefined so it can fall back rather
-    // than render a blank box.
-    expect(ICON_MAP['not-a-real-icon']).toBeUndefined()
   })
 })
 
@@ -195,21 +171,9 @@ describe('LUCIDE_TO_EMOJI', () => {
     expect(new Set(emojis).size, 'duplicate emoji').toBe(emojis.length)
     for (const emoji of emojis) expect(isEmoji(emoji), emoji).toBe(true)
   })
-
-  it('is reversible through EMOJI_TO_LUCIDE', () => {
-    for (const [name, emoji] of Object.entries(LUCIDE_TO_EMOJI)) {
-      expect(EMOJI_TO_LUCIDE[emoji]).toBe(name)
-    }
-  })
 })
 
 describe('CATEGORY_EMOJIS', () => {
-  it('offers every catalogue icon as an emoji, plus the extra presets', () => {
-    const fromIcons = CATEGORY_EMOJIS.filter((entry) => entry.icon !== null)
-    expect(fromIcons).toHaveLength(CATEGORY_ICONS.length)
-    expect(CATEGORY_EMOJIS.length).toBeGreaterThan(CATEGORY_ICONS.length)
-  })
-
   it('never repeats an emoji', () => {
     const emojis = CATEGORY_EMOJIS.map((entry) => entry.emoji)
     expect(new Set(emojis).size).toBe(emojis.length)

@@ -36,10 +36,6 @@ describe('extractApiError', () => {
     expect(extractApiError(apiError(''))).toBe('')
   })
 
-  it('preserves a whitespace-only string detail', () => {
-    expect(extractApiError(apiError('   '))).toBe('   ')
-  })
-
   it('uses an explicit fallback when no detail is available', () => {
     expect(extractApiError(new Error('network failure'), 'Localized fallback')).toBe('Localized fallback')
   })

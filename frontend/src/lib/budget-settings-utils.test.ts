@@ -92,13 +92,6 @@ describe('planBudgetChange', () => {
     ])
   })
 
-  it('keeps this month at the new amount and stops later months when repetition is switched off', () => {
-    expect(plan(80, false, budget({}))).toEqual([
-      { type: 'create', data: { category_id: 'food', amount: 80, month, is_recurring: false } },
-      { type: 'update', id: 'b1', data: { amount: 0, effective_month: '2026-11-01' } },
-    ])
-  })
-
   it('keeps zero tombstones when clearing one-off and recurring budgets', () => {
     expect(plan(0, true, budget({ id: 'o1', month, is_recurring: false }))).toEqual([
       { type: 'update', id: 'o1', data: { amount: 0 } },

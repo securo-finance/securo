@@ -191,9 +191,7 @@ describe('formatSignedAmount', () => {
     expect(formatSignedAmount(0.004, 'debit', 'USD', 'en-US')).toBe('$0.00')
     expect(formatSignedAmount(0, 'credit', 'USD', 'en-US')).toBe('$0.00')
     // Precision follows the currency: 0.4 JPY rounds to zero.
-    expect(normalize(formatSignedAmount(0.4, 'debit', 'JPY', 'ja-JP'))).toBe(
-      normalize(formatCurrency(0, 'JPY', 'ja-JP')),
-    )
+    expect(normalize(formatSignedAmount(0.4, 'debit', 'JPY', 'ja-JP'))).toBe('￥0')
   })
 })
 

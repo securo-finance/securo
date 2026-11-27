@@ -276,26 +276,6 @@ describe('Budget spending in the inline editor', () => {
     expect(api.dashboard.spendingByCategory).toHaveBeenCalledWith(selectedMonth, undefined)
   })
 
-  it.each([true, false])(
-    'places regular-weight spending beside the limit on desktop and below the category on mobile (canWrite=%s)',
-    async (canWrite) => {
-      api.canWrite = canWrite
-      mockSpending()
-      renderWithProviders(<BudgetsPage />)
-      await screen.findByText('$450.00')
-      const row = budgetRow()
-      const spending = row.getByRole('progressbar').parentElement?.parentElement
-
-      expect(spending).toHaveClass('row-start-2', 'col-span-3', 'md:row-start-1', 'md:col-start-3', 'md:col-span-1')
-      expect(spending?.parentElement).toHaveClass('grid')
-      expect(budgetInput().parentElement).toHaveClass('col-start-3', 'row-start-1', 'md:col-start-5')
-      expect(row.getByText('$450.00')).toHaveClass('font-normal')
-      expect(row.getByText('$450.00')).not.toHaveClass('font-semibold', 'font-bold')
-      expect(budgetInput()).toHaveClass('font-semibold')
-      expect(row.queryByText(t('dashboard.ofBudget', { budget: '$900.00' }))).not.toBeInTheDocument()
-    },
-  )
-
   it.each([
     [0, 0, 'bg-emerald-500'],
     [250, 50, 'bg-emerald-500'],

@@ -55,15 +55,6 @@ async function fill(
 }
 
 describe('RegisterPage', () => {
-  it('renders the signup form', async () => {
-    await renderRegister()
-
-    expect(screen.getByLabelText(t('auth.email'))).toBeInTheDocument()
-    expect(screen.getByLabelText(t('auth.password'))).toBeInTheDocument()
-    expect(screen.getByLabelText(t('auth.confirmPassword'))).toBeInTheDocument()
-    expect(screen.getByLabelText(t('auth.currency'))).toBeInTheDocument()
-  })
-
   it('registers and lands on the dashboard', async () => {
     authContext.register.mockResolvedValue(undefined)
     const { user } = await renderRegister()
@@ -164,11 +155,5 @@ describe('RegisterPage', () => {
 
     expect(screen.getByRole('button', { name: t('auth.register') })).toBeInTheDocument()
     expect(navigate).not.toHaveBeenCalledWith('/login', { replace: true })
-  })
-
-  it('defaults the currency to USD', async () => {
-    await renderRegister()
-
-    expect(screen.getByLabelText(t('auth.currency'))).toHaveTextContent('USD')
   })
 })

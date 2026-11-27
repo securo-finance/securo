@@ -6,7 +6,7 @@ import type { Category, Rule } from '../types'
 describe('normalizeRuleMatchValue', () => {
   it('normalizes case, whitespace, and accents for duplicate checks', () => {
     expect(normalizeRuleMatchValue(' Café ')).toBe('CAFE')
-    expect(normalizeRuleMatchValue('Niño')).toBe(normalizeRuleMatchValue('nino'))
+    expect(normalizeRuleMatchValue('Niño')).toBe('NINO')
   })
 })
 

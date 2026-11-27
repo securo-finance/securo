@@ -31,7 +31,8 @@ describe('applyMask', () => {
   it('is idempotent, so re-rendering a stored value does not drift', () => {
     const mask = '##-#######'
     const once = applyMask('123456789', mask)
-    expect(applyMask(once, mask)).toBe(once)
+    expect(once).toBe('12-3456789')
+    expect(applyMask(once, mask)).toBe('12-3456789')
   })
 })
 

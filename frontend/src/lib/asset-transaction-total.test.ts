@@ -24,10 +24,8 @@ describe('asset transaction total', () => {
   })
 
   it('formats the total in the given currency', () => {
-    expect(formatTransactionTotal(100, 'BRL', 'pt-BR')).toBe(
-      new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(100),
-    )
-    expect(formatTransactionTotal(100, 'BRL', 'pt-BR')).not.toContain('US$')
+    expect(formatTransactionTotal(100, 'BRL', 'pt-BR').replace(/\s/g, ' ')).toBe('R$ 100,00')
+    expect(formatTransactionTotal(100, 'USD', 'en-US')).toBe('$100.00')
   })
 
   it('formats a bare amount when the currency is unknown', () => {

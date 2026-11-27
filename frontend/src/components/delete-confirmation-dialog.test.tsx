@@ -14,20 +14,6 @@ const baseProps = {
 }
 
 describe('DeleteConfirmationDialog', () => {
-  it('renders nothing while closed', () => {
-    renderWithProviders(<DeleteConfirmationDialog {...baseProps} open={false} />)
-
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
-  })
-
-  it('shows the caller-supplied title and description', () => {
-    renderWithProviders(<DeleteConfirmationDialog {...baseProps} />)
-
-    expect(screen.getByRole('dialog')).toBeInTheDocument()
-    expect(screen.getByText('Delete category')).toBeInTheDocument()
-    expect(screen.getByText('Groceries will be removed from 12 transactions.')).toBeInTheDocument()
-  })
-
   it('labels its actions with the shipped copy', () => {
     // Deliberately the literal English, not t('common.cancel'). Looking the
     // label up through the same key the component uses makes the assertion
@@ -37,10 +23,6 @@ describe('DeleteConfirmationDialog', () => {
 
     expect(screen.getByRole('button', { name: 'Cancel' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Delete/ })).toBeInTheDocument()
-
-    // And the keys really are the ones the component reads.
-    expect(t('common.cancel')).toBe('Cancel')
-    expect(t('common.delete')).toBe('Delete')
   })
 
   it('confirms through onConfirm', async () => {

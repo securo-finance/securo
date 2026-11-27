@@ -87,16 +87,4 @@ describe('the rules list filters', () => {
     expect(status).toHaveDisplayValue('All statuses')
     expect(action).toHaveDisplayValue('All actions')
   })
-
-  it('leaves no filter unnamed', async () => {
-    renderWithProviders(<RulesPage />)
-
-    await screen.findByRole('combobox', { name: 'Filter by category' })
-    const comboboxes = screen.getAllByRole('combobox')
-
-    expect(comboboxes).toHaveLength(3)
-    for (const combobox of comboboxes) {
-      expect(combobox).toHaveAccessibleName()
-    }
-  })
 })

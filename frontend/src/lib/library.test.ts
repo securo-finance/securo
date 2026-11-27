@@ -35,11 +35,17 @@ describe('library', () => {
       'money_map',
       'statement',
     ])
-    expect(resolveLayout('dashboard', null)).toEqual(
-      DASHBOARD_WIDGETS.filter((widget) => !widget.optional).map((widget) => ({ id: widget.id })),
-    )
-    // New widgets wait in the library instead of appearing on everyone's dashboard.
-    expect(resolveLayout('dashboard', null).map((item) => item.id)).not.toContain('spending-pace')
+    // New widgets (spending-pace and later) wait in the library instead of
+    // appearing on everyone's dashboard.
+    expect(resolveLayout('dashboard', null)).toEqual([
+      { id: 'overview' },
+      { id: 'spending-plan' },
+      { id: 'uncategorized' },
+      { id: 'spending-by-category' },
+      { id: 'balance-flow' },
+      { id: 'goals' },
+      { id: 'transactions' },
+    ])
   })
 
   it('keeps a saved arrangement, minus what this version no longer has or a width it never offers', () => {

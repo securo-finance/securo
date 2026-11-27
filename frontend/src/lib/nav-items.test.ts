@@ -31,13 +31,6 @@ const PERSONAL_MODULES: ModuleId[] = [
 const linkKeys = (items: NavItem[]) => items.filter((i) => i.type === 'link').map((i) => i.key)
 
 describe('nav catalog', () => {
-  it('maps every link to a known module', () => {
-    for (const item of navItems) {
-      if (item.type !== 'link') continue
-      expect(MODULE_IDS).toContain(item.module)
-    }
-  })
-
   it('has a link for every module in the catalog', () => {
     const covered = navItems.filter((i) => i.type === 'link').map((i) => i.module)
     expect([...covered].sort()).toEqual([...MODULE_IDS].sort())

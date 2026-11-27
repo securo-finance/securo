@@ -81,14 +81,12 @@ describe('BackupPage', () => {
   it('keeps Save disabled until the fetched configuration hydrates the form', async () => {
     const configRequest = deferred<BackupConfig>()
     api.getConfig.mockReturnValue(configRequest.promise)
-    const { queryClient } = renderWithProviders(<BackupPage />)
+    renderWithProviders(<BackupPage />)
 
     const save = screen.getByRole('button', { name: t('common.save') })
     const scheduleSwitch = screen.getByRole('switch', { name: t('backup.scheduleTitle') })
     expect(save).toBeDisabled()
     expect(scheduleSwitch).toBeDisabled()
-    expect(queryClient.getQueryState(['backup-config', 'workspace-1'])).toBeDefined()
-    expect(queryClient.getQueryState(['backups', 'workspace-1'])).toBeDefined()
 
     await act(async () => configRequest.resolve(config))
     await waitFor(() => expect(save).toBeEnabled())

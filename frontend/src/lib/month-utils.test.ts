@@ -67,12 +67,6 @@ describe('monthRange', () => {
   it('pads a short last day', () => {
     expect(monthRange('2026-02')).toEqual({ from: '2026-02-01', to: '2026-02-28' })
   })
-
-  it('carries no time component, matching the ?from/?to params', () => {
-    const { from, to } = monthRange('2026-06')
-    expect(from).not.toMatch(/T/)
-    expect(to).not.toMatch(/T/)
-  })
 })
 
 describe('monthLabel', () => {

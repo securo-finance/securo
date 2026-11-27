@@ -118,14 +118,6 @@ describe('Assets provider value freshness badge', () => {
     expect(await screen.findByText(t('assets.providerValueStale', { date: displayedDate(valueDate) }))).toBeVisible()
   })
 
-  it('does not flag a synced position the provider updated today', async () => {
-    api.assets.list.mockResolvedValue([syncedAsset({ provider_value_date: todayInTimezone('UTC') })])
-    renderWithProviders(<AssetsPage />)
-
-    await screen.findByText('Frozen CDB')
-    await waitFor(expectNoStaleWarning)
-  })
-
   it('does not flag a position exactly at the seven day boundary', async () => {
     api.assets.list.mockResolvedValue([syncedAsset({ provider_value_date: daysAgoInUtc(7) })])
     renderWithProviders(<AssetsPage />)

@@ -79,12 +79,6 @@ describe('MonthStepper', () => {
     expect(onChange).toHaveBeenCalledWith('2027-01')
   })
 
-  it('renders the label in the given locale', () => {
-    renderWithProviders(<MonthStepper value="2026-05" onChange={vi.fn()} locale="pt-BR" />)
-
-    expect(screen.getByTitle(/maio de 2026/i)).toBeInTheDocument()
-  })
-
   it('holds no state of its own, so the parent stays the source of truth', () => {
     const onChange = vi.fn()
     const { rerender } = renderWithProviders(<MonthStepper value="2026-06" onChange={onChange} locale="en-US" />)

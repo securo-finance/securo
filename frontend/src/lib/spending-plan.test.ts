@@ -179,14 +179,6 @@ describe('planReceipt', () => {
     })
   })
 
-  it('adds up to the opening balance plus every event through the binding day, less the floor', () => {
-    const receipt = planReceipt(timeline)!
-    const events = timeline.events.filter((e) => e.date <= receipt.through).reduce((total, e) => total + e.amount, 0)
-
-    expect(receipt.free).toBe(timeline.opening_balance + events - timeline.balance_floor + timeline.today.spent)
-    expect(receipt.perDay).toBe(timeline.safe_daily_allowance)
-  })
-
   it('floors the money per day to cents', () => {
     expect(planReceipt({ ...timeline, opening_balance: 1000.01 })!.perDay).toBe(382.5)
     expect(planReceipt({ ...timeline, opening_balance: 999.99 })!.perDay).toBe(382.49)

@@ -14,17 +14,14 @@ const baseAsset = {
 
 describe('getAssetProfit', () => {
   it('uses the purchase price for a manually valued asset', () => {
-    expect(
-      getAssetProfit({
-        ...baseAsset,
-        gain_loss: 446.45,
-        purchase_price: 3679,
-        value_count: 1,
-      }),
-    ).toEqual({
-      amount: 446.45,
-      percentage: (446.45 / 3679) * 100,
+    const profit = getAssetProfit({
+      ...baseAsset,
+      gain_loss: 446.45,
+      purchase_price: 3679,
+      value_count: 1,
     })
+    expect(profit?.amount).toBe(446.45)
+    expect(profit?.percentage).toBeCloseTo(12.135, 3)
   })
 
   it('uses the ledger cost basis for a held market asset', () => {

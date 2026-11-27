@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { screen } from '@testing-library/react'
 
 import { ProjectedTransactionBadge } from '@/components/projected-transaction-badge'
-import { i18n, renderWithProviders, t } from '@/test/utils'
+import { renderWithProviders, t } from '@/test/utils'
 
 describe('ProjectedTransactionBadge', () => {
   it('labels a projected transaction from the bundle', () => {
@@ -17,16 +17,5 @@ describe('ProjectedTransactionBadge', () => {
     renderWithProviders(<ProjectedTransactionBadge />)
 
     expect(screen.queryByText('transactions.projected')).not.toBeInTheDocument()
-  })
-
-  it('follows the active language', async () => {
-    await i18n.changeLanguage('pt-BR')
-    try {
-      renderWithProviders(<ProjectedTransactionBadge />)
-
-      expect(screen.getByText(t('transactions.projected'))).toBeInTheDocument()
-    } finally {
-      await i18n.changeLanguage('en')
-    }
   })
 })

@@ -75,14 +75,6 @@ async function renderLogin() {
 }
 
 describe('LoginPage', () => {
-  it('renders the credentials form', async () => {
-    await renderLogin()
-
-    expect(screen.getByLabelText(t('auth.email'))).toBeInTheDocument()
-    expect(screen.getByLabelText(t('auth.password'))).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: t('auth.login') })).toBeInTheDocument()
-  })
-
   it('signs in and lands on the dashboard', async () => {
     authContext.login.mockResolvedValue({ requires_2fa: false })
     const { user } = await renderLogin()

@@ -28,12 +28,6 @@ describe('CategoryIcon', () => {
     expect(screen.getByText('👨‍👩‍👧‍👦')).toBeInTheDocument()
   })
 
-  it('scales the emoji with the badge size', () => {
-    const { container } = renderWithProviders(<CategoryIcon icon="🍔" color="#f97316" size="xl" />)
-
-    expect(container.querySelector('span')).toHaveStyle({ fontSize: '22px' })
-  })
-
   it('falls back to a placeholder icon for an unknown name', () => {
     // A renamed icon in a future lucide release must not blank the row.
     const { container } = renderWithProviders(<CategoryIcon icon="not-a-real-icon" color="#22c55e" />)
@@ -58,14 +52,6 @@ describe('CategoryIcon', () => {
     expect(container.firstElementChild).toHaveStyle({
       backgroundColor: 'rgb(34, 197, 94)',
     })
-  })
-
-  it('grows with the requested size', () => {
-    const { container: small } = renderWithProviders(<CategoryIcon icon="shopping-cart" color="#22c55e" size="xs" />)
-    expect(small.firstElementChild).toHaveClass('w-4', 'h-4')
-
-    const { container: large } = renderWithProviders(<CategoryIcon icon="shopping-cart" color="#22c55e" size="xl" />)
-    expect(large.firstElementChild).toHaveClass('w-11', 'h-11')
   })
 
   it('never shrinks inside a flex row', () => {

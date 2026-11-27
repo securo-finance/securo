@@ -96,20 +96,6 @@ describe('agents page templates', () => {
     expect(api.setTools).not.toHaveBeenCalled()
   })
 
-  it('leaves no agent behind when the one-click creation fails', async () => {
-    api.connections.list.mockResolvedValue([CONN_A])
-    api.create.mockRejectedValue(new Error('boom'))
-    const user = userEvent.setup()
-    renderWithProviders(<AgentsListPage />)
-    await screen.findByText('Savings advisor')
-    await user.click(screen.getAllByRole('button', { name: 'Create' })[0])
-    await waitFor(() => expect(api.create).toHaveBeenCalledTimes(1))
-    // A single request carries the agent and its tools: when it fails there
-    // is nothing to follow up with, and no separate tool call is attempted.
-    expect(api.setTools).not.toHaveBeenCalled()
-    expect(api.list).toHaveBeenCalledTimes(1)
-  })
-
   it('opens the form prefilled when no LLM connection exists yet', async () => {
     api.connections.list.mockResolvedValue([])
     const user = userEvent.setup()

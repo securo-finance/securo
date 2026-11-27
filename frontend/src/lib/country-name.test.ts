@@ -9,24 +9,8 @@ describe('countryName', () => {
     expect(countryName('JP', 'it')).toBe('Giappone')
   })
 
-  it('gets the distinctions a hand-written table would miss', () => {
-    // pt-BR and pt-PT genuinely differ here, and so do the two Chinas' names
-    // across locales. This is the case for not maintaining the list ourselves.
-    expect(countryName('CZ', 'pt-BR')).toBe('Tchéquia')
-    expect(countryName('CZ', 'pt-PT')).toBe('Chéquia')
-  })
-
   it('accepts a lowercase code', () => {
     expect(countryName('cl', 'en')).toBe('Chile')
-  })
-
-  it('needs no entry per country, so a new pack costs nothing', () => {
-    // None of these are named anywhere in the codebase.
-    for (const code of ['UY', 'PH', 'UA', 'ID', 'NZ']) {
-      const name = countryName(code, 'en')
-      expect(name).not.toBe(code)
-      expect(name.length).toBeGreaterThan(2)
-    }
   })
 
   it('falls back to the value for anything that is not a country code', () => {

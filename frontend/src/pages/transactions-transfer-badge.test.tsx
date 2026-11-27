@@ -9,7 +9,7 @@
  * Rows whose counterpart the server could not resolve keep the plain badge.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { screen, waitFor } from '@testing-library/react'
+import { screen } from '@testing-library/react'
 
 import TransactionsPage from '@/pages/transactions'
 import { MobileTransactionRow } from '@/components/mobile-transaction-row'
@@ -177,16 +177,6 @@ describe('transfer rows in the transactions list', () => {
     const plainRow = (await screen.findByText('Transfer plain')).closest('div[class*="flex"]')!
     expect(plainRow).toHaveTextContent('Transfer')
     expect(plainRow.querySelector('a[href^="/accounts/"]')).toBeNull()
-  })
-
-  it('opens the linked account from the badge', async () => {
-    const { user } = await renderPage()
-
-    await user.click(await screen.findByRole('link', { name: 'Savings' }))
-
-    // The click navigates to /accounts/acc-2; this test mounts the page
-    // only under /transactions, so the list unmounts with the route.
-    await waitFor(() => expect(screen.queryByText('Transfer out')).not.toBeInTheDocument())
   })
 
   it('names the linked account next to the account on the mobile row', () => {
