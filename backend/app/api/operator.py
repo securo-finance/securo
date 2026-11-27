@@ -45,8 +45,20 @@ class QuotaValues(BaseModel):
     max_members_per_workspace: Limit = Field(default=None, ge=0, le=_INT32_MAX)
 
 
+LimitsSource = quota_service.Source
+
+
 class QuotaRead(QuotaValues):
+    """The limits that hold for the account, and where they come from."""
+
     user_id: uuid.UUID
+    source: LimitsSource
+
+
+class QuotaDefaultsRead(QuotaValues):
+    """Null on all four with `is_set` false: no default, accounts without a row are unbounded."""
+
+    is_set: bool
 
 
 class CounterFitRead(BaseModel):
@@ -59,6 +71,7 @@ class CounterFitRead(BaseModel):
 class FitCheckRead(BaseModel):
     allowed: bool
     counters: list[CounterFitRead]
+    source: LimitsSource
 
 
 async def _user(session: AsyncSession, user_id: uuid.UUID) -> User:
@@ -71,9 +84,8 @@ async def _user(session: AsyncSession, user_id: uuid.UUID) -> User:
 @router.get("/quotas/{user_id}", response_model=QuotaRead, dependencies=[Depends(operator_only)])
 async def read_quota(user_id: uuid.UUID, session: AsyncSession = Depends(get_async_session)):
     await _user(session, user_id)
-    quota = await quota_service.get_quota(session, user_id)
-    values = {c: getattr(quota, c) if quota else None for c in quota_service.COUNTERS}
-    return QuotaRead(user_id=user_id, **values)
+    limits, source = await quota_service.effective_limits(session, user_id)
+    return QuotaRead(user_id=user_id, source=source, **limits)
 
 
 @router.put("/quotas/{user_id}", response_model=QuotaRead, dependencies=[Depends(operator_only)])
@@ -83,7 +95,35 @@ async def write_quota(
     await _user(session, user_id)
     quota = await quota_service.set_quota(session, user_id, body.model_dump())
     await session.commit()
-    return QuotaRead(user_id=user_id, **{c: getattr(quota, c) for c in quota_service.COUNTERS})
+    return QuotaRead(
+        user_id=user_id, source=quota_service.OWN, **{c: getattr(quota, c) for c in quota_service.COUNTERS}
+    )
+
+
+def _defaults_read(defaults: Optional[dict]) -> QuotaDefaultsRead:
+    return QuotaDefaultsRead(is_set=defaults is not None, **(defaults or {}))
+
+
+@router.get("/quota-defaults", response_model=QuotaDefaultsRead, dependencies=[Depends(operator_only)])
+async def read_quota_defaults(session: AsyncSession = Depends(get_async_session)):
+    return _defaults_read(await quota_service.get_defaults(session))
+
+
+@router.put("/quota-defaults", response_model=QuotaDefaultsRead, dependencies=[Depends(operator_only)])
+async def write_quota_defaults(body: QuotaValues, session: AsyncSession = Depends(get_async_session)):
+    """The limits every account without a row of its own is held to. Rewrites no account."""
+    defaults = await quota_service.set_defaults(session, body.model_dump())
+    await session.commit()
+    return _defaults_read(defaults)
+
+
+@router.delete(
+    "/quota-defaults", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(operator_only)]
+)
+async def clear_quota_defaults(session: AsyncSession = Depends(get_async_session)):
+    """No default: accounts without a row are unbounded again."""
+    await quota_service.set_defaults(session, None)
+    await session.commit()
 
 
 @router.post(
@@ -100,4 +140,5 @@ async def fit_check(
     return FitCheckRead(
         allowed=result.allowed,
         counters=[CounterFitRead(**vars(f)) for f in result.counters],
+        source=result.source,
     )

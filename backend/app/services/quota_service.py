@@ -9,10 +9,11 @@ every check passes.
 """
 from __future__ import annotations
 
+import json
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Mapping, Optional
+from typing import Literal, Mapping, Optional
 
 from fastapi import HTTPException, status
 from sqlalchemy import func, select, text
@@ -22,6 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import row_security
 from app.core.config import get_settings
+from app.models.app_settings import AppSetting
 from app.models.bank_connection import BankConnection
 from app.models.user_quota import UserQuota
 from app.models.workspace import Workspace, WorkspaceMember
@@ -45,6 +47,61 @@ def _owned_by(user_id: uuid.UUID):
 
 async def get_quota(session: AsyncSession, user_id: uuid.UUID) -> Optional[UserQuota]:
     return await session.get(UserQuota, user_id)
+
+
+# The limits an account with no row of its own is held to (#1971). An
+# instance setting only the operator writes: the admin screen's keys are an
+# allowlist that does not name this one.
+DEFAULTS_KEY = "quota_defaults"
+
+Source = Literal["own", "default", "none"]
+OWN: Source = "own"
+DEFAULT: Source = "default"
+UNBOUNDED: Source = "none"
+
+Limits = dict[str, Optional[int]]
+
+
+async def get_defaults(session: AsyncSession) -> Optional[Limits]:
+    setting = await session.get(AppSetting, DEFAULTS_KEY)
+    if setting is None:
+        return None
+    stored = json.loads(setting.value)
+    return {c: stored.get(c) for c in COUNTERS}
+
+
+async def set_defaults(session: AsyncSession, values: Optional[Mapping[str, Optional[int]]]) -> Optional[Limits]:
+    """Write the defaults, or clear them with None. No account is rewritten."""
+    setting = await session.get(AppSetting, DEFAULTS_KEY)
+    if values is None:
+        if setting is not None:
+            await session.delete(setting)
+            await session.flush()
+        return None
+    limits = {c: values.get(c) for c in COUNTERS}
+    if setting is None:
+        session.add(AppSetting(key=DEFAULTS_KEY, value=json.dumps(limits)))
+    else:
+        setting.value = json.dumps(limits)
+    await session.flush()
+    return limits
+
+
+async def effective_limits(session: AsyncSession, user_id: uuid.UUID) -> tuple[Limits, Source]:
+    """The limits that hold for the account, and where they come from.
+
+    Its own row always wins, even with all four null; without one, the
+    defaults when set; otherwise unbounded. Read at check time, so every
+    path that creates a user follows without writing anything, and changing
+    the defaults moves every account without a row at once.
+    """
+    quota = await get_quota(session, user_id)
+    if quota is not None:
+        return {c: getattr(quota, c) for c in COUNTERS}, OWN
+    defaults = await get_defaults(session)
+    if defaults is not None:
+        return defaults, DEFAULT
+    return dict.fromkeys(COUNTERS), UNBOUNDED
 
 
 async def count_workspaces(session: AsyncSession, user_id: uuid.UUID, kind: str) -> int:
@@ -132,8 +189,8 @@ async def _check(
 ) -> None:
     if not enforced() or user_id is None:
         return
-    quota = await get_quota(session, user_id)
-    maximum = getattr(quota, counter) if quota is not None else None
+    limits, _ = await effective_limits(session, user_id)
+    maximum = limits[counter]
     if maximum is None:
         return
     await _lock(session, lock_key)
@@ -205,6 +262,9 @@ class CounterFit:
 class FitCheck:
     allowed: bool
     counters: list[CounterFit]
+    # Where the account's limits come from today: its own row, the defaults
+    # or neither (#1971).
+    source: Source
 
 
 async def check_fit(
@@ -233,7 +293,8 @@ async def check_fit(
         else:
             excess = max(0, current[counter] - limit)
         fits.append(CounterFit(counter, current[counter], limit, excess))
-    return FitCheck(allowed=all(f.excess == 0 for f in fits), counters=fits)
+    _, source = await effective_limits(session, user_id)
+    return FitCheck(allowed=all(f.excess == 0 for f in fits), counters=fits, source=source)
 
 
 async def set_quota(session: AsyncSession, user_id: uuid.UUID, values: Mapping[str, Optional[int]]) -> UserQuota:
