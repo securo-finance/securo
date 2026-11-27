@@ -24,13 +24,14 @@ from app.core.database import get_async_session
 from app.core.row_security import bind_workspace
 from app.core.shared_scope import bound_to_workspace
 from app.models.user import User
-from app.models.workspace import Workspace, WorkspaceMember
+from app.models.workspace import WORKSPACE_ACTIVE, Workspace, WorkspaceMember
 from app.services.workspace_service import (
     _virtual_manager_member,
     get_default_workspace,
     get_membership,
     is_workspace_manager,
 )
+from app.services.workspace_status_service import SUSPENDED_DETAIL
 
 
 @dataclass
@@ -64,6 +65,10 @@ class WorkspaceContext:
     def require_write(self) -> None:
         if not self.can_write:
             raise HTTPException(status_code=403, detail="Read-only role")
+        # Outlives the role: not even the owner writes into a suspended
+        # workspace (ADR 0049).
+        if self.workspace.status != WORKSPACE_ACTIVE:
+            raise HTTPException(status_code=403, detail=SUSPENDED_DETAIL)
 
     def require_owner(self) -> None:
         if not self.is_owner:

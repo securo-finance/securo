@@ -70,6 +70,7 @@ from app.models.workspace import Workspace
 from app.services import invoice_archive, invoice_service, reconciliation_service
 from app.services.invoice_service import InvoiceError
 from app.services.recurring_transaction_service import _advance_date
+from app.services.workspace_status_service import in_active_workspace, is_suspended
 
 logger = logging.getLogger(__name__)
 
@@ -1142,9 +1143,23 @@ async def generate_due(
         attribute_names=[
             "status", "frequency", "start_date", "end_type", "end_date",
             "end_count", "next_sequence", "payee_id", "currency", "user_id",
-            "payment_terms_days", "notes", "custom_fields", "terms",
+            "workspace_id", "payment_terms_days", "notes", "custom_fields", "terms",
         ],
     )
+    # The job picks its schedules before this one is locked, so the workspace
+    # can be suspended in between. Nothing writes into a suspended workspace
+    # (ADR 0049), and issuing an invoice writes: the run ends here, with
+    # nothing emitted and the cursor where it was.
+    #
+    # The schedule lock serializes two runs of the same agreement, not the
+    # administrator: a suspension committing between this check and the
+    # caller's commit still lands after an invoice. The window is the emission
+    # itself and is accepted — the next run's select already leaves the
+    # workspace out. Locking the workspace row here would close it, at the
+    # cost of holding that row for the whole emission (and the archive step
+    # that follows commits separately, after the lock is gone anyway).
+    if await is_suspended(session, schedule.workspace_id):
+        return []
     emitted: list[Invoice] = []
     try:
         while len(emitted) < MAX_PERIODS_PER_RUN:
@@ -1212,7 +1227,9 @@ async def due_schedule_ids(session: AsyncSession) -> list[uuid.UUID]:
     walk from the anchor and not a column to compare in SQL."""
     result = await session.execute(
         select(InvoiceSchedule.id).where(
-            InvoiceSchedule.status == "active", InvoiceSchedule.origin == "local"
+            InvoiceSchedule.status == "active",
+            InvoiceSchedule.origin == "local",
+            in_active_workspace(InvoiceSchedule.workspace_id),
         )
     )
     return [row[0] for row in result.all()]

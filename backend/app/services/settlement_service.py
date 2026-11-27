@@ -17,6 +17,7 @@ from app.schemas.group_settlement import (
 )
 from app.schemas.transaction import TransactionPaybackInput
 from app.services import notification_service
+from app.services.workspace_status_service import in_active_workspace, require_not_suspended
 
 
 async def _ensure_group_visible(
@@ -30,6 +31,20 @@ async def _ensure_group_visible(
     from app.services.group_service import get_group_visible
 
     return await get_group_visible(session, group_id, workspace_id, user_id)
+
+
+async def _ensure_group_writable(
+    session: AsyncSession,
+    group_id: uuid.UUID,
+    workspace_id: uuid.UUID,
+    user_id: uuid.UUID,
+) -> Optional[Group]:
+    """The visible group, refused when its own workspace is suspended: a
+    linked member reaches it from another workspace, whose gate passes."""
+    group = await _ensure_group_visible(session, group_id, workspace_id, user_id)
+    if group is not None:
+        await require_not_suspended(session, group.workspace_id)
+    return group
 
 
 async def _user_member_id(
@@ -141,6 +156,7 @@ async def _pick_default_account_for_user(
         .where(
             Account.user_id == user_id,
             Account.workspace_id.in_(user_workspaces_subq),
+            in_active_workspace(Account.workspace_id),
             Account.is_closed.is_(False),
             Account.type.in_(("checking", "savings")),
         )
@@ -276,7 +292,7 @@ async def create_settlement(
     *,
     commit: bool = True,
 ) -> Optional[GroupSettlement]:
-    group = await _ensure_group_visible(session, group_id, workspace_id, user_id)
+    group = await _ensure_group_writable(session, group_id, workspace_id, user_id)
     if not group:
         return None
 
@@ -392,6 +408,26 @@ async def replace_receiver_settlements(
         raise ValueError("This credit was created by a settlement; change it from the group")
     if transaction.user_id != user_id:
         raise ValueError("Only the transaction's owner can record its payback")
+    # The rows being replaced can sit in a group of another workspace, which a
+    # linked member reaches from here. A suspended workspace is never written
+    # to (ADR 0049), and deleting is writing: checked before the delete, which
+    # otherwise ran even for a payback that names no payer. Two workspaces are
+    # in play: the one the settlement was recorded from, and the one that owns
+    # its group, which can be the suspended one.
+    replaced_in = {
+        workspace
+        for row in (
+            await session.execute(
+                select(GroupSettlement.workspace_id, Group.workspace_id)
+                .select_from(GroupSettlement)
+                .join(Group, Group.id == GroupSettlement.group_id)
+                .where(GroupSettlement.receiver_transaction_id == transaction.id)
+            )
+        ).all()
+        for workspace in row
+    }
+    for settled_workspace_id in replaced_in:
+        await require_not_suspended(session, settled_workspace_id)
     await session.execute(
         delete(GroupSettlement).where(GroupSettlement.receiver_transaction_id == transaction.id)
     )
@@ -437,7 +473,7 @@ async def update_settlement(
     user_id: uuid.UUID,
     data: GroupSettlementUpdate,
 ) -> Optional[GroupSettlement]:
-    group = await _ensure_group_visible(session, group_id, workspace_id, user_id)
+    group = await _ensure_group_writable(session, group_id, workspace_id, user_id)
     if not group:
         return None
 
@@ -450,6 +486,11 @@ async def update_settlement(
     settlement = result.scalar_one_or_none()
     if not settlement:
         return None
+
+    # The row can sit in the workspace that recorded it (the payer's), not in
+    # the group's, and a mutation writes into both (ADR 0049).
+    if settlement.workspace_id != group.workspace_id:
+        await require_not_suspended(session, settlement.workspace_id)
 
     # Caller must currently own the settlement (linked member of the
     # original from_member, or the group owner).
@@ -507,7 +548,7 @@ async def delete_settlement(
     workspace_id: uuid.UUID,
     user_id: uuid.UUID,
 ) -> bool:
-    group = await _ensure_group_visible(session, group_id, workspace_id, user_id)
+    group = await _ensure_group_writable(session, group_id, workspace_id, user_id)
     if not group:
         return False
     result = await session.execute(
@@ -519,6 +560,10 @@ async def delete_settlement(
     settlement = result.scalar_one_or_none()
     if not settlement:
         return False
+    # The row can sit in the workspace that recorded it (the payer's), not in
+    # the group's, and a deletion writes into both (ADR 0049).
+    if settlement.workspace_id != group.workspace_id:
+        await require_not_suspended(session, settlement.workspace_id)
     if not await _can_settle_from(session, group, user_id, settlement.from_member_id):
         raise PermissionError("You can only delete settlements you created")
     # The payer's debit (when made from `account_id`) and the receiver's

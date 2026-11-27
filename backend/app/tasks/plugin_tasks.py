@@ -19,6 +19,7 @@ from app.core.redis import close_redis
 from app.core.row_security import maker_for_row, workspace_makers
 from app.models.plugin_connection import PluginConnection, PluginConnectionRoutine
 from app.plugins import connections, runner
+from app.services.workspace_status_service import is_suspended
 from app.worker import celery_app
 
 logger = logging.getLogger(__name__)
@@ -48,6 +49,8 @@ async def sync_due(session: AsyncSession) -> int:
             connection = await session.get(PluginConnection, connection_id, populate_existing=True)
             if connection is None or not connections.due(connection):
                 continue
+            if await is_suspended(session, connection.workspace_id):
+                continue
             await connections.sync(session, connection)
             ran += 1
         except Exception:
@@ -70,6 +73,8 @@ async def run_due_routines(session: AsyncSession) -> int:
             routine = await session.get(PluginConnectionRoutine, routine_id, populate_existing=True)
             connection = await session.get(PluginConnection, connection_id, populate_existing=True)
             if routine is None or connection is None or not connections.routine_due(routine, connection):
+                continue
+            if await is_suspended(session, connection.workspace_id):
                 continue
             if await connections.run_routine(session, connection, routine, scheduled=True) == "ran":
                 ran += 1
@@ -99,7 +104,11 @@ async def _sync_one(connection_id: str) -> None:
         maker = await maker_for_row(session_maker, "plugin_connections", uuid.UUID(connection_id))
         async with maker() as session:
             connection = await session.get(PluginConnection, uuid.UUID(connection_id))
-            if connection is not None and connection.status != "needs_auth":
+            if (
+                connection is not None
+                and connection.status != "needs_auth"
+                and not await is_suspended(session, connection.workspace_id)
+            ):
                 await connections.sync(session, connection)
     finally:
         await engine.dispose()
@@ -132,11 +141,16 @@ async def _run_routines_of(
         maker = await maker_for_row(session_maker, "plugin_connections", uuid.UUID(connection_id))
         async with maker() as session:
             connection = await session.get(PluginConnection, uuid.UUID(connection_id))
-            if connection is None:
+            if connection is None or await is_suspended(session, connection.workspace_id):
                 return []
             for routine in await connections.list_routines(session, [connection.id]):
                 if only is not None and routine.routine not in only:
                     continue
+                # Checked again for every routine: a suspension that lands
+                # while an earlier one runs stops the rest of the round, so
+                # nothing more is written into the workspace (ADR 0049).
+                if await is_suspended(session, connection.workspace_id):
+                    return []
                 # Forced: the values just changed and this run is what proves
                 # them, so a routine not yet due runs anyway.
                 if not force and not connections.routine_due(routine, connection):

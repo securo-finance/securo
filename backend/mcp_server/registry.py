@@ -111,6 +111,8 @@ async def call_tool(
     # not prove the user still belongs to the workspace it names.
     workspace_id = await authorize_call(session, ctx)
     if ctx.external and (arguments or {}).get("apply") and not ctx.can_write:
+        if ctx.suspended:
+            raise ToolAccessDenied("This workspace is suspended, so changes can't be applied.")
         raise ToolAccessDenied("Your role in this workspace is read-only, so changes can't be applied.")
     await bind_workspace(session, workspace_id, None if ctx.external else ctx.user_id)
     async with use_timezone(session, workspace_id):

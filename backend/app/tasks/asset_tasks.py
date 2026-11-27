@@ -20,6 +20,7 @@ from app.core.row_security import workspace_makers
 from app.models.asset import Asset
 from app.models.asset_value import AssetValue
 from app.services.asset_service import refresh_all_market_prices
+from app.services.workspace_status_service import in_active_workspace, is_suspended
 
 logger = logging.getLogger(__name__)
 
@@ -75,6 +76,7 @@ async def _apply_growth_rules_in(session_maker) -> int:
                 Asset.growth_frequency.isnot(None),
                 Asset.is_archived == False,
                 Asset.sell_date.is_(None),
+                in_active_workspace(Asset.workspace_id),
             )
         )
         assets = list(result.scalars().all())
@@ -86,6 +88,11 @@ async def _apply_growth_rules_in(session_maker) -> int:
         for asset in assets:
             try:
                 async with session_maker() as session:
+                    # The selection above ran before this session opened: an
+                    # administrator may have suspended the workspace since,
+                    # and nothing is written into it (ADR 0049).
+                    if await is_suspended(session, asset.workspace_id):
+                        continue
                     if asset.workspace_id not in todays:
                         todays[asset.workspace_id] = today_in(
                             await get_workspace_timezone(session, asset.workspace_id)
