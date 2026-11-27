@@ -32,14 +32,17 @@ def operator_only(request: Request) -> None:
 
 Limit = Optional[int]
 
+# The columns are 32-bit integers; past this the database refuses with a 500.
+_INT32_MAX = 2_147_483_647
+
 
 class QuotaValues(BaseModel):
     """A null counter is unbounded."""
 
-    max_personal_workspaces: Limit = Field(default=None, ge=0)
-    max_business_workspaces: Limit = Field(default=None, ge=0)
-    max_bank_connections: Limit = Field(default=None, ge=0)
-    max_members_per_workspace: Limit = Field(default=None, ge=0)
+    max_personal_workspaces: Limit = Field(default=None, ge=0, le=_INT32_MAX)
+    max_business_workspaces: Limit = Field(default=None, ge=0, le=_INT32_MAX)
+    max_bank_connections: Limit = Field(default=None, ge=0, le=_INT32_MAX)
+    max_members_per_workspace: Limit = Field(default=None, ge=0, le=_INT32_MAX)
 
 
 class QuotaRead(QuotaValues):

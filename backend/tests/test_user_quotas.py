@@ -162,6 +162,76 @@ async def test_the_member_route_answers_the_quota(managed, client: AsyncClient, 
     assert resp.json()["detail"]["code"] == "quota_exceeded"
 
 
+async def _user_count(session: AsyncSession) -> int:
+    return len((await session.execute(select(User.id))).all())
+
+
+@pytest.mark.asyncio
+async def test_a_refused_invite_creates_no_account(managed, client: AsyncClient, session, test_user, test_workspace, auth_headers):
+    """Over the member limit, inviting a new address leaves no user behind.
+
+    Creating the account commits on its own, so a refusal checked only when
+    the member is added used to leave a user with no workspace who could sign
+    in with the password the owner typed.
+    """
+    await _limit(session, test_user.id, max_members_per_workspace=0)
+    before = await _user_count(session)
+    resp = await client.post(
+        f"/api/workspaces/{test_workspace.id}/members",
+        json={"email": "new-person@example.com", "role": "editor", "password": "a-long-password-1"},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 403, resp.text
+    assert resp.json()["detail"]["code"] == "quota_exceeded"
+    session.expire_all()
+    assert await _user_count(session) == before
+    assert await session.scalar(select(User).where(User.email == "new-person@example.com")) is None
+
+
+@pytest.mark.asyncio
+async def test_an_account_created_by_an_invite_that_loses_the_last_seat_is_removed(
+    managed, client: AsyncClient, session, test_user, test_workspace, auth_headers
+):
+    """The seat can go between the early check and the insert (a parallel
+    invite); the account made for this invite goes with the refusal."""
+    await _limit(session, test_user.id, max_members_per_workspace=1)
+    before = await _user_count(session)
+    real = quota_service.check_new_member
+    calls = 0
+
+    async def seat_taken_after_the_first_check(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        if calls > 1:
+            raise quota_service._refuse("max_members_per_workspace", 1, 1)
+        await real(*args, **kwargs)
+
+    with patch.object(quota_service, "check_new_member", seat_taken_after_the_first_check):
+        resp = await client.post(
+            f"/api/workspaces/{test_workspace.id}/members",
+            json={"email": "raced@example.com", "role": "editor", "password": "a-long-password-1"},
+            headers=auth_headers,
+        )
+    assert calls == 2
+    assert resp.status_code == 403, resp.text
+    session.expire_all()
+    assert await _user_count(session) == before
+    assert await session.scalar(select(User).where(User.email == "raced@example.com")) is None
+
+
+@pytest.mark.asyncio
+async def test_an_invite_with_room_still_creates_the_account(managed, client: AsyncClient, session, test_user, test_workspace, auth_headers):
+    await _limit(session, test_user.id, max_members_per_workspace=1)
+    resp = await client.post(
+        f"/api/workspaces/{test_workspace.id}/members",
+        json={"email": "fits@example.com", "role": "editor", "password": "a-long-password-1"},
+        headers=auth_headers,
+    )
+    assert resp.status_code in (200, 201), resp.text
+    session.expire_all()
+    assert await session.scalar(select(User).where(User.email == "fits@example.com")) is not None
+
+
 # --- Bank connections ----------------------------------------------------------
 
 
@@ -333,6 +403,16 @@ async def test_the_operator_writes_reads_and_checks_a_fit(operator, client: Asyn
 
     resp = await client.put(url, json={"max_bank_connections": -1}, headers=operator)
     assert resp.status_code == 422
+
+    # The columns are 32-bit integers: past that the database refused with a 500.
+    for counter in quota_service.COUNTERS:
+        resp = await client.put(url, json={counter: 2**31}, headers=operator)
+        assert resp.status_code == 422, (counter, resp.text)
+        resp = await client.post(f"{url}/fit-check", json={counter: 1099511627776}, headers=operator)
+        assert resp.status_code == 422, (counter, resp.text)
+    resp = await client.put(url, json={"max_bank_connections": 2**31 - 1}, headers=operator)
+    assert resp.status_code == 200, resp.text
+    resp = await client.put(url, json=body, headers=operator)
 
     resp = await client.post(f"{url}/fit-check", json={"max_personal_workspaces": 0}, headers=operator)
     assert resp.status_code == 200
