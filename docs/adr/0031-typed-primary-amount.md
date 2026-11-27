@@ -26,4 +26,5 @@ ADR 0027 keeps that figure for a row in another currency than its account (`amou
 
 ## Enforced by
 
-`tests/test_primary_restamp.py` (a round trip on a same-currency account, a resave that keeps the typed amount, an edit that drops it).
+- `tests/test_primary_restamp.py` (a round trip on a same-currency account, a resave that keeps the typed amount, an edit that drops it, and posting a pending row today).
+- `backend/tests/test_typed_primary_date_move.py` (date-only moves on transfer counterparts and posting pending rows/transfer pairs to today).
