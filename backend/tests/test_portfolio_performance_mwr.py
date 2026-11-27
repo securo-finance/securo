@@ -10,6 +10,7 @@ from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.asset import Asset
+from app.models.asset_transaction import AssetTransaction
 from app.models.asset_value import AssetValue
 from app.models.user import User
 from app.providers.benchmark import BenchmarkHistoryPoint
@@ -197,6 +198,84 @@ async def test_money_weighted_performance_compares_shadow_benchmarks(
     assert sum(series.flows) == 100.0
     assert series.benchmark_values["yahoo:^FLAT"][-1] == 200.0
     assert series.benchmark_flows["yahoo:^SAME"] == series.flows
+
+
+@pytest.mark.asyncio
+async def test_money_weighted_counts_market_trades_as_money_moved(
+    session: AsyncSession, test_user: User, test_workspace
+):
+    """The dip case again, as ledger trades in a market-priced holding: a share
+    bought at 100, two more at the dip at 50, all worth 100 at the end."""
+    end = date.today()
+    start = end - timedelta(days=30)
+    mid = start + timedelta(days=15)
+    asset = Asset(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        name="Stock",
+        type="stock",
+        currency="BRL",
+        valuation_method="market_price",
+    )
+    session.add(asset)
+    await session.flush()
+    session.add_all(
+        AssetTransaction(
+            asset_id=asset.id,
+            workspace_id=test_workspace.id,
+            kind="buy",
+            quantity=Decimal(quantity),
+            price=Decimal(price),
+            date=when,
+        )
+        for when, quantity, price in ((start, "1", "100"), (mid, "2", "50"))
+    )
+    session.add_all(
+        AssetValue(
+            asset_id=asset.id,
+            workspace_id=test_workspace.id,
+            amount=Decimal(amount),
+            price=Decimal(price),
+            date=when,
+            source="market",
+        )
+        for when, amount, price in ((start, "100", "100"), (mid, "150", "50"), (end, "300", "100"))
+    )
+    await session.commit()
+    provider = MultiHistoryProvider(
+        {
+            "^SAME": [
+                BenchmarkHistoryPoint(start, 100.0),
+                BenchmarkHistoryPoint(mid, 50.0),
+                BenchmarkHistoryPoint(end, 100.0),
+            ],
+            "^FLAT": [BenchmarkHistoryPoint(start, 100.0), BenchmarkHistoryPoint(end, 100.0)],
+        }
+    )
+
+    mwr = await get_portfolio_performance_multi(
+        session,
+        test_workspace.id,
+        test_user.id,
+        "BRL",
+        [("yahoo", "^SAME"), ("yahoo", "^FLAT")],
+        "3m",
+        end_date=end,
+        provider=provider,  # type: ignore[arg-type]
+        method="mwr",
+    )
+
+    expected = (36 / (1 + math.sqrt(13)) ** 2 - 1) * 100
+    assert mwr.portfolio_return == pytest.approx(expected, abs=1e-5)
+    same, flat = mwr.benchmarks
+    assert same.benchmark_return == pytest.approx(expected, abs=1e-5)
+    # The flat index is bought with the same 100 at the dip: no gain at all.
+    assert flat.benchmark_return == pytest.approx(0.0, abs=1e-5)
+    series = mwr.money_weighted
+    assert series is not None
+    dates = [point.date for point in mwr.points]
+    assert series.flows[dates.index(mid)] == 100.0
 
 
 @pytest.mark.asyncio

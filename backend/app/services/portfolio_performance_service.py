@@ -953,12 +953,14 @@ class CashFlows:
     def net(self) -> dict[date, float]:
         """Money put in less money taken out, per date, for a money-weighted
         return. Every flow counts on the date it is recorded at, the first
-        valuation that reflects it."""
+        valuation that reflects it. A market trade's fee is paid on top of a
+        buy and comes off a sale's proceeds, so it adds to either."""
         return {
             point_date: (
                 self.contributions.get(point_date, 0.0)
                 + self.opening.get(point_date, 0.0)
                 - self.withdrawals.get(point_date, 0.0)
+                + sum(trade.amount + trade.fee for trade in self.trades.get(point_date, ()))
             )
             for point_date in self.dates
         }
