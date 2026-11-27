@@ -120,6 +120,7 @@ ALLOWLIST: dict[tuple[str, str], str] = {
     ("PUT", "/api/operator/quotas/{user_id}"): "operator-token-gated per-account limits, no user",
     ("POST", "/api/operator/quotas/{user_id}/fit-check"): "operator-token-gated read of the account's counts",
     ("POST", "/api/operator/accounts"): "operator-token-gated opening of a new account, no user (#1965)",
+    ("POST", "/api/operator/accounts/{user_id}/first-access-link"): "operator-token-gated resend of the first-access link (#1967)",
 }
 
 # Gated by the operator's token instead of a user (ADR 0049).
@@ -127,6 +128,7 @@ OPERATOR_ROUTES = {
     ("PUT", "/api/operator/quotas/{user_id}"),
     ("POST", "/api/operator/quotas/{user_id}/fit-check"),
     ("POST", "/api/operator/accounts"),
+    ("POST", "/api/operator/accounts/{user_id}/first-access-link"),
 }
 
 # These routes establish authentication (or end it), so requiring an existing

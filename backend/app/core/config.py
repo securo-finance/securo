@@ -205,9 +205,17 @@ class Settings(BaseSettings):
     email_from: str = ""
     # How long a recovery link stays valid.
     password_reset_token_minutes: int = 60
+    # How long the link an operator-opened account gets to set its first
+    # password stays valid (#1967). Longer than recovery: a first access is
+    # often opened hours or days later.
+    first_access_token_minutes: int = 4320
 
     @model_validator(mode="after")
     def validate_email_settings(self):
+        # The link can also be handed out in the operator's response, with
+        # email off, so its lifetime is checked either way.
+        if self.first_access_token_minutes <= 0:
+            raise ValueError("FIRST_ACCESS_TOKEN_MINUTES must be positive")
         if not self.email_enabled:
             return self
         if self.email_provider == "resend":

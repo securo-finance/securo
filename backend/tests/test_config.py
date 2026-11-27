@@ -255,7 +255,19 @@ EMAIL_COMPOSE_KEYS = (
     "SMTP_PASSWORD",
     "EMAIL_FROM",
     "PASSWORD_RESET_TOKEN_MINUTES",
+    "FIRST_ACCESS_TOKEN_MINUTES",
 )
+
+
+def test_first_access_lifetime_must_be_positive(monkeypatch):
+    monkeypatch.setenv("FIRST_ACCESS_TOKEN_MINUTES", "0")
+    with pytest.raises(ValueError, match="FIRST_ACCESS_TOKEN_MINUTES"):
+        Settings(_env_file=None)
+
+
+def test_first_access_lasts_longer_than_recovery_by_default():
+    settings = Settings(_env_file=None)
+    assert settings.first_access_token_minutes > settings.password_reset_token_minutes
 
 
 @pytest.mark.parametrize("compose_file", ["docker-compose.yml", "docker-compose.prod.yml"])

@@ -50,6 +50,8 @@ def _body(**overrides) -> dict:
         "language": "pt-BR",
         "workspaces": [{"name": "Casa", "kind": "personal", "default_currency": "BRL"}],
         "quotas": {"max_personal_workspaces": 1, "max_business_workspaces": 1, "max_bank_connections": 3},
+        # Email is off in tests; the first access is covered in test_first_access_link.py.
+        "first_access": "response",
     }
     return body | overrides
 

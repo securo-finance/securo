@@ -139,6 +139,7 @@ x-backend-env: &backend-env
   SMTP_PASSWORD: ${SMTP_PASSWORD:-}
   EMAIL_FROM: ${EMAIL_FROM:-}
   PASSWORD_RESET_TOKEN_MINUTES: ${PASSWORD_RESET_TOKEN_MINUTES:-60}
+  FIRST_ACCESS_TOKEN_MINUTES: ${FIRST_ACCESS_TOKEN_MINUTES:-4320}
 
 x-backend-base: &backend-base
   build: ./backend

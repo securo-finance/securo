@@ -340,6 +340,44 @@ def password_reset_email(
     return Email(to=to, subject=subject, text=text)
 
 
+#: The message an account the operator opened gets, to set its first password
+#: (#1967). Built in for now; editing it from the admin screen comes with the
+#: recovery templates' editor.
+FIRST_ACCESS_TEMPLATES: dict[str, dict[str, str]] = {
+    "en": {
+        "subject": "Your {app_name} account is ready",
+        "body": (
+            "Hi,\n\n"
+            "An account on {app_name} was opened for this address.\n"
+            "Open the link below to choose your password. It is valid for {hours} hours:\n\n"
+            "{link}\n\n"
+            "If you were not expecting this, ignore this message.\n"
+        ),
+    },
+    "pt": {
+        "subject": "Sua conta no {app_name} está pronta",
+        "body": (
+            "Olá,\n\n"
+            "Uma conta no {app_name} foi aberta para este endereço.\n"
+            "Abra o link abaixo para escolher sua senha. Ele vale por {hours} horas:\n\n"
+            "{link}\n\n"
+            "Se você não esperava por isso, ignore esta mensagem.\n"
+        ),
+    },
+}
+
+
+def first_access_email(
+    to: str, link: str, language: object, token_minutes: int, *, app_name: str = "Securo"
+) -> Email:
+    """The first-access message in the account's language."""
+    template = FIRST_ACCESS_TEMPLATES[template_language(language)]
+    values = {"app_name": app_name, "link": link, "hours": max(1, token_minutes // 60)}
+    return Email(
+        to=to, subject=template["subject"].format(**values), text=template["body"].format(**values)
+    )
+
+
 def _httpx_client(timeout: float) -> httpx.AsyncClient:
     return httpx.AsyncClient(timeout=timeout)
 
