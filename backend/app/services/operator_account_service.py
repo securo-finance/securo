@@ -141,7 +141,9 @@ async def _open_workspace(session: AsyncSession, user: User, request: WorkspaceR
     return workspace
 
 
-def _record(user: User, workspaces: list[Workspace], quotas: Mapping[str, Optional[int]], ip: Optional[str]) -> list:
+def _record(
+    user: User, workspaces: list[Workspace], quotas: Optional[Mapping[str, Optional[int]]], ip: Optional[str]
+) -> list:
     entry = AdminAccessLog(
         id=uuid.uuid4(),
         actor_id=None,
@@ -155,7 +157,11 @@ def _record(user: User, workspaces: list[Workspace], quotas: Mapping[str, Option
                 "from": None,
                 "to": [{"id": str(w.id), "kind": w.kind} for w in workspaces],
             },
-            "quotas": {"from": None, "to": {c: quotas.get(c) for c in quota_service.COUNTERS}},
+            # None when no limits were written: the account follows the defaults.
+            "quotas": {
+                "from": None,
+                "to": {c: quotas.get(c) for c in quota_service.COUNTERS} if quotas is not None else None,
+            },
         },
         reason=REASON,
         ip=ip,
@@ -171,7 +177,7 @@ async def open_account(
     external_reference: str,
     language: str,
     workspaces: Sequence[WorkspaceRequest],
-    quotas: Mapping[str, Optional[int]],
+    quotas: Optional[Mapping[str, Optional[int]]] = None,
     ip: Optional[str] = None,
 ) -> OpenedAccount:
     """Open the account, or answer the one this reference already opened.
@@ -200,8 +206,11 @@ async def open_account(
     session.add(user)
     try:
         await session.flush()
-        # The limits first, so the workspaces below are held to them.
-        await quota_service.set_quota(session, user.id, quotas)
+        # The limits first, so the workspaces below are held to them. With no
+        # limits sent the account gets no row of its own: a row, even all
+        # null, would win over the instance's defaults.
+        if quotas is not None:
+            await quota_service.set_quota(session, user.id, quotas)
         opened = [await _open_workspace(session, user, w, language) for w in workspaces]
         session.add_all(_record(user, opened, quotas, ip))
         await session.commit()

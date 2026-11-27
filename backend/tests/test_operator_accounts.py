@@ -322,6 +322,32 @@ async def test_the_limits_are_written_in_the_same_transaction(managed, operator,
 
 
 @pytest.mark.asyncio
+async def test_without_limits_the_account_gets_no_row_of_its_own(managed, operator, client: AsyncClient, session):
+    body = _body()
+    del body["quotas"]
+    resp = await client.post(URL, json=body, headers=operator)
+    assert resp.status_code == 201, resp.text
+    user_id = uuid.UUID(resp.json()["user_id"])
+    # No row, so the instance's defaults hold for it, not a row of nulls.
+    assert await session.get(UserQuota, user_id) is None
+    assert resp.json()["quotas"] == dict.fromkeys(
+        ["max_personal_workspaces", "max_business_workspaces", "max_bank_connections", "max_members_per_workspace"]
+    )
+    [entry] = list(await session.scalars(select(AdminAccessLog).where(AdminAccessLog.target_user_id == user_id)))
+    assert entry.changes["quotas"] == {"from": None, "to": None}
+
+
+@pytest.mark.asyncio
+async def test_limits_sent_as_null_are_written_as_the_accounts_own(managed, operator, client: AsyncClient, session):
+    # Sending the four as null is a choice: the account's own row, unbounded.
+    resp = await client.post(URL, json=_body(quotas={}), headers=operator)
+    assert resp.status_code == 201, resp.text
+    quota = await session.get(UserQuota, uuid.UUID(resp.json()["user_id"]))
+    assert quota is not None
+    assert quota.max_bank_connections is None
+
+
+@pytest.mark.asyncio
 async def test_workspaces_over_the_limits_open_nothing(managed, operator, client: AsyncClient, session: AsyncSession):
     two = [_body()["workspaces"][0], _body()["workspaces"][0] | {"name": "Outra"}]
     resp = await client.post(URL, json=_body(workspaces=two), headers=operator)

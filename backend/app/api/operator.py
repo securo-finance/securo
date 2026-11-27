@@ -139,7 +139,9 @@ class OpenAccount(BaseModel):
     external_reference: str = Field(min_length=1, max_length=255)
     language: str = Field(default="en", min_length=2, max_length=10)
     workspaces: list[OpenWorkspace] = Field(min_length=1, max_length=20)
-    quotas: QuotaValues = Field(default_factory=QuotaValues)
+    #: Left out, the account gets no limits of its own and follows the
+    #: instance's defaults.
+    quotas: Optional[QuotaValues] = None
 
 
 class OpenedWorkspaceRead(BaseModel):
@@ -195,7 +197,7 @@ async def open_account(
                 )
                 for w in body.workspaces
             ],
-            quotas=body.quotas.model_dump(),
+            quotas=body.quotas.model_dump() if body.quotas is not None else None,
             ip=client_ip(request),
         )
     except operator_account_service.OpenAccountError as exc:
@@ -204,6 +206,7 @@ async def open_account(
         ) from exc
     if not opened.created:
         response.status_code = status.HTTP_200_OK
+    # The limits that hold for the account: its own row, or none (unbounded).
     quota = await quota_service.get_quota(session, opened.user.id)
     return OpenedAccountRead(
         user_id=opened.user.id,
