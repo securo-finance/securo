@@ -1,4 +1,4 @@
-# 0037. A synced holding can be priced by a market ticker; the provider keeps its position
+# 0051. A synced holding can be priced by a market ticker; the provider keeps its position
 
 - Status: Accepted
 - Date: 2026-11-20

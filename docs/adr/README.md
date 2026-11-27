@@ -51,7 +51,6 @@ Each file here records one decision about how Securo is built: what we chose, wh
 | [0035](0035-plugin-file-fields-and-routines.md) | Plugin integrations take files in their form and run routines on schedules of their own |
 | [0036](0036-xml-attachments.md) | XML files can be attached, and anything that isn't an image or a PDF is served as a download |
 | [0037](0037-document-reading.md) | Documents are read into transactions by an LLM, reviewed before anything is saved |
-| [0037](0037-synced-holdings-priced-by-a-market-ticker.md) | A synced holding can be priced by a market ticker; the provider keeps its position |
 | [0038](0038-plugin-connection-recovers-with-new-values.md) | A plugin connection is fixed in place with new values, and a routine-only one proves them at once |
 | [0039](0039-date-move-keeps-typed-stamp.md) | A move of the date alone keeps the amount the owner typed |
 | [0040](0040-viewer-currency-reads-own-amount.md) | A row already in the viewer's currency reads as its own amount |
@@ -64,3 +63,4 @@ Each file here records one decision about how Securo is built: what we chose, wh
 | [0047](0047-deleting-a-user-keeps-workspace-data.md) | Deleting a user keeps what they added to other people's workspaces |
 | [0048](0048-required-secret-key.md) | An operator can require a secret key of their own |
 | [0050](0050-instance-settings-leave-a-record.md) | Instance settings an administrator changes leave a record, with no account as its target |
+| [0051](0051-synced-holdings-priced-by-a-market-ticker.md) | A synced holding can be priced by a market ticker; the provider keeps its position |
