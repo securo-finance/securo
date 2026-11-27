@@ -102,13 +102,38 @@ def _refuse(counter: str, current: int, maximum: int) -> HTTPException:
     )
 
 
-async def _check(session: AsyncSession, user_id: Optional[uuid.UUID], counter: str, current_of) -> None:
+async def _lock(session: AsyncSession, key: str) -> None:
+    """One quota count-and-insert per key at a time, until the transaction ends.
+
+    The count and the insert that follows it run in the caller's transaction,
+    so under READ COMMITTED two parallel requests from the same owner could
+    both count below the limit and both insert, going over it by one per
+    request. The transaction-scoped advisory lock makes the second request wait
+    for the first to commit and then count its row. PostgreSQL only, in the
+    same shape as `_lock_day` in `fx_rate_service.py`: SQLite, which the tests
+    use, serialises writers itself.
+    """
+    if session.bind is None or session.bind.dialect.name != "postgresql":
+        return
+    await session.execute(
+        select(func.pg_advisory_xact_lock(func.hashtext(key)))
+    )
+
+
+async def _check(
+    session: AsyncSession,
+    user_id: Optional[uuid.UUID],
+    counter: str,
+    current_of,
+    lock_key: str,
+) -> None:
     if not enforced() or user_id is None:
         return
     quota = await get_quota(session, user_id)
     maximum = getattr(quota, counter) if quota is not None else None
     if maximum is None:
         return
+    await _lock(session, lock_key)
     current = await current_of()
     if current >= maximum:
         raise _refuse(counter, current, maximum)
@@ -118,7 +143,13 @@ async def check_new_workspace(session: AsyncSession, user_id: uuid.UUID, kind: s
     counter = _WORKSPACE_COUNTER.get(kind)
     if counter is None:
         return
-    await _check(session, user_id, counter, lambda: count_workspaces(session, user_id, kind))
+    await _check(
+        session,
+        user_id,
+        counter,
+        lambda: count_workspaces(session, user_id, kind),
+        f"quota:workspaces:{user_id}",
+    )
 
 
 async def _workspace_owner(session: AsyncSession, workspace_id: uuid.UUID) -> Optional[uuid.UUID]:
@@ -132,7 +163,13 @@ async def check_new_bank_connection(session: AsyncSession, workspace_id: uuid.UU
     owner = await _workspace_owner(session, workspace_id)
     if owner is None:
         return
-    await _check(session, owner, BANK_CONNECTIONS, lambda: count_bank_connections(session, owner))
+    await _check(
+        session,
+        owner,
+        BANK_CONNECTIONS,
+        lambda: count_bank_connections(session, owner),
+        f"quota:connections:{owner}",
+    )
 
 
 async def check_new_member(session: AsyncSession, workspace_id: uuid.UUID, user_id: uuid.UUID) -> None:
@@ -141,7 +178,13 @@ async def check_new_member(session: AsyncSession, workspace_id: uuid.UUID, user_
     owner = await _workspace_owner(session, workspace_id)
     if owner is None or owner == user_id:
         return
-    await _check(session, owner, MEMBERS_PER_WORKSPACE, lambda: count_members(session, workspace_id))
+    await _check(
+        session,
+        owner,
+        MEMBERS_PER_WORKSPACE,
+        lambda: count_members(session, workspace_id),
+        f"quota:members:{workspace_id}",
+    )
 
 
 @dataclass(frozen=True)
