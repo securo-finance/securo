@@ -86,7 +86,9 @@ async def sync_conn_account(session: AsyncSession, test_user: User, test_workspa
     return conn, account
 
 
-async def _enable_amount_tolerance(session: AsyncSession, workspace_id: uuid.UUID, user_id: uuid.UUID) -> None:
+async def _enable_amount_tolerance(
+    session: AsyncSession, workspace_id: uuid.UUID, user_id: uuid.UUID
+) -> None:
     await reconciliation_rule_service.upsert_override(
         session,
         workspace_id,
@@ -108,8 +110,7 @@ async def _make_typed_usd_placeholder(
     user_id: uuid.UUID,
     account: Account,
 ) -> uuid.UUID:
-    """A 18.43 USD recurring placeholder on a BRL account with a user-typed
-    90.00 BRL conversion."""
+    """A 18.43 USD recurring placeholder with a user-typed 90.00 BRL conversion."""
     bill = await create_recurring_transaction(
         session,
         workspace_id,
@@ -125,6 +126,7 @@ async def _make_typed_usd_placeholder(
         ),
     )
     bill.next_occurrence = date(2026, 2, 10)
+    foreign_to_account = account.currency != "USD"
     placeholder = Transaction(
         id=uuid.uuid4(),
         user_id=user_id,
@@ -138,8 +140,8 @@ async def _make_typed_usd_placeholder(
         fx_rate_used=Decimal("4.8833"),
         amount_primary_typed=Decimal("90.00"),
         amount_primary_typed_currency="BRL",
-        amount_account=Decimal("90.00"),
-        amount_account_source=ACCOUNT_AMOUNT_FROM_USER,
+        amount_account=Decimal("90.00") if foreign_to_account else None,
+        amount_account_source=ACCOUNT_AMOUNT_FROM_USER if foreign_to_account else None,
         type="debit",
         source="recurring",
         status="posted",
@@ -172,7 +174,9 @@ async def _switch_display_currency(
     await session.commit()
 
 
-def _mock_provider(transactions: list[TransactionData], account_ext: str = "acc-ext-1") -> AsyncMock:
+def _mock_provider(
+    transactions: list[TransactionData], account_ext: str = "acc-ext-1"
+) -> AsyncMock:
     provider = AsyncMock()
     provider.refresh_credentials = AsyncMock(return_value={"token": "t"})
     provider.get_accounts = AsyncMock(
@@ -290,6 +294,67 @@ async def test_import_placeholder_fx_rate_override_clears_typed_primary(
     tx = txs[0]
     assert tx.id == placeholder_id
     assert tx.amount_primary == Decimal("97.31")
+    assert (tx.amount_primary_typed, tx.amount_primary_typed_currency) == (None, None)
+
+
+@pytest.mark.asyncio
+async def test_import_placeholder_fx_rate_override_on_usd_account_survives_round_trip(
+    session: AsyncSession, test_user: User, test_workspace, usd_brl_rates
+):
+    """On a USD account (where `amount_account` is None), an `fx_rate` CSV
+    override on a matching-amount USD placeholder clears `amount_primary_typed`
+    so a BRL -> USD -> BRL round trip re-derives at market FX instead of
+    resurrecting the placeholder's typed 90.00 BRL."""
+    user_id, workspace_id = test_user.id, test_workspace.id
+    usd_account = Account(
+        id=uuid.uuid4(),
+        user_id=user_id,
+        workspace_id=workspace_id,
+        name="USD Checking",
+        type="checking",
+        balance=Decimal("0"),
+        currency="USD",
+    )
+    session.add(usd_account)
+    await session.commit()
+    await session.refresh(usd_account)
+
+    placeholder_id = await _make_typed_usd_placeholder(
+        session, workspace_id, user_id, usd_account
+    )
+
+    incoming = [
+        TransactionImport(
+            description="NETFLIX SUBSCRIPTION",
+            amount=Decimal("18.43"),
+            date=D_CHARGE,
+            type="debit",
+            currency="USD",
+            fx_rate=Decimal("5.28"),
+        )
+    ]
+    with patch("app.services.import_service.apply_rules_to_transaction", new_callable=AsyncMock):
+        imported, _, _, _ = await import_transactions(
+            session, workspace_id, user_id, usd_account.id, incoming, "csv"
+        )
+
+    assert imported == 1
+    txs = await _real_txs(session, usd_account.id)
+    assert len(txs) == 1
+    tx = txs[0]
+    assert tx.id == placeholder_id
+    assert tx.amount_account is None
+    assert tx.amount_primary == Decimal("97.31")
+    assert tx.fx_rate_used == Decimal("5.28")
+    assert (tx.amount_primary_typed, tx.amount_primary_typed_currency) == (None, None)
+
+    await _switch_display_currency(session, user_id, "USD")
+    await session.refresh(tx)
+    assert tx.amount_primary == Decimal("18.43")
+
+    await _switch_display_currency(session, user_id, "BRL")
+    await session.refresh(tx)
+    assert tx.amount_primary == Decimal("101.36")
     assert (tx.amount_primary_typed, tx.amount_primary_typed_currency) == (None, None)
 
 
