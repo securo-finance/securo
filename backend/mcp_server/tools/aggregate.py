@@ -26,7 +26,10 @@ from mcp_server.tools._helpers import num, parse_date, parse_uuid_list, resolve_
         "Returns a list of {bucket, value, count} rows. Amounts use the "
         "user's primary currency when available, falling back to native. "
         "By default counts only POSTED transactions (already settled) — "
-        "set status='all' or 'pending' to include scheduled/recurring rows."
+        "set status='all' or 'pending' to include scheduled/recurring rows. "
+        "Synthetic opening_balance rows are excluded by default (matching "
+        "list_transactions and P&L reports); set include_opening_balance=true "
+        "to include them when reconciling full table counts."
     ),
     parameters={
         "type": "object",
@@ -43,6 +46,7 @@ from mcp_server.tools._helpers import num, parse_date, parse_uuid_list, resolve_
             "description_contains": {"type": "string", "description": "Case-insensitive substring match against the transaction description — use this to scope to a merchant/keyword like 'uber', 'spotify', 'amigos do bem'."},
             "status": {"type": "string", "enum": ["posted", "pending", "all"], "default": "posted", "description": "Default 'posted' = only money that already moved. Use 'pending' for scheduled/recurring not yet settled, or 'all' to include both."},
             "exclude_transfers": {"type": "boolean", "default": True, "description": "Leave out transfers: paired transfer legs and rows in a category flagged treat_as_transfer."},
+            "include_opening_balance": {"type": "boolean", "default": False, "description": "Include synthetic opening_balance rows. False by default (matching list_transactions and P&L reports); set true when reconciling full table counts."},
             "limit": {"type": "integer", "minimum": 1, "maximum": 50, "default": 25, "description": "Max bucket rows in the result. Capped at 50."},
         },
         "additionalProperties": False,
@@ -65,6 +69,7 @@ async def aggregate(
     description_contains: str | None = None,
     status: str = "posted",
     exclude_transfers: bool = True,
+    include_opening_balance: bool = False,
     limit: int = 25,
 ) -> dict[str, Any]:
     # Hard cap regardless of LLM input — keeps payload small enough for
@@ -152,6 +157,12 @@ async def aggregate(
         # Paired transfers and rows in a `treat_as_transfer` category, the
         # same transfers the reports leave out of income and expenses.
         q = q.where(is_not_transfer(category_col))
+
+    if not include_opening_balance:
+        # Synthetic opening-balance rows seed an account's initial balance
+        # rather than representing real income/expense, so exclude them by
+        # default (matching list_transactions and P&L reports).
+        q = q.where(Transaction.source != "opening_balance")
 
     q = q.group_by(bucket_id).order_by(value_expr.desc().nulls_last()).limit(int(limit))
 
