@@ -1,10 +1,11 @@
 """Per-account usage limits on a managed instance (ADR 0049).
 
-Neutral on purpose: four numbers per user, written by the operator, and no
-notion of a plan. Everything is counted from the rows the user owns (the
-workspaces they created and what those hold), never from stored counters, so
-deleting a connection or archiving a workspace gives the room back at once.
-With MANAGED_INSTANCE off nothing here reads the table and every check passes.
+Neutral on purpose: four numbers per user, written by the operator, and the
+code attaches nothing else to them. Everything is counted from the rows the
+user owns (the workspaces they created and what those hold), never from
+stored counters, so deleting a connection or archiving a workspace gives the
+room back at once. With MANAGED_INSTANCE off nothing here reads the table and
+every check passes.
 """
 from __future__ import annotations
 
@@ -152,14 +153,14 @@ class CounterFit:
 
 
 @dataclass(frozen=True)
-class DowngradeCheck:
+class FitCheck:
     allowed: bool
     counters: list[CounterFit]
 
 
-async def check_downgrade(
+async def check_fit(
     session: AsyncSession, user_id: uuid.UUID, target: Mapping[str, Optional[int]]
-) -> DowngradeCheck:
+) -> FitCheck:
     """Whether the account already fits `target`, per counter.
 
     Nothing is deleted: the person removes the excess and asks again. For the
@@ -183,7 +184,7 @@ async def check_downgrade(
         else:
             excess = max(0, current[counter] - limit)
         fits.append(CounterFit(counter, current[counter], limit, excess))
-    return DowngradeCheck(allowed=all(f.excess == 0 for f in fits), counters=fits)
+    return FitCheck(allowed=all(f.excess == 0 for f in fits), counters=fits)
 
 
 async def set_quota(session: AsyncSession, user_id: uuid.UUID, values: Mapping[str, Optional[int]]) -> UserQuota:

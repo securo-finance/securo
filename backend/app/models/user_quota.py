@@ -12,8 +12,9 @@ from app.core.database import Base
 class UserQuota(Base):
     """The four numbers an account may hold on a managed instance (ADR 0049).
 
-    Neutral on purpose: no plan, no price. The operator writes them; a null
-    counter is unbounded, and a user with no row is unbounded on all four.
+    Neutral on purpose: the operator writes the numbers and the code attaches
+    nothing else to them. A null counter is unbounded, and a user with no row
+    is unbounded on all four.
     """
 
     __tablename__ = "user_quotas"

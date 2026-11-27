@@ -53,7 +53,7 @@ class CounterFitRead(BaseModel):
     excess: int
 
 
-class DowngradeCheckRead(BaseModel):
+class FitCheckRead(BaseModel):
     allowed: bool
     counters: list[CounterFitRead]
 
@@ -84,17 +84,17 @@ async def write_quota(
 
 
 @router.post(
-    "/quotas/{user_id}/downgrade-check",
-    response_model=DowngradeCheckRead,
+    "/quotas/{user_id}/fit-check",
+    response_model=FitCheckRead,
     dependencies=[Depends(operator_only)],
 )
-async def downgrade_check(
+async def fit_check(
     user_id: uuid.UUID, body: QuotaValues, session: AsyncSession = Depends(get_async_session)
 ):
     """Whether the account already fits the target limits. Writes nothing."""
     await _user(session, user_id)
-    result = await quota_service.check_downgrade(session, user_id, body.model_dump())
-    return DowngradeCheckRead(
+    result = await quota_service.check_fit(session, user_id, body.model_dump())
+    return FitCheckRead(
         allowed=result.allowed,
         counters=[CounterFitRead(**vars(f)) for f in result.counters],
     )

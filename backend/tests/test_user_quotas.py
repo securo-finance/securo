@@ -240,12 +240,12 @@ async def test_the_plugin_path_counts_when_room_is_left(managed, session: AsyncS
     assert await quota_service.count_bank_connections(session, user_id) == 1
 
 
-# --- Downgrade -----------------------------------------------------------------
+# --- Fit check -----------------------------------------------------------------
 
 
 @pytest.mark.asyncio
-async def test_check_downgrade_reports_the_excess_per_counter(session: AsyncSession, test_user, test_workspace):
-    """Two workspaces and three connections over the target, as the downgrade screen would show."""
+async def test_check_fit_reports_the_excess_per_counter(session: AsyncSession, test_user, test_workspace):
+    """Two workspaces and three connections over the target, as a screen would show."""
     second, third = await _workspace(session, test_user), await _workspace(session, test_user)
     session.add_all([
         _connection(test_workspace, test_user.id), _connection(second, test_user.id), _connection(third, test_user.id),
@@ -255,7 +255,7 @@ async def test_check_downgrade_reports_the_excess_per_counter(session: AsyncSess
         session.add(WorkspaceMember(workspace_id=test_workspace.id, user_id=member.id, role="viewer"))
     await session.flush()
 
-    result = await quota_service.check_downgrade(session, test_user.id, {
+    result = await quota_service.check_fit(session, test_user.id, {
         "max_personal_workspaces": 1, "max_business_workspaces": None,
         "max_bank_connections": 0, "max_members_per_workspace": 1,
     })
@@ -268,7 +268,7 @@ async def test_check_downgrade_reports_the_excess_per_counter(session: AsyncSess
         "max_members_per_workspace": (3, 1, 2),
     }
 
-    fits = await quota_service.check_downgrade(session, test_user.id, {
+    fits = await quota_service.check_fit(session, test_user.id, {
         "max_personal_workspaces": 3, "max_bank_connections": 3, "max_members_per_workspace": 3,
     })
     assert fits.allowed and all(f.excess == 0 for f in fits.counters)
@@ -294,7 +294,7 @@ async def test_an_instance_superuser_is_refused(operator, client: AsyncClient, t
 
 
 @pytest.mark.asyncio
-async def test_the_operator_writes_reads_and_checks_a_downgrade(operator, client: AsyncClient, test_user):
+async def test_the_operator_writes_reads_and_checks_a_fit(operator, client: AsyncClient, test_user):
     url = f"/api/operator/quotas/{test_user.id}"
     resp = await client.get(url, headers=operator)
     assert resp.status_code == 200 and resp.json()["max_bank_connections"] is None
@@ -308,7 +308,7 @@ async def test_the_operator_writes_reads_and_checks_a_downgrade(operator, client
     resp = await client.put(url, json={"max_bank_connections": -1}, headers=operator)
     assert resp.status_code == 422
 
-    resp = await client.post(f"{url}/downgrade-check", json={"max_personal_workspaces": 0}, headers=operator)
+    resp = await client.post(f"{url}/fit-check", json={"max_personal_workspaces": 0}, headers=operator)
     assert resp.status_code == 200
     assert resp.json()["allowed"] is False
     personal = next(c for c in resp.json()["counters"] if c["counter"] == "max_personal_workspaces")
