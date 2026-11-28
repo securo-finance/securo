@@ -43,6 +43,12 @@
       "groupName": "backend (non-major)"
     },
     {
+      "description": "The uv image in backend/Dockerfile gets the same cooldown as PyPI, and moves in one PR with the uv pins kept by the custom manager below, so the image never builds with a different uv than the one that wrote the lock.",
+      "matchPackageNames": ["uv", "ghcr.io/astral-sh/uv"],
+      "minimumReleaseAge": "7 days",
+      "groupName": "uv"
+    },
+    {
       "description": "Postgres majors need a deliberate data migration for self-hosters — never auto-PR them",
       "matchDatasources": ["docker"],
       "matchPackageNames": ["pgvector/pgvector"],
@@ -53,9 +59,8 @@
   "customManagers": [
     {
       "customType": "regex",
-      "description": "uv pinned in the Dockerfile, CI, the release workflow and scripts/lock.sh (marked with a `# renovate:` comment)",
+      "description": "uv pinned in CI, the release workflow and scripts/lock.sh (marked with a `# renovate:` comment). backend/Dockerfile copies uv from its image, which the dockerfile manager tracks.",
       "fileMatch": [
-        "^backend/Dockerfile$",
         "^backend/scripts/lock\\.sh$",
         "^\\.github/workflows/ci\\.yml$",
         "^\\.github/workflows/prepare-release\\.yml$"

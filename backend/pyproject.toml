@@ -4,8 +4,8 @@ version = "0.23.0"
 description = "Securo API - Personal Finance Manager"
 requires-python = ">=3.11"
 # These ranges express intent; the resolved versions live in uv.lock, which is
-# what CI and the Docker image actually install (exported with --frozen and
-# fed to pip with hash checking). After changing anything here, run
+# what CI and the Docker image actually install (uv sync --locked, which
+# checks the hashes recorded in the lock). After changing anything here, run
 # scripts/lock.sh and commit the updated uv.lock — CI fails if it drifts.
 dependencies = [
     "fastapi>=0.109.0",
@@ -56,6 +56,10 @@ dependencies = [
     # S3-compatible attachment storage. Only imported when STORAGE_PROVIDER=s3,
     # so installs on local storage pay nothing at runtime (ADR 0019).
     "aiobotocore>=2.21.0",
+    # The plugin runner installs each plugin's lockfile with
+    # `sys.executable -m pip` (plugin_runner/store.py). The image's venv is
+    # built by uv and has no pip of its own, so it is locked here.
+    "pip>=26.0",
 ]
 
 [project.optional-dependencies]

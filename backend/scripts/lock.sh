@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Regenerate uv.lock, the source of truth for backend dependencies.
 #
-# Nothing else is committed: CI and the Docker image export the lock at
-# install time (uv export --frozen) and feed it to pip with hash checking,
-# and `uv sync --all-extras` builds a dev venv from it directly.
+# Nothing else is committed: CI and the Docker image install from it with
+# `uv sync --locked`, which verifies the hashes recorded in the lock, and
+# `uv sync --all-extras` builds a dev venv from it directly.
 #
 # Run this after any change to [project.dependencies] or the dev extra in
 # pyproject.toml and commit the updated uv.lock — CI fails if it drifts.
