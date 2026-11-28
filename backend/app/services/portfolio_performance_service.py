@@ -31,11 +31,14 @@ from app.providers.benchmark import (
 from app.schemas.asset import (
     BenchmarkPerformanceRead,
     BenchmarkSourceError,
+    MoneyWeightedSeriesRead,
+    PerformanceMethod,
     PortfolioPerformancePoint,
     PortfolioPerformanceRead,
 )
 from app.services import asset_service
 from app.services.fx_rate_service import convert
+from app.services.money_weighted_return import Legs, solve_on_points
 
 
 logger = logging.getLogger(__name__)
@@ -53,6 +56,8 @@ _SYNCED_FIXED_INCOME_TYPES = {
 _SPLIT_PRICE_RATIO = 0.6
 # Amounts are money: anything this small left after a sale is float residue.
 _HELD_DUST = 1e-6
+# A portfolio worth less than half a cent holds nothing.
+_EMPTY_VALUE = 0.005
 # How long a snapshot without a share count may take to show a trade (a
 # weekend, a holiday, settlement) before the trade is dated the old way.
 _SHOWN_WITHIN = timedelta(days=7)
@@ -606,6 +611,20 @@ def _benchmark_index_returns(
     A time-weighted portfolio return is independent of cash flows, so it is
     compared with the index itself rather than a shadow portfolio.
     """
+    prices = _benchmark_prices(history, start_date, end_date, extra_dates)
+    if not prices:
+        return []
+    baseline = prices[0][1]
+    return [(point_date, (price / baseline - 1.0) * 100.0) for point_date, price in prices]
+
+
+def _benchmark_prices(
+    history: list[tuple[date, float]],
+    start_date: date,
+    end_date: date,
+    extra_dates: set[date],
+) -> list[tuple[date, float]]:
+    """The benchmark's price as of each date of the period, from its start."""
     baseline = _last_on_or_before(history, start_date)
     if baseline is None:
         baseline = next((point for point in history if point[0] >= start_date), None)
@@ -625,8 +644,74 @@ def _benchmark_index_returns(
             if history[history_index][0] >= baseline[0]:
                 price = history[history_index][1]
             history_index += 1
-        output.append((point_date, (price / baseline[1] - 1.0) * 100.0))
+        output.append((point_date, price))
     return output
+
+
+def _benchmark_shadow_portfolio(
+    history: list[tuple[date, float]],
+    start_date: date,
+    end_date: date,
+    start_value: float,
+    flows: dict[date, Legs],
+    extra_dates: set[date],
+    *,
+    opening: Optional[dict[date, float]] = None,
+    exits: Iterable[date] = (),
+) -> tuple[list[tuple[date, float]], dict[date, Legs]]:
+    """The benchmark held with the portfolio's own money, for a money-weighted
+    comparison.
+
+    A money-weighted return depends on when money moved, so the index alone
+    is not comparable with it. Instead the benchmark is bought with what the
+    portfolio held at the start and with every later contribution, at that
+    day's price, and sold for every withdrawal; on a day with both, it buys
+    first. ``opening`` is the part of
+    a day's money the portfolio bought at its previous valuation's price
+    (a trade only a later snapshot reflects): the shadow buys it at the
+    benchmark's price as of that valuation too, so the move in between
+    counts for both. On ``exits``, the days the portfolio sold everything,
+    the shadow sells everything as well, so neither keeps compounding after
+    the other has stopped. Otherwise a withdrawal larger than the shadow
+    holds (the portfolio did better) only takes out what is there.
+    Returns its value per date and the money actually moved.
+    """
+    prices = _benchmark_prices(history, start_date, end_date, extra_dates | set(flows))
+    if not prices:
+        return [], {}
+    opening = opening or {}
+    exits = set(exits)
+    valuations = sorted(extra_dates)
+    units = max(start_value, 0.0) / prices[0][1]
+    values: list[tuple[date, float]] = []
+    moved: dict[date, Legs] = {}
+    for point_date, price in prices:
+        if point_date <= start_date:
+            values.append((point_date, units * price))
+            continue
+        put_in, taken_out = flows.get(point_date, (0.0, 0.0))
+        # The opening purchase is part of the money put in that day.
+        at_open = min(max(opening.get(point_date, 0.0), 0.0), put_in)
+        if at_open > 0:
+            previous = bisect_right(valuations, point_date - timedelta(days=1))
+            as_of = (
+                _last_on_or_before(prices, valuations[previous - 1]) if previous else None
+            )
+            open_price = as_of[1] if as_of is not None else prices[0][1]
+            units += at_open / open_price
+        if put_in > at_open:
+            units += (put_in - at_open) / price
+        sold = 0.0
+        if point_date in exits:
+            sold = units * price
+            units = 0.0
+        elif taken_out > 0:
+            sold = min(taken_out, units * price)
+            units = max(units - sold / price, 0.0)
+        if put_in or sold:
+            moved[point_date] = (put_in, sold)
+        values.append((point_date, units * price))
+    return values, moved
 
 
 T = TypeVar("T")
@@ -751,6 +836,26 @@ class CashFlows:
     opening: dict[date, float] = field(default_factory=dict)
     trades: dict[date, list[MarketTrade]] = field(default_factory=dict)
     dates: set[date] = field(default_factory=set)
+
+    def legs(self) -> dict[date, Legs]:
+        """Money put in and money taken out per date, kept apart, for a
+        money-weighted return: a same-day buy and sale are two amounts, so
+        a day trade that lost 1% reads as that, not as all of its net cost
+        lost. Every flow counts on the date it is recorded at, the first
+        valuation that reflects it. A market trade's fee is paid on top of a
+        buy and comes off a sale's proceeds."""
+        legs: dict[date, Legs] = {}
+        for point_date in self.dates:
+            put_in = self.contributions.get(point_date, 0.0) + self.opening.get(point_date, 0.0)
+            taken_out = self.withdrawals.get(point_date, 0.0)
+            for trade in self.trades.get(point_date, ()):
+                cash = trade.amount + trade.fee
+                if cash >= 0:
+                    put_in += cash
+                else:
+                    taken_out -= cash
+            legs[point_date] = (put_in, taken_out)
+        return legs
 
 
 async def _cash_flows(
@@ -1041,6 +1146,7 @@ async def get_portfolio_performance_multi(
     asset_ids: Optional[list[uuid.UUID]] = None,
     end_date: Optional[date] = None,
     provider: Optional[BenchmarkHistoryRouter] = None,
+    method: PerformanceMethod = "twr",
 ) -> PortfolioPerformanceRead:
     first_provider = benchmarks[0][0] if benchmarks else None
     first_symbol = benchmarks[0][1] if benchmarks else None
@@ -1061,6 +1167,7 @@ async def get_portfolio_performance_multi(
         return PortfolioPerformanceRead(
             benchmark_symbol=first_symbol,
             benchmark_provider=first_provider,
+            method=method,
             period=period,
             start_date=requested_start,
             end_date=last_date,
@@ -1180,31 +1287,45 @@ async def get_portfolio_performance_multi(
     )
     sorted_dates = sorted(portfolio_dates)
     portfolio_values = [(d, snapshot(d)) for d in sorted_dates]
-    asset_by_key = {str(asset.id): asset for asset in assets}
-    intraday: dict[date, list[IntradayTrade]] = {}
-    for previous_date, point_date in zip(sorted_dates, sorted_dates[1:]):
-        # Each holding starts the day at its previous valuation and is then
-        # marked at each of its trades' prices, in ledger order.
-        marks: dict[str, float] = {}
-        for trade in flows.trades.get(point_date, ()):
-            last_mark = marks.get(trade.asset_key)
-            if last_mark is None:
-                last_mark = asset_value(asset_by_key[trade.asset_key], previous_date)
-            mark = last_mark * (1.0 - trade.written_off) if trade.mark is None else trade.mark
-            intraday.setdefault(point_date, []).append(
-                IntradayTrade(mark - last_mark, trade.amount, trade.fee)
-            )
-            marks[trade.asset_key] = mark + trade.amount
-    portfolio_returns = time_weighted_returns(
-        portfolio_values,
-        flows.contributions,
-        flows.withdrawals,
-        fees=flows.fees,
-        opening=flows.opening,
-        intraday=intraday,
-    )
+    money_flows = flows.legs()
+    # A total exit: money moved and nothing is left, whatever the sale
+    # brought in (a write-off sells for nothing) and whatever was held
+    # before (a same-day round trip from an empty portfolio).
+    exits = {
+        point_date
+        for point_date, value in portfolio_values[1:]
+        if abs(value) < _EMPTY_VALUE and point_date in flows.dates
+    }
+    if method == "mwr":
+        # Solved on the chart's own dates once they are known, below.
+        portfolio_returns = [(point_date, 0.0) for point_date, _ in portfolio_values]
+    else:
+        asset_by_key = {str(asset.id): asset for asset in assets}
+        intraday: dict[date, list[IntradayTrade]] = {}
+        for previous_date, point_date in zip(sorted_dates, sorted_dates[1:]):
+            # Each holding starts the day at its previous valuation and is then
+            # marked at each of its trades' prices, in ledger order.
+            marks: dict[str, float] = {}
+            for trade in flows.trades.get(point_date, ()):
+                last_mark = marks.get(trade.asset_key)
+                if last_mark is None:
+                    last_mark = asset_value(asset_by_key[trade.asset_key], previous_date)
+                mark = last_mark * (1.0 - trade.written_off) if trade.mark is None else trade.mark
+                intraday.setdefault(point_date, []).append(
+                    IntradayTrade(mark - last_mark, trade.amount, trade.fee)
+                )
+                marks[trade.asset_key] = mark + trade.amount
+        portfolio_returns = time_weighted_returns(
+            portfolio_values,
+            flows.contributions,
+            flows.withdrawals,
+            fees=flows.fees,
+            opening=flows.opening,
+            intraday=intraday,
+        )
     benchmark_returns: dict[str, list[tuple[date, float]]] = {}
     benchmark_starts: dict[str, date] = {}
+    shadows: dict[str, tuple[list[tuple[date, float]], dict[date, Legs]]] = {}
     # The chart shows every benchmark on every date any series has, so each
     # one is converted on all of them: a close only another benchmark adds
     # still needs that day's rate, not the last portfolio date's.
@@ -1232,12 +1353,30 @@ async def get_portfolio_performance_multi(
         if not any(benchmark_start < point_date <= last_date for point_date in close_dates):
             source_errors[key] = "no_data"
             continue
-        returns = _benchmark_index_returns(
-            pairs,
-            benchmark_start,
-            last_date,
-            portfolio_dates,
-        )
+        if method == "mwr":
+            # The shadow buys what the portfolio held on the benchmark's own
+            # start, then follows the money moved after it.
+            held_then = _last_on_or_before(portfolio_values, benchmark_start)
+            shadow_values, shadow_flows = _benchmark_shadow_portfolio(
+                pairs,
+                benchmark_start,
+                last_date,
+                held_then[1] if held_then is not None else 0.0,
+                money_flows,
+                portfolio_dates,
+                opening=flows.opening,
+                exits=exits,
+            )
+            returns = [(point_date, 0.0) for point_date, _ in shadow_values]
+            if returns:
+                shadows[key] = (shadow_values, shadow_flows)
+        else:
+            returns = _benchmark_index_returns(
+                pairs,
+                benchmark_start,
+                last_date,
+                portfolio_dates,
+            )
         if returns:
             benchmark_returns[key] = returns
             benchmark_starts[key] = benchmark_start
@@ -1250,6 +1389,16 @@ async def get_portfolio_performance_multi(
         portfolio_start,
         last_date,
     )
+    money_weighted: Optional[MoneyWeightedSeriesRead] = None
+    windows: dict[str, Optional[float]] = {}
+    if method == "mwr":
+        solved = await asyncio.to_thread(
+            solve_on_points, points, portfolio_values, money_flows, shadows, benchmark_starts
+        )
+        money_weighted = solved.series
+        portfolio_returns = solved.portfolio
+        benchmark_returns.update(solved.benchmarks)
+        windows = solved.windows
     primary_key = f"{first_provider}:{first_symbol}" if benchmarks else None
     for point in points:
         # The legacy scalar still refers to the first requested benchmark.
@@ -1264,7 +1413,11 @@ async def get_portfolio_performance_multi(
         benchmark_start = benchmark_starts.get(key)
         excess_return = None
         if benchmark_return is not None and benchmark_start is not None:
-            window_return = _return_since(portfolio_returns, benchmark_start)
+            window_return = (
+                windows.get(key)
+                if method == "mwr"
+                else _return_since(portfolio_returns, benchmark_start)
+            )
             if window_return is not None:
                 excess_return = window_return - benchmark_return
         benchmark_metrics.append(
@@ -1284,6 +1437,7 @@ async def get_portfolio_performance_multi(
     return PortfolioPerformanceRead(
         benchmark_symbol=first_symbol,
         benchmark_provider=first_provider,
+        method=method,
         period=period,
         start_date=portfolio_start,
         end_date=last_date,
@@ -1292,6 +1446,7 @@ async def get_portfolio_performance_multi(
         excess_return=first_metric.excess_return if first_metric else None,
         benchmarks=benchmark_metrics,
         points=points,
+        money_weighted=money_weighted,
     )
 
 
@@ -1309,6 +1464,7 @@ async def get_portfolio_performance(
     asset_ids: Optional[list[uuid.UUID]] = None,
     end_date: Optional[date] = None,
     provider: Optional[BenchmarkHistoryRouter] = None,
+    method: PerformanceMethod = "twr",
 ) -> PortfolioPerformanceRead:
     """Backward-compatible single-benchmark entry point."""
     return await get_portfolio_performance_multi(
@@ -1323,4 +1479,5 @@ async def get_portfolio_performance(
         asset_ids=asset_ids,
         end_date=end_date,
         provider=provider,
+        method=method,
     )

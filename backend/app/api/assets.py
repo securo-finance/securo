@@ -49,6 +49,7 @@ from app.schemas.asset import (
     HoldingTradeImportRead,
     MarketSymbolMatch,
     MarketSymbolQuote,
+    PerformanceMethod,
     PortfolioPerformanceRead,
 )
 from app.services import (
@@ -202,6 +203,7 @@ async def portfolio_performance(
     provider: list[str] | None = Query(None),
     benchmark: list[str] | None = Query(None),
     period: str = Query("1y", pattern="^(3m|6m|ytd|1y|3y|5y)$"),
+    method: PerformanceMethod = Query("twr"),
     asset_group_ids: list[uuid.UUID] | None = Query(None),
     selected_asset_group_ids: list[uuid.UUID] | None = Query(None),
     asset_ids: list[uuid.UUID] | None = Query(None),
@@ -251,6 +253,7 @@ async def portfolio_performance(
         asset_group_ids,
         selected_asset_group_ids=selected_asset_group_ids,
         asset_ids=asset_ids,
+        method=method,
     )
 
 

@@ -31,6 +31,8 @@ compares it with any market index the user searches for.
   shows as unavailable on the chart. Each gets its own line, final return and
   excess over the portfolio.
 - Dragging across the chart shows the return between any two dates.
+- A **return method** toggle: time-weighted (the default) or money-weighted.
+  The choice is remembered with the period and scope.
 - If a benchmark's data source fails, only that benchmark shows an error with
   a retry button. The portfolio's own return is always shown.
 
@@ -92,6 +94,88 @@ The naive version subtracts the proceeds from the base *before* the drop that
 produced them, which turns any sale below the last valuation into a total loss
 and inflates partial sales.
 
+## Method: money-weighted return
+
+The toggle switches the portfolio, every benchmark and the drag-to-measure
+range to a **money-weighted return**: the internal rate of return (IRR) of
+what the portfolio held at the start, every amount put in and taken out, and
+what it is worth at the end. It answers a different question from the
+time-weighted return: not *how did the holdings do* but *how did my money
+do*, so the timing and size of contributions changes it.
+
+The rate is solved per point (and again for a dragged range) from
+
+```
+value at end = held at start · g + Σ (money put in − money taken out) · g^(1 − t)
+```
+
+where `t` is each flow's position in the span as a fraction of it (0 at the
+start, 1 at the end) and `g` is the growth over the whole span, so the result `g − 1` is a cumulative
+percentage on the same scale as the time-weighted chart rather than an
+annualised rate. The span runs from the first money in to the last value held
+or taken out: the days before the first buy and after selling everything do
+not stretch or dilute the rate, and the line stays flat after a full sale.
+The solver is Newton's method on `ln g`, warm-started from the previous
+point; when that does not converge it searches a bracket, falling back to
+bisection. Cash that changes sign more than once over time (money taken out
+and put in again) can balance at more than one rate; for such cash the
+solver always starts from 0, as the client does, so the line and a range
+over the same cash pick the same rate. When the two ends of the search
+agree in sign but the cash still balances between them, both scan the same
+grid on `ln g` and take the sign change nearest to 0%.
+
+The line is solved on the chart's own dates, from the same per-point values
+and money moved the response sends for dragging (below), and a dragged range
+is solved the same way. Dragging from the chart's first date to any point
+therefore reads exactly the line there, also on a date only a benchmark close
+adds. Each point is solved over every flow before it, so the work grows with
+both; it runs off the request's event loop.
+
+Every flow counts on the date it is recorded, the first valuation that
+reflects it, and money put in and taken out on the same day are kept apart
+rather than netted, so a day trade that lost 1% reads as that and not as
+all of its net cost lost: buys and sales from the ledger (a trade's fee on top of a buy
+and off a sale's proceeds), contributions and withdrawals read from
+share-count and balance changes, and money bought at a previous snapshot's
+price. The start-of-day timing the time-weighted return uses only matters
+within one interval, and is not modelled here.
+
+Worked example: 100 held, halves to 50, another 100 is bought at the bottom
+and both double. Time-weighted: 0.5 × 2 − 1 = **0%**. Money-weighted over 30
+days with the buy on day 15: **+69.7%**, because most of the money caught the
+recovery.
+
+### Benchmarks under the money-weighted method
+
+An index's own change is a time-weighted figure, so comparing it with a
+money-weighted one would mix the two. Each benchmark becomes a **shadow
+portfolio** instead: it is bought with what the portfolio held at the start
+and with every later contribution at that day's price, and sold for every
+withdrawal, and its money-weighted return is taken the same way. The excess
+then answers "did my timing and picks beat buying the index whenever I
+invested?".
+
+- A benchmark whose data starts after the portfolio's is bought on its own
+  first date with what the portfolio held then, and the excess compares the
+  portfolio's money-weighted return over that same window. A dragged range
+  that reaches before a benchmark's data has no return for it, as under the
+  time-weighted method.
+- Money the portfolio bought at a previous snapshot's price (a trade only a
+  later snapshot reflects) is bought by the shadow at the index's price as of
+  that snapshot too, so the move in between counts for both.
+- When the portfolio is left with nothing on a day money moved (everything
+  sold, also for nothing as a write-off, or bought and sold again the same
+  day), the shadow sells everything that day too, so neither keeps
+  compounding after the other has stopped.
+- A withdrawal larger than the shadow holds (the portfolio did much better)
+  only takes out what is there. The shadow is then empty first and its span
+  ends earlier than the portfolio's, so the two cumulative rates cover
+  different lengths of time; see Known limitations.
+
+The response carries, only for this method, each point's value and money
+moved for the portfolio and each shadow (`money_weighted`), so the client can
+solve a dragged range without another request.
+
 ## Where the cash flows come from
 
 Securo holds investments in several shapes. Each needs its own rule for
@@ -132,7 +216,8 @@ the broker reported.
 
 The benchmark line is the index's own change since the period start: a
 time-weighted portfolio return is independent of cash flows, so it is compared
-with the index itself rather than with a shadow portfolio.
+with the index itself rather than with a shadow portfolio. The money-weighted
+method uses a shadow portfolio instead (see above).
 
 A benchmark never moves the portfolio's own period. The portfolio is measured
 from the period start (or its first valuation, if later); a benchmark whose
@@ -218,6 +303,13 @@ with the expected return worked out by hand:
   finer ones for weeks, with patchier coverage than daily closes. That is
   a new column and a new outbound call under ADR 0025, for an error of this
   size. Worth revisiting in its own change once trades carry a time.
+- **Money-weighted return with no money in.** A scope that only shows money
+  taken out (a sale whose purchase is outside the data) has no rate; the line
+  repeats its last value.
+- **An emptied shadow.** When the portfolio takes out more than its shadow
+  holds, the shadow ends early and its cumulative rate covers a shorter span
+  than the portfolio's. A public-market-equivalent method that lets the
+  shadow go negative would keep the spans equal; it is not done here.
 - **Benchmark fairness.** The Ibovespa is a total-return index (dividends
   reinvested), and the Índice DI compounds all of its income, so comparing
   either with a price-only portfolio is unfair to the portfolio until

@@ -61,6 +61,7 @@ const benchmarks: BenchmarkMatch[] = [
 const performanceData: PerformanceData = {
   benchmark_symbol: '^GSPC',
   benchmark_provider: 'yahoo',
+  method: 'twr',
   period: '1y',
   start_date: '2026-01-07',
   end_date: '2026-09-29',
@@ -321,6 +322,7 @@ describe('PortfolioPerformance', () => {
       walletIds: [],
       assetIds: [],
       period: '1y',
+      method: 'twr',
     })
     const { user } = renderPerformance()
 
@@ -335,26 +337,26 @@ describe('PortfolioPerformance', () => {
     })
     await user.click(apple)
     await waitFor(() =>
-      expect(assets.performance).toHaveBeenLastCalledWith([], '1y', null, [], ['apple'], workspaceId),
+      expect(assets.performance).toHaveBeenLastCalledWith([], '1y', null, [], ['apple'], workspaceId, 'twr'),
     )
 
     await user.click(brokerage)
     expect(apple).toBeChecked()
     expect(apple).toBeDisabled()
     await waitFor(() =>
-      expect(assets.performance).toHaveBeenLastCalledWith([], '1y', null, ['brokerage'], [], workspaceId),
+      expect(assets.performance).toHaveBeenLastCalledWith([], '1y', null, ['brokerage'], [], workspaceId, 'twr'),
     )
     expect(within(scope).getByText('1 selected')).toBeInTheDocument()
 
     await user.click(within(scope).getByRole('checkbox', { name: 'Cash reserve' }))
     await waitFor(() =>
-      expect(assets.performance).toHaveBeenLastCalledWith([], '1y', null, ['brokerage'], ['cash'], workspaceId),
+      expect(assets.performance).toHaveBeenLastCalledWith([], '1y', null, ['brokerage'], ['cash'], workspaceId, 'twr'),
     )
     await user.click(brokerage)
     expect(apple).not.toBeChecked()
     expect(apple).toBeEnabled()
     await waitFor(() =>
-      expect(assets.performance).toHaveBeenLastCalledWith([], '1y', null, [], ['cash'], workspaceId),
+      expect(assets.performance).toHaveBeenLastCalledWith([], '1y', null, [], ['cash'], workspaceId, 'twr'),
     )
   })
 
@@ -364,6 +366,7 @@ describe('PortfolioPerformance', () => {
       walletIds: [],
       assetIds: [],
       period: '1y',
+      method: 'twr',
     })
     const sold = {
       id: 'tesla',
@@ -378,7 +381,7 @@ describe('PortfolioPerformance', () => {
     const scope = screen.getByRole('dialog', { name: 'Portfolio scope' })
     await user.click(within(scope).getByRole('checkbox', { name: 'Tesla · TSLA · Sold' }))
     await waitFor(() =>
-      expect(assets.performance).toHaveBeenLastCalledWith([], '1y', null, [], ['tesla'], workspaceId),
+      expect(assets.performance).toHaveBeenLastCalledWith([], '1y', null, [], ['tesla'], workspaceId, 'twr'),
     )
   })
 
@@ -403,11 +406,41 @@ describe('PortfolioPerformance', () => {
         undefined,
         undefined,
         workspaceId,
+        'twr',
       ),
     )
     expect(period).toHaveAttribute('aria-pressed', 'true')
     expect(screen.getByRole('button', { name: '1Y' })).toHaveAttribute('aria-pressed', 'false')
     expect(readLastSelection(workspaceId)?.period).toBe('3m')
+  })
+
+  it('switches to the money-weighted return and remembers it', async () => {
+    const { user } = renderPerformance()
+    await screen.findByText('+12.50%')
+    const methods = screen.getByRole('group', { name: 'Return method' })
+    expect(within(methods).getByRole('button', { name: 'Time-weighted' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
+
+    await user.click(within(methods).getByRole('button', { name: 'Money-weighted' }))
+    await waitFor(() =>
+      expect(assets.performance).toHaveBeenLastCalledWith(
+        [],
+        '1y',
+        null,
+        undefined,
+        undefined,
+        workspaceId,
+        'mwr',
+      ),
+    )
+    expect(within(methods).getByRole('button', { name: 'Money-weighted' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
+    expect(readLastSelection(workspaceId)?.method).toBe('mwr')
+    expect(screen.getByText(/Money-weighted gross return \(IRR\)/)).toBeInTheDocument()
   })
 
   it('supports keyboard benchmark selection and removal at the five-benchmark limit', async () => {
@@ -444,6 +477,7 @@ describe('PortfolioPerformance', () => {
         undefined,
         undefined,
         workspaceId,
+        'twr',
       ),
     )
 
@@ -688,6 +722,7 @@ describe('PortfolioPerformance', () => {
         ['brokerage', 'hidden-wallet'],
         ['archived-asset', 'cash'],
         workspaceId,
+        'twr',
       ),
     )
     // The view still matches: nothing to update yet.
@@ -793,7 +828,7 @@ describe('PortfolioPerformance', () => {
     await screen.findByText('+12.50%')
 
     expect(vi.mocked(assets.performance).mock.calls).toEqual([
-      [[], '1y', null, ['brokerage'], ['cash'], workspaceId],
+      [[], '1y', null, ['brokerage'], ['cash'], workspaceId, 'twr'],
     ])
     expect(screen.getByRole('button', { name: /Wallets or assets\s*2/ })).toBeInTheDocument()
     expect(readLastSelection(workspaceId)).toMatchObject({
@@ -833,6 +868,86 @@ describe('PortfolioPerformance', () => {
     fireEvent.keyDown(chart, { key: 'Escape' })
     expect(screen.queryByText('Selected period')).not.toBeInTheDocument()
     expect(screen.getByText('+12.50%')).toBeInTheDocument()
+  })
+
+  it('solves a money-weighted range again and leaves out a benchmark it reaches before', async () => {
+    writeBenchmarkSelections(workspaceId, benchmarks.slice(0, 2))
+    vi.mocked(assets.performance).mockResolvedValue({
+      ...performanceData,
+      method: 'mwr',
+      points: [
+        { date: '2026-01-07', portfolio: 0, benchmark: 0, benchmarks: { 'yahoo:^GSPC': 0 } },
+        {
+          date: '2026-05-04',
+          portfolio: 20,
+          benchmark: 0,
+          benchmarks: { 'yahoo:^GSPC': 0, 'yahoo:^IXIC': 0 },
+        },
+        {
+          date: '2026-09-29',
+          portfolio: 12.5,
+          benchmark: 5,
+          benchmarks: { 'yahoo:^GSPC': 5, 'yahoo:^IXIC': 4 },
+        },
+      ],
+      // 100 held, 100 more put in on May 4 when it is worth 220 in all.
+      money_weighted: {
+        values: [100, 220, 230],
+        flows: [
+          [0, 0],
+          [100, 0],
+          [0, 0],
+        ],
+        benchmark_values: { 'yahoo:^GSPC': [100, 200, 210], 'yahoo:^IXIC': [0, 220, 230] },
+        benchmark_flows: {
+          'yahoo:^GSPC': [
+            [0, 0],
+            [100, 0],
+            [0, 0],
+          ],
+          'yahoo:^IXIC': [
+            [0, 0],
+            [220, 0],
+            [0, 0],
+          ],
+        },
+      },
+    })
+    const { container } = renderPerformance()
+    await screen.findByText('+12.50%')
+    const chart = await waitFor(() => {
+      const surface = container.querySelector<SVGElement>('.recharts-surface')
+      expect(surface).toBeInTheDocument()
+      return surface!
+    })
+
+    await markRange(container, chart, 1)
+    // -100 now, then -100 + 220 on May 4: the 100 held grew 20%.
+    expect(screen.getByText('Selected period').nextElementSibling).toHaveTextContent('+20.00%')
+    const card = (name: string) => screen.getByTitle(name).closest('.rounded-lg') as HTMLElement
+    expect(within(card('S&P 500')).getByText(/0\.00%/)).toBeInTheDocument()
+    // The Nasdaq only has data from May 4: like time-weighted, no return.
+    expect(within(card('Nasdaq Composite')).queryByText(/%/)).not.toBeInTheDocument()
+
+    // May 4 to Sep 29 holds 220 that grows to 230 with no money moved: +4.55%.
+    // Dividing the line's cumulative values (20% and 12.5%) would give -6.25%.
+    fireEvent.keyDown(chart, { key: 'Escape' })
+    // Back to May 4 wherever Escape left the cursor.
+    fireEvent.keyDown(chart, { key: 'ArrowLeft' })
+    fireEvent.keyDown(chart, { key: 'ArrowRight' })
+    await waitFor(() =>
+      expect(container.querySelector('.recharts-tooltip-wrapper')).toHaveTextContent('May 4, 2026'),
+    )
+    fireEvent.keyDown(chart, { key: 'Enter' })
+    fireEvent.keyDown(chart, { key: 'ArrowRight' })
+    await waitFor(() =>
+      expect(container.querySelector('.recharts-tooltip-wrapper')).toHaveTextContent('Sep 29, 2026'),
+    )
+    fireEvent.keyDown(chart, { key: ' ' })
+    await waitFor(() =>
+      expect(screen.getByText('Selected period').nextElementSibling).toHaveTextContent('+4.55%'),
+    )
+    expect(within(card('Nasdaq Composite')).getByText(/4\.55%/)).toBeInTheDocument()
   })
 
   it('plots dates on a time scale with one tick per month and finds dates by time', async () => {

@@ -1,4 +1,10 @@
-import type { BenchmarkMatch, PortfolioPerformancePeriod, UserPreferences } from '../types'
+import type {
+  BenchmarkMatch,
+  MoneyFlow,
+  PerformanceMethod,
+  PortfolioPerformancePeriod,
+  UserPreferences,
+} from '../types'
 
 const STORAGE_PREFIX = 'securo.performanceBenchmark.'
 export const MAX_PERFORMANCE_BENCHMARKS = 5
@@ -78,6 +84,8 @@ export interface PerformanceSelection {
   walletIds: string[]
   assetIds: string[]
   period: PortfolioPerformancePeriod
+  /** Time-weighted when absent. */
+  method?: PerformanceMethod
 }
 
 /** A named set of wallets and holdings, saved to the user's preferences. */
@@ -105,6 +113,7 @@ export function readLastSelection(workspaceId: string): PerformanceSelection | n
       period: PERIODS.includes(parsed.period as PortfolioPerformancePeriod)
         ? (parsed.period as PortfolioPerformancePeriod)
         : '1y',
+      method: parsed.method === 'mwr' ? 'mwr' : 'twr',
     }
   } catch {
     return null
@@ -197,6 +206,116 @@ export function periodReturn(startPercent: number, endPercent: number): number |
 }
 
 const DAY_MS = 86_400_000
+const MAX_LOG_GROWTH = 45
+const CASH_EPSILON = 1e-9
+// The server's grid on ln(growth): every 0.05 from -5 to 5, then every 1
+// out to the bounds.
+const SEARCH_GRID = [
+  ...new Set([
+    ...Array.from({ length: 201 }, (_, index) => (index - 100) * 0.05),
+    ...Array.from({ length: 2 * MAX_LOG_GROWTH + 1 }, (_, index) => index - MAX_LOG_GROWTH),
+  ]),
+].sort((a, b) => a - b)
+
+/**
+ * Money-weighted return (IRR) between two points, as a cumulative percentage.
+ * Mirrors the server's `money_weighted_return` step for step: what was held
+ * at `start`, plus the money put in after it and less the money taken out
+ * (`flows`, kept apart per date), grows into what is held at `end` at a
+ * single rate, compounded over the time money was actually invested. Unlike
+ * a time-weighted series, the return of a range can't be derived from the
+ * cumulative values, so it is solved again from the values and flows.
+ */
+export function moneyWeightedReturn(
+  dates: string[],
+  values: number[],
+  flows: MoneyFlow[],
+  start: number,
+  end: number,
+): number | null {
+  const time = (index: number) => new Date(`${dates[index]}T00:00:00Z`).getTime() / DAY_MS
+  const cash: [number, number][] = [[time(start), -Math.max(values[start] ?? 0, 0)]]
+  for (let index = start + 1; index <= end; index += 1) {
+    const [putIn, takenOut] = flows[index] ?? [0, 0]
+    if (putIn) cash.push([time(index), -putIn])
+    if (takenOut) cash.push([time(index), takenOut])
+  }
+  cash.push([time(end), Math.max(values[end] ?? 0, 0)])
+  const moved = cash.filter(([, amount]) => Math.abs(amount) > CASH_EPSILON)
+  if (!moved.length) return 0
+  const paid = moved.reduce((sum, [, amount]) => (amount < 0 ? sum - amount : sum), 0)
+  const received = moved.reduce((sum, [, amount]) => (amount > 0 ? sum + amount : sum), 0)
+  if (paid <= 0) return null
+  if (received <= 0) return -100
+  const first = Math.min(...moved.map(([when]) => when))
+  const span = Math.max(...moved.map(([when]) => when)) - first
+  if (span === 0) return (received / paid - 1) * 100
+  const timed = moved.map(([when, amount]) => [(when - first) / span, amount] as const)
+  const npv = (x: number) => {
+    let total = 0
+    let slope = 0
+    for (const [elapsed, amount] of timed) {
+      const term = amount * Math.exp(-x * elapsed)
+      total += term
+      slope -= elapsed * term
+    }
+    return [total, slope] as const
+  }
+  const tolerance = 1e-12 * (paid + received)
+  // Newton's method from 0, then a bracketed search: the server's path from
+  // the same start, so when the cash balances at more than one rate (money
+  // taken out and put in again), both land on the same one.
+  let x = 0
+  for (let iteration = 0; iteration < 8; iteration += 1) {
+    const [value, slope] = npv(x)
+    if (Math.abs(value) <= tolerance) return (Math.exp(x) - 1) * 100
+    if (!slope) break
+    const step = value / slope
+    x -= step
+    if (!(x > -MAX_LOG_GROWTH && x < MAX_LOG_GROWTH)) break
+    if (Math.abs(step) < 1e-13) return (Math.exp(x) - 1) * 100
+  }
+  let low = -MAX_LOG_GROWTH
+  let high = MAX_LOG_GROWTH
+  let [lowValue] = npv(low)
+  const [highValue] = npv(high)
+  x = 0
+  if (lowValue > 0 === highValue > 0 && lowValue !== 0) {
+    // Both ends agree, yet the cash can still balance between them at two
+    // rates the ends do not separate: the server's grid, nearest to 0%.
+    const values = SEARCH_GRID.map((point) => [point, npv(point)[0]] as const)
+    let bracket: [number, number] | null = null
+    for (let index = 0; index + 1 < values.length; index += 1) {
+      const [a, aValue] = values[index]
+      const [b, bValue] = values[index + 1]
+      if (aValue > 0 !== bValue > 0 && (!bracket || Math.abs(a + b) < Math.abs(bracket[0] + bracket[1]))) {
+        bracket = [a, b]
+      }
+    }
+    if (!bracket) return null
+    ;[low, high] = bracket
+    ;[lowValue] = npv(low)
+    x = (low + high) / 2
+  }
+  if (lowValue === 0) return (Math.exp(low) - 1) * 100
+  const lowPositive = lowValue > 0
+  for (let iteration = 0; iteration < 200; iteration += 1) {
+    const [value, slope] = npv(x)
+    if (Math.abs(value) <= tolerance) break
+    if (value > 0 === lowPositive) low = x
+    else high = x
+    // Newton's step, falling back to bisection when it leaves the bracket.
+    const step = slope ? x - value / slope : Number.NaN
+    const next = step > low && step < high ? step : (low + high) / 2
+    if (Math.abs(next - x) < 1e-13) {
+      x = next
+      break
+    }
+    x = next
+  }
+  return (Math.exp(x) - 1) * 100
+}
+
 /** Above this span, month labels alone are distinct; below it the day shows too. */
 export const SHORT_SPAN_DAYS = 186
 

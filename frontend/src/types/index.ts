@@ -1766,6 +1766,20 @@ export interface BenchmarkMatch {
 
 export type PortfolioPerformancePeriod = '3m' | '6m' | 'ytd' | '1y' | '3y' | '5y'
 
+/** Time-weighted (how the holdings did) or money-weighted (how your money did). */
+export type PerformanceMethod = 'twr' | 'mwr'
+
+/** Per-point values and money moved, aligned with `points`, for range IRRs. */
+/** Money put in and money taken out on one date, both positive. */
+export type MoneyFlow = [number, number]
+
+export interface MoneyWeightedSeries {
+  values: number[]
+  flows: MoneyFlow[]
+  benchmark_values: Record<string, number[]>
+  benchmark_flows: Record<string, MoneyFlow[]>
+}
+
 export interface PortfolioPerformancePoint {
   date: string
   portfolio: number
@@ -1806,6 +1820,7 @@ export interface HoldingTradeImportIssue {
 export interface PortfolioPerformance {
   benchmark_symbol: string | null
   benchmark_provider: string | null
+  method: PerformanceMethod
   period: PortfolioPerformancePeriod
   start_date: string
   end_date: string
@@ -1814,6 +1829,7 @@ export interface PortfolioPerformance {
   excess_return: number | null
   benchmarks: BenchmarkPerformance[]
   points: PortfolioPerformancePoint[]
+  money_weighted?: MoneyWeightedSeries | null
 }
 
 export interface AssetPriceRefreshResult {

@@ -104,6 +104,7 @@ import type {
   MarketSymbolQuote,
   BenchmarkMatch,
   HoldingTradeImport,
+  PerformanceMethod,
   PortfolioPerformance,
   PortfolioPerformancePeriod,
   Attachment,
@@ -1734,6 +1735,7 @@ export const assets = {
     selectedAssetGroupIds?: string[],
     assetIds?: string[],
     workspaceId?: string | null,
+    method: PerformanceMethod = 'twr',
   ): Promise<PortfolioPerformance> => {
     const hasGroups = assetGroupIds != null && assetGroupIds.length > 0
     const { data } = await api.get('/assets/performance', {
@@ -1746,6 +1748,7 @@ export const assets = {
             }
           : {}),
         period,
+        method,
         ...(hasGroups ? { asset_group_ids: assetGroupIds } : {}),
         ...(selectedAssetGroupIds?.length
           ? { selected_asset_group_ids: selectedAssetGroupIds }

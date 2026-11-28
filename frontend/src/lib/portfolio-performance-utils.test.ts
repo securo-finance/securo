@@ -3,6 +3,7 @@ import {
   benchmarkStorageKey,
   dateToTimestamp,
   isSameSelection,
+  moneyWeightedReturn,
   newViewId,
   periodReturn,
   readBenchmarkSelection,
@@ -16,6 +17,7 @@ import {
   writeBenchmarkSelections,
   writeLastSelection,
 } from './portfolio-performance-utils'
+import type { MoneyFlow } from '../types'
 
 const values = new Map<string, string>()
 
@@ -82,12 +84,14 @@ describe('performance selection memory', () => {
       walletIds: ['w1'],
       assetIds: ['a1'],
       period: '6m',
+      method: 'mwr',
     })
     expect(readLastSelection('ws-1')).toEqual({
       scope: 'custom',
       walletIds: ['w1'],
       assetIds: ['a1'],
       period: '6m',
+      method: 'mwr',
     })
     expect(readLastSelection('ws-2')).toBeNull()
   })
@@ -102,6 +106,7 @@ describe('performance selection memory', () => {
       walletIds: ['w1'],
       assetIds: [],
       period: '1y',
+      method: 'twr',
     })
   })
 })
@@ -156,6 +161,74 @@ describe('periodReturn', () => {
 
   it('has no defined return after a total loss', () => {
     expect(periodReturn(-100, 5)).toBeNull()
+  })
+})
+
+describe('moneyWeightedReturn', () => {
+  const day = (offset: number) => new Date(Date.UTC(2025, 0, 1 + offset)).toISOString().slice(0, 10)
+  // Money put in (positive) or taken out (negative) per date, as legs.
+  const legs = (...amounts: number[]): MoneyFlow[] =>
+    amounts.map((amount) => (amount >= 0 ? [amount, 0] : [0, -amount]))
+
+  it('is the plain change when no money moves', () => {
+    expect(moneyWeightedReturn([day(0), day(365)], [1000, 1100], legs(0, 0), 0, 1)).toBeCloseTo(10, 6)
+  })
+
+  it('matches the server on a dip bought with new money', () => {
+    // Same case as the backend: -100 - 100 g^-0.5 + 300 g^-1 = 0.
+    const dates = [day(0), day(15), day(30)]
+    const flows = legs(0, 100, 0)
+    const expected = (36 / (1 + Math.sqrt(13)) ** 2 - 1) * 100
+    expect(moneyWeightedReturn(dates, [100, 150, 300], flows, 0, 2)).toBeCloseTo(expected, 6)
+    // A range that starts after the top-up is just that range's change.
+    expect(moneyWeightedReturn(dates, [100, 150, 300], flows, 1, 2)).toBeCloseTo(100, 6)
+  })
+
+  it('ignores the days before the first buy and after selling everything', () => {
+    const dates = [day(0), day(181), day(365), day(400)]
+    expect(moneyWeightedReturn(dates, [0, 1000, 1100, 1100], legs(0, 1000, 0, 0), 0, 2)).toBeCloseTo(
+      10,
+      6,
+    )
+    // 1000 sold for 1100 after a year: +10%, and the idle days after it
+    // leave that unchanged.
+    const sold = legs(0, 0, -1100, 0)
+    expect(moneyWeightedReturn(dates, [1000, 1100, 0, 0], sold, 0, 2)).toBeCloseTo(10, 6)
+    expect(moneyWeightedReturn(dates, [1000, 1100, 0, 0], sold, 0, 3)).toBeCloseTo(10, 6)
+  })
+
+  it('keeps a same-day buy and sale apart', () => {
+    // Bought for 1000 and sold for 990 on one day: 1% lost, not all of the
+    // 10 it cost on net.
+    const dates = [day(0), day(1), day(5)]
+    expect(moneyWeightedReturn(dates, [0, 0, 0], [[0, 0], [1000, 990], [0, 0]], 0, 2)).toBeCloseTo(
+      -1,
+      6,
+    )
+  })
+
+  it('picks the same of two rates as the server', () => {
+    // 100 in, 230 out halfway, 132 back in at the end: +21% and +44% both
+    // balance it; the server's solver lands on +21% from the same start.
+    const dates = [day(0), day(10), day(20)]
+    expect(moneyWeightedReturn(dates, [100, 0, 0], legs(0, -230, 132), 0, 2)).toBeCloseTo(21, 6)
+  })
+
+  it('finds a rate the ends of the search do not separate, like the server', () => {
+    // 100 in, 240 out, 120 back in: -49.6% and +185% both balance it.
+    const dates = [day(0), day(10), day(20)]
+    const expected = (1 / (1 + Math.sqrt(1 / 6)) ** 2 - 1) * 100
+    expect(moneyWeightedReturn(dates, [100, 0, 0], legs(0, -240, 120), 0, 2)).toBeCloseTo(
+      expected,
+      6,
+    )
+  })
+
+  it('handles nothing invested, a total loss and money that was never put in', () => {
+    const dates = [day(0), day(1), day(10)]
+    expect(moneyWeightedReturn(dates, [0, 0, 0], legs(0, 0, 0), 0, 2)).toBe(0)
+    expect(moneyWeightedReturn(dates, [0, 500, 0], legs(0, 500, 0), 0, 2)).toBe(-100)
+    expect(moneyWeightedReturn(dates, [0, 0, 0], legs(0, -500, 0), 0, 2)).toBeNull()
   })
 })
 
