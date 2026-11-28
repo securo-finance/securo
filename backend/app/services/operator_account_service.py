@@ -12,18 +12,28 @@ import secrets
 import uuid
 from dataclasses import dataclass
 from decimal import Decimal
-from typing import Any, Mapping, Optional, Sequence
+from typing import TYPE_CHECKING, Any, Literal, Mapping, Optional, Sequence
 
 from fastapi_users.password import PasswordHelper
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import get_settings
 from app.models.account import Account
 from app.models.admin_access_log import AdminAccessLog, AdminAccessLogViewer
 from app.models.user import User
 from app.models.workspace import Workspace
-from app.services import account_lookup_service, invoice_service, quota_service, workspace_service
+from app.services import (
+    account_lookup_service,
+    email_service,
+    invoice_service,
+    quota_service,
+    workspace_service,
+)
+
+if TYPE_CHECKING:
+    from app.core.auth import UserManager
 
 #: Who acted, in the record (ADR 0042): the operator is no account.
 OPERATOR_ACTOR = "operator"
@@ -225,4 +235,50 @@ async def open_account(
         await session.rollback()
         raise
     return OpenedAccount(user=user, workspaces=opened, created=True)
+
+
+# --- The first access (#1967) ---------------------------------------------------
+
+FirstAccessDelivery = Literal["email", "response"]
+
+
+@dataclass(frozen=True)
+class FirstAccess:
+    """What the first access gives: a link to hand back, a message to send
+    after the response, or nothing, with `password_set` saying why not."""
+
+    link: Optional[str] = None
+    message: Optional[email_service.Email] = None
+    password_set: bool = False
+
+
+def first_access(
+    user_manager: UserManager, user: User, delivery: FirstAccessDelivery, *, send: bool = True
+) -> FirstAccess:
+    """The link that sets the account's first password, if it may have one.
+
+    Only an account with no password gets a link: once one is set, the
+    recovery screen is the way in. By email, only an active account, and only
+    when `send` (a retry of the call that opened the account sends nothing
+    again). The link is never logged: whoever holds it can take the account
+    until it is used.
+    """
+    if user.password_set_at is not None:
+        return FirstAccess(password_set=True)
+    link = email_service.password_reset_link(user_manager.first_access_token(user))
+    if delivery == "response":
+        return FirstAccess(link=link)
+    if not (send and user.is_active):
+        return FirstAccess()
+    settings = get_settings()
+    preferences = user.preferences if isinstance(user.preferences, dict) else {}
+    return FirstAccess(
+        message=email_service.first_access_email(
+            to=user.email,
+            link=link,
+            language=preferences.get("language"),
+            token_minutes=settings.first_access_token_minutes,
+            app_name=settings.app_name,
+        )
+    )
 

@@ -9,19 +9,34 @@ import hmac
 import uuid
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi import APIRouter, BackgroundTasks, Body, Depends, HTTPException, Request, Response, status
 from pydantic import BaseModel, EmailStr, Field, model_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.auth import UserManager, get_user_manager
 from app.core.config import get_settings
 from app.core.database import get_async_session
-from app.core.rate_limit import client_ip
+from app.core.rate_limit import RateLimiter, client_ip
 from app.models.user import User
 from app.models.workspace import WorkspaceKind
 from app.schemas.invoice import IssuerTaxIdInput
-from app.services import operator_account_service, quota_service
+from app.services import email_service, operator_account_service, quota_service
 
 router = APIRouter(prefix="/api/operator", tags=["operator"])
+
+FirstAccessDelivery = operator_account_service.FirstAccessDelivery
+
+
+def _require_email() -> None:
+    """A link to send by email needs email on (ADR 0044)."""
+    if not get_settings().email_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail={
+                "code": "email_disabled",
+                "message": "Email is off on this instance: ask for the first-access link in the response.",
+            },
+        )
 
 
 def operator_only(request: Request) -> None:
@@ -34,7 +49,7 @@ def operator_only(request: Request) -> None:
 
 
 def managed_only() -> None:
-    """Off a managed instance the route that opens accounts does not exist (ADR 0004)."""
+    """Off a managed instance the account routes do not exist (ADR 0004)."""
     if not get_settings().managed_instance:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not Found")
 
@@ -142,6 +157,10 @@ class OpenAccount(BaseModel):
     #: Left out, the account gets no limits of its own and follows the
     #: instance's defaults.
     quotas: Optional[QuotaValues] = None
+    #: How the person gets the link to set their password: by email (needs
+    #: EMAIL_ENABLED), or in this response for an instance that delivers it
+    #: some other way.
+    first_access: FirstAccessDelivery = "email"
 
 
 class OpenedWorkspaceRead(BaseModel):
@@ -160,6 +179,8 @@ class OpenedAccountRead(BaseModel):
     created: bool
     workspaces: list[OpenedWorkspaceRead]
     quotas: QuotaValues
+    #: Only with `first_access: "response"` and while no password is set.
+    first_access_link: Optional[str] = None
 
 
 @router.post(
@@ -172,13 +193,21 @@ async def open_account(
     body: OpenAccount,
     request: Request,
     response: Response,
+    background_tasks: BackgroundTasks,
     session: AsyncSession = Depends(get_async_session),
+    user_manager: UserManager = Depends(get_user_manager),
 ):
     """Open an account with its workspaces and limits in one transaction.
 
-    The account has no password anyone knows until the person sets one. An
-    email that already has an account is refused (`email_taken`), never merged.
+    The account has no password anyone knows until the person sets one, with
+    the first-access link sent to its address or handed back in the response
+    (#1967). An email that already has an account is refused (`email_taken`),
+    never merged.
     """
+    if body.first_access == "email":
+        # Refused before anything is written: an account nobody can enter
+        # helps no one.
+        _require_email()
     try:
         opened = await operator_account_service.open_account(
             session,
@@ -206,6 +235,13 @@ async def open_account(
         ) from exc
     if not opened.created:
         response.status_code = status.HTTP_200_OK
+    # A retry answers the account it already opened and sends nothing again;
+    # the resend route is there for that.
+    access = operator_account_service.first_access(
+        user_manager, opened.user, body.first_access, send=opened.created
+    )
+    if access.message:
+        background_tasks.add_task(email_service.deliver, access.message)
     # The limits that hold for the account: its own row, or none (unbounded).
     quota = await quota_service.get_quota(session, opened.user.id)
     return OpenedAccountRead(
@@ -215,4 +251,55 @@ async def open_account(
         created=opened.created,
         workspaces=[OpenedWorkspaceRead.model_validate(w, from_attributes=True) for w in opened.workspaces],
         quotas=QuotaValues(**{c: getattr(quota, c) if quota else None for c in quota_service.COUNTERS}),
+        first_access_link=access.link,
     )
+
+
+# --- The first access (#1967) ---------------------------------------------------
+
+
+class FirstAccessLinkRequest(BaseModel):
+    delivery: FirstAccessDelivery = "email"
+
+
+class FirstAccessLinkRead(BaseModel):
+    #: Only when the link was asked for in the response.
+    link: Optional[str] = None
+
+
+first_access_rate_limit = RateLimiter(
+    max_requests=10, window_seconds=3600, scope="operator_first_access", unavailable_status=503
+)
+
+
+@router.post(
+    "/accounts/{user_id}/first-access-link",
+    response_model=FirstAccessLinkRead,
+    status_code=status.HTTP_202_ACCEPTED,
+    dependencies=[Depends(managed_only), Depends(operator_only), Depends(first_access_rate_limit)],
+)
+async def resend_first_access_link(
+    user_id: uuid.UUID,
+    background_tasks: BackgroundTasks,
+    body: FirstAccessLinkRequest = Body(default_factory=FirstAccessLinkRequest),
+    session: AsyncSession = Depends(get_async_session),
+    user_manager: UserManager = Depends(get_user_manager),
+):
+    """Send the first-access link again, for an account that has not set a password yet.
+
+    By email it answers the same 202 whether or not a message went out. Asked
+    in the response, an account that already set its password is refused with
+    `password_already_set`: there is no link to hand out.
+    """
+    user = await _user(session, user_id)
+    if body.delivery == "email":
+        _require_email()
+    access = operator_account_service.first_access(user_manager, user, body.delivery)
+    if body.delivery == "response" and access.password_set:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"code": "password_already_set", "message": "This account already has a password."},
+        )
+    if access.message:
+        background_tasks.add_task(email_service.deliver, access.message)
+    return FirstAccessLinkRead(link=access.link)

@@ -30,6 +30,9 @@ logger = logging.getLogger(__name__)
 #: a recovery link so the answer costs what a live account's answer costs.
 _NO_SUCH_ACCOUNT = "no-such-account"
 
+#: The audience of the link that sets an operator-opened account's first password (#1967).
+FIRST_ACCESS_AUDIENCE = "securo:first-access"
+
 
 async def get_user_db(session: AsyncSession = Depends(get_async_session)):
     yield _AccountLookupUserDatabase(session, User)
@@ -254,10 +257,38 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
         )
         await self.on_after_forgot_password(user, token, request)
 
+    def first_access_token(self, user: User) -> str:
+        """A link for an account born without a password to set its first one (#1967).
+
+        Its own audience and lifetime (FIRST_ACCESS_TOKEN_MINUTES), so a
+        recovery link can't stand in for it nor the other way round. Like a
+        recovery link it names the address it goes to and a fingerprint of the
+        stored password: the first password set changes that hash, so the link
+        works once.
+        """
+        token_data = {
+            "sub": str(user.id),
+            "password_fgpt": self.password_helper.hash(user.hashed_password),
+            "aud": FIRST_ACCESS_AUDIENCE,
+            "email": user.email,
+        }
+        return generate_jwt(
+            token_data,
+            self.reset_password_token_secret,
+            get_settings().first_access_token_minutes * 60,
+        )
+
     async def reset_password(
         self, token: str, password: str, request: Optional[Request] = None
     ) -> User:
-        """Refuse a link issued for an address the account no longer has."""
+        """Refuse a link issued for an address the account no longer has.
+
+        The same screen takes a first-access link (#1967): it sets the first
+        password of an account the operator opened.
+        """
+        first_access = self._first_access_claims(token)
+        if first_access is not None:
+            return await self._set_first_password(first_access, password, request)
         claims = self._reset_token_claims(token)
         issued_for = claims.get("email")
         if not isinstance(issued_for, str):
@@ -281,6 +312,36 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
             )
         except jwt.PyJWTError:
             raise exceptions.InvalidResetPasswordToken() from None
+
+    def _first_access_claims(self, token: str) -> Optional[dict]:
+        """The claims of a first-access link, or None when the token is anything else."""
+        try:
+            return decode_jwt(token, self.reset_password_token_secret, [FIRST_ACCESS_AUDIENCE])
+        except jwt.PyJWTError:
+            return None
+
+    async def _set_first_password(
+        self, claims: dict, password: str, request: Optional[Request] = None
+    ) -> User:
+        try:
+            user = await self.get(uuid.UUID(str(claims.get("sub"))))
+        except (exceptions.UserNotExists, ValueError):
+            raise exceptions.InvalidResetPasswordToken() from None
+        fingerprint = claims.get("password_fgpt")
+        if (
+            user.email != claims.get("email")
+            # Once a password is set the link has done its job.
+            or user.password_set_at is not None
+            or not isinstance(fingerprint, str)
+            or not self.password_helper.verify_and_update(user.hashed_password, fingerprint)[0]
+        ):
+            raise exceptions.InvalidResetPasswordToken()
+        if not user.is_active:
+            raise exceptions.UserInactive()
+        # The link reached the mailbox, which proves the address is the person's.
+        updated = await self._update(user, {"password": password, "is_verified": True})
+        await self.on_after_reset_password(updated, request)
+        return updated
 
     async def on_after_forgot_password(
         self, user: User, token: str, request: Optional[Request] = None
