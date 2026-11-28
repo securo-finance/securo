@@ -3326,7 +3326,11 @@
         "update_budget": "Budget aktualisieren",
         "delete_budget": "Budget löschen",
         "update_transaction_notes": "Notizen der Transaktion bearbeiten",
-        "create_category_group": "Kategoriegruppe erstellen"
+        "create_category_group": "Kategoriegruppe erstellen",
+        "create_asset": "Vermögenswert hinzufügen",
+        "update_asset": "Vermögenswert aktualisieren",
+        "archive_assets": "Vermögenswerte archivieren",
+        "asset_purchase_backfill": "Kaufhistorie des Vermögenswerts nachtragen"
       },
       "summary": {
         "categorize": "{{count}} Transaktion(en) → {{category}}",
@@ -3352,7 +3356,15 @@
         "manualAccountMoney": "{{label}}: {{amount}}",
         "manualAccountDate": "{{label}}: {{date}}",
         "manualAccountChange": "{{field}}: {{before}} → {{after}}",
-        "manualAccountNoChanges": "Keine Änderungen"
+        "manualAccountNoChanges": "Keine Änderungen",
+        "createAsset": "{{name}} · {{type}} · {{amount}}",
+        "updateAsset": "{{name}} → {{changes}}",
+        "archiveAssets": "{{count}} Vermögenswert(e) archivieren: {{names}}",
+        "unarchiveAssets": "{{count}} Vermögenswert(e) wiederherstellen: {{names}}",
+        "assetPurchaseBackfill": "{{name}}: {{details}}",
+        "assetBackfillPurchase": "Kauf {{amount}} am {{date}}",
+        "assetBackfillValues": "{{count}} Wertstand/Wertstände",
+        "regenerateGrowth": "Wachstumsverlauf neu generieren"
       }
     },
     "conversation": {

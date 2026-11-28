@@ -59,6 +59,10 @@ def test_registry_contains_v1_tools():
         "propose_update_payee",
         "propose_merge_payees",
         "propose_create_payee",
+        "propose_create_asset",
+        "propose_update_asset",
+        "propose_archive_assets",
+        "propose_asset_purchase_backfill",
         "search_knowledge_base",
         "list_recurring_transactions",
         "list_assets",
@@ -78,6 +82,10 @@ def test_proposal_tools_marked_is_proposal():
         "propose_update_payee",
         "propose_merge_payees",
         "propose_create_payee",
+        "propose_create_asset",
+        "propose_update_asset",
+        "propose_archive_assets",
+        "propose_asset_purchase_backfill",
     ):
         spec = REGISTRY[name]
         assert spec.is_proposal, f"{name} should have is_proposal=True"
@@ -1258,3 +1266,856 @@ async def test_propose_create_payee_rule_external_apply_writes(
     )).scalar_one()
     assert any(c.get("value") == "UBER" for c in row.conditions)
     assert any(a.get("value") == str(cat.id) for a in row.actions)
+
+
+# --- Manual Asset MCP Proposal Tools (#1260) -------------------------------
+
+
+async def test_propose_create_asset_manual_and_growth_and_refusals(
+    session: AsyncSession, test_user, test_workspace
+):
+    from sqlalchemy import select
+    from app.models.asset import Asset
+    from app.models.asset_group import AssetGroup
+    from app.models.workspace import Workspace
+
+    other_ws = Workspace(id=uuid.uuid4(), name="OtherAsset", kind="personal", default_currency="USD", locale="en")
+    session.add(other_ws)
+    await session.flush()
+    other_group = AssetGroup(id=uuid.uuid4(), user_id=test_user.id, workspace_id=other_ws.id, name="ForeignWallet")
+    my_group = AssetGroup(id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id, name="RealEstate")
+    session.add_all([other_group, my_group])
+    await session.commit()
+
+    handler = REGISTRY["propose_create_asset"].handler
+    ext_ctx = CallContext(user_id=test_user.id, workspace_id=test_workspace.id, external=True)
+
+    # market_price refused
+    assert "market_price" in (
+        await handler(
+            session=session, ctx=ext_ctx, name="AAPL", type="stock", valuation_method="market_price"
+        )
+    )["error"]
+
+    # cross-workspace group refused
+    assert "group not found" in (
+        await handler(
+            session=session, ctx=ext_ctx, name="Flat", type="real_estate", group_id=str(other_group.id)
+        )
+    )["error"]
+
+    # growth_rule requires growth fields
+    assert "growth_type" in (
+        await handler(
+            session=session, ctx=ext_ctx, name="CDB", type="investment", valuation_method="growth_rule"
+        )
+    )["error"]
+
+    # manual create preview + apply
+    created = await handler(
+        session=session,
+        ctx=ext_ctx,
+        name="Apartment",
+        type="real_estate",
+        currency="BRL",
+        current_value=500000.0,
+        purchase_date="2025-01-15",
+        purchase_price=450000.0,
+        group_id=str(my_group.id),
+        apply=True,
+    )
+    assert created.get("applied") is True
+    assert created["kind"] == "create_asset"
+    asset_row = (await session.execute(select(Asset).where(Asset.id == uuid.UUID(created["id"])))).scalar_one()
+    assert asset_row.name == "Apartment"
+    assert asset_row.group_id == my_group.id
+    assert asset_row.purchase_price == Decimal("450000.00")
+
+    # growth_rule apply + name_collision check
+    growth = await handler(
+        session=session,
+        ctx=ext_ctx,
+        name="apartment",
+        type="investment",
+        currency="BRL",
+        valuation_method="growth_rule",
+        purchase_price=10000.0,
+        purchase_date="2026-01-01",
+        growth_type="percentage",
+        growth_rate=1.0,
+        growth_frequency="monthly",
+        apply=True,
+    )
+    assert growth.get("applied") is True
+    assert growth["name_collision"]["name"] == "Apartment"
+
+
+async def test_propose_update_and_archive_assets_and_refusals(
+    session: AsyncSession, test_user, test_workspace
+):
+    from app.models.asset import Asset
+    from app.models.asset_group import AssetGroup
+    from app.models.asset_transaction import AssetTransaction
+
+    group = AssetGroup(id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id, name="Wallet")
+    manual_asset = Asset(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        name="Gold Coin",
+        type="valuable",
+        currency="BRL",
+        valuation_method="manual",
+        purchase_price=Decimal("1000.00"),
+        purchase_date=date(2025, 1, 1),
+        group_id=group.id,
+        source="manual",
+    )
+    market_asset = Asset(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        name="Apple",
+        type="stock",
+        currency="USD",
+        valuation_method="market_price",
+        ticker="AAPL",
+        source="manual",
+    )
+    synced_asset = Asset(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        name="Synced CDB",
+        type="investment",
+        currency="BRL",
+        valuation_method="manual",
+        source="pluggy",
+    )
+    ledger_asset = Asset(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        name="Ledger Fund",
+        type="fund",
+        currency="BRL",
+        valuation_method="manual",
+        source="manual",
+    )
+    session.add_all([group, manual_asset, market_asset, synced_asset, ledger_asset])
+    await session.flush()
+    session.add(
+        AssetTransaction(
+            id=uuid.uuid4(),
+            asset_id=ledger_asset.id,
+            workspace_id=test_workspace.id,
+            kind="buy",
+            quantity=Decimal("10"),
+            price=Decimal("100"),
+            fee=Decimal("0"),
+            date=date(2025, 1, 1),
+            source="manual",
+        )
+    )
+    await session.commit()
+
+    ext_ctx = CallContext(user_id=test_user.id, workspace_id=test_workspace.id, external=True)
+    update_h = REGISTRY["propose_update_asset"].handler
+    archive_h = REGISTRY["propose_archive_assets"].handler
+
+    # Refusals on update
+    assert "market-priced" in (await update_h(session=session, ctx=ext_ctx, asset_id=str(market_asset.id), name="X"))["error"]
+    assert "synced" in (await update_h(session=session, ctx=ext_ctx, asset_id=str(synced_asset.id), name="X"))["error"]
+    assert "ledger-backed" in (await update_h(session=session, ctx=ext_ctx, asset_id=str(ledger_asset.id), name="X"))["error"]
+
+    # Update name and ungroup (group_id="")
+    updated = await update_h(
+        session=session,
+        ctx=ext_ctx,
+        asset_id=str(manual_asset.id),
+        name="Silver Coin",
+        group_id="",
+        apply=True,
+    )
+    assert updated.get("applied") is True
+    await session.refresh(manual_asset)
+    assert manual_asset.name == "Silver Coin"
+    assert manual_asset.group_id is None
+
+    # Archive refuses market/synced/ledger
+    assert "market-priced" in (
+        await archive_h(session=session, ctx=ext_ctx, asset_ids=[str(manual_asset.id), str(market_asset.id)])
+    )["error"]
+    assert "synced" in (
+        await archive_h(session=session, ctx=ext_ctx, asset_ids=[str(synced_asset.id)])
+    )["error"]
+    assert "ledger-backed" in (
+        await archive_h(session=session, ctx=ext_ctx, asset_ids=[str(ledger_asset.id)])
+    )["error"]
+
+    # Archive manual asset + missing_ids handling
+    missing_id = str(uuid.uuid4())
+    archived = await archive_h(
+        session=session,
+        ctx=ext_ctx,
+        asset_ids=[str(manual_asset.id), missing_id],
+        is_archived=True,
+        apply=True,
+    )
+    assert archived.get("applied") is True
+    assert archived["updated_count"] == 1
+    assert archived["missing_ids"] == [missing_id]
+    await session.refresh(manual_asset)
+    assert manual_asset.is_archived is True
+
+
+async def test_propose_asset_purchase_backfill_and_refusals(
+    session: AsyncSession, test_user, test_workspace
+):
+    from sqlalchemy import select
+    from app.models.asset import Asset
+    from app.models.asset_transaction import AssetTransaction
+    from app.models.asset_value import AssetValue
+    from app.models.fx_rate import FxRate
+
+    manual_usd = Asset(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        name="Watch",
+        type="valuable",
+        currency="USD",
+        valuation_method="manual",
+        source="manual",
+    )
+    market_asset = Asset(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        name="MSFT",
+        type="stock",
+        currency="USD",
+        valuation_method="market_price",
+        ticker="MSFT",
+        source="manual",
+    )
+    synced_asset = Asset(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        name="Synced",
+        type="investment",
+        currency="BRL",
+        valuation_method="manual",
+        source="pluggy",
+    )
+    ledger_asset = Asset(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        name="Ledger",
+        type="investment",
+        currency="BRL",
+        valuation_method="manual",
+        source="manual",
+    )
+    session.add_all([manual_usd, market_asset, synced_asset, ledger_asset])
+    await session.flush()
+    session.add(
+        AssetTransaction(
+            id=uuid.uuid4(),
+            asset_id=ledger_asset.id,
+            workspace_id=test_workspace.id,
+            kind="buy",
+            quantity=Decimal("1"),
+            price=Decimal("50"),
+            fee=Decimal("0"),
+            date=date(2025, 2, 1),
+            source="manual",
+        )
+    )
+    session.add(
+        FxRate(base_currency="USD", quote_currency="BRL", date=date(2025, 3, 1), rate=Decimal("5.000000"), source="test")
+    )
+    await session.commit()
+
+    ext_ctx = CallContext(user_id=test_user.id, workspace_id=test_workspace.id, external=True)
+    backfill_h = REGISTRY["propose_asset_purchase_backfill"].handler
+
+    # Explicit refusals: market-priced, ledger-backed, synced
+    assert "market-priced" in (
+        await backfill_h(session=session, ctx=ext_ctx, asset_id=str(market_asset.id), purchase_price=100.0)
+    )["error"]
+    assert "ledger-backed" in (
+        await backfill_h(session=session, ctx=ext_ctx, asset_id=str(ledger_asset.id), purchase_price=100.0)
+    )["error"]
+    assert "synced" in (
+        await backfill_h(session=session, ctx=ext_ctx, asset_id=str(synced_asset.id), purchase_price=100.0)
+    )["error"]
+
+    # Duplicate value dates refused
+    dup = await backfill_h(
+        session=session,
+        ctx=ext_ctx,
+        asset_id=str(manual_usd.id),
+        values=[{"date": "2025-03-01", "amount": 1000.0}, {"date": "2025-03-01", "amount": 1100.0}],
+    )
+    assert "duplicate value date" in dup["error"]
+
+    # 1. Dry-run preview (apply omitted / False) must leave DB untouched
+    valid_backfill_kwargs = dict(
+        asset_id=str(manual_usd.id),
+        purchase_date="2025-03-01",
+        purchase_price=2000.0,
+        values=[
+            {"date": "2025-03-01", "amount": 2000.0},
+            {"date": "2025-06-01", "amount": 2300.0},
+        ],
+    )
+    preview = await backfill_h(session=session, ctx=ext_ctx, **valid_backfill_kwargs)
+    assert preview.get("applied") is not True
+    assert preview["kind"] == "asset_purchase_backfill"
+    await session.refresh(manual_usd)
+    assert manual_usd.purchase_date is None
+    assert manual_usd.purchase_price is None
+    assert (
+        await session.execute(select(AssetValue).where(AssetValue.asset_id == manual_usd.id))
+    ).scalars().all() == []
+
+    # 2. Viewer role with apply=True must be denied (no DB writes)
+    viewer_ctx = CallContext(
+        user_id=test_user.id, workspace_id=test_workspace.id, external=True, role="viewer"
+    )
+    viewer_res = await backfill_h(
+        session=session, ctx=viewer_ctx, **valid_backfill_kwargs, apply=True
+    )
+    assert viewer_res.get("applied") is not True
+    await session.refresh(manual_usd)
+    assert manual_usd.purchase_date is None
+    assert manual_usd.purchase_price is None
+    assert (
+        await session.execute(select(AssetValue).where(AssetValue.asset_id == manual_usd.id))
+    ).scalars().all() == []
+
+    # 3. Writer with apply=True commits metadata + snapshots
+    applied = await backfill_h(
+        session=session, ctx=ext_ctx, **valid_backfill_kwargs, apply=True
+    )
+    assert applied.get("applied") is True
+    assert applied["values_created"] == 2
+
+    await session.refresh(manual_usd)
+    assert manual_usd.purchase_date == date(2025, 3, 1)
+    assert manual_usd.purchase_price == Decimal("2000.00")
+    assert manual_usd.purchase_price_primary == Decimal("10000.00")
+
+    vals = (
+        await session.execute(
+            select(AssetValue).where(AssetValue.asset_id == manual_usd.id).order_by(AssetValue.date)
+        )
+    ).scalars().all()
+    assert len(vals) == 2
+    assert all(v.workspace_id == test_workspace.id and v.source == "manual" for v in vals)
+    assert [(v.date, v.amount) for v in vals] == [
+        (date(2025, 3, 1), Decimal("2000.000000")),
+        (date(2025, 6, 1), Decimal("2300.000000")),
+    ]
+
+    # 4. Retrying the exact same backfill is idempotent (skips stored (date, amount))
+    retry = await backfill_h(
+        session=session, ctx=ext_ctx, **valid_backfill_kwargs, apply=True
+    )
+    assert retry.get("applied") is True
+    assert retry["values_created"] == 0
+    assert len(
+        (
+            await session.execute(select(AssetValue).where(AssetValue.asset_id == manual_usd.id))
+        ).scalars().all()
+    ) == 2
+
+    # 5. Distinct 6th-decimal amount on an existing date is preserved, then deduped on retry
+    distinct_res = await backfill_h(
+        session=session,
+        ctx=ext_ctx,
+        asset_id=str(manual_usd.id),
+        values=[{"date": "2025-03-01", "amount": 2000.000001}],
+        apply=True,
+    )
+    assert distinct_res.get("applied") is True
+    assert distinct_res["values_created"] == 1
+    distinct_retry = await backfill_h(
+        session=session,
+        ctx=ext_ctx,
+        asset_id=str(manual_usd.id),
+        values=[{"date": "2025-03-01", "amount": 2000.000001}],
+        apply=True,
+    )
+    assert distinct_retry.get("applied") is True
+    assert distinct_retry["values_created"] == 0
+    stored_vals = (
+        await session.execute(
+            select(AssetValue)
+            .where(AssetValue.asset_id == manual_usd.id, AssetValue.date == date(2025, 3, 1))
+            .order_by(AssetValue.amount)
+        )
+    ).scalars().all()
+    assert [v.amount for v in stored_vals] == [
+        Decimal("2000.000000"),
+        Decimal("2000.000001"),
+    ]
+
+
+async def test_propose_create_and_update_asset_accept_negative_growth_rate(
+    session: AsyncSession, test_user, test_workspace
+):
+    """Depreciating growth-rule assets (e.g. vehicles at -10%/yr) must be allowed."""
+    from app.models.asset import Asset
+
+    ext_ctx = CallContext(user_id=test_user.id, workspace_id=test_workspace.id, external=True)
+    create_h = REGISTRY["propose_create_asset"].handler
+    update_h = REGISTRY["propose_update_asset"].handler
+
+    created = await create_h(
+        session=session,
+        ctx=ext_ctx,
+        name="Family Car",
+        type="vehicle",
+        currency="USD",
+        valuation_method="growth_rule",
+        purchase_date="2026-01-01",
+        purchase_price=30000.0,
+        growth_type="percentage",
+        growth_rate=-10.0,
+        growth_frequency="yearly",
+        apply=True,
+    )
+    assert created.get("applied") is True, created
+    assert created["proposed"]["growth_rate"] == -10.0
+    asset_id = uuid.UUID(created["id"])
+
+    asset = await session.get(Asset, asset_id)
+    assert asset is not None
+    assert asset.growth_rate == Decimal("-10.0")
+
+    updated = await update_h(
+        session=session,
+        ctx=ext_ctx,
+        asset_id=str(asset_id),
+        growth_rate=-12.5,
+        apply=True,
+    )
+    assert updated.get("applied") is True, updated
+    assert updated["changes"]["growth_rate"] == -12.5
+    await session.refresh(asset)
+    assert asset.growth_rate == Decimal("-12.5")
+
+    # Non-negative monetary fields still reject negatives
+    bad_price = await create_h(
+        session=session,
+        ctx=ext_ctx,
+        name="Bad Car",
+        type="vehicle",
+        purchase_price=-500.0,
+    )
+    assert "cannot be negative" in bad_price["error"]
+
+
+async def test_asset_update_date_validation_and_atomic_rest_routes(
+    client,
+    auth_headers,
+    viewer_auth_headers,
+    session: AsyncSession,
+    test_user,
+    test_workspace,
+):
+    """Service-level date validation rejects purchase_date > sell_date, and
+    atomic archive/backfill REST endpoints enforce write gates and rollback."""
+    from sqlalchemy import select
+    from app.models.asset import Asset
+    from app.models.asset_value import AssetValue
+
+    manual_a = Asset(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        name="Gold Coin",
+        type="valuable",
+        currency="USD",
+        valuation_method="manual",
+        source="manual",
+        purchase_date=date(2025, 1, 10),
+        sell_date=date(2025, 6, 10),
+    )
+    market_b = Asset(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        name="AAPL",
+        type="stock",
+        currency="USD",
+        valuation_method="market_price",
+        ticker="AAPL",
+        source="manual",
+    )
+    session.add_all([manual_a, market_b])
+    await session.commit()
+
+    # Partial PATCH moving purchase_date past stored sell_date is rejected (422)
+    bad_patch = await client.patch(
+        f"/api/assets/{manual_a.id}",
+        headers=auth_headers,
+        json={"purchase_date": "2025-07-01"},
+    )
+    assert bad_patch.status_code == 422
+    assert "purchase_date cannot be after sell_date" in bad_patch.json()["detail"]
+    await session.refresh(manual_a)
+    assert manual_a.purchase_date == date(2025, 1, 10)
+
+    # Unrelated rename on an asset with pre-existing inverted legacy dates is still allowed
+    legacy = Asset(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        name="Legacy Inverted",
+        type="valuable",
+        currency="USD",
+        valuation_method="manual",
+        source="manual",
+        purchase_date=date(2025, 7, 1),
+        sell_date=date(2025, 6, 1),
+    )
+    session.add(legacy)
+    await session.commit()
+    rename_legacy = await client.patch(
+        f"/api/assets/{legacy.id}",
+        headers=auth_headers,
+        json={"name": "Legacy Renamed"},
+    )
+    assert rename_legacy.status_code == 200
+    assert rename_legacy.json()["name"] == "Legacy Renamed"
+
+    # Snapshot amount exceeding asset_values.amount column ceiling returns 422
+    from app.core.money import MAX_MONEY_AMOUNT, max_asset_value
+    from app.services import asset_service
+
+    too_big_snapshot = max_asset_value() + Decimal("0.0000004")
+    overflow_backfill = await client.post(
+        f"/api/assets/{manual_a.id}/backfill",
+        headers=auth_headers,
+        json={"values": [{"date": "2025-02-01", "amount": str(too_big_snapshot)}]},
+    )
+    assert overflow_backfill.status_code == 422
+    assert str(max_asset_value()) in str(overflow_backfill.json()["detail"])
+
+    # Direct service apply enforces the same pre-rounding ceiling as REST
+    with pytest.raises(ValueError, match=str(max_asset_value())):
+        await asset_service.backfill_asset_purchase_history(
+            session,
+            manual_a.id,
+            test_workspace.id,
+            test_user.id,
+            values=[(date(2025, 2, 1), too_big_snapshot)],
+        )
+    await session.rollback()
+
+    # Same-currency purchase_price exceeding Numeric(15, 2) ceiling returns 422 (not 500)
+    too_big_price = MAX_MONEY_AMOUNT + Decimal("0.01")
+    overflow_price_backfill = await client.post(
+        f"/api/assets/{manual_a.id}/backfill",
+        headers=auth_headers,
+        json={"purchase_price": str(too_big_price)},
+    )
+    assert overflow_price_backfill.status_code == 422
+    assert str(MAX_MONEY_AMOUNT) in str(overflow_price_backfill.json()["detail"])
+    await session.refresh(manual_a)
+    assert manual_a.purchase_price is None
+
+    # Zero purchase_price remains accepted (allow_zero=True)
+    zero_price_backfill = await client.post(
+        f"/api/assets/{manual_a.id}/backfill",
+        headers=auth_headers,
+        json={"purchase_price": "0"},
+    )
+    assert zero_price_backfill.status_code == 200
+    await session.refresh(manual_a)
+    assert manual_a.purchase_price == Decimal("0.00")
+    manual_a.purchase_price = None
+    await session.commit()
+
+    # Atomic archive: protected asset in batch rejects entire batch (manual_a unchanged)
+    bad_archive = await client.post(
+        "/api/assets/archive",
+        headers=auth_headers,
+        json={"asset_ids": [str(manual_a.id), str(market_b.id)], "is_archived": True},
+    )
+    assert bad_archive.status_code == 422
+    await session.refresh(manual_a)
+    await session.refresh(market_b)
+    assert manual_a.is_archived is False
+    assert market_b.is_archived is False
+
+    # Viewer forbidden on both new write routes
+    assert (
+        await client.post(
+            "/api/assets/archive",
+            headers=viewer_auth_headers,
+            json={"asset_ids": [str(manual_a.id)], "is_archived": True},
+        )
+    ).status_code == 403
+    assert (
+        await client.post(
+            f"/api/assets/{manual_a.id}/backfill",
+            headers=viewer_auth_headers,
+            json={"purchase_price": 500},
+        )
+    ).status_code == 403
+
+    # Atomic backfill: invalid value entry rolls back purchase_price too
+    bad_backfill = await client.post(
+        f"/api/assets/{manual_a.id}/backfill",
+        headers=auth_headers,
+        json={
+            "purchase_price": 999,
+            "values": [
+                {"date": "2025-02-01", "amount": 1000},
+                {"date": "2025-02-01", "amount": 1100},
+            ],
+        },
+    )
+    assert bad_backfill.status_code == 422
+    await session.refresh(manual_a)
+    assert manual_a.purchase_price is None
+    assert (
+        await session.execute(select(AssetValue).where(AssetValue.asset_id == manual_a.id))
+    ).scalars().all() == []
+
+    # Valid atomic backfill + idempotent retry
+    ok_backfill = await client.post(
+        f"/api/assets/{manual_a.id}/backfill",
+        headers=auth_headers,
+        json={
+            "purchase_price": 1000,
+            "values": [{"date": "2025-02-01", "amount": "1000.001000"}],
+        },
+    )
+    assert ok_backfill.status_code == 200
+    assert ok_backfill.json()["values_created"] == 1
+
+    retry_backfill = await client.post(
+        f"/api/assets/{manual_a.id}/backfill",
+        headers=auth_headers,
+        json={
+            "purchase_price": 1000,
+            "values": [{"date": "2025-02-01", "amount": "1000.001000"}],
+        },
+    )
+    assert retry_backfill.status_code == 200
+    assert retry_backfill.json()["values_created"] == 0
+
+    # Valid atomic archive
+    ok_archive = await client.post(
+        "/api/assets/archive",
+        headers=auth_headers,
+        json={"asset_ids": [str(manual_a.id)], "is_archived": True},
+    )
+    assert ok_archive.status_code == 200
+    assert ok_archive.json()["updated_count"] == 1
+    await session.refresh(manual_a)
+    assert manual_a.is_archived is True
+
+
+async def test_asset_write_locks_refresh_stale_identity_map_rows(
+    session: AsyncSession,
+    test_user,
+    test_workspace,
+):
+    """Locked selects must pass populate_existing=True so concurrent changes
+    committed after an earlier load in the same session cannot bypass guards."""
+    from sqlalchemy import select, update as sa_update
+    from app.models.asset import Asset
+    from app.schemas.asset import AssetUpdate
+    from app.services import asset_service
+
+    asset_id = uuid.uuid4()
+    ws_id = test_workspace.id
+    uid = test_user.id
+    asset = Asset(
+        id=asset_id,
+        user_id=uid,
+        workspace_id=ws_id,
+        name="Locked Asset",
+        type="valuable",
+        currency="USD",
+        valuation_method="manual",
+        source="manual",
+        purchase_date=date(2025, 1, 10),
+        sell_date=date(2025, 12, 31),
+    )
+    session.add(asset)
+    await session.commit()
+
+    # Load into the session identity map (stale sell_date = 2025-12-31 in memory)
+    loaded = (
+        await session.execute(select(Asset).where(Asset.id == asset_id))
+    ).scalar_one()
+    assert loaded.sell_date == date(2025, 12, 31)
+
+    # Simulate another writer moving sell_date earlier without updating ORM identity map
+    await session.execute(
+        sa_update(Asset)
+        .where(Asset.id == asset_id)
+        .values(sell_date=date(2025, 3, 1))
+        .execution_options(synchronize_session=False)
+    )
+    assert loaded.sell_date == date(2025, 12, 31)
+
+    with pytest.raises(ValueError, match="purchase_date cannot be after sell_date"):
+        await asset_service.update_asset(
+            session,
+            asset_id,
+            ws_id,
+            uid,
+            AssetUpdate(purchase_date=date(2025, 4, 1)),
+        )
+    await session.rollback()
+
+    # Re-apply the out-of-band update and verify backfill_asset_purchase_history refreshes too
+    loaded = (
+        await session.execute(select(Asset).where(Asset.id == asset_id))
+    ).scalar_one()
+    assert loaded.sell_date == date(2025, 12, 31)
+    await session.execute(
+        sa_update(Asset)
+        .where(Asset.id == asset_id)
+        .values(sell_date=date(2025, 3, 1))
+        .execution_options(synchronize_session=False)
+    )
+    with pytest.raises(ValueError, match="purchase_date cannot be after sell_date"):
+        await asset_service.backfill_asset_purchase_history(
+            session,
+            asset_id,
+            ws_id,
+            uid,
+            purchase_date=date(2025, 4, 1),
+        )
+
+
+async def test_asset_backfill_and_patch_uncached_fx_overflow_is_atomic(
+    client,
+    auth_headers,
+    session: AsyncSession,
+    test_user,
+    test_workspace,
+):
+    """Pre-warming FX rates before locking/mutating ensures an uncached
+    sync_rates() commit cannot persist half of a rejected backfill or
+    date-only PATCH when primary-currency conversion overflows."""
+    from unittest.mock import patch
+
+    from sqlalchemy import select
+    from app.models.asset import Asset
+    from app.models.asset_value import AssetValue
+    from app.models.fx_rate import FxRate
+
+    test_user.preferences = {**(test_user.preferences or {}), "currency_display": "BRL"}
+    asset_id = uuid.uuid4()
+    asset = Asset(
+        id=asset_id,
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        name="USD Foreign Holding",
+        type="valuable",
+        currency="USD",
+        valuation_method="manual",
+        source="manual",
+        purchase_date=date(2020, 1, 1),
+        purchase_price=Decimal("100.00"),
+    )
+    session.add(asset)
+    await session.commit()
+
+    synced_dates: list[date] = []
+
+    async def fake_sync_rates(db: AsyncSession, target: date) -> int:
+        # Mirror real fx_rate_service.sync_rates(): upsert FX rate and commit
+        # the shared session.
+        synced_dates.append(target)
+        db.add(
+            FxRate(
+                base_currency="USD",
+                quote_currency="BRL",
+                date=target,
+                rate=Decimal("5.0000000000"),
+                source="test",
+            )
+        )
+        await db.commit()
+        return 1
+
+    with patch("app.services.fx_rate_service.sync_rates", side_effect=fake_sync_rates):
+        # 1. Backfill with uncached FX date and overflowing conversion (3e12 * 5 > 1e13)
+        bad_backfill = await client.post(
+            f"/api/assets/{asset_id}/backfill",
+            headers=auth_headers,
+            json={
+                "purchase_date": "2021-06-01",
+                "purchase_price": "3000000000000",
+                "values": [{"date": "2021-06-01", "amount": "500"}],
+            },
+        )
+        assert bad_backfill.status_code == 422, bad_backfill.text
+        assert date(2021, 6, 1) in synced_dates
+
+        session.expire_all()
+        stored = await session.get(Asset, asset_id)
+        assert stored is not None
+        assert stored.purchase_date == date(2020, 1, 1)
+        assert stored.purchase_price == Decimal("100.00")
+        assert stored.purchase_price_primary is None
+        assert (
+            await session.execute(select(AssetValue).where(AssetValue.asset_id == asset_id))
+        ).scalars().all() == []
+
+        # 2. Date-only PATCH on an asset whose existing purchase_price overflows BRL
+        stored.purchase_price = Decimal("3000000000000.00")
+        await session.commit()
+
+        bad_patch = await client.patch(
+            f"/api/assets/{asset_id}",
+            headers=auth_headers,
+            json={"purchase_date": "2021-07-01"},
+        )
+        assert bad_patch.status_code == 422, bad_patch.text
+        assert date(2021, 7, 1) in synced_dates
+
+        session.expire_all()
+        stored = await session.get(Asset, asset_id)
+        assert stored is not None
+        assert stored.purchase_date == date(2020, 1, 1)
+        assert stored.purchase_price == Decimal("3000000000000.00")
+        assert stored.purchase_price_primary is None
+
+        # 3. Control: valid foreign-currency backfill with uncached FX date succeeds
+        ok_backfill = await client.post(
+            f"/api/assets/{asset_id}/backfill",
+            headers=auth_headers,
+            json={
+                "purchase_date": "2021-08-01",
+                "purchase_price": "1000",
+                "values": [{"date": "2021-08-01", "amount": "1200"}],
+            },
+        )
+        assert ok_backfill.status_code == 200, ok_backfill.text
+        assert date(2021, 8, 1) in synced_dates
+
+        session.expire_all()
+        stored = await session.get(Asset, asset_id)
+        assert stored is not None
+        assert stored.purchase_date == date(2021, 8, 1)
+        assert stored.purchase_price == Decimal("1000.00")
+        assert stored.purchase_price_primary == Decimal("5000.00")
+        vals = (
+            await session.execute(select(AssetValue).where(AssetValue.asset_id == asset_id))
+        ).scalars().all()
+        assert len(vals) == 1
+        assert vals[0].amount == Decimal("1200.000000")

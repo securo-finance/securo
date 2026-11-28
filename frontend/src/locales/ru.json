@@ -3376,7 +3376,11 @@
         "update_budget": "Обновить бюджет",
         "delete_budget": "Удалить бюджет",
         "update_transaction_notes": "Изменить примечания к транзакции",
-        "create_category_group": "Создать группу категорий"
+        "create_category_group": "Создать группу категорий",
+        "create_asset": "Добавить актив",
+        "update_asset": "Обновить актив",
+        "archive_assets": "Архивировать активы",
+        "asset_purchase_backfill": "Заполнить историю покупки актива"
       },
       "summary": {
         "categorize": "{{count}} транзакций → {{category}}",
@@ -3402,7 +3406,15 @@
         "manualAccountMoney": "{{label}}: {{amount}}",
         "manualAccountDate": "{{label}}: {{date}}",
         "manualAccountChange": "{{field}}: {{before}} → {{after}}",
-        "manualAccountNoChanges": "Нет изменений"
+        "manualAccountNoChanges": "Нет изменений",
+        "createAsset": "{{name}} · {{type}} · {{amount}}",
+        "updateAsset": "{{name}} → {{changes}}",
+        "archiveAssets": "Архивировать {{count}} актив(ов): {{names}}",
+        "unarchiveAssets": "Восстановить {{count}} актив(ов): {{names}}",
+        "assetPurchaseBackfill": "{{name}}: {{details}}",
+        "assetBackfillPurchase": "покупка {{amount}} от {{date}}",
+        "assetBackfillValues": "{{count}} снимок(ов) стоимости",
+        "regenerateGrowth": "пересчитать историю роста"
       }
     },
     "conversation": {

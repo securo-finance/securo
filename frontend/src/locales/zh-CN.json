@@ -3325,7 +3325,11 @@
         "update_budget": "更新预算",
         "delete_budget": "删除预算",
         "update_transaction_notes": "编辑交易备注",
-        "create_category_group": "创建分类组"
+        "create_category_group": "创建分类组",
+        "create_asset": "添加资产",
+        "update_asset": "更新资产",
+        "archive_assets": "归档资产",
+        "asset_purchase_backfill": "补录资产买入历史"
       },
       "summary": {
         "categorize": "{{count}} 笔交易 → {{category}}",
@@ -3351,7 +3355,15 @@
         "manualAccountMoney": "{{label}}：{{amount}}",
         "manualAccountDate": "{{label}}：{{date}}",
         "manualAccountChange": "{{field}}：{{before}} → {{after}}",
-        "manualAccountNoChanges": "无变更"
+        "manualAccountNoChanges": "无变更",
+        "createAsset": "{{name}} · {{type}} · {{amount}}",
+        "updateAsset": "{{name}} → {{changes}}",
+        "archiveAssets": "归档 {{count}} 项资产：{{names}}",
+        "unarchiveAssets": "恢复 {{count}} 项资产：{{names}}",
+        "assetPurchaseBackfill": "{{name}}：{{details}}",
+        "assetBackfillPurchase": "于 {{date}} 买入 {{amount}}",
+        "assetBackfillValues": "{{count}} 条估值快照",
+        "regenerateGrowth": "重新生成增长历史"
       }
     },
     "conversation": {

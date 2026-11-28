@@ -33,9 +33,13 @@ from app.schemas.asset_import import (
 )
 from app.schemas.asset import (
     ArchivedAssetCountsRead,
+    AssetArchiveBatchRequest,
+    AssetArchiveBatchResponse,
     AssetBuyCreate,
     AssetCreate,
     AssetPriceRefreshResult,
+    AssetPurchaseBackfillRequest,
+    AssetPurchaseBackfillResponse,
     AssetRead,
     AssetReorder,
     AssetTransactionCreate,
@@ -592,6 +596,27 @@ async def delete_asset_transaction(
     return asset
 
 
+@router.post("/archive", response_model=AssetArchiveBatchResponse)
+async def archive_assets_batch(
+    data: AssetArchiveBatchRequest,
+    ctx: WorkspaceContext = Depends(current_writable_workspace),
+    session: AsyncSession = Depends(get_async_session),
+):
+    try:
+        updated_count = await asset_service.set_assets_archived(
+            session,
+            ctx.workspace.id,
+            data.asset_ids,
+            is_archived=data.is_archived,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=str(exc),
+        )
+    return AssetArchiveBatchResponse(updated_count=updated_count)
+
+
 @router.get("/{asset_id}", response_model=AssetRead)
 async def get_asset(
     asset_id: uuid.UUID,
@@ -628,11 +653,54 @@ async def update_asset(
         asset = await asset_service.update_asset(
             session, asset_id, ctx.workspace.id, ctx.user_id, data, regenerate_growth=regenerate_growth
         )
-    except MoneyOutOfRange as e:
-        raise HTTPException(status_code=422, detail=str(e))
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=str(exc),
+        )
     if not asset:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Asset not found")
     return asset
+
+
+@router.post("/{asset_id}/backfill", response_model=AssetPurchaseBackfillResponse)
+async def backfill_asset_purchase_history(
+    asset_id: uuid.UUID,
+    data: AssetPurchaseBackfillRequest,
+    ctx: WorkspaceContext = Depends(current_writable_workspace),
+    session: AsyncSession = Depends(get_async_session),
+):
+    if (
+        data.purchase_date is None
+        and data.purchase_price is None
+        and not data.values
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="provide at least one of purchase_date, purchase_price, or values",
+        )
+    try:
+        res = await asset_service.backfill_asset_purchase_history(
+            session,
+            asset_id,
+            ctx.workspace.id,
+            ctx.user_id,
+            purchase_date=data.purchase_date,
+            purchase_price=data.purchase_price,
+            values=[(v.date, v.amount) for v in data.values],
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=str(exc),
+        )
+    if res is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Asset not found")
+    updated_asset, values_created = res
+    return AssetPurchaseBackfillResponse(
+        asset=updated_asset,
+        values_created=values_created,
+    )
 
 
 @router.delete("/{asset_id}", status_code=status.HTTP_204_NO_CONTENT)

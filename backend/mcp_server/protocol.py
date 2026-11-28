@@ -164,6 +164,7 @@ def origin_allowed(origin: Optional[str], allowed: frozenset[str]) -> bool:
 # overwrite their categories.
 ADDITIVE_PROPOSALS = frozenset(
     {
+        "propose_create_asset",
         "propose_create_budget",
         "propose_create_category",
         "propose_create_goal",

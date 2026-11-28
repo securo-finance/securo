@@ -3327,7 +3327,11 @@
         "update_budget": "Begroting bijwerken",
         "delete_budget": "Begroting verwijderen",
         "update_transaction_notes": "Opmerkingen van transactie bewerken",
-        "create_category_group": "Categoriegroep aanmaken"
+        "create_category_group": "Categoriegroep aanmaken",
+        "create_asset": "Activa toevoegen",
+        "update_asset": "Activa bijwerken",
+        "archive_assets": "Activa archiveren",
+        "asset_purchase_backfill": "Aankoopgeschiedenis van activa aanvullen"
       },
       "summary": {
         "categorize": "{{count}} transactie(s) → {{category}}",
@@ -3353,7 +3357,15 @@
         "manualAccountMoney": "{{label}}: {{amount}}",
         "manualAccountDate": "{{label}}: {{date}}",
         "manualAccountChange": "{{field}}: {{before}} → {{after}}",
-        "manualAccountNoChanges": "Geen wijzigingen"
+        "manualAccountNoChanges": "Geen wijzigingen",
+        "createAsset": "{{name}} · {{type}} · {{amount}}",
+        "updateAsset": "{{name}} → {{changes}}",
+        "archiveAssets": "{{count}} activum/activa archiveren: {{names}}",
+        "unarchiveAssets": "{{count}} activum/activa herstellen: {{names}}",
+        "assetPurchaseBackfill": "{{name}}: {{details}}",
+        "assetBackfillPurchase": "aankoop {{amount}} op {{date}}",
+        "assetBackfillValues": "{{count}} waardemoment(en)",
+        "regenerateGrowth": "groeigeschiedenis opnieuw genereren"
       }
     },
     "conversation": {

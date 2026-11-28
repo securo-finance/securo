@@ -4,12 +4,14 @@ import { useTranslation } from 'react-i18next'
 import { AlertCircle, Check, ChevronDown, ChevronRight, Loader2, Sparkles } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
+import { extractApiError } from '@/lib/api-errors'
 import { cn } from '@/lib/utils'
 import { formatDate } from '@/lib/date-range-format'
 import { invalidateCategoryQueries } from '@/lib/invalidate-queries'
 import { useDateLocale } from '@/hooks/use-display-locale'
 import {
   accounts,
+  assets,
   budgets,
   categories,
   categoryGroups,
@@ -66,11 +68,16 @@ export function ProposalCard({ toolCallId, data }: Props) {
         'rules',
         'goals',
         'dashboard',
+        'reports',
+        'assets',
+        'asset-groups',
+        'portfolio-trend',
+        'asset-values',
+        'asset-trend',
       ].forEach((key) => qc.invalidateQueries({ queryKey: [key] }))
     },
     onError: (err: unknown) => {
-      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
-      toast.error(detail || t('agents.proposal.applyFailed'))
+      toast.error(extractApiError(err, t('agents.proposal.applyFailed')))
     },
   })
 
@@ -166,6 +173,45 @@ function kindTitle(kind: ProposalKind, t: ReturnType<typeof useTranslation>['t']
   if (kind === 'create_manual_account') return t('accounts.addManual')
   if (kind === 'update_manual_account') return t('accounts.editAccount')
   return t(`agents.proposal.kind.${kind}`)
+}
+
+function assetTypeLabel(
+  assetType: unknown,
+  t: ReturnType<typeof useTranslation>['t'],
+): string {
+  const raw = String(assetType ?? 'other')
+  const suffix = raw
+    .replace(/_([a-z])/g, (_, c: string) => c.toUpperCase())
+    .replace(/^./, (c) => c.toUpperCase())
+  return t(`assets.type${suffix}`, { defaultValue: raw })
+}
+
+function formatChangeEntries(
+  changes: Record<string, unknown>,
+  target: Record<string, unknown>,
+  changeLabels: ProposalData['change_labels'],
+  dateLocale: string,
+  moneyFields: Set<string>,
+  dateFields: Set<string>,
+): string {
+  const beforeCurrency = target.currency
+  const afterCurrency = changes.currency ?? target.currency
+  return Object.entries(changes)
+    .map(([k, v]) => {
+      const labelPair = changeLabels?.[k]
+      if (labelPair) {
+        return `${k}: ${String(labelPair.before ?? '∅')} → ${String(labelPair.after ?? '∅')}`
+      }
+      const rawBefore = target[k]
+      const formatVal = (val: unknown, currency: unknown) => {
+        if (val == null) return '∅'
+        if (moneyFields.has(k)) return fmt(val, currency)
+        if (dateFields.has(k)) return formatDate(String(val), dateLocale)
+        return String(val)
+      }
+      return `${k}: ${formatVal(rawBefore, beforeCurrency)} → ${formatVal(v, afterCurrency)}`
+    })
+    .join(', ')
 }
 
 function accountTypeLabel(
@@ -365,6 +411,68 @@ function renderSummary(
       return t('agents.proposal.summary.createCategoryGroup', {
         name: String(p.name ?? '?'),
       }) + (d.name_collision ? ` — ${t('agents.proposal.collision', { name: d.name_collision.name })}` : '')
+    case 'create_asset': {
+      const val = p.current_value ?? p.purchase_price
+      return t('agents.proposal.summary.createAsset', {
+        name: String(p.name ?? '?'),
+        type: assetTypeLabel(p.type, t),
+        amount: val != null ? fmt(val, p.currency) : '—',
+      }) + (d.name_collision ? ` — ${t('agents.proposal.collision', { name: d.name_collision.name })}` : '')
+    }
+    case 'update_asset': {
+      const changes = (d.changes || {}) as Record<string, unknown>
+      const formattedChanges = formatChangeEntries(
+        changes,
+        tgt,
+        d.change_labels,
+        dateLocale,
+        new Set(['purchase_price', 'sell_price']),
+        new Set(['purchase_date', 'sell_date', 'growth_start_date']),
+      )
+      const parts = [
+        ...(formattedChanges ? [formattedChanges] : []),
+        ...(d.regenerate_growth ? [t('agents.proposal.summary.regenerateGrowth')] : []),
+      ]
+      return t('agents.proposal.summary.updateAsset', {
+        name: String(tgt.name ?? '?'),
+        changes: parts.join(', ') || '—',
+      })
+    }
+    case 'archive_assets': {
+      const items = d.affected ?? []
+      const count = d.affected_count ?? items.length
+      const names = items.map((a) => a.name ?? a.id).join(', ') || '?'
+      return t(
+        d.is_archived === false
+          ? 'agents.proposal.summary.unarchiveAssets'
+          : 'agents.proposal.summary.archiveAssets',
+        { count, names },
+      )
+    }
+    case 'asset_purchase_backfill': {
+      const changes = (d.changes || {}) as Record<string, unknown>
+      const parts: string[] = []
+      if (changes.purchase_price !== undefined || changes.purchase_date !== undefined) {
+        parts.push(
+          t('agents.proposal.summary.assetBackfillPurchase', {
+            amount: fmt(changes.purchase_price ?? tgt.purchase_price, tgt.currency),
+            date: changes.purchase_date
+              ? formatDate(String(changes.purchase_date), dateLocale)
+              : tgt.purchase_date
+                ? formatDate(String(tgt.purchase_date), dateLocale)
+                : '—',
+          }),
+        )
+      }
+      const entries = d.value_entries ?? d.values ?? []
+      if (entries.length > 0) {
+        parts.push(t('agents.proposal.summary.assetBackfillValues', { count: entries.length }))
+      }
+      return t('agents.proposal.summary.assetPurchaseBackfill', {
+        name: String(tgt.name ?? '?'),
+        details: parts.join(' · ') || '—',
+      })
+    }
     default:
       return ''
   }
@@ -650,6 +758,55 @@ async function applyProposal(data: ProposalData): Promise<string | void> {
         color: (p.color as string) || undefined,
       })
       return g.id
+    }
+    case 'create_asset': {
+      const payload: Record<string, unknown> = { ...p }
+      delete payload.group_name
+      const created = await assets.create(payload as Parameters<typeof assets.create>[0])
+      return created.id
+    }
+    case 'update_asset': {
+      const id = String((data.target as Record<string, unknown>).id)
+      const raw: Record<string, unknown> = { ...((data.changes || {}) as Record<string, unknown>) }
+      const valueEntry = raw.value_entry as { amount: number; date: string } | undefined
+      delete raw.value_entry
+      delete raw.group_name
+      if (Object.keys(raw).length > 0 || data.regenerate_growth) {
+        await assets.update(
+          id,
+          raw as Parameters<typeof assets.update>[1],
+          data.regenerate_growth ? { regenerateGrowth: true } : undefined,
+        )
+      }
+      if (valueEntry) {
+        await assets.addValue(id, {
+          amount: Number(valueEntry.amount),
+          date: String(valueEntry.date),
+        })
+      }
+      return id
+    }
+    case 'archive_assets': {
+      const ids = data.affected?.length
+        ? data.affected.map((a) => a.id)
+        : (data.asset_ids ?? [])
+      const targetArchived = data.is_archived ?? true
+      const result = await assets.archiveBatch(ids, targetArchived)
+      return `${result.updated_count} updated`
+    }
+    case 'asset_purchase_backfill': {
+      const id = String((data.target as Record<string, unknown>).id)
+      const raw: Record<string, unknown> = { ...((data.changes || {}) as Record<string, unknown>) }
+      const entries = data.value_entries ?? data.values ?? []
+      await assets.backfill(id, {
+        ...(raw.purchase_date !== undefined ? { purchase_date: String(raw.purchase_date) } : {}),
+        ...(raw.purchase_price !== undefined ? { purchase_price: Number(raw.purchase_price) } : {}),
+        values: entries.map((entry) => ({
+          date: String(entry.date),
+          amount: Number(entry.amount),
+        })),
+      })
+      return id
     }
   }
 }

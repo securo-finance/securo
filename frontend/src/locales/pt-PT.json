@@ -3323,7 +3323,11 @@
         "update_budget": "Atualizar orçamento",
         "delete_budget": "Eliminar orçamento",
         "update_transaction_notes": "Editar notas da transação",
-        "create_category_group": "Criar grupo de categorias"
+        "create_category_group": "Criar grupo de categorias",
+        "create_asset": "Adicionar ativo",
+        "update_asset": "Atualizar ativo",
+        "archive_assets": "Arquivar ativos",
+        "asset_purchase_backfill": "Preencher histórico de compra do ativo"
       },
       "summary": {
         "categorize": "{{count}} transação(ões) → {{category}}",
@@ -3349,7 +3353,15 @@
         "manualAccountMoney": "{{label}}: {{amount}}",
         "manualAccountDate": "{{label}}: {{date}}",
         "manualAccountChange": "{{field}}: {{before}} → {{after}}",
-        "manualAccountNoChanges": "Nenhuma alteração"
+        "manualAccountNoChanges": "Nenhuma alteração",
+        "createAsset": "{{name}} · {{type}} · {{amount}}",
+        "updateAsset": "{{name}} → {{changes}}",
+        "archiveAssets": "Arquivar {{count}} ativo(s): {{names}}",
+        "unarchiveAssets": "Restaurar {{count}} ativo(s): {{names}}",
+        "assetPurchaseBackfill": "{{name}}: {{details}}",
+        "assetBackfillPurchase": "compra de {{amount}} em {{date}}",
+        "assetBackfillValues": "{{count}} registo(s) de valor",
+        "regenerateGrowth": "regenerar histórico de crescimento"
       }
     },
     "conversation": {

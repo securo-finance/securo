@@ -3511,7 +3511,11 @@
         "update_budget": "Upravit rozpočet",
         "delete_budget": "Smazat rozpočet",
         "update_transaction_notes": "Upravit poznámku transakce",
-        "create_category_group": "Vytvořit skupinu kategorií"
+        "create_category_group": "Vytvořit skupinu kategorií",
+        "create_asset": "Přidat aktivum",
+        "update_asset": "Aktualizovat aktivum",
+        "archive_assets": "Archivovat aktiva",
+        "asset_purchase_backfill": "Doplnit historii nákupu aktiva"
       },
       "summary": {
         "categorize": "{{count}} transakcí → {{category}}",
@@ -3541,7 +3545,15 @@
         "manualAccountMoney": "{{label}}: {{amount}}",
         "manualAccountDate": "{{label}}: {{date}}",
         "manualAccountChange": "{{field}}: {{before}} → {{after}}",
-        "manualAccountNoChanges": "Žádné změny"
+        "manualAccountNoChanges": "Žádné změny",
+        "createAsset": "{{name}} · {{type}} · {{amount}}",
+        "updateAsset": "{{name}} → {{changes}}",
+        "archiveAssets": "Archivovat {{count}} aktivum/aktiv: {{names}}",
+        "unarchiveAssets": "Obnovit {{count}} aktivum/aktiv: {{names}}",
+        "assetPurchaseBackfill": "{{name}}: {{details}}",
+        "assetBackfillPurchase": "nákup {{amount}} dne {{date}}",
+        "assetBackfillValues": "{{count}} záznam(ů) hodnoty",
+        "regenerateGrowth": "znovu vygenerovat historii růstu"
       }
     },
     "conversation": {
