@@ -295,15 +295,15 @@ class MoneyWeightedSeriesRead(BaseModel):
     """What a money-weighted return between any two points is solved from.
 
     Each list is aligned with ``PortfolioPerformanceRead.points``: the value
-    held at that point and the net money put in on that date (negative when
-    taken out). Benchmarks are keyed like ``points[].benchmarks`` and hold
+    held at that point and the money put in and taken out on that date, as a
+    pair of positive amounts. Benchmarks are keyed like ``points[].benchmarks`` and hold
     the shadow portfolio that received the same money.
     """
 
     values: list[float] = Field(default_factory=list)
-    flows: list[float] = Field(default_factory=list)
+    flows: list[tuple[float, float]] = Field(default_factory=list)
     benchmark_values: dict[str, list[float]] = Field(default_factory=dict)
-    benchmark_flows: dict[str, list[float]] = Field(default_factory=dict)
+    benchmark_flows: dict[str, list[tuple[float, float]]] = Field(default_factory=dict)
 
 
 class PortfolioPerformanceRead(BaseModel):

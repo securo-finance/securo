@@ -893,9 +893,24 @@ describe('PortfolioPerformance', () => {
       // 100 held, 100 more put in on May 4 when it is worth 220 in all.
       money_weighted: {
         values: [100, 220, 230],
-        flows: [0, 100, 0],
+        flows: [
+          [0, 0],
+          [100, 0],
+          [0, 0],
+        ],
         benchmark_values: { 'yahoo:^GSPC': [100, 200, 210], 'yahoo:^IXIC': [0, 220, 230] },
-        benchmark_flows: { 'yahoo:^GSPC': [0, 100, 0], 'yahoo:^IXIC': [0, 220, 0] },
+        benchmark_flows: {
+          'yahoo:^GSPC': [
+            [0, 0],
+            [100, 0],
+            [0, 0],
+          ],
+          'yahoo:^IXIC': [
+            [0, 0],
+            [220, 0],
+            [0, 0],
+          ],
+        },
       },
     })
     const { container } = renderPerformance()
@@ -913,6 +928,26 @@ describe('PortfolioPerformance', () => {
     expect(within(card('S&P 500')).getByText(/0\.00%/)).toBeInTheDocument()
     // The Nasdaq only has data from May 4: like time-weighted, no return.
     expect(within(card('Nasdaq Composite')).queryByText(/%/)).not.toBeInTheDocument()
+
+    // May 4 to Sep 29 holds 220 that grows to 230 with no money moved: +4.55%.
+    // Dividing the line's cumulative values (20% and 12.5%) would give -6.25%.
+    fireEvent.keyDown(chart, { key: 'Escape' })
+    // Back to May 4 wherever Escape left the cursor.
+    fireEvent.keyDown(chart, { key: 'ArrowLeft' })
+    fireEvent.keyDown(chart, { key: 'ArrowRight' })
+    await waitFor(() =>
+      expect(container.querySelector('.recharts-tooltip-wrapper')).toHaveTextContent('May 4, 2026'),
+    )
+    fireEvent.keyDown(chart, { key: 'Enter' })
+    fireEvent.keyDown(chart, { key: 'ArrowRight' })
+    await waitFor(() =>
+      expect(container.querySelector('.recharts-tooltip-wrapper')).toHaveTextContent('Sep 29, 2026'),
+    )
+    fireEvent.keyDown(chart, { key: ' ' })
+    await waitFor(() =>
+      expect(screen.getByText('Selected period').nextElementSibling).toHaveTextContent('+4.55%'),
+    )
+    expect(within(card('Nasdaq Composite')).getByText(/4\.55%/)).toBeInTheDocument()
   })
 
   it('plots dates on a time scale with one tick per month and finds dates by time', async () => {

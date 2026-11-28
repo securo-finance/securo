@@ -1,5 +1,6 @@
 import type {
   BenchmarkMatch,
+  MoneyFlow,
   PerformanceMethod,
   PortfolioPerformancePeriod,
   UserPreferences,
@@ -210,23 +211,27 @@ const CASH_EPSILON = 1e-9
 
 /**
  * Money-weighted return (IRR) between two points, as a cumulative percentage.
- * Mirrors the server's `money_weighted_return`: what was held at `start`,
- * plus the money put in after it (`flows`, negative when taken out), grows
- * into what is held at `end` at a single rate, compounded over the time
- * money was actually invested. Unlike a time-weighted series, the return
- * of a range can't be derived from the cumulative values, so it is solved
- * again from the values and flows.
+ * Mirrors the server's `money_weighted_return` step for step: what was held
+ * at `start`, plus the money put in after it and less the money taken out
+ * (`flows`, kept apart per date), grows into what is held at `end` at a
+ * single rate, compounded over the time money was actually invested. Unlike
+ * a time-weighted series, the return of a range can't be derived from the
+ * cumulative values, so it is solved again from the values and flows.
  */
 export function moneyWeightedReturn(
   dates: string[],
   values: number[],
-  flows: number[],
+  flows: MoneyFlow[],
   start: number,
   end: number,
 ): number | null {
   const time = (index: number) => new Date(`${dates[index]}T00:00:00Z`).getTime() / DAY_MS
   const cash: [number, number][] = [[time(start), -Math.max(values[start] ?? 0, 0)]]
-  for (let index = start + 1; index <= end; index += 1) cash.push([time(index), -(flows[index] ?? 0)])
+  for (let index = start + 1; index <= end; index += 1) {
+    const [putIn, takenOut] = flows[index] ?? [0, 0]
+    if (putIn) cash.push([time(index), -putIn])
+    if (takenOut) cash.push([time(index), takenOut])
+  }
   cash.push([time(end), Math.max(values[end] ?? 0, 0)])
   const moved = cash.filter(([, amount]) => Math.abs(amount) > CASH_EPSILON)
   if (!moved.length) return 0
@@ -248,6 +253,20 @@ export function moneyWeightedReturn(
     }
     return [total, slope] as const
   }
+  const tolerance = 1e-12 * (paid + received)
+  // Newton's method from 0, then a bracketed search: the server's path from
+  // the same start, so when the cash balances at more than one rate (money
+  // taken out and put in again), both land on the same one.
+  let x = 0
+  for (let iteration = 0; iteration < 8; iteration += 1) {
+    const [value, slope] = npv(x)
+    if (Math.abs(value) <= tolerance) return (Math.exp(x) - 1) * 100
+    if (!slope) break
+    const step = value / slope
+    x -= step
+    if (!(x > -MAX_LOG_GROWTH && x < MAX_LOG_GROWTH)) break
+    if (Math.abs(step) < 1e-13) return (Math.exp(x) - 1) * 100
+  }
   let low = -MAX_LOG_GROWTH
   let high = MAX_LOG_GROWTH
   const [lowValue] = npv(low)
@@ -255,11 +274,7 @@ export function moneyWeightedReturn(
   if (lowValue === 0) return (Math.exp(low) - 1) * 100
   if (lowValue > 0 === highValue > 0) return null
   const lowPositive = lowValue > 0
-  const tolerance = 1e-12 * (paid + received)
-  // The server solves its line warm-started from each previous point; from
-  // 0 here, both land on the same rate unless the cash has several (money
-  // put in and taken out more than once around a loss), which is rare.
-  let x = 0
+  x = 0
   for (let iteration = 0; iteration < 200; iteration += 1) {
     const [value, slope] = npv(x)
     if (Math.abs(value) <= tolerance) break

@@ -117,7 +117,10 @@ or taken out: the days before the first buy and after selling everything do
 not stretch or dilute the rate, and the line stays flat after a full sale.
 The solver is Newton's method on `ln g`, warm-started from the previous
 point; when that does not converge it searches a bracket, falling back to
-bisection.
+bisection. Cash that changes sign more than once over time (money taken out
+and put in again) can balance at more than one rate; for such cash the
+solver always starts from 0, as the client does, so the line and a range
+over the same cash pick the same rate.
 
 The line is solved on the chart's own dates, from the same per-point values
 and money moved the response sends for dragging (below), and a dragged range
@@ -127,7 +130,9 @@ adds. Each point is solved over every flow before it, so the work grows with
 both; it runs off the request's event loop.
 
 Every flow counts on the date it is recorded, the first valuation that
-reflects it: buys and sales from the ledger (a trade's fee on top of a buy
+reflects it, and money put in and taken out on the same day are kept apart
+rather than netted, so a day trade that lost 1% reads as that and not as
+all of its net cost lost: buys and sales from the ledger (a trade's fee on top of a buy
 and off a sale's proceeds), contributions and withdrawals read from
 share-count and balance changes, and money bought at a previous snapshot's
 price. The start-of-day timing the time-weighted return uses only matters
@@ -156,8 +161,9 @@ invested?".
 - Money the portfolio bought at a previous snapshot's price (a trade only a
   later snapshot reflects) is bought by the shadow at the index's price as of
   that snapshot too, so the move in between counts for both.
-- When the portfolio sells everything, the shadow sells everything on the
-  same day, so neither keeps compounding after the other has stopped.
+- When the portfolio is closed out (everything sold, also for nothing, as a
+  write-off), the shadow sells everything on the same day, so neither keeps
+  compounding after the other has stopped.
 - A withdrawal larger than the shadow holds (the portfolio did much better)
   only takes out what is there. The shadow is then empty first and its span
   ends earlier than the portfolio's, so the two cumulative rates cover

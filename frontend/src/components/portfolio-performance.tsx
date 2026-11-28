@@ -68,6 +68,7 @@ import type {
   Asset,
   AssetGroup,
   BenchmarkMatch,
+  MoneyFlow,
   PerformanceMethod,
   PortfolioPerformancePeriod,
 } from '@/types'
@@ -637,7 +638,7 @@ export function PortfolioPerformance({
     // solved again rather than derived from the cumulative line.
     const series = data?.method === 'mwr' ? data.money_weighted : null
     const dates = chartData.map((row) => String(row.date))
-    const solved = (values?: number[], flows?: number[]) =>
+    const solved = (values?: number[], flows?: MoneyFlow[]) =>
       values && flows ? moneyWeightedReturn(dates, values, flows, first, last) : null
     return {
       startDate: String(from.date),

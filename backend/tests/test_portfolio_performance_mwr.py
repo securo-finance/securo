@@ -49,11 +49,10 @@ def test_money_weighted_return_rewards_buying_before_a_rise():
     """Halve, double the stake at the bottom, recover: flat time-weighted,
     a gain money-weighted, since most of the money caught the recovery."""
     values = [(day(0), 100.0), (day(15), 50.0 + 100.0), (day(30), 300.0)]
-    flows = {day(15): 100.0}
-    assert time_weighted_returns(values, flows)[-1][1] == pytest.approx(0.0)
+    assert time_weighted_returns(values, {day(15): 100.0})[-1][1] == pytest.approx(0.0)
     # -100 - 100 g^-0.5 + 300 g^-1 = 0  =>  g^-0.5 = (1 + sqrt(13)) / 6
     expected = (36 / (1 + math.sqrt(13)) ** 2 - 1) * 100
-    assert money_weighted_returns(values, flows)[-1][1] == pytest.approx(expected)
+    assert money_weighted_returns(values, {day(15): (100.0, 0.0)})[-1][1] == pytest.approx(expected)
 
 
 def test_money_weighted_return_ignores_the_days_before_the_first_buy():
@@ -66,6 +65,29 @@ def test_money_weighted_return_of_a_same_day_round_trip_is_the_ratio():
     assert result == pytest.approx(-1.0)
 
 
+def test_money_weighted_series_keeps_a_same_day_buy_and_sale_apart():
+    # Bought for 1000 and sold for 990 on one day: 1% lost on the trade,
+    # not all of the 10 it cost on net.
+    values = [(day(0), 0.0), (day(1), 0.0), (day(5), 0.0)]
+    series = money_weighted_returns(values, {day(1): (1000.0, 990.0)})
+    assert series[-1][1] == pytest.approx(-1.0)
+
+
+def test_money_weighted_line_and_range_pick_the_same_of_two_rates():
+    # 100 in, 230 out halfway, 132 back in at the end: both +21% and +44%
+    # balance this cash. A warm start near one of them must not pick it.
+    dates = [day(0), day(10), day(20)]
+    values = [100.0, 0.0, 0.0]
+    flows = [(0.0, 0.0), (0.0, 230.0), (132.0, 0.0)]
+    line = money_weighted_returns(list(zip(dates, values)), dict(zip(dates, flows)))
+    assert line[-1][1] == pytest.approx(range_return(dates, values, flows, 0, 2))
+    cash = [(day(10), -230.0), (day(20), 132.0)]
+    for guess in (0.0, 21.0, 44.0, 130.0):
+        assert money_weighted_return(day(0), 100.0, cash, day(20), 0.0, guess=guess) == (
+            pytest.approx(range_return(dates, values, flows, 0, 2))
+        )
+
+
 def test_money_weighted_return_edges():
     assert money_weighted_return(day(0), 0, [], day(10), 0) == 0.0
     # Everything bought is gone.
@@ -76,8 +98,7 @@ def test_money_weighted_return_edges():
 
 def test_money_weighted_series_stays_flat_after_selling_everything():
     values = [(day(0), 100.0), (day(10), 110.0), (day(20), 0.0), (day(40), 0.0)]
-    flows = {day(20): -110.0}
-    series = money_weighted_returns(values, flows)
+    series = money_weighted_returns(values, {day(20): (0.0, 110.0)})
     assert series[0] == (day(0), 0.0)
     assert series[-1][1] == pytest.approx(10.0)
     assert series[-1][1] == pytest.approx(series[-2][1])
@@ -86,18 +107,18 @@ def test_money_weighted_series_stays_flat_after_selling_everything():
 def test_shadow_benchmark_gets_the_portfolios_money_on_the_same_days():
     history = [(day(0), 100.0), (day(15), 50.0), (day(30), 100.0)]
     values, moved = _benchmark_shadow_portfolio(
-        history, day(0), day(30), 100.0, {day(15): 100.0}, set()
+        history, day(0), day(30), 100.0, {day(15): (100.0, 0.0)}, set()
     )
     assert values == [(day(0), 100.0), (day(15), 150.0), (day(30), 300.0)]
-    assert moved == {day(15): 100.0}
+    assert moved == {day(15): (100.0, 0.0)}
 
 
 def test_shadow_benchmark_only_pays_out_what_it_holds():
     history = [(day(0), 100.0), (day(10), 50.0), (day(20), 50.0)]
     values, moved = _benchmark_shadow_portfolio(
-        history, day(0), day(20), 100.0, {day(10): -80.0}, set()
+        history, day(0), day(20), 100.0, {day(10): (0.0, 80.0)}, set()
     )
-    assert moved == {day(10): -50.0}
+    assert moved == {day(10): (0.0, 50.0)}
     assert values[-1] == (day(20), 0.0)
 
 
@@ -106,9 +127,9 @@ def test_shadow_benchmark_sells_everything_when_the_portfolio_does():
     # of the same amount would leave 10 in the shadow compounding to the end.
     history = [(day(0), 100.0), (day(365), 120.0), (day(730), 144.0)]
     values, moved = _benchmark_shadow_portfolio(
-        history, day(0), day(730), 100.0, {day(365): -110.0}, set(), exits={day(365)}
+        history, day(0), day(730), 100.0, {day(365): (0.0, 110.0)}, set(), exits={day(365)}
     )
-    assert moved == {day(365): pytest.approx(-120.0)}
+    assert moved == {day(365): (0.0, pytest.approx(120.0))}
     assert values[-1] == (day(730), 0.0)
     returns = money_weighted_returns(values, moved)
     # +20% over the time the money was in, not +44% stretched to day 730.
@@ -124,12 +145,40 @@ def test_shadow_benchmark_buys_money_bought_at_open_at_the_earlier_price():
         day(0),
         day(31),
         0.0,
-        {day(31): 1000.0},
+        {day(31): (1000.0, 0.0)},
         {day(0), day(31)},
         opening={day(31): 1000.0},
     )
-    assert moved == {day(31): 1000.0}
+    assert moved == {day(31): (1000.0, 0.0)}
     assert values[-1] == (day(31), pytest.approx(1100.0))
+
+
+def test_shadow_benchmark_keeps_an_opening_purchase_beside_a_same_day_sale():
+    # 100 bought at the earlier price and 100 sold that day: the purchase
+    # still happens, at 100, and the sale at 150 takes out a third of it.
+    history = [(day(0), 100.0), (day(10), 150.0), (day(20), 200.0)]
+    values, moved = _benchmark_shadow_portfolio(
+        history,
+        day(0),
+        day(20),
+        100.0,
+        {day(10): (100.0, 100.0)},
+        {day(0), day(10), day(20)},
+        opening={day(10): 100.0},
+    )
+    assert moved == {day(10): (100.0, 100.0)}
+    # 2 units bought by day 10, 2/3 of one sold: 4/3 units at 200.
+    assert values[-1] == (day(20), pytest.approx(200.0 * 4 / 3))
+
+
+def test_shadow_benchmark_sells_out_on_an_exit_with_nothing_taken_out():
+    # The portfolio's only holding was written off (sold for nothing).
+    history = [(day(0), 100.0), (day(10), 110.0), (day(20), 150.0)]
+    values, moved = _benchmark_shadow_portfolio(
+        history, day(0), day(20), 100.0, {}, {day(0), day(10), day(20)}, exits={day(10)}
+    )
+    assert moved == {day(10): (0.0, pytest.approx(110.0))}
+    assert values[-1] == (day(20), 0.0)
 
 
 async def _dip_and_top_up(session: AsyncSession, user: User, workspace) -> tuple[date, date, date]:
@@ -228,8 +277,8 @@ async def test_money_weighted_performance_compares_shadow_benchmarks(
     dates = [point.date for point in mwr.points]
     assert len(series.values) == len(series.flows) == len(dates)
     assert series.values[0] == 100.0 and series.values[-1] == 300.0
-    assert series.flows[dates.index(mid)] == 100.0
-    assert sum(series.flows) == 100.0
+    assert series.flows[dates.index(mid)] == (100.0, 0.0)
+    assert sum(put_in for put_in, _ in series.flows) == 100.0
     assert series.benchmark_values["yahoo:^FLAT"][-1] == 200.0
     assert series.benchmark_flows["yahoo:^SAME"] == series.flows
 
@@ -316,7 +365,7 @@ async def test_money_weighted_counts_market_trades_as_money_moved(
     series = mwr.money_weighted
     assert series is not None
     dates = [point.date for point in mwr.points]
-    assert series.flows[dates.index(mid)] == 102.0
+    assert series.flows[dates.index(mid)] == (102.0, 0.0)
 
 
 @pytest.mark.asyncio
@@ -356,8 +405,8 @@ async def test_money_weighted_benchmark_starting_late_buys_in_on_its_start(
     assert values[dates.index(mid)] == 150.0 and values[-1] == 300.0
     # Its first value counts as money in, so a range from before it re-solves
     # to the same return instead of growing from nothing.
-    assert flows[dates.index(mid)] == 150.0
-    assert sum(flows) == 150.0
+    assert flows[dates.index(mid)] == (150.0, 0.0)
+    assert sum(put_in for put_in, _ in flows) == 150.0
 
 
 @pytest.mark.asyncio
@@ -400,9 +449,8 @@ async def test_money_weighted_line_matches_a_range_from_the_start(
     assert mwr.portfolio_return == pytest.approx(mwr.points[-1].portfolio, abs=1e-5)
 
 
-@pytest.mark.asyncio
-async def test_money_weighted_full_sale_closes_the_shadow_too(
-    session: AsyncSession, test_user: User, test_workspace
+async def _sell_everything_and_compare(
+    session: AsyncSession, test_user: User, test_workspace, sale_price: str
 ):
     end = date.today()
     start = end - timedelta(days=60)
@@ -427,7 +475,7 @@ async def test_money_weighted_full_sale_closes_the_shadow_too(
             price=Decimal(price),
             date=when,
         )
-        for when, kind, price in ((start, "buy", "100"), (sold_on, "sell", "110"))
+        for when, kind, price in ((start, "buy", "100"), (sold_on, "sell", sale_price))
     )
     session.add_all(
         AssetValue(
@@ -438,7 +486,11 @@ async def test_money_weighted_full_sale_closes_the_shadow_too(
             date=when,
             source="market",
         )
-        for when, amount, price in ((start, "100", "100"), (sold_on, "0", "110"), (end, "0", "130"))
+        for when, amount, price in (
+            (start, "100", "100"),
+            (sold_on, "0", sale_price),
+            (end, "0", "130"),
+        )
     )
     await session.commit()
     provider = MultiHistoryProvider(
@@ -463,11 +515,30 @@ async def test_money_weighted_full_sale_closes_the_shadow_too(
         method="mwr",
     )
 
+    return mwr
+
+
+@pytest.mark.asyncio
+async def test_money_weighted_full_sale_closes_the_shadow_too(
+    session: AsyncSession, test_user: User, test_workspace
+):
+    mwr = await _sell_everything_and_compare(session, test_user, test_workspace, "110")
     assert mwr.portfolio_return == pytest.approx(10.0, abs=1e-5)
     (up,) = mwr.benchmarks
     # Both were invested from the start to the sale: +20% against +10%.
     assert up.benchmark_return == pytest.approx(20.0, abs=1e-5)
     assert up.excess_return == pytest.approx(-10.0, abs=1e-5)
+
+
+@pytest.mark.asyncio
+async def test_money_weighted_write_off_closes_the_shadow_too(
+    session: AsyncSession, test_user: User, test_workspace
+):
+    # Sold for nothing: no money comes out, but the portfolio is closed.
+    mwr = await _sell_everything_and_compare(session, test_user, test_workspace, "0")
+    assert mwr.portfolio_return == pytest.approx(-100.0, abs=1e-5)
+    (up,) = mwr.benchmarks
+    assert up.benchmark_return == pytest.approx(20.0, abs=1e-5)
 
 
 @pytest.mark.asyncio

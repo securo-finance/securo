@@ -1770,11 +1770,14 @@ export type PortfolioPerformancePeriod = '3m' | '6m' | 'ytd' | '1y' | '3y' | '5y
 export type PerformanceMethod = 'twr' | 'mwr'
 
 /** Per-point values and money moved, aligned with `points`, for range IRRs. */
+/** Money put in and money taken out on one date, both positive. */
+export type MoneyFlow = [number, number]
+
 export interface MoneyWeightedSeries {
   values: number[]
-  flows: number[]
+  flows: MoneyFlow[]
   benchmark_values: Record<string, number[]>
-  benchmark_flows: Record<string, number[]>
+  benchmark_flows: Record<string, MoneyFlow[]>
 }
 
 export interface PortfolioPerformancePoint {

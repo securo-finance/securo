@@ -10,6 +10,7 @@ the start of the chart to a point reads exactly the line's value there.
 from __future__ import annotations
 
 import math
+from collections.abc import Iterable
 from datetime import date
 from typing import NamedTuple, Optional
 
@@ -19,6 +20,30 @@ from app.schemas.asset import MoneyWeightedSeriesRead, PortfolioPerformancePoint
 # Bounds on the log of the period's growth: from about -100% to +2e19%.
 _MAX_LOG_GROWTH = 45.0
 _CASH_EPSILON = 1e-9
+
+# Money put in and money taken out on one date, both positive and kept
+# apart: a buy and a sale on the same day are two amounts, not their net.
+Legs = tuple[float, float]
+
+
+def _entries(dated_legs: Iterable[tuple[date, Legs]]) -> list[tuple[date, float]]:
+    """Legs as the signed amounts the solver takes, money in first."""
+    entries: list[tuple[date, float]] = []
+    for point_date, (put_in, taken_out) in dated_legs:
+        if put_in:
+            entries.append((point_date, put_in))
+        if taken_out:
+            entries.append((point_date, -taken_out))
+    return entries
+
+
+def _sign_changes(cash: list[tuple[date, float]]) -> int:
+    """How often the cash changes sign over time, each date's amounts summed."""
+    totals: dict[date, float] = {}
+    for point_date, amount in cash:
+        totals[point_date] = totals.get(point_date, 0.0) + amount
+    signs = [amount > 0 for _, amount in sorted(totals.items()) if abs(amount) > _CASH_EPSILON]
+    return sum(1 for before, after in zip(signs, signs[1:]) if before != after)
 
 
 def money_weighted_return(
@@ -39,7 +64,8 @@ def money_weighted_return(
     it. The rate is compounded over the time money was actually invested,
     from the first money in to the last value held or taken out, so the
     days before the first buy or after selling everything do not stretch
-    it. ``guess`` is a starting cumulative percentage for the solver.
+    it. ``guess`` is a starting cumulative percentage for the solver; it is
+    ignored when the cash could have more than one rate (below).
 
     None when no rate balances the money (only possible with money taken
     out and none ever put in).
@@ -61,6 +87,13 @@ def money_weighted_return(
     if span == 0:
         # Everything happened on one day: there is no time to compound over.
         return (received / paid - 1.0) * 100.0
+    if _sign_changes(cash) > 1:
+        # Money taken out and put in again can balance at more than one rate
+        # (no more than the number of sign changes). Which one the solver
+        # finds depends on where it starts, so it always starts from 0 here:
+        # the line and a range over the same cash, here and in the client,
+        # then land on the same rate.
+        guess = 0.0
     # Solve sum(amount * growth ** -elapsed) = 0 for the period's growth,
     # with elapsed as a fraction of the span, on x = ln(growth).
     timed = [((point_date - first).days / span, amount) for point_date, amount in cash]
@@ -121,21 +154,19 @@ def money_weighted_return(
 
 def money_weighted_returns(
     values: list[tuple[date, float]],
-    flows: dict[date, float],
+    flows: dict[date, Legs],
 ) -> list[tuple[date, float]]:
     """Cumulative money-weighted return from the first value to each later one.
 
-    ``flows`` is the net money put in per date (negative when taken out),
-    already reflected in the value on that date. A point no rate can be
-    solved for repeats the one before it.
+    ``flows`` is the money put in and taken out per date, already reflected
+    in the value on that date. A point no rate can be solved for repeats the
+    one before it.
     """
     if not values:
         return []
     start_date, start_value = values[0]
-    dated_flows = sorted(
-        (point_date, amount)
-        for point_date, amount in flows.items()
-        if point_date > start_date and amount
+    dated_flows = _entries(
+        sorted((point_date, legs) for point_date, legs in flows.items() if point_date > start_date)
     )
     output = [(start_date, 0.0)]
     included: list[tuple[date, float]] = []
@@ -155,7 +186,7 @@ def money_weighted_returns(
 
 
 def range_return(
-    dates: list[date], values: list[float], flows: list[float], start: int, end: int
+    dates: list[date], values: list[float], flows: list[Legs], start: int, end: int
 ) -> Optional[float]:
     """The return between two points of an aligned series.
 
@@ -163,15 +194,15 @@ def range_return(
     ``end``, grown into what was held at ``end``. The client's
     ``moneyWeightedReturn`` solves a dragged range the same way.
     """
-    moved = [(dates[index], flows[index]) for index in range(start + 1, end + 1) if flows[index]]
+    moved = _entries((dates[index], flows[index]) for index in range(start + 1, end + 1))
     return money_weighted_return(
         dates[start], max(values[start], 0.0), moved, dates[end], max(values[end], 0.0)
     )
 
 
 def _aligned(
-    point_dates: list[date], values: list[tuple[date, float]], moved: dict[date, float]
-) -> tuple[list[float], list[float]]:
+    point_dates: list[date], values: list[tuple[date, float]], moved: dict[date, Legs]
+) -> tuple[list[float], list[Legs]]:
     """A series' value and money moved on each of the chart's dates.
 
     Values carry forward to dates only another series has. Money moved on
@@ -181,7 +212,7 @@ def _aligned(
     that starts with it.
     """
     held: list[float] = []
-    flows: list[float] = []
+    flows: list[Legs] = []
     value = 0.0
     value_index = 0
     for index, point_date in enumerate(point_dates):
@@ -190,10 +221,10 @@ def _aligned(
             value = values[value_index][1]
             value_index += 1
         held.append(round(value, 6))
-        flow = moved.get(point_date, 0.0) if index else 0.0
+        put_in, taken_out = moved.get(point_date, (0.0, 0.0)) if index else (0.0, 0.0)
         if index and not started and value_index:
-            flow += value
-        flows.append(round(flow, 6))
+            put_in += value
+        flows.append((round(put_in, 6), round(taken_out, 6)))
     return held, flows
 
 
@@ -208,8 +239,8 @@ class SolvedSeries(NamedTuple):
 def solve_on_points(
     points: list[PortfolioPerformancePoint],
     portfolio_values: list[tuple[date, float]],
-    net_flows: dict[date, float],
-    shadows: dict[str, tuple[list[tuple[date, float]], dict[date, float]]],
+    money_flows: dict[date, Legs],
+    shadows: dict[str, tuple[list[tuple[date, float]], dict[date, Legs]]],
     benchmark_starts: dict[str, date],
 ) -> SolvedSeries:
     """Solve the money-weighted line of the portfolio and of each benchmark's
@@ -219,7 +250,7 @@ def solve_on_points(
     call it off the event loop.
     """
     dates = [point.date for point in points]
-    values, flows = _aligned(dates, portfolio_values, net_flows)
+    values, flows = _aligned(dates, portfolio_values, money_flows)
     series = MoneyWeightedSeriesRead(values=values, flows=flows)
     portfolio = money_weighted_returns(list(zip(dates, values)), dict(zip(dates, flows)))
     for point, (_, value) in zip(points, portfolio):
