@@ -187,12 +187,18 @@ async def _in_viewer_currency(
 
 
 async def _read_all_in_viewer_currency(
-    session: AsyncSession, primary_currency: str, rows
+    session: AsyncSession, primary_currency: str, rows, workspace_id: uuid.UUID | None = None,
 ) -> list[TransactionRead]:
     """Rows as the list shows them: stamps in the viewer's currency, then
     tagged. Every response the transaction dialog can open must read like
-    this; it sends `amount_primary` back as it got it (#440)."""
-    items = [TransactionRead.model_validate(tx, from_attributes=True) for tx in rows]
+    this; it sends `amount_primary` back as it got it (#440). With
+    `workspace_id`, rows from another workspace hide its Pocket details."""
+    items = [
+        TransactionRead.for_viewer(tx, workspace_id)
+        if workspace_id is not None
+        else TransactionRead.model_validate(tx, from_attributes=True)
+        for tx in rows
+    ]
     viewer = await viewer_currency(session, primary_currency)
     # The warning is judged on each row as it was stored, in its owner's
     # currency: a converted row's rate is rewritten, and a 1.0 it lands on
@@ -331,7 +337,9 @@ async def list_transactions(
         workspace_only=workspace_only,
     )
     primary_currency = ctx.user.primary_currency
-    items = await _read_all_in_viewer_currency(session, primary_currency, transactions)
+    items = await _read_all_in_viewer_currency(
+        session, primary_currency, transactions, ctx.workspace.id
+    )
     await _attach_invoice_links(session, ctx, items)
     await _attach_transfer_counterparts(session, ctx.workspace.id, items)
     summary_out = (

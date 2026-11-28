@@ -528,12 +528,28 @@ async def delete_settlement(
     # as delete_transaction does. A linked existing transaction, a row
     # another settlement also points at, a transfer leg and a row that
     # carries group splits (user-entered allocations) are left alone.
+    from app.services import goal_allocation_service
+    from app.services.goal_service import _lock_pocket_account
+
+    tx_ids = sorted(
+        {tx_id for tx_id in (settlement.transaction_id, settlement.receiver_transaction_id) if tx_id},
+        key=str,
+    )
+    # Pocket assignments on these rows are checked under the shared lock
+    # order: accounts first, then the rows in id order.
+    account_ids = set(
+        (
+            await session.scalars(
+                select(Transaction.account_id).where(
+                    Transaction.id.in_(tx_ids), Transaction.workspace_id == workspace_id
+                )
+            )
+        ).all()
+    )
+    for account_id in sorted(account_ids, key=str):
+        await _lock_pocket_account(session, workspace_id, account_id)
     created: list[Transaction] = []
-    seen: set[uuid.UUID] = set()
-    for tx_id in (settlement.transaction_id, settlement.receiver_transaction_id):
-        if tx_id is None or tx_id in seen:
-            continue
-        seen.add(tx_id)
+    for tx_id in tx_ids:
         # Lock the row so a concurrent transfer pairing either lands
         # before this check (and is seen) or waits for the delete.
         tx = (
@@ -566,7 +582,10 @@ async def delete_settlement(
             )
         )
         if other.first() is None:
+            if tx.account_id not in account_ids:
+                raise ValueError("Transaction account changed; retry this operation")
             created.append(tx)
+    await goal_allocation_service.clear_transactions_allocations(session, workspace_id, created)
     if created:
         from app.services.attachment_service import cleanup_attachment_files
 

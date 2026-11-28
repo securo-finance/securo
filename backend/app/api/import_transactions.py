@@ -217,6 +217,8 @@ async def import_transactions(
         # A row whose conversion does not fit the column (issue #422): the
         # import commits once at the end, so nothing of it was saved.
         raise HTTPException(status_code=422, detail=str(e))
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     except Exception as e:
         # Another import of the same document won the race: nothing of this
         # one was committed; drop it and say so.

@@ -36,7 +36,7 @@ from app.models.category import Category
 from app.models.category_group import CategoryGroup
 from app.models.collection import Collection, collection_accounts, collection_asset_groups
 from app.models.credit_card_bill import CreditCardBill
-from app.models.goal import Goal
+from app.models.goal import Goal, GoalAllocation
 from app.models.group import Group, GroupMember
 from app.models.group_settlement import GroupSettlement
 from app.models.import_log import ImportLog
@@ -181,6 +181,7 @@ RESTORE_ORDER: list[str] = [
     "reconciliation_suggestions",
     "reconciliation_events",
     "goals",
+    "goal_allocations",
 ]
 
 MODEL_SPECS: dict[str, EntitySpec] = {
@@ -237,6 +238,7 @@ MODEL_SPECS: dict[str, EntitySpec] = {
     ),
     "reconciliation_events": EntitySpec("reconciliation_events", ReconciliationEvent),
     "goals": EntitySpec("goals", Goal),
+    "goal_allocations": EntitySpec("goal_allocations", GoalAllocation),
 }
 
 
@@ -336,6 +338,7 @@ DATA_NAMES = [
     "reconciliation_suggestions",
     "reconciliation_events",
     "goals",
+    "goal_allocations",
 ]
 BOTH_NAMES = list(dict.fromkeys([*DATA_NAMES, *CONFIG_NAMES]))
 
@@ -1647,7 +1650,17 @@ async def _clear_workspace_entities(
             )
         )
 
+    # A Pocket's ledger belongs to its account: a restore that replaces the
+    # accounts replaces every Pocket with them, even from an archive made
+    # before Pockets existed. One that keeps the accounts keeps the Pockets.
+    pockets_follow_accounts = "accounts" in name_set
+    if pockets_follow_accounts:
+        await session.execute(
+            delete(GoalAllocation).where(GoalAllocation.workspace_id == workspace_id)
+        )
+
     delete_order = [
+        "goal_allocations",
         "reconciliation_events",
         "reconciliation_suggestions",
         "invoice_attachments",
@@ -1698,6 +1711,13 @@ async def _clear_workspace_entities(
         if name == "asset_values":
             asset_ids = select(Asset.id).where(Asset.workspace_id == workspace_id)
             await session.execute(delete(AssetValue).where(AssetValue.asset_id.in_(asset_ids)))
+            continue
+        if name == "goals" and not pockets_follow_accounts:
+            await session.execute(
+                delete(Goal).where(
+                    Goal.workspace_id == workspace_id, Goal.tracking_type != "pocket"
+                )
+            )
             continue
         model = MODEL_SPECS[name].model
         assert model is not None
@@ -2119,6 +2139,14 @@ async def restore_backup_bytes(
                             "them, and the copies are restored without them."
                         )
                     rows = [row for row in rows if str(row.get("transaction_id")) not in broken]
+                if name == "goals" and "accounts" not in names:
+                    pocket_rows = [row for row in rows if row.get("tracking_type") == "pocket"]
+                    if pocket_rows:
+                        warnings.append(
+                            f"Skipped {len(pocket_rows)} pocket(s): a pocket is restored "
+                            "only together with its account."
+                        )
+                        rows = [row for row in rows if row.get("tracking_type") != "pocket"]
                 for row in rows:
                     prepared = _prepare_model_data(
                         model,
@@ -2142,6 +2170,17 @@ async def restore_backup_bytes(
                             prepared.get("user_id"),
                             currency_cache,
                         )
+                    if model is Goal and prepared.get("tracking_type") == "pocket":
+                        if prepared.get("account_id") is None:
+                            raise ValueError(
+                                f"Backup pocket {row.get('id')} has no restorable account"
+                            )
+                    if model is GoalAllocation and prepared.get("source") == "transaction":
+                        if prepared.get("transaction_id") is None:
+                            raise ValueError(
+                                f"Backup pocket assignment {row.get('id')} has no "
+                                "restorable transaction"
+                            )
                     if model is Rule:
                         await rule_service.validate_rule_definition(
                             session,

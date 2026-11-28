@@ -428,6 +428,7 @@ export interface Transaction {
   // The recurring bill this transaction fulfills, if any (issue #116).
   recurring_transaction_id?: string | null
   splits: TransactionSplit[]
+  goal_allocations?: GoalAllocation[]
   // Settlements this credit pays back.
   settled_by?: { id: string; group_id: string; from_member_id: string; amount: number }[]
   // Split across several categories (#425): `category_id` is then null and
@@ -571,8 +572,9 @@ export interface FlaggedSummary {
   due_soon: number
 }
 
-export type TransactionEditPayload = Omit<Partial<Transaction>, 'splits' | 'category_lines'> & {
+export type TransactionEditPayload = Omit<Partial<Transaction>, 'splits' | 'goal_allocations' | 'category_lines'> & {
   splits?: TransactionSplitsInput | null
+  goal_allocations?: GoalAllocationInput[]
   category_lines?: TransactionCategoryLinesInput
   // Replaces the settlements this credit pays back; no payers removes them.
   payback?: { group_id?: string; to_member_id?: string; payers: { member_id: string; amount: number }[] }
@@ -1861,7 +1863,7 @@ export interface Goal {
   target_amount_primary: number | null
   current_amount_primary: number | null
   target_date: string | null
-  tracking_type: 'manual' | 'account' | 'asset' | 'asset_group' | 'net_worth'
+  tracking_type: 'manual' | 'account' | 'asset' | 'asset_group' | 'net_worth' | 'pocket'
   account_id: string | null
   asset_id: string | null
   asset_group_id: string | null
@@ -1878,6 +1880,26 @@ export interface Goal {
   account_name: string | null
   asset_name: string | null
   asset_group_name: string | null
+  account_balance?: number | null
+  account_reserved_total?: number | null
+  account_available?: number | null
+  is_underfunded?: boolean
+}
+
+export interface GoalAllocationInput {
+  goal_id: string
+  amount: number
+}
+
+export interface GoalAllocation {
+  id: string
+  goal_id: string
+  goal_name: string
+  transaction_id: string | null
+  amount: number
+  source: 'opening' | 'adjustment' | 'transaction'
+  created_at: string
+  updated_at: string
 }
 
 export interface GoalSummary {

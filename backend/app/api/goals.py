@@ -10,7 +10,14 @@ from app.core.workspace_context import (
     current_workspace,
     current_writable_workspace,
 )
-from app.schemas.goal import GoalCreate, GoalRead, GoalSummary, GoalUpdate
+from app.schemas.goal import (
+    GoalAdjustmentCreate,
+    GoalAllocationRead,
+    GoalCreate,
+    GoalRead,
+    GoalSummary,
+    GoalUpdate,
+)
 from app.services import goal_service
 
 router = APIRouter(prefix="/api/goals", tags=["goals"])
@@ -44,6 +51,36 @@ async def create_goal(
         return await goal_service.create_goal(session, ctx.workspace.id, ctx.user_id, data)
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+
+@router.get("/{goal_id}/activity", response_model=list[GoalAllocationRead])
+async def goal_activity(
+    goal_id: uuid.UUID,
+    ctx: WorkspaceContext = Depends(current_workspace),
+    session: AsyncSession = Depends(get_async_session),
+):
+    activity = await goal_service.get_pocket_activity(session, goal_id, ctx.workspace.id)
+    if activity is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Goal not found")
+    return activity
+
+
+@router.post("/{goal_id}/adjustments", response_model=GoalRead)
+async def adjust_pocket(
+    goal_id: uuid.UUID,
+    data: GoalAdjustmentCreate,
+    ctx: WorkspaceContext = Depends(current_writable_workspace),
+    session: AsyncSession = Depends(get_async_session),
+):
+    try:
+        goal = await goal_service.adjust_pocket(
+            session, goal_id, ctx.workspace.id, ctx.user_id, data
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+    if goal is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Goal not found")
+    return goal
 
 
 @router.get("/{goal_id}", response_model=GoalRead)

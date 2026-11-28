@@ -3,7 +3,7 @@ import { AccountIcon } from '@/components/account-icon'
 import { CategorySplitBadge, TransactionCategoryIcon } from '@/components/category-lines-display'
 import { isSplitByCategory } from '@/lib/category-lines'
 import type { Transaction, Account } from '@/types'
-import { AlertTriangle, ArrowLeftRight, CalendarClock, ChartNoAxesColumn, CircleDashed, Clock, EyeClosed, Paperclip, Repeat } from 'lucide-react'
+import { AlertTriangle, ArrowLeftRight, CalendarClock, ChartNoAxesColumn, CircleDashed, Clock, EyeClosed, Paperclip, Repeat, WalletCards } from 'lucide-react'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
 import { TransactionFlagMarker } from '@/components/transaction-flag-marker'
 import { useTranslation } from 'react-i18next'
@@ -97,7 +97,9 @@ export function MobileTransactionRow({
   const showInstallmentBadge = tx.installment_number != null && tx.total_installments != null
   const showPendingBadge = shouldShowPendingBadge(tx)
   const showAttachmentIcon = (tx.attachment_count ?? 0) > 0
+  const pocketCount = tx.goal_allocations?.length ?? 0
   const hasBadges =
+    pocketCount > 0 ||
     showGroupBadge ||
     showPaybackBadge ||
     showUnreadDot ||
@@ -181,6 +183,15 @@ export function MobileTransactionRow({
                 className="h-3 w-3 text-blue-600 shrink-0"
                 aria-label={t('transactions.transfer')}
               />
+            )}
+            {pocketCount > 0 && (
+              <span
+                className="inline-flex items-center gap-0.5 text-[9px] font-semibold text-violet-700 dark:text-violet-300 shrink-0"
+                title={tx.goal_allocations?.map(item => item.goal_name).join(', ')}
+              >
+                <WalletCards className="h-3 w-3" />
+                {pocketCount}
+              </span>
             )}
             {virtual && (
               <CalendarClock className="h-3 w-3 text-primary shrink-0" />

@@ -3,7 +3,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any, Optional
 
-from sqlalchemy import Date, DateTime, ForeignKey, Integer, Numeric, String
+from sqlalchemy import CheckConstraint, Date, DateTime, ForeignKey, Index, Integer, Numeric, String, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
@@ -16,6 +16,7 @@ if TYPE_CHECKING:
     from app.models.asset import Asset
     from app.models.asset_group import AssetGroup
     from app.models.user import User
+    from app.models.transaction import Transaction
 
 
 class Goal(Base):
@@ -50,3 +51,70 @@ class Goal(Base):
     account: Mapped[Optional["Account"]] = relationship()
     asset: Mapped[Optional["Asset"]] = relationship()
     asset_group: Mapped[Optional["AssetGroup"]] = relationship()
+    allocations: Mapped[list["GoalAllocation"]] = relationship(
+        back_populates="goal", cascade="all, delete-orphan", passive_deletes=True
+    )
+
+
+class GoalAllocation(Base):
+    """A virtual reservation inside an existing account.
+
+    Positive amounts reserve money for a pocket; negative amounts release it.
+    Transaction-backed rows inherit their direction from the transaction type.
+    They never create or alter a financial transaction themselves.
+    """
+
+    __tablename__ = "goal_allocations"
+    __table_args__ = (
+        Index("ix_goal_allocations_workspace_id", "workspace_id"),
+        Index("ix_goal_allocations_goal_id", "goal_id"),
+        Index("ix_goal_allocations_transaction_id", "transaction_id"),
+        UniqueConstraint(
+            "goal_id", "transaction_id", name="uq_goal_allocations_goal_transaction"
+        ),
+        CheckConstraint("amount <> 0", name="ck_goal_allocations_amount_nonzero"),
+        CheckConstraint(
+            "source IN ('opening', 'adjustment', 'transaction')",
+            name="ck_goal_allocations_source",
+        ),
+        CheckConstraint(
+            "(source = 'transaction' AND transaction_id IS NOT NULL) OR "
+            "(source IN ('opening', 'adjustment') AND transaction_id IS NULL)",
+            name="ck_goal_allocations_source_transaction",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False
+    )
+    goal_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("goals.id", ondelete="CASCADE"), nullable=False
+    )
+    transaction_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("transactions.id", ondelete="CASCADE"),
+        nullable=True,
+    )
+    user_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    amount: Mapped[Decimal] = mapped_column(Numeric(precision=15, scale=2), nullable=False)
+    source: Mapped[str] = mapped_column(String(20), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+    goal: Mapped["Goal"] = relationship(back_populates="allocations", lazy="joined")
+    transaction: Mapped[Optional["Transaction"]] = relationship(
+        back_populates="goal_allocations"
+    )
+
+    @property
+    def goal_name(self) -> str:
+        return self.goal.name

@@ -416,6 +416,7 @@ async def list_transactions(
 
     from app.models.transaction import Transaction
     from app.models.transaction_split import TransactionSplit
+    from app.services.transaction_service import _tag_shared_view
 
     if not await get_group_visible(session, group_id, workspace_id, user_id):
         return None
@@ -448,6 +449,7 @@ async def list_transactions(
         # A linked member's row keeps its card ending in its own workspace.
         if tx.workspace_id != workspace_id:
             set_committed_value(tx, "card_masked_number", None)
+    await _tag_shared_view(session, txs, user_id, workspace_id)
     return txs
 
 

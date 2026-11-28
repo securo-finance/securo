@@ -8,6 +8,35 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from app.schemas.category import ICON_MAX_LENGTH
 
 
+class GoalAllocationInput(BaseModel):
+    goal_id: uuid.UUID
+    amount: Decimal = Field(gt=0, max_digits=15, decimal_places=2)
+
+
+class GoalAllocationRead(BaseModel):
+    id: uuid.UUID
+    goal_id: uuid.UUID
+    goal_name: str
+    transaction_id: Optional[uuid.UUID] = None
+    amount: Decimal
+    source: str
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class GoalAdjustmentCreate(BaseModel):
+    amount: Decimal = Field(max_digits=15, decimal_places=2)
+
+    @field_validator("amount")
+    @classmethod
+    def validate_nonzero(cls, value: Decimal) -> Decimal:
+        if value == 0:
+            raise ValueError("amount must not be zero")
+        return value
+
+
 class GoalCreate(BaseModel):
     name: str
     target_amount: Decimal
@@ -21,12 +50,17 @@ class GoalCreate(BaseModel):
     icon: Optional[str] = Field(None, max_length=ICON_MAX_LENGTH)
     color: Optional[str] = None
     metadata_json: Optional[Any] = None
+    initial_allocation: Decimal = Field(
+        default=Decimal("0"), ge=0, max_digits=15, decimal_places=2
+    )
 
     @field_validator("tracking_type")
     @classmethod
     def validate_tracking_type(cls, v: str) -> str:
-        if v not in ("manual", "account", "asset", "asset_group", "net_worth"):
-            raise ValueError("tracking_type must be manual, account, asset, asset_group, or net_worth")
+        if v not in ("manual", "account", "asset", "asset_group", "net_worth", "pocket"):
+            raise ValueError(
+                "tracking_type must be manual, account, asset, asset_group, net_worth, or pocket"
+            )
         return v
 
 
@@ -56,8 +90,10 @@ class GoalUpdate(BaseModel):
     @field_validator("tracking_type")
     @classmethod
     def validate_tracking_type(cls, v: Optional[str]) -> Optional[str]:
-        if v is not None and v not in ("manual", "account", "asset", "asset_group", "net_worth"):
-            raise ValueError("tracking_type must be manual, account, asset, asset_group, or net_worth")
+        if v is not None and v not in ("manual", "account", "asset", "asset_group", "net_worth", "pocket"):
+            raise ValueError(
+                "tracking_type must be manual, account, asset, asset_group, net_worth, or pocket"
+            )
         return v
 
 
@@ -92,6 +128,13 @@ class GoalRead(BaseModel):
     account_name: Optional[str] = None
     asset_name: Optional[str] = None
     asset_group_name: Optional[str] = None
+
+    # Pocket-only account breakdown. These remain null for every existing
+    # tracking type so the API is additive and old clients keep their meaning.
+    account_balance: Optional[Decimal] = None
+    account_reserved_total: Optional[Decimal] = None
+    account_available: Optional[Decimal] = None
+    is_underfunded: bool = False
 
     model_config = ConfigDict(from_attributes=True)
 

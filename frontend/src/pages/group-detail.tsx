@@ -382,6 +382,9 @@ export default function GroupDetailPage() {
       queryClient.invalidateQueries({ queryKey: ['groups', groupId, 'settlements'] })
       queryClient.invalidateQueries({ queryKey: ['groups', groupId, 'balances'] })
     },
+    onError: (err: unknown) => {
+      toast.error(extractApiError(err, t('common.error')))
+    },
   })
 
   const openSettleUp = (

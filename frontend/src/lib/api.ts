@@ -4,6 +4,15 @@ import { normalizeBudgetComparisonRows } from '@/lib/budget-settings-utils'
 import type { AxiosResponse } from 'axios'
 import { markDataChanged } from '@/lib/data-changed'
 import type { NumberFormat, DateFormat } from '@/lib/format'
+import {
+  normalizeGoal,
+  normalizeGoalAllocation,
+  normalizeGoalSummary,
+  normalizeTransactionGoalAllocations,
+  type ApiGoal,
+  type ApiGoalAllocation,
+  type ApiGoalSummary,
+} from '@/lib/goal-api-normalization'
 import type {
   AppNotificationKind,
   AppNotificationList,
@@ -109,6 +118,8 @@ import type {
   Attachment,
   Goal,
   GoalSummary,
+  GoalAllocation,
+  GoalAllocationInput,
   DashboardSummary,
   SpendingByCategory,
   MonthlyTrend,
@@ -703,6 +714,15 @@ export const mortgagePayments = {
 }
 
 // Transactions
+// Both legs of a transfer response carry Pocket allocations with string amounts.
+function normalizeTransferLegs<T extends { debit: Transaction; credit: Transaction }>(data: T): T {
+  return {
+    ...data,
+    debit: normalizeTransactionGoalAllocations(data.debit),
+    credit: normalizeTransactionGoalAllocations(data.credit),
+  }
+}
+
 export const transactions = {
   list: async (params?: {
     account_id?: string
@@ -744,7 +764,7 @@ export const transactions = {
       params,
       paramsSerializer: { indexes: null },
     })
-    return data
+    return { ...data, items: data.items.map(normalizeTransactionGoalAllocations) }
   },
   calendar: async (params?: {
     month?: string
@@ -760,7 +780,7 @@ export const transactions = {
   },
   get: async (id: string): Promise<Transaction> => {
     const { data } = await api.get(`/transactions/${id}`)
-    return data
+    return normalizeTransactionGoalAllocations(data)
   },
   descriptionSuggestions: async (q: string, limit = 8): Promise<DescriptionSuggestion[]> => {
     const { data } = await api.get('/transactions/description-suggestions', { params: { q, limit } })
@@ -768,11 +788,11 @@ export const transactions = {
   },
   create: async (transaction: TransactionEditPayload): Promise<Transaction> => {
     const { data } = await api.post('/transactions', transaction)
-    return data
+    return normalizeTransactionGoalAllocations(data)
   },
   createInstallments: async (payload: InstallmentSeriesInput): Promise<Transaction[]> => {
     const { data } = await api.post('/transactions/installments', payload)
-    return data
+    return data.map(normalizeTransactionGoalAllocations)
   },
   update: async (
     id: string,
@@ -782,14 +802,14 @@ export const transactions = {
     },
   ): Promise<Transaction> => {
     const { data } = await api.patch(`/transactions/${id}`, transaction)
-    return data
+    return normalizeTransactionGoalAllocations(data)
   },
   delete: async (id: string, applyTo: TransactionApplyScope = 'this'): Promise<void> => {
     await api.delete(`/transactions/${id}`, { params: { apply_to: applyTo } })
   },
   toggleIgnore: async (id: string): Promise<Transaction> => {
     const { data } = await api.patch(`/transactions/${id}/ignore`)
-    return data
+    return normalizeTransactionGoalAllocations(data)
   },
   // Issue #636: clear the "new" marker of one row, or of every unread row in
   // the workspace. `workspaceId` pins the write to the workspace the list was
@@ -797,7 +817,7 @@ export const transactions = {
   // in the meantime.
   markRead: async (id: string, workspaceId?: string | null): Promise<Transaction> => {
     const { data } = await api.patch(`/transactions/${id}/read`, undefined, workspaceHeader(workspaceId))
-    return data
+    return normalizeTransactionGoalAllocations(data)
   },
   markAllRead: async (workspaceId?: string | null): Promise<{ updated: number }> => {
     const { data } = await api.post('/transactions/read-all', undefined, workspaceHeader(workspaceId))
@@ -805,11 +825,11 @@ export const transactions = {
   },
   unlinkRecurring: async (id: string): Promise<Transaction> => {
     const { data } = await api.patch(`/transactions/${id}/unlink-recurring`)
-    return data
+    return normalizeTransactionGoalAllocations(data)
   },
   postToday: async (id: string): Promise<Transaction> => {
     const { data } = await api.post(`/transactions/${id}/post-today`)
-    return data
+    return normalizeTransactionGoalAllocations(data)
   },
   createTransfer: async (transfer: {
     from_account_id: string
@@ -819,9 +839,11 @@ export const transactions = {
     description: string
     notes?: string
     destination_amount?: number
+    from_goal_allocations?: GoalAllocationInput[]
+    to_goal_allocations?: GoalAllocationInput[]
   }): Promise<{ debit: Transaction; credit: Transaction; transfer_pair_id: string }> => {
     const { data } = await api.post('/transactions/transfer', transfer)
-    return data
+    return normalizeTransferLegs(data)
   },
   bulkCategorize: async (transactionIds: string[], categoryId: string | null): Promise<{ updated: number; skipped_split?: number }> => {
     const { data } = await api.patch('/transactions/bulk-categorize', {
@@ -886,7 +908,7 @@ export const transactions = {
     const { data } = await api.post('/transactions/link-transfer', {
       transaction_ids: transactionIds,
     })
-    return data
+    return normalizeTransferLegs(data)
   },
   createTransferCounterpart: async (
     transactionId: string,
@@ -895,15 +917,15 @@ export const transactions = {
     const { data } = await api.post(`/transactions/${transactionId}/create-counterpart`, {
       to_account_id: toAccountId,
     })
-    return data
+    return normalizeTransferLegs(data)
   },
   transferCandidates: async (transactionId: string, params?: { limit?: number; window_days?: number }): Promise<Transaction[]> => {
     const { data } = await api.get(`/transactions/${transactionId}/transfer-candidates`, { params })
-    return data
+    return (data as Transaction[]).map(normalizeTransactionGoalAllocations)
   },
   transferPair: async (transactionId: string): Promise<Transaction | null> => {
     const { data } = await api.get(`/transactions/${transactionId}/transfer-pair`)
-    return data
+    return data ? normalizeTransactionGoalAllocations(data) : null
   },
   unlinkTransfer: async (pairId: string): Promise<void> => {
     await api.delete(`/connections/transfers/${pairId}`)
@@ -1250,7 +1272,7 @@ export const groups = {
     const { data } = await api.get(`/groups/${groupId}/transactions`, {
       params: { limit },
     })
-    return data
+    return data.map(normalizeTransactionGoalAllocations)
   },
 }
 
@@ -1584,27 +1606,35 @@ export const budgets = {
 // Goals
 export const goals = {
   list: async (status?: string): Promise<Goal[]> => {
-    const { data } = await api.get('/goals', { params: { status } })
-    return data
+    const { data } = await api.get<ApiGoal[]>('/goals', { params: { status } })
+    return data.map(normalizeGoal)
   },
   get: async (id: string): Promise<Goal> => {
-    const { data } = await api.get(`/goals/${id}`)
-    return data
+    const { data } = await api.get<ApiGoal>(`/goals/${id}`)
+    return normalizeGoal(data)
   },
   create: async (goal: Partial<Goal>): Promise<Goal> => {
-    const { data } = await api.post('/goals', goal)
-    return data
+    const { data } = await api.post<ApiGoal>('/goals', goal)
+    return normalizeGoal(data)
   },
   update: async (id: string, goal: Partial<Goal>): Promise<Goal> => {
-    const { data } = await api.patch(`/goals/${id}`, goal)
-    return data
+    const { data } = await api.patch<ApiGoal>(`/goals/${id}`, goal)
+    return normalizeGoal(data)
   },
   delete: async (id: string): Promise<void> => {
     await api.delete(`/goals/${id}`)
   },
   summary: async (limit = 3): Promise<GoalSummary[]> => {
-    const { data } = await api.get('/goals/summary', { params: { limit } })
-    return data
+    const { data } = await api.get<ApiGoalSummary[]>('/goals/summary', { params: { limit } })
+    return data.map(normalizeGoalSummary)
+  },
+  adjust: async (id: string, amount: number): Promise<Goal> => {
+    const { data } = await api.post<ApiGoal>(`/goals/${id}/adjustments`, { amount })
+    return normalizeGoal(data)
+  },
+  activity: async (id: string): Promise<GoalAllocation[]> => {
+    const { data } = await api.get<ApiGoalAllocation[]>(`/goals/${id}/activity`)
+    return data.map(normalizeGoalAllocation)
   },
 }
 

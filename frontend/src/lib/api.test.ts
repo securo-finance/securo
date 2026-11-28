@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { InternalAxiosRequestConfig } from 'axios'
-import { api, assets, notifications, rules } from '@/lib/api'
+import { api, assets, notifications, rules, transactions } from '@/lib/api'
 import { DATA_CHANGED_KEY } from '@/lib/data-changed'
 
 // The interceptor under test only looks at method + success, so a fake
@@ -92,6 +92,46 @@ describe('api data-change signal on a rate-limited price refresh (issue #778)', 
       response: { status: 429, data: { detail } },
     })
     expect(localStorage.getItem(DATA_CHANGED_KEY)).toBeNull()
+  })
+})
+
+describe('transfer responses carry numeric pocket amounts', () => {
+  const leg = (id: string, amount: string) => ({
+    id,
+    goal_allocations: [{ id: `${id}-a`, goal_id: 'goal-1', goal_name: 'Trip', amount }],
+  })
+  const respondWith = (body: unknown) => {
+    api.defaults.adapter = (config: InternalAxiosRequestConfig) =>
+      Promise.resolve({ data: body, status: 200, statusText: 'OK', headers: {}, config })
+  }
+
+  beforeEach(() => localStorage.clear())
+
+  it('normalizes both legs of a linked transfer and a created counterpart', async () => {
+    const pair = { debit: leg('d', '-20.50'), credit: leg('c', '30.00'), transfer_pair_id: 'p' }
+    respondWith(pair)
+    for (const result of [
+      await transactions.linkTransfer(['d', 'c']),
+      await transactions.createTransferCounterpart('d', 'acc-2'),
+    ]) {
+      expect(result.debit.goal_allocations?.[0].amount).toBe(-20.5)
+      expect(result.credit.goal_allocations?.[0].amount).toBe(30)
+      expect(result.transfer_pair_id).toBe('p')
+    }
+  })
+
+  it('normalizes transfer candidates and the transfer pair, and keeps a missing pair null', async () => {
+    respondWith([leg('x', '12.34')])
+    expect((await transactions.transferCandidates('t'))[0].goal_allocations?.[0].amount).toBe(12.34)
+    respondWith(leg('y', '-5.00'))
+    expect((await transactions.transferPair('t'))?.goal_allocations?.[0].amount).toBe(-5)
+    respondWith(null)
+    expect(await transactions.transferPair('t')).toBeNull()
+  })
+
+  it('normalizes a transaction marked as read', async () => {
+    respondWith(leg('r', '7.25'))
+    expect((await transactions.markRead('r')).goal_allocations?.[0].amount).toBe(7.25)
   })
 })
 

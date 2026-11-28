@@ -1328,7 +1328,10 @@ async def import_transactions(
         )
     if account:
         account_result = await session.execute(
-            select(Account).where(Account.id == account_id).with_for_update()
+            select(Account)
+            .where(Account.id == account_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
         )
         account = account_result.scalar_one()
     account_currency = account.currency if account else get_settings().default_currency
@@ -1519,6 +1522,11 @@ async def import_transactions(
             pool=incoming_pool,
         )
         if placeholder and not placeholder.is_ignored:
+            from app.services import goal_allocation_service
+
+            await goal_allocation_service.validate_transaction_allocations(
+                session, workspace_id, placeholder
+            )
             placeholder.source = source
             placeholder.external_id = txn_data.external_id
             placeholder.import_id = import_log.id
@@ -1599,6 +1607,14 @@ async def import_transactions(
             placeholder.notes = merge_notes(placeholder.notes, preview.notes)
             if preview.is_ignored:
                 placeholder.is_ignored = True
+            try:
+                await goal_allocation_service.validate_transaction_allocations(
+                    session, workspace_id, placeholder
+                )
+            except ValueError:
+                await goal_allocation_service.clear_transaction_allocations(
+                    session, workspace_id, placeholder
+                )
             imported += 1
             continue
 

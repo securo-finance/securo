@@ -30,7 +30,7 @@ from app.models.notification import Notification, NotificationDelivery, Notifica
 from app.models.payee import Payee, PayeeMapping, PayeeTaxId
 from app.models.app_settings import AppSetting
 from app.models.admin_access_log import AdminAccessLog, AdminAccessLogViewer
-from app.models.goal import Goal
+from app.models.goal import Goal, GoalAllocation
 from app.models.credit_card_bill import CreditCardBill
 from app.models.group import Group, GroupMember
 from app.models.transaction_split import TransactionSplit
@@ -104,6 +104,7 @@ __all__ = [
     "AdminAccessLog",
     "AdminAccessLogViewer",
     "Goal",
+    "GoalAllocation",
     "CreditCardBill",
     "Group",
     "GroupMember",

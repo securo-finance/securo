@@ -195,7 +195,7 @@ async def list_group_transactions(
     )
     if txs is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Group not found")
-    return txs
+    return [TransactionRead.for_viewer(tx, ctx.workspace.id) for tx in txs]
 
 
 @router.get("/{group_id}/summary", response_model=GroupSummary)
@@ -310,6 +310,8 @@ async def delete_settlement(
         )
     except PermissionError as e:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     if not deleted:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Settlement not found"

@@ -311,7 +311,11 @@ async def _resolve_rate(
         and await _may_fetch(session, target, (from_currency, to_currency))
     ):
         try:
-            synced = await sync_rates(session, target)
+            # Persist fetched rates in their own transaction so read-only
+            # callers reuse them, without committing the caller's work.
+            # READ COMMITTED lets the caller's next query see them.
+            async with AsyncSession(session.bind, expire_on_commit=False) as rate_session:
+                synced = await sync_rates(rate_session, target)
             _failed_dates.pop(target, None)
             if synced > 0:
                 logger.info("On-demand sync fetched %d rates for %s", synced, target)
