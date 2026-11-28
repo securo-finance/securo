@@ -1,15 +1,15 @@
 """a workspace can be suspended, and changing it leaves a record (ADR 0052)
 
-Revision ID: 137
-Revises: 136
+Revision ID: 138
+Revises: 137
 """
 
 import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
-revision = "137"
-down_revision = "136"
+revision = "138"
+down_revision = "137"
 branch_labels = None
 depends_on = None
 
