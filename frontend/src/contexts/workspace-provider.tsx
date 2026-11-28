@@ -60,6 +60,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       appliedGeneration.current = load
       lastLoadedAt.current = Date.now()
       hasList.current = true
+      // A list in hand ends the wait, even when a newer request is still out.
+      setLoadingList(false)
+      setFetchedFor(loadingFor)
       setLoadFailed(false)
       setFailedLoads(0)
       setList(fetched)

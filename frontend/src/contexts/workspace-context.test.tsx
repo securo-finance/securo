@@ -253,6 +253,25 @@ describe('loading', () => {
     expect(result.current.hasModule('transactions')).toBe(true)
   })
 
+  it('stops loading as soon as the first list lands, with a refresh still out', async () => {
+    // A focus refresh starts while the first load is in flight. The first list
+    // is applied when it lands; the shell must not keep loading until the
+    // refresh, which may be slow, settles too.
+    let resolveFirst: (list: Workspace[]) => void = () => {}
+    workspacesApi.list
+      .mockReturnValueOnce(new Promise<Workspace[]>((resolve) => { resolveFirst = resolve }))
+      .mockReturnValueOnce(new Promise<Workspace[]>(() => {}))
+
+    const { result } = renderHook(() => useWorkspace(), { wrapper })
+    await act(async () => { window.dispatchEvent(new Event('focus')) })
+    expect(workspacesApi.list).toHaveBeenCalledTimes(2)
+
+    await act(async () => { resolveFirst([makeWorkspace()]) })
+
+    expect(result.current.isLoading).toBe(false)
+    expect(result.current.hasModule('transactions')).toBe(true)
+  })
+
   it('applies a slow status check even after the next one went out', async () => {
     // The suspended notice asks every 30 s. A check slower than that is
     // overtaken by the next one; dropping its answer would keep a reactivated

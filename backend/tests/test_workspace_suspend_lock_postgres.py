@@ -64,34 +64,38 @@ def _user(name, currency="BRL", **over):
     )
 
 
-async def _waits_or_ends(sessions, task):
-    """Return once the task ended or some session waits on a lock.
+async def _waits_or_ends(sessions, task, pid):
+    """Return once the task ended or the backend `pid` is blocked by another.
 
-    A fixed sleep reads a slow runner as a suspension that waited."""
+    A fixed sleep reads a slow runner as a suspension that waited, and a lock
+    wait from any other session would read as this one waiting."""
     async with sessions() as probe:
         for _ in range(300):
             if task.done():
                 return
-            waiting = await probe.scalar(
-                text(
-                    "SELECT count(*) FROM pg_stat_activity "
-                    "WHERE wait_event_type = 'Lock' AND datname = current_database()"
-                )
+            blocked = await probe.scalar(
+                text("SELECT cardinality(pg_blocking_pids(:pid)) > 0"), {"pid": pid}
             )
             await probe.rollback()
-            if waiting:
+            if blocked:
                 return
             await asyncio.sleep(0.05)
     raise AssertionError("the suspension neither ended nor waited on a lock")
 
 
-def _suspend(sessions, workspace_id, admin_id):
+async def _suspend(sessions, workspace_id, admin_id):
+    """Start the administrator's suspension; return its task and backend pid."""
+    pid = asyncio.get_running_loop().create_future()
+
     async def run():
         async with sessions() as admin:
+            pid.set_result(await admin.scalar(text("SELECT pg_backend_pid()")))
             await workspace_status_service.set_status(
                 admin, workspace_id, "suspended", actor_id=admin_id, reason="Unpaid invoice",
             )
-    return asyncio.create_task(run())
+
+    task = asyncio.create_task(run())
+    return task, await asyncio.wait_for(pid, timeout=30)
 
 
 def _pause_after_the_rate_fetch(monkeypatch):
@@ -147,19 +151,15 @@ async def test_a_suspension_waits_for_the_price_sweep_that_holds_the_workspace(
 
     monkeypatch.setattr(asset_service, "_last_split_dates", paused)
 
-    async with postgres_sessions() as sweep, postgres_sessions() as admin:
+    async with postgres_sessions() as sweep:
         sweeping = asyncio.create_task(
             asset_service.refresh_all_market_prices(sweep, market_provider=_Closes())
         )
         await asyncio.wait_for(reached.wait(), timeout=30)
 
-        suspending = asyncio.create_task(
-            workspace_status_service.set_status(
-                admin, workspace_id, "suspended", actor_id=admin_id, reason="Unpaid invoice",
-            )
-        )
+        suspending, admin_pid = await _suspend(postgres_sessions, workspace_id, admin_id)
         try:
-            await _waits_or_ends(postgres_sessions, suspending)
+            await _waits_or_ends(postgres_sessions, suspending, admin_pid)
             # The sweep holds the workspace active until it commits.
             assert not suspending.done()
         finally:
@@ -210,9 +210,9 @@ async def test_a_rate_fetched_for_a_bill_keeps_the_workspace_held(
             recurring_transaction_service.generate_pending(job, owner.id)
         )
         await asyncio.wait_for(reached.wait(), timeout=30)
-        suspending = _suspend(postgres_sessions, workspace.id, admin.id)
+        suspending, admin_pid = await _suspend(postgres_sessions, workspace.id, admin.id)
         try:
-            await _waits_or_ends(postgres_sessions, suspending)
+            await _waits_or_ends(postgres_sessions, suspending, admin_pid)
             assert not suspending.done()
         finally:
             release.set()
@@ -252,14 +252,17 @@ async def test_a_rate_fetched_during_a_sync_commits_nothing_early(
     monkeypatch.setattr(connection_service, "detect_transfer_pairs", _no_pairs)
 
     raised = None
+    suspended_first = None
     async with postgres_sessions() as job:
         syncing = asyncio.create_task(connection_service.sync_connection(
             job, connection.id, workspace.id, owner.id, provider=_bank_provider(),
         ))
         await asyncio.wait_for(reached.wait(), timeout=30)
-        suspending = _suspend(postgres_sessions, workspace.id, admin.id)
+        suspending, admin_pid = await _suspend(postgres_sessions, workspace.id, admin.id)
         try:
-            await _waits_or_ends(postgres_sessions, suspending)
+            await _waits_or_ends(postgres_sessions, suspending, admin_pid)
+            # Done here: the suspension committed while the sync was paused.
+            suspended_first = suspending.done()
         finally:
             release.set()
             try:
@@ -273,10 +276,17 @@ async def test_a_rate_fetched_during_a_sync_commits_nothing_early(
             select(func.count()).select_from(Transaction)
             .where(Transaction.workspace_id == workspace.id)
         )
-    # All or nothing: a sync the suspension stopped kept no row.
-    if raised is not None:
+    # All or nothing. A suspension that committed while the sync was paused
+    # stops it with no row kept; one left waiting lets the sync finish first.
+    # Rows the sync already inserted hold a key-share lock on the workspace
+    # row, so the suspension waits unless an early commit released them; the
+    # final check before the commit is covered without that lock in
+    # test_workspace_status.py.
+    if suspended_first:
+        assert raised is not None
         assert rows == 0
     else:
+        assert raised is None
         assert rows > 0
 
 
