@@ -32,6 +32,7 @@ USER_OWNED: dict[str, str] = {
     "users": "the account itself",
     "user_passkeys": "a user's sign-in credentials",
     "user_quotas": "the limits an account may hold on a managed instance, across the workspaces it created (ADR 0049)",
+    "user_module_limits": "the modules an account's workspaces may use on a managed instance, copied onto each workspace it created (ADR 0054)",
     "agent_llm_connections": "a user's own LLM provider keys",
     "agent_llm_usage": "a user's LLM usage log; outlives the agent or conversation",
 }

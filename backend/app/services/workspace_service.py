@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
 from app.core.row_security import bind_workspace
-from app.services import quota_service
+from app.services import module_limit_service, quota_service
 from app.models.user import User
 from app.models.workspace import (
     MANAGER_VIRTUAL_ROLE,
@@ -75,6 +75,7 @@ async def create_personal_workspace_for_user(
         default_currency=prefs.get("currency_display", "USD"),
         locale=lang,
     )
+    await module_limit_service.stamp_new_workspace(session, workspace)
     session.add(workspace)
     await session.flush()
     await bind_workspace(session, workspace.id, user.id)
@@ -251,6 +252,7 @@ async def create_workspace(
         icon=icon,
         color=color,
     )
+    await module_limit_service.stamp_new_workspace(session, workspace)
     session.add(workspace)
     await session.flush()
     await bind_workspace(session, workspace.id, creator.id)

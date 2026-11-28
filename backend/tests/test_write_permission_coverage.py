@@ -119,12 +119,14 @@ ALLOWLIST: dict[tuple[str, str], str] = {
     # user: the customer's administrator must not reach these (ADR 0049).
     ("PUT", "/api/operator/quotas/{user_id}"): "operator-token-gated per-account limits, no user",
     ("POST", "/api/operator/quotas/{user_id}/fit-check"): "operator-token-gated read of the account's counts",
+    ("PUT", "/api/operator/modules/{user_id}"): "operator-token-gated per-account module list, no user",
 }
 
 # Gated by the operator's token instead of a user (ADR 0049).
 OPERATOR_ROUTES = {
     ("PUT", "/api/operator/quotas/{user_id}"),
     ("POST", "/api/operator/quotas/{user_id}/fit-check"),
+    ("PUT", "/api/operator/modules/{user_id}"),
 }
 
 # These routes establish authentication (or end it), so requiring an existing

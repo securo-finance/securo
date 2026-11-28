@@ -64,3 +64,4 @@ Each file here records one decision about how Securo is built: what we chose, wh
 | [0048](0048-required-secret-key.md) | An operator can require a secret key of their own |
 | [0049](0049-hosted-usage-quotas.md) | A managed instance can limit each account with four neutral counters |
 | [0050](0050-instance-settings-leave-a-record.md) | Instance settings an administrator changes leave a record, with no account as its target |
+| [0054](0054-account-module-limits.md) | A managed instance can keep modules off for an account's workspaces |

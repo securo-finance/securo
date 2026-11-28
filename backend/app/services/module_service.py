@@ -11,6 +11,8 @@ The chain, in order:
     1. Catalog      — each module declares whether it is on by default.
     2. Kind policy  — the only layer with opinions today.
     3. Workspace    — per-workspace override. Abstains for now.
+       Account limit — on a managed instance, the list the operator set
+                      for the account that created the workspace.
     4. Supplemental — extension point. Abstains in this codebase.
 
 Layer 0 is listed first because it is the outermost constraint, and
@@ -39,6 +41,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Optional, Protocol
 
+from app.core.config import get_settings
 from app.core.feature_flags import feature_flag
 from app.models.workspace import Workspace
 
@@ -178,8 +181,29 @@ class SupplementalProvider:
         return None
 
 
+class AccountModuleLimitProvider:
+    """Layer 3 — the operator's list for the workspace's account (ADR 0054).
+
+    Reads only the copy on the workspace row (`module_allowlist`), so
+    resolving stays free of queries. Abstains unless MANAGED_INSTANCE is
+    on and the workspace has a list. Restricts only: a module the layers
+    above turned off stays off, whatever the list says.
+    """
+
+    def apply(
+        self, current: frozenset[ModuleId], workspace: Workspace
+    ) -> Optional[frozenset[ModuleId]]:
+        allowlist = getattr(workspace, "module_allowlist", None)
+        if allowlist is None or not get_settings().managed_instance:
+            return None
+        known = {m.value for m in ModuleId}
+        allowed = {ModuleId(m) for m in allowlist if m in known}
+        return frozenset(current & allowed)
+
+
 DEFAULT_PROVIDERS: Sequence[ModuleProvider] = (
     WorkspaceOverrideProvider(),
+    AccountModuleLimitProvider(),
     SupplementalProvider(),
 )
 
