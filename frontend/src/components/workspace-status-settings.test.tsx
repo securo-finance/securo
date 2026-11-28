@@ -103,6 +103,33 @@ it('searches on the server and shows what the search returned', async () => {
   expect(admin.listWorkspaces).toHaveBeenLastCalledWith({ search: 'x', page: 1, limit: 50 })
 })
 
+it('keeps Next off while a search is still loading', async () => {
+  // The old list counts three pages; the search has one. Until its answer
+  // comes, the total on screen is the old one and Next would lead past it.
+  let answer: (value: { items: AdminWorkspace[]; total: number }) => void = () => {}
+  vi.mocked(admin.listWorkspaces).mockImplementation((params) =>
+    params?.search
+      ? new Promise((resolve) => {
+          answer = resolve
+        })
+      : Promise.resolve({ items: [home], total: 120 }),
+  )
+
+  const { user } = renderWithProviders(<WorkspaceStatusSettings />)
+  expect(await screen.findByText('1–1 of 120')).toBeVisible()
+  expect(screen.getByRole('button', { name: 'Next' })).toBeEnabled()
+
+  await user.type(screen.getByRole('searchbox'), 'h')
+  await waitFor(() =>
+    expect(admin.listWorkspaces).toHaveBeenLastCalledWith({ search: 'h', page: 1, limit: 50 }),
+  )
+  expect(screen.getByText('1–1 of 120')).toBeVisible()
+  expect(screen.getByRole('button', { name: 'Next' })).toBeDisabled()
+
+  answer({ items: [home], total: 1 })
+  await waitFor(() => expect(screen.queryByText(/of 120/)).not.toBeInTheDocument())
+})
+
 it('pages through the workspaces past the first fifty, and a search starts over', async () => {
   const many = (page: number) =>
     Array.from({ length: page === 3 ? 20 : 50 }, (_, i) => ({

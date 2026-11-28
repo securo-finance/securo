@@ -253,6 +253,47 @@ describe('loading', () => {
     expect(result.current.hasModule('transactions')).toBe(true)
   })
 
+  it('applies a slow status check even after the next one went out', async () => {
+    // The suspended notice asks every 30 s. A check slower than that is
+    // overtaken by the next one; dropping its answer would keep a reactivated
+    // workspace read-only for as long as the server stays slow.
+    workspacesApi.list.mockResolvedValueOnce([makeWorkspace({ status: 'suspended' })])
+    const { result } = await renderWorkspace()
+    expect(result.current.canWrite).toBe(false)
+
+    let answerSlow: (list: Workspace[]) => void = () => {}
+    let answerNext: (list: Workspace[]) => void = () => {}
+    workspacesApi.list
+      .mockReturnValueOnce(new Promise<Workspace[]>((resolve) => { answerSlow = resolve }))
+      .mockReturnValueOnce(new Promise<Workspace[]>((resolve) => { answerNext = resolve }))
+    act(() => { void result.current.refresh({ background: true }) })
+    act(() => { void result.current.refresh({ background: true }) })
+
+    await act(async () => { answerSlow([makeWorkspace({ status: 'active' })]) })
+    expect(result.current.canWrite).toBe(true)
+
+    // The newer answer still wins when it lands, and an older one after it
+    // would be ignored.
+    await act(async () => { answerNext([makeWorkspace({ status: 'suspended' })]) })
+    expect(result.current.canWrite).toBe(false)
+  })
+
+  it('never lets an older list replace a newer one that already landed', async () => {
+    workspacesApi.list.mockResolvedValueOnce([makeWorkspace({ name: 'First' })])
+    const { result } = await renderWorkspace()
+
+    let answerOlder: (list: Workspace[]) => void = () => {}
+    workspacesApi.list
+      .mockReturnValueOnce(new Promise<Workspace[]>((resolve) => { answerOlder = resolve }))
+      .mockResolvedValueOnce([makeWorkspace({ name: 'Newer' })])
+    act(() => { void result.current.refresh({ background: true }) })
+    await act(async () => { await result.current.refresh({ background: true }) })
+    expect(result.current.workspaces[0].name).toBe('Newer')
+
+    await act(async () => { answerOlder([makeWorkspace({ name: 'Older' })]) })
+    expect(result.current.workspaces[0].name).toBe('Newer')
+  })
+
   it('keeps the list when a background refresh fails', async () => {
     // A refresh nobody asked for must not turn the shell into "unreachable".
     workspacesApi.list

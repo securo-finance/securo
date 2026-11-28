@@ -28,10 +28,14 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const isLoading = loadingList || (!!user && !!token && fetchedFor !== token)
   // Failed loads in a row; paces the automatic retries.
   const [failedLoads, setFailedLoads] = useState(0)
-  // Bumped by every load and by sign-out: only the latest load may write its
-  // result, so an older request that fails late cannot flag a list a newer
-  // one already brought back, or clear it.
+  // Bumped by every load and by sign-out: only the latest load may record a
+  // failure or end the loading state, so an older request that fails late
+  // cannot flag a list a newer one already brought back, or clear it.
   const loadGeneration = useRef(0)
+  // The newest load whose list was applied. A list may still land after a
+  // newer request went out (a poll slower than the poll interval would
+  // otherwise never be applied), but never after a newer list landed.
+  const appliedGeneration = useRef(0)
   // When the list last came back, so a background refresh on focus cannot
   // hammer the server while the person alt-tabs.
   const lastLoadedAt = useRef(0)
@@ -52,7 +56,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     if (!background) setLoadingList(true)
     try {
       const fetched = await workspacesApi.list()
-      if (load !== loadGeneration.current) return
+      if (load <= appliedGeneration.current || loadingFor !== tokenRef.current) return
+      appliedGeneration.current = load
       lastLoadedAt.current = Date.now()
       hasList.current = true
       setLoadFailed(false)
@@ -107,6 +112,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     if (authLoading) return
     if (!user || !token) {
       loadGeneration.current += 1
+      // No list asked for before sign-out may land after it.
+      appliedGeneration.current = loadGeneration.current
       hasList.current = false
       setFailedLoads(0)
       setList([])

@@ -31,12 +31,15 @@ export function WorkspaceStatusSettings() {
   const [page, setPage] = useState(1)
   const [confirming, setConfirming] = useState<AdminWorkspace | null>(null)
   const [reason, setReason] = useState('')
-  const { data, isError, refetch } = useQuery({
+  const { data, isError, isPlaceholderData, refetch } = useQuery({
     queryKey: ['admin', 'workspaces', search, page],
     queryFn: () => admin.listWorkspaces({ search: search || undefined, page, limit: PAGE_SIZE }),
     placeholderData: keepPreviousData,
   })
   const pages = data ? Math.max(1, Math.ceil(data.total / PAGE_SIZE)) : 1
+  // While a page loads, the total shown is the previous search's: it may count
+  // pages the new results do not have.
+  const lastPage = page >= pages || isPlaceholderData
   const update = useMutation({
     mutationFn: ({ id, status, reason }: { id: string; status: WorkspaceStatus; reason: string }) =>
       admin.updateWorkspaceStatus(id, status, reason),
@@ -154,7 +157,7 @@ export function WorkspaceStatusSettings() {
               <Button
                 variant="outline"
                 size="sm"
-                disabled={page >= pages}
+                disabled={lastPage}
                 onClick={() => setPage((p) => Math.min(pages, p + 1))}
               >
                 {t('common.next')}
