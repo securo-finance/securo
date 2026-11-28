@@ -44,8 +44,12 @@ _ROUTE_RESOURCES: dict[str, tuple[str, ...]] = {
 # Resources whose routes only ever read: a `:write` scope is meaningless.
 _READ_ONLY_RESOURCES = frozenset({"reports"})
 
-# Reference data any token may read, whatever its scopes.
-_OPEN_TO_ANY_TOKEN: tuple[str, ...] = ("/api/currencies", "/api/timezones")
+# Reference data and token self-inspection any token may read, whatever its scopes.
+_OPEN_TO_ANY_TOKEN: tuple[str, ...] = (
+    "/api/currencies",
+    "/api/timezones",
+    "/api/auth/token-info",
+)
 
 RESOURCES: tuple[str, ...] = tuple(_ROUTE_RESOURCES)
 

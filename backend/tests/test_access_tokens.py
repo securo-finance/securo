@@ -41,6 +41,14 @@ def test_reference_data_needs_no_scope():
     assert required_scope("POST", "/api/currencies") is None
 
 
+def test_token_info_scope_is_read_only_for_any_token():
+    for method in ("GET", "HEAD", "OPTIONS"):
+        assert required_scope(method, "/api/auth/token-info") == ""
+    for method in ("POST", "PUT", "PATCH", "DELETE"):
+        assert required_scope(method, "/api/auth/token-info") is None
+    assert required_scope("GET", "/api/auth/token-info-extra") is None
+
+
 def test_write_includes_read():
     assert grants(["accounts:write"], "accounts:read")
     assert not grants(["accounts:read"], "accounts:write")
@@ -519,3 +527,215 @@ async def test_token_group_filter_stays_in_its_workspace(client: AsyncClient, au
     token = (await _create(client, auth_headers, ["transactions:read"]))["token"]
     by_token = (await client.get("/api/transactions", headers=_bearer(token), params=params)).json()["items"]
     assert [t["description"] for t in by_token] == ["Hotel"]
+
+
+# --- Token self-inspection (/api/auth/token-info) -----------------------------
+
+
+@pytest.mark.asyncio
+async def test_token_info_returns_metadata_and_workspace(
+    client: AsyncClient, auth_headers: dict, test_workspace
+):
+    resp = await client.post(
+        "/api/access-tokens",
+        headers=auth_headers,
+        json={"name": "automation-script", "scopes": ["goals:read"], "expires_in_days": 30},
+    )
+    assert resp.status_code == 201, resp.text
+    created = resp.json()
+
+    info_resp = await client.get("/api/auth/token-info", headers=_bearer(created["token"]))
+    assert info_resp.status_code == 200, info_resp.text
+    assert info_resp.json() == {
+        "id": created["id"],
+        "name": "automation-script",
+        "token_prefix": created["token_prefix"],
+        "workspace_id": str(test_workspace.id),
+        "workspace_name": test_workspace.name,
+        "scopes": ["goals:read"],
+        "expires_at": created["expires_at"],
+    }
+
+    # Explicitly sending the matching X-Workspace-Id also succeeds.
+    matching_resp = await client.get(
+        "/api/auth/token-info",
+        headers=_bearer(created["token"], **{"X-Workspace-Id": str(test_workspace.id)}),
+    )
+    assert matching_resp.status_code == 200
+    assert matching_resp.json() == info_resp.json()
+
+    # Tokens without expiry return expires_at as None.
+    no_expiry = await _create(client, auth_headers, ["goals:read"], expires_in_days=None)
+    no_expiry_resp = await client.get("/api/auth/token-info", headers=_bearer(no_expiry["token"]))
+    assert no_expiry_resp.status_code == 200
+    assert no_expiry_resp.json()["expires_at"] is None
+
+
+@pytest.mark.asyncio
+async def test_token_info_resolves_non_default_workspace_without_header(
+    client: AsyncClient, auth_headers: dict, session: AsyncSession, test_user
+):
+    other = Workspace(
+        id=uuid.uuid4(), name="Side Business", kind="business", default_currency="USD", locale="en"
+    )
+    session.add(other)
+    await session.flush()
+    session.add(
+        WorkspaceMember(id=uuid.uuid4(), workspace_id=other.id, user_id=test_user.id, role="owner")
+    )
+    await session.commit()
+
+    other_headers = {**auth_headers, "X-Workspace-Id": str(other.id)}
+    created = await _create(client, other_headers, ["goals:read"])
+
+    resp = await client.get("/api/auth/token-info", headers=_bearer(created["token"]))
+    assert resp.status_code == 200, resp.text
+    assert resp.json() == {
+        "id": created["id"],
+        "name": created["name"],
+        "token_prefix": created["token_prefix"],
+        "workspace_id": str(other.id),
+        "workspace_name": "Side Business",
+        "scopes": ["goals:read"],
+        "expires_at": created["expires_at"],
+    }
+
+
+@pytest.mark.asyncio
+async def test_token_info_rejects_session_jwt_and_anonymous(
+    client: AsyncClient, auth_headers: dict
+):
+    session_resp = await client.get("/api/auth/token-info", headers=auth_headers)
+    assert session_resp.status_code == 400
+    assert session_resp.json()["detail"] == "This endpoint requires a personal access token."
+
+    anon_resp = await client.get("/api/auth/token-info")
+    assert anon_resp.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_token_info_rejects_mismatched_workspace_header(
+    client: AsyncClient, auth_headers: dict, session: AsyncSession, test_user
+):
+    token = (await _create(client, auth_headers, ["goals:read"]))["token"]
+
+    other = Workspace(id=uuid.uuid4(), name="Other", kind="personal", default_currency="USD", locale="en")
+    session.add(other)
+    await session.flush()
+    session.add(
+        WorkspaceMember(id=uuid.uuid4(), workspace_id=other.id, user_id=test_user.id, role="owner")
+    )
+    await session.commit()
+
+    resp = await client.get(
+        "/api/auth/token-info",
+        headers=_bearer(token, **{"X-Workspace-Id": str(other.id)}),
+    )
+    assert resp.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_token_info_rejects_revoked_and_expired_tokens(
+    client: AsyncClient, auth_headers: dict, session: AsyncSession
+):
+    revoked = await _create(client, auth_headers, ["goals:read"])
+    del_resp = await client.delete(f"/api/access-tokens/{revoked['id']}", headers=auth_headers)
+    assert del_resp.status_code == 204
+    assert (await client.get("/api/auth/token-info", headers=_bearer(revoked["token"]))).status_code == 401
+
+    expired = await _create(client, auth_headers, ["goals:read"], expires_in_days=1)
+    row = await session.get(AccessToken, uuid.UUID(expired["id"]))
+    assert row is not None
+    row.expires_at = datetime.now(timezone.utc) - timedelta(seconds=1)
+    await session.commit()
+    assert (await client.get("/api/auth/token-info", headers=_bearer(expired["token"]))).status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_token_info_rejects_removed_member(
+    client: AsyncClient, auth_headers: dict, session: AsyncSession, test_user, test_workspace
+):
+    token = (await _create(client, auth_headers, ["goals:read"]))["token"]
+    member = (
+        await session.execute(
+            select(WorkspaceMember).where(
+                WorkspaceMember.user_id == test_user.id,
+                WorkspaceMember.workspace_id == test_workspace.id,
+            )
+        )
+    ).scalar_one()
+    await session.delete(member)
+    await session.commit()
+
+    assert (await client.get("/api/auth/token-info", headers=_bearer(token))).status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_token_info_rejects_archived_workspace(
+    client: AsyncClient, auth_headers: dict, session: AsyncSession, test_user
+):
+    other = Workspace(
+        id=uuid.uuid4(), name="Old Workspace", kind="personal", default_currency="USD", locale="en"
+    )
+    session.add(other)
+    await session.flush()
+    session.add(
+        WorkspaceMember(id=uuid.uuid4(), workspace_id=other.id, user_id=test_user.id, role="owner")
+    )
+    await session.commit()
+
+    other_headers = {**auth_headers, "X-Workspace-Id": str(other.id)}
+    token = (await _create(client, other_headers, ["goals:read"]))["token"]
+
+    other.is_archived = True
+    await session.commit()
+
+    assert (await client.get("/api/auth/token-info", headers=_bearer(token))).status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_token_info_allows_viewer_role_member(
+    client: AsyncClient, viewer_auth_headers: dict, test_workspace
+):
+    created = await _create(client, viewer_auth_headers, ["goals:read"])
+
+    resp = await client.get("/api/auth/token-info", headers=_bearer(created["token"]))
+    assert resp.status_code == 200, resp.text
+    assert resp.json() == {
+        "id": created["id"],
+        "name": created["name"],
+        "token_prefix": created["token_prefix"],
+        "workspace_id": str(test_workspace.id),
+        "workspace_name": test_workspace.name,
+        "scopes": ["goals:read"],
+        "expires_at": created["expires_at"],
+    }
+
+
+@pytest.mark.asyncio
+async def test_token_info_rejects_malformed_workspace_header(
+    client: AsyncClient, auth_headers: dict
+):
+    token = (await _create(client, auth_headers, ["goals:read"]))["token"]
+
+    resp = await client.get(
+        "/api/auth/token-info",
+        headers=_bearer(token, **{"X-Workspace-Id": "not-a-uuid"}),
+    )
+    assert resp.status_code == 400
+    assert resp.json()["detail"] == "Invalid X-Workspace-Id"
+
+
+@pytest.mark.asyncio
+async def test_token_info_rejects_non_get_method_and_prefix_sibling(
+    client: AsyncClient, auth_headers: dict
+):
+    token = (await _create(client, auth_headers, list(ALL_SCOPES)))["token"]
+
+    # Starlette handles method mismatch (405) and unknown path (404) before
+    # endpoint dependencies (`current_active_user`) execute.
+    post_resp = await client.post("/api/auth/token-info", headers=_bearer(token))
+    assert post_resp.status_code == 405
+
+    extra_resp = await client.get("/api/auth/token-info-extra", headers=_bearer(token))
+    assert extra_resp.status_code == 404

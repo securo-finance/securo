@@ -58,7 +58,7 @@ from app.api.workspaces import router as workspaces_router
 from app.api.access_log import router as access_log_router
 from app.api.account_email import router as account_email_router
 from app.api.users_me import router as users_me_router
-from app.api.access_tokens import router as access_tokens_router
+from app.api.access_tokens import router as access_tokens_router, token_info_router
 from app.api.plugins import router as plugins_router
 from app.api.ui_layouts import router as ui_layouts_router
 from app.api.admin import router as admin_router, check_registration_enabled
@@ -287,6 +287,7 @@ app.include_router(products_router)
 app.include_router(settings_router)
 app.include_router(workspaces_router)
 app.include_router(access_tokens_router)
+app.include_router(token_info_router)
 app.include_router(plugins_router)
 app.include_router(ui_layouts_router)
 app.include_router(admin_router)
