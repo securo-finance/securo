@@ -1541,7 +1541,10 @@ async def import_transactions(
             # the account's own (#1073): the row takes the charged currency.
             currency_changed = placeholder.currency != txn_currency
             placeholder.currency = txn_currency
-            amount_changed = placeholder.amount != txn_data.amount
+            amount_changed = (
+                as_stored_amount(Decimal(str(placeholder.amount)))
+                != as_stored_amount(Decimal(str(txn_data.amount)))
+            )
             if amount_changed or txn_data.fx_rate or currency_changed:
                 # Matched under a tolerance, or the file says what the charge
                 # cost in the primary currency: the row now stands for what was

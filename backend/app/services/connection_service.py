@@ -16,7 +16,7 @@ from sqlalchemy.orm.attributes import flag_modified
 
 from app.core.app_clock import app_today
 from app.core.config import get_settings
-from app.core.money import MoneyOutOfRange, bounded_asset_value
+from app.core.money import MoneyOutOfRange, as_stored_amount, bounded_asset_value
 from app.models.asset import PROVIDER_VALUE_DATE_METADATA_KEY, Asset
 from app.models.asset_group import AssetGroup
 from app.models.asset_transaction import AssetTransaction
@@ -5505,8 +5505,12 @@ async def sync_connection(
                     # charged currency.
                     currency_changed = placeholder.currency != incoming_currency
                     placeholder.currency = incoming_currency
+                    amount_changed = (
+                        as_stored_amount(Decimal(str(placeholder.amount)))
+                        != as_stored_amount(Decimal(str(txn_data.amount)))
+                    )
                     if (
-                        placeholder.amount != txn_data.amount
+                        amount_changed
                         or converted is not None
                         or txn_data.amount_in_account_currency is not None
                         or currency_changed

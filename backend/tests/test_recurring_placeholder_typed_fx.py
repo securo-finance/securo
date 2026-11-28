@@ -666,3 +666,81 @@ async def test_sync_placeholder_identical_charge_without_conversion_keeps_typed_
     await _switch_display_currency(session, user_id, "BRL")
     await session.refresh(tx)
     assert tx.amount_primary == Decimal("90.00")
+
+
+@pytest.mark.asyncio
+async def test_import_placeholder_subcent_equivalent_amount_keeps_typed_primary(
+    session: AsyncSession, test_user: User, test_workspace, test_account: Account, usd_brl_rates
+):
+    """An imported charge differing only below one cent (18.43001 vs 18.43)
+    stores the identical cent amount and preserves the placeholder's typed
+    conversion when currency and fx_rate are unchanged."""
+    user_id, workspace_id, account_id = test_user.id, test_workspace.id, test_account.id
+    await _enable_amount_tolerance(session, workspace_id, user_id)
+    placeholder_id = await _make_typed_usd_placeholder(
+        session, workspace_id, user_id, test_account
+    )
+
+    txn = TransactionImport(
+        date=D_CHARGE,
+        description="NETFLIX SUBSCRIPTION",
+        amount=Decimal("18.43001"),
+        type="debit",
+        currency="USD",
+    )
+    with patch("app.services.import_service.apply_rules_to_transaction", new_callable=AsyncMock):
+        imported, skipped, _, _ = await import_transactions(
+            session, workspace_id, user_id, account_id, [txn], "csv"
+        )
+
+    assert (imported, skipped) == (1, 0)
+    txs = await _real_txs(session, account_id)
+    assert len(txs) == 1
+    tx = txs[0]
+    assert tx.id == placeholder_id
+    assert (tx.amount_primary_typed, tx.amount_primary_typed_currency) == (
+        Decimal("90.00"),
+        "BRL",
+    )
+    assert tx.amount_primary == Decimal("90.00")
+
+
+@pytest.mark.asyncio
+async def test_sync_placeholder_subcent_equivalent_amount_keeps_typed_primary(
+    session: AsyncSession, test_user: User, test_workspace, sync_conn_account, usd_brl_rates
+):
+    """A synced charge differing only below one cent (18.43001 vs 18.43)
+    stores the identical cent amount and preserves the placeholder's typed
+    conversion when currency and bank conversion are unchanged."""
+    conn, account = sync_conn_account
+    conn_id, account_id = conn.id, account.id
+    user_id, workspace_id = test_user.id, test_workspace.id
+    await _enable_amount_tolerance(session, workspace_id, user_id)
+    placeholder_id = await _make_typed_usd_placeholder(
+        session, workspace_id, user_id, account
+    )
+
+    provider = _mock_provider(
+        [
+            TransactionData(
+                external_id="sync-subcent-1",
+                description="NETFLIX SUBSCRIPTION",
+                amount=Decimal("18.43001"),
+                date=D_CHARGE,
+                type="debit",
+                currency="USD",
+                status="posted",
+            )
+        ]
+    )
+    await _run_real_sync(session, conn_id, workspace_id, user_id, provider)
+
+    txs = await _real_txs(session, account_id)
+    assert len(txs) == 1
+    tx = txs[0]
+    assert tx.id == placeholder_id
+    assert (tx.amount_primary_typed, tx.amount_primary_typed_currency) == (
+        Decimal("90.00"),
+        "BRL",
+    )
+    assert tx.amount_primary == Decimal("90.00")
