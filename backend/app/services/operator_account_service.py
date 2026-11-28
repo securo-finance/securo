@@ -293,8 +293,7 @@ async def describe(session: AsyncSession, user: User) -> AccountView:
     owned = await _owned_workspaces(session, user.id)
     seats = await quota_service.count_members_of(session, [w.id for w in owned])
     workspaces = [OwnedWorkspace(w.id, w.name, w.kind, w.is_archived, seats.get(w.id, 0)) for w in owned]
-    quota = await quota_service.get_quota(session, user.id)
-    limits = {c: getattr(quota, c) if quota else None for c in quota_service.COUNTERS}
+    limits, _ = await quota_service.effective_limits(session, user.id)
     fit = await quota_service.check_fit(session, user.id, limits)
     usage = [CounterUsage(f.counter, f.current, f.target) for f in fit.counters]
     return AccountView(user=user, workspaces=workspaces, usage=usage)

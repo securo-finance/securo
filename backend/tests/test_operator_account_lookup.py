@@ -185,6 +185,19 @@ async def test_an_account_with_no_limits_row_is_unbounded(operator, client: Asyn
 
 
 @pytest.mark.asyncio
+async def test_an_account_with_no_limits_row_shows_the_defaults_it_is_held_to(
+    operator, client: AsyncClient, session: AsyncSession, test_user
+):
+    await quota_service.set_defaults(session, {"max_bank_connections": 1, "max_members_per_workspace": 4})
+    await session.commit()
+    body = (await client.get(URL, params={"user_id": str(test_user.id)}, headers=operator)).json()
+    maxima = {u["counter"]: u["maximum"] for u in body["usage"]}
+    assert maxima["max_bank_connections"] == 1
+    assert maxima["max_members_per_workspace"] == 4
+    assert maxima["max_personal_workspaces"] is None
+
+
+@pytest.mark.asyncio
 async def test_an_unknown_account_is_404(operator, client: AsyncClient):
     assert (await client.get(URL, params={"user_id": str(uuid.uuid4())}, headers=operator)).status_code == 404
     assert (await client.get(URL, params={"email": "nobody@example.com"}, headers=operator)).status_code == 404
