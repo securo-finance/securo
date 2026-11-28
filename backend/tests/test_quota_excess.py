@@ -279,3 +279,32 @@ async def test_my_standing_shows_the_excess(managed, client: AsyncClient, sessio
     assert body["above"] is True and body["in_effect"] is True and body["sync_paused"] is True
     connections = next(c for c in body["counters"] if c["counter"] == "max_bank_connections")
     assert connections == {"counter": "max_bank_connections", "current": 2, "maximum": 1, "excess": 1}
+
+
+async def test_a_date_on_an_account_held_by_the_defaults_keeps_the_defaults(
+    managed, operator, client: AsyncClient, session, test_user, test_workspace, auth_headers
+):
+    """The date alone must not hand the account a row of its own with every number unbounded (ADR 0056)."""
+    user_id, workspace_id = test_user.id, test_workspace.id
+    await _connections(session, test_workspace, test_user, 2)
+    await quota_service.set_defaults(session, {"max_bank_connections": 1})
+    await session.commit()
+
+    url = f"/api/operator/quotas/{user_id}"
+    past = (_now() - timedelta(minutes=1)).isoformat()
+    resp = await client.put(f"{url}/excess-date", json={"effective_at": past}, headers=operator)
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["source"] == "default" and resp.json()["max_bank_connections"] == 1
+    assert resp.json()["excess_effective_at"] is not None
+
+    body = (await client.get("/api/quotas/mine", headers=auth_headers)).json()
+    assert body["above"] is True and body["in_effect"] is True and body["sync_paused"] is True
+
+    session.expire_all()
+    with pytest.raises(quota_service.SyncPausedError):
+        await quota_service.check_sync(session, workspace_id)
+
+    # The defaults still move the account: lifting them ends the pause.
+    await quota_service.set_defaults(session, {"max_bank_connections": 2})
+    await session.commit()
+    await quota_service.check_sync(session, workspace_id)

@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Optional
 
-from sqlalchemy import DateTime, ForeignKey, Integer
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, true
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -31,6 +31,11 @@ class UserQuota(Base):
     # means an excess has no effect, as ADR 0049 first had it.
     excess_effective_at: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=True), nullable=True
+    )
+    # False on a row only the date created: the account still follows the
+    # operator defaults (ADR 0056), and its four numbers here mean nothing.
+    has_limits: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default=true()
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
