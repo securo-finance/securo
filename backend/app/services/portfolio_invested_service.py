@@ -35,7 +35,7 @@ async def get_invested_capital(
     counts as money in or out. Returns ``[{"date", "amount"}]`` ascending,
     one point per date on which the total changes.
     """
-    user = await session.get(User, user_id) if user_id is not None else None
+    user = await session.get(User, user_id)
     primary = user.primary_currency if user else get_settings().default_currency
 
     trend = await asset_service.get_portfolio_trend(
@@ -67,7 +67,8 @@ async def get_invested_capital(
     first_trade = (
         await session.execute(
             select(func.min(AssetTransaction.date)).where(
-                AssetTransaction.asset_id.in_([asset.id for asset in assets])
+                AssetTransaction.workspace_id == workspace_id,
+                AssetTransaction.asset_id.in_([asset.id for asset in assets]),
             )
         )
     ).scalar_one_or_none()

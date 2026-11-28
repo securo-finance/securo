@@ -2586,7 +2586,7 @@ function PortfolioChart({ data, invested, wallets, currency, locale: loc, dateLo
   const isStacked = mode === 'total' || drawMode === 'stacked'
   const hasInvested = (invested?.length ?? 0) > 0
   const lastInvested = hasInvested ? invested![invested!.length - 1].amount : 0
-  const gain = data.total - lastInvested
+  const gain = Math.round((data.total - lastInvested) * 100) / 100 || 0
 
   const formatCompact = (v: number) => {
     const abs = Math.abs(v)
@@ -2810,7 +2810,7 @@ function PortfolioChart({ data, invested, wallets, currency, locale: loc, dateLo
                     return { key: s.key, name: s.name, value: val, color: s.color }
                   })
                   .filter(item => item.value !== 0)
-                if (items.length === 0 && mode !== 'total') return null
+                if (items.length === 0 && mode !== 'total' && !showInvestedLine) return null
                 return (
                   <div style={{ background: 'var(--card)', color: 'var(--foreground)', border: '1px solid var(--border)', borderRadius: '0.75rem', fontSize: '12px', boxShadow: '0 4px 12px rgba(0,0,0,0.08)', padding: '10px 12px' }}>
                     <p style={{ fontWeight: 600, marginBottom: 6 }}>

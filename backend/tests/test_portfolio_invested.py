@@ -356,7 +356,7 @@ async def test_cents_do_not_drift_when_only_the_total_is_rounded(
 
     points = await get_invested_capital(session, test_workspace.id, test_user.id, end_date=day(5))
 
-    # 1.005, 2.010 and 3.015 exactly, rounded half up only at the total.
+    # 1.005, 2.010 and 3.015 exactly, rounded half to even only at the total.
     assert as_pairs(points) == [(day(0), 1.0), (day(1), 2.01), (day(2), 3.02)]
 
 

@@ -87,6 +87,24 @@ describe('Invested line on the portfolio chart', () => {
     expect(gain).toHaveTextContent('+$200.00')
   })
 
+  it('rounds floating-point drift on collection totals to +$0.00 instead of -$0.00', async () => {
+    ui.wallets = ['w1']
+    api.assets.portfolioTrend.mockResolvedValue({
+      assets: [
+        { id: 'a1', name: 'A1', type: 'stock', group_id: 'w1' },
+        { id: 'a2', name: 'A2', type: 'stock', group_id: 'w1' },
+      ],
+      trend: [{ date: '2026-01-01', a1: 100.1, a2: 200.2, _total: 300.3 }],
+      total: 300.3,
+    })
+    api.assets.portfolioInvested.mockResolvedValue([{ date: '2026-01-01', amount: 300.3 }])
+    renderWithProviders(<AssetsPage />)
+
+    const gain = await screen.findByText(t('assets.gainLoss'), { selector: 'p' })
+    expect(gain).toHaveTextContent('+$0.00')
+    expect(gain).not.toHaveTextContent('-$0.00')
+  })
+
   it('drops the Net invested legend entry in wallet view with Lines', async () => {
     const { user, container } = renderWithProviders(<AssetsPage />)
 
