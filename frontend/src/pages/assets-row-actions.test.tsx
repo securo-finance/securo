@@ -7,7 +7,7 @@ import type { Asset } from '@/types'
 
 const api = vi.hoisted(() => ({
   assets: {
-    list: vi.fn(), portfolioTrend: vi.fn(), refreshPrice: vi.fn(), delete: vi.fn(), update: vi.fn(),
+    list: vi.fn(), archivedCount: vi.fn(), portfolioTrend: vi.fn(), refreshPrice: vi.fn(), delete: vi.fn(), update: vi.fn(),
     values: vi.fn(), valueTrend: vi.fn(), transactions: vi.fn(), marketSearch: vi.fn(),
   },
   assetGroups: { list: vi.fn() },
@@ -69,6 +69,7 @@ const menuNames = () => screen.getAllByRole('menuitem').map((i) => i.textContent
 beforeEach(() => {
   vi.clearAllMocks()
   workspace.canWrite = true
+  api.assets.archivedCount.mockResolvedValue({ count: 0, by_wallet: {}, ungrouped: 0 })
   api.assets.portfolioTrend.mockResolvedValue({ assets: [], trend: [], total: 0 })
   api.assets.values.mockResolvedValue([])
   api.assets.valueTrend.mockResolvedValue([])

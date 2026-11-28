@@ -14,11 +14,20 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
 from app.core.app_clock import app_today
-from app.core.shared_scope import in_bound_workspace, invited_group_member_ids
+from app.core.shared_scope import (
+    bound_workspace_id,
+    in_bound_workspace,
+    invited_group_member_ids,
+)
 from app.models.account import Account
 from app.models.category import Category
 from app.models.transaction import Transaction
 from app.models.transaction_category_line import TransactionCategoryLine
+from app.services.category_defaults import (
+    DEFAULT_KEY_TO_VARIANTS,
+    VARIANT_TO_DEFAULT_KEY,
+    normalize_category_name,
+)
 
 if TYPE_CHECKING:
     from app.services.viewer_currency import ViewerCurrency
@@ -1052,3 +1061,158 @@ async def viewer_shared_spending_by_category(
     for cat_id, total in result.all():
         out[cat_id] = out.get(cat_id, 0.0) + float(total or 0)
     return out
+
+
+def any_unmapped_pnl_line(mapped_category_ids: Iterable[uuid.UUID]):
+    """SQL filter: some non-ignored, non-transfer category line is not in
+    ``mapped_category_ids`` (or any such line exists when empty)."""
+    mapped = list(mapped_category_ids)
+    clauses = [
+        TransactionCategoryLine.transaction_id == Transaction.id,
+        TransactionCategoryLine.category_id.not_in(_non_pnl_category_ids()),
+    ]
+    if mapped:
+        clauses.append(TransactionCategoryLine.category_id.notin_(mapped))
+    return exists().where(*clauses)
+
+
+async def resolve_viewer_category_map(
+    session: AsyncSession,
+    foreign_cat_ids: Iterable[Optional[uuid.UUID]],
+    viewer_workspace_id: uuid.UUID,
+) -> dict[uuid.UUID, Optional[Category]]:
+    """Map foreign category IDs onto equivalent categories in ``viewer_workspace_id``.
+
+    Matches first by exact normalized name, then via ``DEFAULT_CATEGORIES``
+    cross-language variants/aliases, enforcing ``(treat_as_transfer, is_ignored)``
+    compatibility and deterministic tie-breaking. Never returns a foreign
+    ``Category`` instance (unmapped IDs resolve to ``None``).
+    """
+    ids = {cid for cid in foreign_cat_ids if cid is not None}
+    if not ids:
+        return {}
+
+    foreign_cats = (
+        await session.execute(select(Category).where(Category.id.in_(ids)))
+    ).scalars().all()
+    viewer_cats = (
+        await session.execute(
+            select(Category)
+            .where(Category.workspace_id == viewer_workspace_id)
+            .order_by(
+                Category.is_hidden.asc(),
+                Category.is_system.desc(),
+                Category.name,
+                Category.id,
+            )
+        )
+    ).scalars().all()
+
+    by_norm_name: dict[str, list[Category]] = {}
+    by_default_key: dict[str, list[Category]] = {}
+    for vcat in viewer_cats:
+        norm = normalize_category_name(vcat.name)
+        by_norm_name.setdefault(norm, []).append(vcat)
+        default_key = VARIANT_TO_DEFAULT_KEY.get(norm)
+        if default_key is not None:
+            by_default_key.setdefault(default_key, []).append(vcat)
+
+    def _compatible(fcat: Category, vcat: Category) -> bool:
+        return (
+            vcat.treat_as_transfer == fcat.treat_as_transfer
+            and vcat.is_ignored == fcat.is_ignored
+        )
+
+    mapping: dict[uuid.UUID, Optional[Category]] = {cid: None for cid in ids}
+    for fcat in foreign_cats:
+        if fcat.workspace_id == viewer_workspace_id:
+            mapping[fcat.id] = fcat
+            continue
+        norm = normalize_category_name(fcat.name)
+        match = next(
+            (vcat for vcat in by_norm_name.get(norm, ()) if _compatible(fcat, vcat)),
+            None,
+        )
+        if match is None:
+            default_key = VARIANT_TO_DEFAULT_KEY.get(norm)
+            if default_key is not None:
+                match = next(
+                    (
+                        vcat
+                        for vcat in by_default_key.get(default_key, ())
+                        if _compatible(fcat, vcat)
+                    ),
+                    None,
+                )
+        mapping[fcat.id] = match
+    return mapping
+
+
+async def matching_foreign_category_ids(
+    session: AsyncSession,
+    viewer_cat_ids: Iterable[uuid.UUID],
+    viewer_workspace_id: uuid.UUID,
+    *,
+    candidate_foreign_cat_ids: Optional[Iterable[uuid.UUID]] = None,
+) -> set[uuid.UUID]:
+    """Return foreign category IDs that resolve to any of ``viewer_cat_ids``
+    in ``viewer_workspace_id`` (symmetric inverse of ``resolve_viewer_category_map``)."""
+    if bound_workspace_id() is not None:
+        return set()
+
+    target_ids = {cid for cid in viewer_cat_ids if cid is not None}
+    if not target_ids:
+        return set()
+
+    cand_ids: Optional[set[uuid.UUID]] = None
+    if candidate_foreign_cat_ids is not None:
+        cand_ids = {cid for cid in candidate_foreign_cat_ids if cid is not None}
+        if not cand_ids:
+            return set()
+
+    viewer_cats = (
+        await session.execute(
+            select(Category).where(
+                Category.workspace_id == viewer_workspace_id,
+                Category.id.in_(target_ids),
+            )
+        )
+    ).scalars().all()
+    if not viewer_cats:
+        return set()
+
+    target_norms: set[str] = set()
+    target_sigs: set[tuple[bool, bool]] = set()
+    for vcat in viewer_cats:
+        norm = normalize_category_name(vcat.name)
+        target_norms.add(norm)
+        default_key = VARIANT_TO_DEFAULT_KEY.get(norm)
+        if default_key is not None:
+            target_norms.update(DEFAULT_KEY_TO_VARIANTS[default_key])
+        target_sigs.add((vcat.treat_as_transfer, vcat.is_ignored))
+
+    foreign_query = select(Category).where(
+        Category.workspace_id != viewer_workspace_id,
+        in_bound_workspace(Category.workspace_id),
+    )
+    if cand_ids is not None:
+        foreign_query = foreign_query.where(Category.id.in_(cand_ids))
+    foreign_cats = (await session.execute(foreign_query)).scalars().all()
+
+    prematched_ids = [
+        fcat.id
+        for fcat in foreign_cats
+        if normalize_category_name(fcat.name) in target_norms
+        and (fcat.treat_as_transfer, fcat.is_ignored) in target_sigs
+    ]
+    if not prematched_ids:
+        return set()
+
+    resolved = await resolve_viewer_category_map(
+        session, prematched_ids, viewer_workspace_id
+    )
+    return {
+        fid
+        for fid, vcat in resolved.items()
+        if vcat is not None and vcat.id in target_ids
+    }

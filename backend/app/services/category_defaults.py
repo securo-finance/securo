@@ -14,6 +14,7 @@ workspaces created before a rename aren't given a duplicate.
 """
 
 import json
+import unicodedata
 from importlib.resources import files
 
 # importlib.resources (rather than Path(__file__)) so the file is found in
@@ -45,3 +46,19 @@ def name_variants(data: dict) -> set[str]:
     """Every name an existing entry may carry: each language's display
     name plus any former names listed under ``aliases``."""
     return set(data["names"].values()) | set(data.get("aliases", ()))
+
+
+def normalize_category_name(name: str) -> str:
+    """Canonicalize a category display name for cross-workspace matching."""
+    return unicodedata.normalize("NFKC", name).strip().casefold()
+
+
+VARIANT_TO_DEFAULT_KEY: dict[str, str] = {}
+DEFAULT_KEY_TO_VARIANTS: dict[str, frozenset[str]] = {}
+for _default_key, _default_data in DEFAULT_CATEGORIES.items():
+    _normalized_variants = frozenset(
+        normalize_category_name(variant) for variant in name_variants(_default_data)
+    )
+    DEFAULT_KEY_TO_VARIANTS[_default_key] = _normalized_variants
+    for _variant_norm in _normalized_variants:
+        VARIANT_TO_DEFAULT_KEY.setdefault(_variant_norm, _default_key)

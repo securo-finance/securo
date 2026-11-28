@@ -17,7 +17,7 @@ ADR 0032 did not say which edits invalidate the typed figure. The code decided t
 - A date move still restamps the account leg, because the value in the account's currency follows the date, and `_restore_typed_primary` then puts the owner's figure back.
 - A row with nothing typed keeps following the date: a derived stamp is still recalculated on a date move.
 - The restamp decision reads `money_inputs_changed` for the typed copy and keeps the date out of it.
-- The counterpart of a transfer and a pending row posted to today still follow ADR 0031: a date change there drops the typed figure. This ADR covers the row the person edits; aligning those two paths with it is a separate decision, tracked in #1816.
+- All three date-move paths follow this rule (#1816): a single-row edit, a transfer counterpart whose date cascades without an amount change, and a pending row (and its manual transfer counterpart) posted to today (`_restamp_posted_leg` in `backend/app/services/transaction_service.py`). Each restamps the account leg for the new date and then puts the owner's typed figure back via `_restore_typed_primary` and `stamp_account_amount`. Changing a transfer leg's amount still drops the counterpart's typed figure.
 
 ## Consequences
 
@@ -26,4 +26,5 @@ ADR 0032 did not say which edits invalidate the typed figure. The code decided t
 
 ## Enforced by
 
-`backend/tests/test_viewer_currency_shared_workspace.py`: `test_member_moving_only_the_date_keeps_the_owners_typed_stamp`, `test_member_moving_only_the_date_restamps_a_derived_stamp` and `test_member_moving_only_the_date_keeps_the_typed_account_leg`.
+- `backend/tests/test_viewer_currency_shared_workspace.py`: `test_member_moving_only_the_date_keeps_the_owners_typed_stamp`, `test_member_moving_only_the_date_restamps_a_derived_stamp` and `test_member_moving_only_the_date_keeps_the_typed_account_leg`.
+- `backend/tests/test_typed_primary_date_move.py`: transfer date-only cascade keeping typed figures on both legs while restamping non-primary foreign account legs, transfer amount edits dropping the counterpart's typed figure, and posting pending rows (single and transfer pairs) with typed vs derived stamps.

@@ -38,6 +38,7 @@ PERSONAL_TABLES = (
     "notifications",
     "ui_layouts",
     "user_passkeys",
+    "user_quotas",
     "workspace_members",
 )
 

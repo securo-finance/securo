@@ -1,6 +1,7 @@
 from app.models.user import User
 from app.models.access_token import AccessToken
 from app.models.passkey import UserPasskey
+from app.models.user_quota import UserQuota
 from app.models.workspace import Workspace, WorkspaceMember, WorkspaceTaxId
 from app.models.category import Category
 from app.models.category_group import CategoryGroup
@@ -69,6 +70,7 @@ __all__ = [
     "AccessToken",
     "User",
     "UserPasskey",
+    "UserQuota",
     "Workspace",
     "WorkspaceMember",
     "WorkspaceTaxId",

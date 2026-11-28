@@ -7,7 +7,7 @@ import { renderWithProviders } from '@/test/utils'
 import type { Asset, AssetGroup } from '@/types'
 
 const api = vi.hoisted(() => ({
-  assets: { list: vi.fn(), portfolioTrend: vi.fn() },
+  assets: { list: vi.fn(), archivedCount: vi.fn(), portfolioTrend: vi.fn() },
   assetGroups: { list: vi.fn(), create: vi.fn() },
   currencies: { list: vi.fn() },
   fxRates: { status: vi.fn() },
@@ -53,6 +53,7 @@ beforeEach(() => {
   vi.clearAllMocks()
   localStorage.clear()
   localStorage.setItem('securo.assetsTab', 'performance')
+  api.assets.archivedCount.mockResolvedValue({ count: 0, by_wallet: {}, ungrouped: 0 })
   api.assets.portfolioTrend.mockResolvedValue({ assets: [], trend: [], total: 0 })
   api.assets.list.mockResolvedValue([] as Asset[])
   api.currencies.list.mockResolvedValue([])

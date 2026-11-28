@@ -1822,6 +1822,12 @@ export interface AssetPriceRefreshResult {
   rate_limited: number
 }
 
+export interface ArchivedAssetCounts {
+  count: number
+  by_wallet: Record<string, number>
+  ungrouped: number
+}
+
 export interface AssetGroup {
   id: string
   user_id: string

@@ -6,7 +6,7 @@ import { renderWithProviders, t } from '@/test/utils'
 import type { AssetGroup } from '@/types'
 
 const api = vi.hoisted(() => ({
-  assets: { list: vi.fn(), portfolioTrend: vi.fn() },
+  assets: { list: vi.fn(), archivedCount: vi.fn(), portfolioTrend: vi.fn() },
   assetGroups: { list: vi.fn(), reorder: vi.fn() },
   accounts: { list: vi.fn() },
   currencies: { list: vi.fn() },
@@ -54,7 +54,7 @@ function openMenu(name: string) {
   })
 }
 
-const handle = (name: string) => screen.queryByRole('button', { name: t('assets.reorderWallet', { name }) })
+const handle = (name: string) => screen.queryByRole('button', { name: t('assets.reorder', { name }) })
 
 /** The wallet names in the order the page draws them. */
 const shownOrder = () =>
@@ -70,6 +70,7 @@ beforeEach(() => {
   vi.clearAllMocks()
   workspace.canWrite = true
   api.assets.list.mockResolvedValue([])
+  api.assets.archivedCount.mockResolvedValue({ count: 0, by_wallet: {}, ungrouped: 0 })
   api.assets.portfolioTrend.mockResolvedValue({ assets: [], trend: [], total: 0 })
   api.assetGroups.list.mockResolvedValue(WALLETS)
   api.accounts.list.mockResolvedValue([])
@@ -84,9 +85,9 @@ describe('Wallet ordering', () => {
     await renderPage()
 
     openMenu('Brokerage')
-    fireEvent.click(await screen.findByRole('menuitem', { name: t('assets.moveWalletDown') }))
+    fireEvent.click(await screen.findByRole('menuitem', { name: t('assets.moveDown') }))
 
-    await waitFor(() => expect(api.assetGroups.reorder).toHaveBeenCalledWith(['pension', 'brokerage', 'savings']))
+    await waitFor(() => expect(api.assetGroups.reorder).toHaveBeenCalledWith(['pension', 'brokerage']))
     // Drawn in the new order while the save is still pending.
     await waitFor(() => expect(shownOrder()).toEqual(['Pension', 'Brokerage', 'Savings']))
     finish()
@@ -94,10 +95,12 @@ describe('Wallet ordering', () => {
 
   it('puts the old order back when saving fails', async () => {
     api.assetGroups.reorder.mockRejectedValue(new Error('offline'))
+    // The refetch after the error never answers, so only the rollback can restore the order.
+    api.assetGroups.list.mockResolvedValueOnce(WALLETS).mockReturnValue(new Promise(() => {}))
     await renderPage()
 
     openMenu('Savings')
-    fireEvent.click(await screen.findByRole('menuitem', { name: t('assets.moveWalletUp') }))
+    fireEvent.click(await screen.findByRole('menuitem', { name: t('assets.moveUp') }))
 
     await waitFor(() => expect(toast.error).toHaveBeenCalledWith(t('common.error')))
     expect(shownOrder()).toEqual(['Brokerage', 'Pension', 'Savings'])
@@ -108,8 +111,8 @@ describe('Wallet ordering', () => {
 
     openMenu('Brokerage')
 
-    expect(await screen.findByRole('menuitem', { name: t('assets.moveWalletUp') })).toHaveAttribute('data-disabled')
-    expect(screen.getByRole('menuitem', { name: t('assets.moveWalletDown') })).not.toHaveAttribute('data-disabled')
+    expect(await screen.findByRole('menuitem', { name: t('assets.moveUp') })).toHaveAttribute('data-disabled')
+    expect(screen.getByRole('menuitem', { name: t('assets.moveDown') })).not.toHaveAttribute('data-disabled')
   })
 
   it('offers no ordering when there is only one wallet', async () => {
@@ -119,7 +122,7 @@ describe('Wallet ordering', () => {
     expect(handle('Brokerage')).not.toBeInTheDocument()
     openMenu('Brokerage')
     await screen.findByRole('menu')
-    expect(screen.queryByRole('menuitem', { name: t('assets.moveWalletDown') })).not.toBeInTheDocument()
+    expect(screen.queryByRole('menuitem', { name: t('assets.moveDown') })).not.toBeInTheDocument()
   })
 
   it('shows a drag handle per wallet to someone who can write', async () => {

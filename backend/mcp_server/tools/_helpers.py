@@ -10,6 +10,29 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Any, Optional
 
+from mcp_server.registry import ToolInputError
+
+
+def parse_bool(
+    v: Any, *, field: str = "value", default: Optional[bool] = None
+) -> bool:
+    """Coerce a boolean argument strictly so `"false"` / `"0"` cannot evaluate truthy.
+
+    When ``default`` is provided, an explicit ``None`` (JSON ``null``) resolves to
+    that default instead of raising ``ToolInputError``.
+    """
+    if v is None and default is not None:
+        return default
+    if isinstance(v, bool):
+        return v
+    if isinstance(v, str):
+        key = v.strip().lower()
+        if key in ("true", "1"):
+            return True
+        if key in ("false", "0"):
+            return False
+    raise ToolInputError(f"{field} must be a boolean")
+
 
 def parse_date(v: Any) -> Optional[date]:
     if v is None or v == "":

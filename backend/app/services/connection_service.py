@@ -67,6 +67,7 @@ from app.services.provider_settings import resolve_settings
 from app.services import asset_service
 from app.services import oauth_state
 from app.services import admin_service
+from app.services import quota_service
 from app.services import category_line_service, notification_service, reconciliation_service, recurring_match_service
 from app.services.text_similarity import normalize_words, token_overlap
 from app.services.account_service import (
@@ -1165,6 +1166,7 @@ async def _sync_holdings(
             and asset.group_id != group.id
         ):
             asset.group_id = group.id
+            asset.position = 0  # its place was in the old wallet
         # Seed a historical value at purchase_date so users get a real
         # evolution curve from day one — not just today's snapshot.
         # Idempotent: skips if any AssetValue already exists at that date.
@@ -2351,6 +2353,8 @@ async def handle_oauth_callback(
         await session.refresh(existing_reconnect)
         return existing_reconnect
 
+    # A new connection, not a reconnect: it counts toward the account's limit (ADR 0049).
+    await quota_service.check_new_bank_connection(session, workspace_id)
     flow_params = dict(state_payload.get("flow_params") or {})
     flow_sync_assets = flow_params.pop("sync_assets", None)
     initial_settings: dict[str, object] = {"flow_params": flow_params}
