@@ -149,6 +149,9 @@ x-backend-env: &backend-env
 
 x-backend-base: &backend-base
   image: ghcr.io/securo-finance/securo-backend:latest
+  # Some podman-compose setups start containers in / instead of the image's
+  # WORKDIR, and migrate then can't find alembic.ini (#673).
+  working_dir: /app
   environment: *backend-env
   # Lets a connection point at a model server running on the host (LM Studio,
   # Ollama, llama.cpp) as http://host.docker.internal:<port>. Docker Desktop
@@ -318,6 +321,7 @@ services:
   # goes out only through plugins-egress, to the hosts it declared.
   plugins-runner:
     image: ghcr.io/securo-finance/securo-backend:latest
+    working_dir: /app
     profiles: [plugins]
     command: uvicorn --factory plugin_runner.main:create_app --host 0.0.0.0 --port 8090
     environment:
@@ -346,6 +350,7 @@ services:
   # through untouched (client certificates keep working).
   plugins-egress:
     image: ghcr.io/securo-finance/securo-backend:latest
+    working_dir: /app
     profiles: [plugins]
     command: python -m plugin_runner.egress
     environment:

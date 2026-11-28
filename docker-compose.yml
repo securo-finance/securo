@@ -142,6 +142,11 @@ x-backend-env: &backend-env
 
 x-backend-base: &backend-base
   build: ./backend
+  # Alembic and the app find alembic.ini and their modules relative to /app.
+  # The image sets WORKDIR /app, but some podman-compose setups start the
+  # container in / instead, and migrate then fails with "No 'script_location'
+  # key found in configuration" (#673). Stating it here keeps every runtime on /app.
+  working_dir: /app
   environment: *backend-env
   # Lets a connection point at a model server running on the host (LM Studio,
   # Ollama, llama.cpp) as http://host.docker.internal:<port>. Docker Desktop
@@ -233,6 +238,8 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile.dev
+    # npm runs from /app; same reason as the backend's working_dir (#673).
+    working_dir: /app
     ports:
       - "${FRONTEND_PORT:-3000}:5173"
     environment:
@@ -284,6 +291,7 @@ services:
   # goes out only through plugins-egress, to the hosts it declared.
   plugins-runner:
     build: ./backend
+    working_dir: /app
     profiles: [plugins]
     command: uvicorn --factory plugin_runner.main:create_app --host 0.0.0.0 --port 8090
     environment:
@@ -315,6 +323,7 @@ services:
   # through untouched (client certificates keep working).
   plugins-egress:
     build: ./backend
+    working_dir: /app
     profiles: [plugins]
     command: python -m plugin_runner.egress
     environment:
