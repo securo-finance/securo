@@ -51,8 +51,14 @@ export const i18nReady = i18n
     detection: {
       order: ['querystring', 'localStorage', 'cookie'],
       caches: ['localStorage'],
-      // 'iw' is the pre-1989 code for Hebrew; load he.json for it too.
-      convertDetectedLanguage: (lng: string) => (/^iw(-|$)/i.test(lng) ? 'he' : lng),
+      // 'iw' is the pre-1989 code for Hebrew; normalize it and any Chinese
+      // variant ('zh', 'zh-cn', 'zh-Hans', ...) so dynamic locale lookup hits
+      // the bundled file instead of silently falling back to English.
+      convertDetectedLanguage: (lng: string) => {
+        if (/^iw(-|$)/i.test(lng)) return 'he'
+        if (/^zh(-|$)/i.test(lng)) return 'zh-CN'
+        return lng
+      },
     },
     interpolation: {
       escapeValue: false,
