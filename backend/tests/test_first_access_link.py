@@ -100,6 +100,7 @@ async def test_the_message_carries_a_link_that_sets_the_first_password(
     assert (await _login(client)).status_code == 200
 
     user = await session.scalar(select(User).where(User.email == "ana@example.com"))
+    assert user is not None
     await session.refresh(user)
     assert user.password_set_at is not None
     # The link reached the mailbox.

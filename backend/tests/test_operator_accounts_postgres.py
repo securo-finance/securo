@@ -22,7 +22,11 @@ TOKEN = "operator-secret-token"
 
 
 def _body(email: str, reference: str, workspaces: list[dict]) -> dict:
-    return {"email": email, "external_reference": reference, "language": "pt-BR", "workspaces": workspaces}
+    # Email is off in tests; the first access is covered in test_first_access_link.py.
+    return {
+        "email": email, "external_reference": reference, "language": "pt-BR", "workspaces": workspaces,
+        "first_access": "response",
+    }
 
 
 PERSONAL = {"name": "Casa", "kind": "personal", "default_currency": "BRL"}
