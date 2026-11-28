@@ -937,7 +937,9 @@
     "fxRateUsed": "Kurz: {{rate}}",
     "refreshRates": "Obnovit kurzy",
     "ratesRefreshed": "Kurzy aktualizovány",
-    "ratesError": "Kurzy se nepodařilo aktualizovat"
+    "ratesError": "Kurzy se nepodařilo aktualizovat",
+    "balanceReimbursements": "Po odečtení náhrad",
+    "balanceReimbursementsHint": "Zapnuto: náhrady a vratky se počítají jen ve vašem podílu. Vypnuto: skutečný zůstatek účtů."
   },
   "transactions": {
     "title": "Transakce",
@@ -1331,7 +1333,12 @@
     "suggestionBadge": "Otázka",
     "suggestionBadgeTooltip": "Platba může uhradit tuto fakturu. Otevřete frontu a odpovězte.",
     "clearGroupFilter": "Zrušit filtr skupiny",
-    "attachmentNoPreview": "Tento soubor nemá náhled. Stáhněte si ho a otevřete."
+    "attachmentNoPreview": "Tento soubor nemá náhled. Stáhněte si ho a otevřete.",
+    "reimbursementFilter": "Náhrady",
+    "reimbursementLinked": "Propojené s náhradami",
+    "reimbursementAnchor": "Má náhrady",
+    "reimbursementCounterpart": "Je náhradou",
+    "reimbursementUnlinked": "Nepropojené"
   },
   "accounts": {
     "title": "Účty",
@@ -4542,6 +4549,51 @@
       "turnedOff": "Čtení dokumentů vypnuto"
     },
     "unreadPages": "Nepřečtené stránky (skeny, a model nečte obrázky): {{pages}}. Jejich řádky v této kontrole chybí."
+  },
+  "reimbursements": {
+    "title": "Náhrady a vratky",
+    "manage": "Spravovat",
+    "addReimbursements": "Přidat náhrady…",
+    "linkAsReimbursement": "Propojit jako náhradu za…",
+    "linkAsTitle": "Propojit jako náhradu",
+    "counterpartsDescription": "Propojte platby, kterými vám to bylo vráceno, nebo vratku. V přehledech a rozpočtech se počítá jen čistá částka.",
+    "anchorsDescription": "Vyberte, co tato transakce vrací. V přehledech a rozpočtech se počítá jen čistá částka.",
+    "linked": "Propojeno",
+    "paysBack": "Vrací",
+    "noLinks": "Zatím nic propojeno",
+    "available": "K dispozici {{amount}}",
+    "amountFor": "Částka pro {{description}}",
+    "remove": "Odebrat {{description}}",
+    "netPreview": "Započítaná čistá částka: {{amount}}",
+    "link": "Propojit",
+    "searchPlaceholder": "Hledat ve všech transakcích…",
+    "results": "Výsledky",
+    "suggestions": "Návrhy",
+    "noCandidates": "Žádné odpovídající transakce",
+    "overAllocated": "Banka tuto částku po propojení snížila; přehledy její propojení poměrně zmenší.",
+    "saved": "Náhrady uloženy",
+    "badge": "Náhrada",
+    "badgeTooltip": "Plně propojeno s tím, co vrací",
+    "rowNet": "Čistě {{amount}}",
+    "rowLeft": "Nepropojeno {{amount}}",
+    "sectionEmpty": "Propojte platby, kterými vám to bylo vráceno, nebo vratku, aby se počítala jen čistá částka.",
+    "sectionLinked": "Propojeno s náhradami",
+    "sectionNet": "V přehledech se počítá jako {{amount}}",
+    "sectionLeft": "Zatím nepropojeno {{amount}}",
+    "errors": {
+      "transfer": "Převod nelze propojit jako náhradu.",
+      "excluded": "Transakci vyřazenou z přehledů nelze propojit jako náhradu.",
+      "notLinkable": "Tuto transakci nelze propojit jako náhradu.",
+      "noAmount": "Transakci bez částky nelze propojit jako náhradu.",
+      "category": "Transakci v ignorované nebo převodové kategorii nelze propojit jako náhradu.",
+      "groupSplit": "Transakci rozdělenou mezi osoby nelze propojit jako náhradu.",
+      "chain": "Náhrada nemůže mít vlastní náhrady.",
+      "direction": "Náhrada musí jít opačným směrem.",
+      "beyondAmount": "Náhradu nelze propojit na víc, než je její částka.",
+      "shrink": "Částka nemůže být nižší než to, co je z ní už propojeno.",
+      "unlinkFirstDirection": "Před změnou směru zrušte propojení náhrad.",
+      "unlinkFirstGroupSplit": "Před rozdělením mezi osoby zrušte propojení náhrad."
+    }
   },
   "notifications": {
     "title": "Oznámení",

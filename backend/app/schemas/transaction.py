@@ -354,6 +354,13 @@ class TransactionRead(TransactionBase):
     # date and the amount, so the dialog leaves it to the server (#483).
     fx_typed: bool = False
     attachment_count: int = 0
+    # Reimbursement links (#1126), filled by the list and the single read.
+    # An anchor carries its amount less what its counterparts pay back
+    # (negative once paid back more than in full; null without a rate for a
+    # counterpart in another currency); a counterpart what is left of it.
+    reimbursement_role: Optional[Literal["anchor", "counterpart"]] = None
+    reimbursement_net: Optional[float] = None
+    reimbursement_unallocated: Optional[float] = None
     installment_number: Optional[int] = None
     total_installments: Optional[int] = None
     installment_total_amount: Optional[float] = None

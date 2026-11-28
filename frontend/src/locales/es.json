@@ -910,7 +910,9 @@
     "ratesRefreshed": "Tipos FX actualizados",
     "ratesError": "No se pudo actualizar los tipos FX",
     "cashBalance": "Efectivo",
-    "investmentAccounts": "Cuentas de inversión"
+    "investmentAccounts": "Cuentas de inversión",
+    "balanceReimbursements": "Neto de reembolsos",
+    "balanceReimbursementsHint": "Activado: los reembolsos y devoluciones cuentan solo tu parte. Desactivado: el saldo real de tus cuentas."
   },
   "transactions": {
     "title": "Transacciones",
@@ -1265,7 +1267,12 @@
     "suggestionBadge": "Pregunta",
     "suggestionBadgeTooltip": "Un pago puede saldar esta factura. Abre la cola para responder.",
     "clearGroupFilter": "Quitar filtro de grupo",
-    "attachmentNoPreview": "No hay vista previa de este archivo. Descárgalo para abrirlo."
+    "attachmentNoPreview": "No hay vista previa de este archivo. Descárgalo para abrirlo.",
+    "reimbursementFilter": "Reembolsos",
+    "reimbursementLinked": "Vinculadas a reembolsos",
+    "reimbursementAnchor": "Tiene reembolsos",
+    "reimbursementCounterpart": "Es un reembolso",
+    "reimbursementUnlinked": "Sin vincular"
   },
   "accounts": {
     "title": "Cuentas",
@@ -4345,6 +4352,51 @@
       "turnedOff": "Lectura de documentos desactivada"
     },
     "unreadPages": "Páginas no leídas (escaneadas, y el modelo no lee imágenes): {{pages}}. Sus líneas no están en esta revisión."
+  },
+  "reimbursements": {
+    "title": "Reembolsos y devoluciones",
+    "manage": "Gestionar",
+    "addReimbursements": "Añadir reembolsos…",
+    "linkAsReimbursement": "Vincular como reembolso de…",
+    "linkAsTitle": "Vincular como reembolso",
+    "counterpartsDescription": "Vincula los pagos que devolvieron esta transacción, o una devolución. Solo el importe neto cuenta en informes y presupuestos.",
+    "anchorsDescription": "Elige qué devuelve esta transacción. Solo el importe neto cuenta en informes y presupuestos.",
+    "linked": "Vinculados",
+    "paysBack": "Devuelve",
+    "noLinks": "Aún no hay nada vinculado",
+    "available": "{{amount}} disponible",
+    "amountFor": "Importe de {{description}}",
+    "remove": "Quitar {{description}}",
+    "netPreview": "Neto contabilizado: {{amount}}",
+    "link": "Vincular",
+    "searchPlaceholder": "Buscar en todas las transacciones…",
+    "results": "Resultados",
+    "suggestions": "Sugerencias",
+    "noCandidates": "No hay transacciones que coincidan",
+    "overAllocated": "El banco redujo este importe después de vincularlo; los informes reducen sus vínculos en proporción.",
+    "saved": "Reembolsos guardados",
+    "badge": "Reembolso",
+    "badgeTooltip": "Vinculado por completo a lo que devuelve",
+    "rowNet": "Neto {{amount}}",
+    "rowLeft": "{{amount}} sin vincular",
+    "sectionEmpty": "Vincula los pagos que devolvieron esta transacción, o una devolución, para que solo cuente el neto.",
+    "sectionLinked": "Vinculado a reembolsos",
+    "sectionNet": "Cuenta como {{amount}} en los informes",
+    "sectionLeft": "{{amount}} aún sin vincular",
+    "errors": {
+      "transfer": "Una transferencia no puede vincularse como reembolso.",
+      "excluded": "Una transacción excluida de los informes no puede vincularse como reembolso.",
+      "notLinkable": "Esta transacción no puede vincularse como reembolso.",
+      "noAmount": "Una transacción sin importe no puede vincularse como reembolso.",
+      "category": "Una transacción en una categoría ignorada o de transferencia no puede vincularse como reembolso.",
+      "groupSplit": "Una transacción dividida entre personas no puede vincularse como reembolso.",
+      "chain": "Un reembolso no puede tener reembolsos propios.",
+      "direction": "Un reembolso debe ir en la dirección opuesta.",
+      "beyondAmount": "Un reembolso no puede vincularse por más de su importe.",
+      "shrink": "El importe no puede ser menor que lo ya vinculado desde él.",
+      "unlinkFirstDirection": "Desvincula los reembolsos antes de cambiar la dirección.",
+      "unlinkFirstGroupSplit": "Desvincula los reembolsos antes de dividir entre personas."
+    }
   },
   "notifications": {
     "title": "Notificaciones",

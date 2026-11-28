@@ -404,6 +404,15 @@ export interface Transaction {
    */
   fx_typed?: boolean
   attachment_count?: number
+  /**
+   * Reimbursement links (#1126). An anchor carries its amount less what its
+   * counterparts pay back (negative once paid back more than in full, null
+   * without a rate for a counterpart in another currency); a counterpart
+   * what is left of it once its allocations are taken off.
+   */
+  reimbursement_role?: 'anchor' | 'counterpart' | null
+  reimbursement_net?: number | null
+  reimbursement_unallocated?: number | null
   installment_number: number | null
   total_installments: number | null
   installment_total_amount: number | null
@@ -1559,6 +1568,12 @@ export interface AccountRunningBalancePoint {
 
 export interface BalanceHistory {
   current: DailyBalance[]
+  /**
+   * True when the curve counts rows linked by reimbursements for the user's
+   * share only (netting). False for the real balance, including a chart
+   * scoped to some accounts, which cannot net.
+   */
+  netted?: boolean
   opening_balance: number
   baseline: DailyBaseline[]
   comparison: DailyBalance[] | null
@@ -2785,6 +2800,46 @@ export interface LoanSchedule {
   projected_payoff_date: string | null
   paid_off: boolean
   installments: LoanInstallment[]
+}
+
+/**
+ * Transactions by their place in a reimbursement link: either side (`linked`),
+ * the original row that has reimbursements (`anchor`), a row that reimburses
+ * another (`counterpart`), or neither (`unlinked`).
+ */
+export type ReimbursementFilter = 'linked' | 'anchor' | 'counterpart' | 'unlinked'
+
+/** The row on the other side of a reimbursement allocation. */
+export interface ReimbursementLinkedTransaction {
+  id: string
+  account_id: string
+  description: string
+  date: string
+  amount: number | string
+  currency: string
+  type: 'debit' | 'credit'
+  /** What is left of the row once its allocations are taken off. */
+  unallocated: number | string
+}
+
+export interface ReimbursementAllocation {
+  id: string
+  anchor_id: string
+  counterpart_id: string
+  /** The part of the counterpart that pays the anchor back, in its currency. */
+  amount: number | string
+  created_at: string
+  transaction: ReimbursementLinkedTransaction
+}
+
+/** A transaction's reimbursement links, from its own side. */
+export interface TransactionReimbursements {
+  transaction_id: string
+  counterparts: ReimbursementAllocation[]
+  anchors: ReimbursementAllocation[]
+  unallocated: number | string
+  over_allocated: boolean
+  net_amount: number | string | null
 }
 
 export type AppNotificationKind =

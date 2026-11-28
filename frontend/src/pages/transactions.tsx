@@ -48,8 +48,8 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { Skeleton } from '@/components/ui/skeleton'
-import { AlertTriangle, ArrowLeftRight, ArrowUp, ArrowDown, Check, CheckCheck, CircleDashed, Clock, HelpCircle, Info, Paperclip, Repeat, TagIcon, Trash2, Users, X, EyeClosed, ChartNoAxesColumn, Flag, SlidersHorizontal, Receipt } from 'lucide-react'
-import type { Transaction, Rule, InstallmentSeriesInput, TransactionApplyScope, TransactionEditPayload, ReconciliationSuggestion } from '@/types'
+import { AlertTriangle, ArrowLeftRight, ArrowUp, ArrowDown, Check, CheckCheck, CircleDashed, Clock, HelpCircle, Info, Paperclip, Repeat, TagIcon, Trash2, Users, X, EyeClosed, ChartNoAxesColumn, Flag, SlidersHorizontal, Receipt, Undo2 } from 'lucide-react'
+import type { Transaction, Rule, InstallmentSeriesInput, TransactionApplyScope, TransactionEditPayload, ReconciliationSuggestion, ReimbursementFilter } from '@/types'
 import { RuleDialog, type RuleDialogInitialData } from '@/components/rule-dialog'
 import { TransactionFlagMarker } from '@/components/transaction-flag-marker'
 import { flagFilterToParam, parseFlagFilter, type FlagFilter } from '@/lib/transaction-flag'
@@ -74,6 +74,9 @@ import { MakeRecurringDialog } from '@/components/make-recurring-dialog'
 import { useSidebarState } from '@/contexts/sidebar-state-context'
 import { cn } from '@/lib/utils'
 import { LinkTransferDialog } from '@/components/link-transfer-dialog'
+import { ReimbursementDialog, type ReimbursementDialogMode } from '@/components/reimbursement-dialog'
+import { ReimbursementAmountNote, ReimbursementBadge } from '@/components/reimbursement-display'
+import { isFullyAllocatedReimbursement, parseReimbursementFilter } from '@/lib/reimbursements'
 import { BulkAddToGroupDialog, type BulkAddToGroupSubmission } from '@/components/bulk-add-to-group-dialog'
 import { TransactionsFilterBar } from '@/components/transactions-filter-bar'
 import { TransactionCalendarView } from '@/components/transaction-calendar-view'
@@ -208,6 +211,9 @@ export default function TransactionsPage() {
   const [filterUnpaid, setFilterUnpaid] = useState<boolean>(
     searchParams.get('unpaid') === '1',
   )
+  const [filterReimbursement, setFilterReimbursement] = useState<ReimbursementFilter | ''>(
+    () => parseReimbursementFilter(searchParams.get('reimbursement')),
+  )
   // Hiding ignored rows is a reading preference, not a query someone re-picks
   // every visit, so it outlives the page the way page size and columns do. The
   // URL still wins when present, so a shared link shows what its sender saw.
@@ -274,6 +280,9 @@ export default function TransactionsPage() {
   const [receiptDialogOpen, setReceiptDialogOpen] = useState(false)
   const { enabled: documentAiEnabled } = useDocumentAiStatus()
   const [linkTransferDialogOpen, setLinkTransferDialogOpen] = useState(false)
+  const [reimbursementTarget, setReimbursementTarget] = useState<
+    { tx: Transaction; mode: ReimbursementDialogMode } | null
+  >(null)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [lastSelectedId, setLastSelectedId] = useState<string | null>(null)
   const grid = useTransactionsGridState()
@@ -319,6 +328,7 @@ export default function TransactionsPage() {
     setFilterStatus(searchParams.get('status') ?? '')
     setFilterUnpaid(searchParams.get('unpaid') === '1')
     setFilterFlag(parseFlagFilter(searchParams.get('flagged')))
+    setFilterReimbursement(parseReimbursementFilter(searchParams.get('reimbursement')))
     const urlHideIgnored = searchParams.get('hide_ignored')
     if (urlHideIgnored !== null) setHideIgnored(urlHideIgnored === 'true')
     setOnlyUnread(searchParams.get('unread_only') === 'true')
@@ -361,6 +371,7 @@ export default function TransactionsPage() {
         ['status', filterStatus],
         ['unpaid', filterUnpaid ? '1' : ''],
         ['flagged', flagFilterToParam(filterFlag)],
+        ['reimbursement', filterReimbursement],
         ['category_id', filterCategoryIds.join(',')],
         ['uncategorized', filterUncategorized ? '1' : ''],
         ['account_id', filterAccountIds.join(',')],
@@ -390,6 +401,7 @@ export default function TransactionsPage() {
     filterStatus,
     filterUnpaid,
     filterFlag,
+    filterReimbursement,
     filterCategoryIds,
     filterUncategorized,
     filterAccountIds,
@@ -416,7 +428,7 @@ export default function TransactionsPage() {
     setSelectedIds(new Set())
     setLastSelectedId(null)
     setBulkCategory('')
-  }, [page, filterAccountIds, filterLinkedCardIds, filterCategoryIds, filterUncategorized, filterPayee, filterType, filterStatus, filterFlag, filterFrom, filterTo, filterMinAmount, filterMaxAmount, searchQuery, onlyUnread])
+  }, [page, filterAccountIds, filterLinkedCardIds, filterCategoryIds, filterUncategorized, filterPayee, filterType, filterStatus, filterFlag, filterReimbursement, filterFrom, filterTo, filterMinAmount, filterMaxAmount, searchQuery, onlyUnread])
 
   useEffect(() => {
     if (viewMode === 'calendar') {
@@ -469,7 +481,7 @@ export default function TransactionsPage() {
     && activeAccountIds !== null && activeAccountIds.length === 0
 
   const { data, isLoading, isFetching, isSuccess, isFetchedAfterMount, fetchStatus, refetch } = useQuery({
-    queryKey: ['transactions', page, limit, effectiveAccountIds, filterLinkedCardIds, filterCategoryIds, filterUncategorized, filterPayee, filterGroupId, filterType, filterStatus, filterUnpaid, filterFlag, filterFrom, filterTo, filterMinAmount, filterMaxAmount, hideIgnored, onlyUnread, searchQuery, tagFilters, isMobile ? 'date' : grid.sortBy, isMobile ? 'desc' : grid.sortDir],
+    queryKey: ['transactions', page, limit, effectiveAccountIds, filterLinkedCardIds, filterCategoryIds, filterUncategorized, filterPayee, filterGroupId, filterType, filterStatus, filterUnpaid, filterFlag, filterReimbursement, filterFrom, filterTo, filterMinAmount, filterMaxAmount, hideIgnored, onlyUnread, searchQuery, tagFilters, isMobile ? 'date' : grid.sortBy, isMobile ? 'desc' : grid.sortDir],
     enabled: !noAccounts,
     queryFn: () =>
       transactions.list({
@@ -492,6 +504,7 @@ export default function TransactionsPage() {
         tags: tagFilters.length > 0 ? tagFilters : undefined,
         exclude_ignored: hideIgnored ? true : undefined,
         flagged: filterFlag === 'all' ? true : undefined,
+        reimbursement: filterReimbursement || undefined,
         flag_due: filterFlag === 'overdue' || filterFlag === 'soon' ? filterFlag : undefined,
         unread_only: onlyUnread ? true : undefined,
         // Mobile has no column headers to change sort; force date-desc so
@@ -570,6 +583,7 @@ export default function TransactionsPage() {
     status: filterStatus || undefined,
     unpaid_only: filterUnpaid || undefined,
     flagged: filterFlag || undefined,
+    reimbursement: filterReimbursement || undefined,
     uncategorized: filterUncategorized || undefined,
     from: filterFrom || undefined,
     to: filterTo || undefined,
@@ -1218,6 +1232,7 @@ export default function TransactionsPage() {
           tags: tagFilters.length > 0 ? tagFilters : undefined,
           exclude_ignored: hideIgnored ? true : undefined,
           flagged: filterFlag === 'all' ? true : undefined,
+          reimbursement: filterReimbursement || undefined,
           flag_due: filterFlag === 'overdue' || filterFlag === 'soon' ? filterFlag : undefined,
           unpaid_only: filterUnpaid ? true : undefined,
           unread_only: onlyUnread ? true : undefined,
@@ -1321,6 +1336,7 @@ export default function TransactionsPage() {
             })}
           </p>
         )}
+        <ReimbursementAmountNote tx={tx} locale={locale} mask={mask} />
         {tx.amount_primary != null && tx.currency !== userCurrency && (
           <div className="flex items-center justify-end gap-1">
             {tx.fx_fallback && (
@@ -1577,7 +1593,7 @@ export default function TransactionsPage() {
       case 'category':
         return (
           <TableCell key={col.id} style={widthStyle} className={baseClass}>
-            <TransactionCategoryLabel tx={tx} />
+            {isFullyAllocatedReimbursement(tx) ? <ReimbursementBadge /> : <TransactionCategoryLabel tx={tx} />}
           </TableCell>
         )
       case 'account': {
@@ -1673,6 +1689,12 @@ export default function TransactionsPage() {
     ? filteredItems.find(tx => selectedIds.has(tx.id))
     : undefined
   const duplicableTx = selectedSingleTx && !selectedSingleTx.is_shared && !selectedSingleTx.transfer_pair_id
+    ? selectedSingleTx
+    : null
+  // A reimbursement link needs one own row that reports count; the server
+  // refuses the rest with a reason.
+  const reimbursableTx = selectedSingleTx && !selectedSingleTx.is_shared && !selectedSingleTx.transfer_pair_id
+    && !selectedSingleTx.is_ignored && !selectedSingleTx.exclude_from_pnl
     ? selectedSingleTx
     : null
   // The flag action unflags when every selected row is already flagged,
@@ -1781,6 +1803,8 @@ export default function TransactionsPage() {
         // The calendar does not apply the review queue, so it is not offered
         // there; the state survives so the list gets it back.
         showUnreadFilter={viewMode === 'list'}
+        filterReimbursement={filterReimbursement}
+        onReimbursementChange={(v) => { setFilterReimbursement(v); setPage(1) }}
         filterFrom={filterFrom}
         filterTo={filterTo}
         onDateRangeChange={(from, to) => { setFilterFrom(from); setFilterTo(to); setPage(1) }}
@@ -1800,6 +1824,7 @@ export default function TransactionsPage() {
           setFilterStatus('')
           setFilterUnpaid(false)
           setFilterFlag('')
+          setFilterReimbursement('')
           setFilterMinAmount('')
           setFilterMaxAmount('')
           handleHideIgnoredChange(false)
@@ -2085,6 +2110,19 @@ export default function TransactionsPage() {
                         <TagIcon className="me-2 h-4 w-4" />
                         {t('transactions.bulkAddTags')}
                       </ContextMenuItem>
+
+                      {reimbursableTx && reimbursableTx.reimbursement_role !== 'counterpart' && (
+                        <ContextMenuItem onSelect={() => setReimbursementTarget({ tx: reimbursableTx, mode: 'counterparts' })}>
+                          <Undo2 className="me-2 h-4 w-4" />
+                          {t('reimbursements.addReimbursements')}
+                        </ContextMenuItem>
+                      )}
+                      {reimbursableTx && reimbursableTx.reimbursement_role !== 'anchor' && (
+                        <ContextMenuItem onSelect={() => setReimbursementTarget({ tx: reimbursableTx, mode: 'anchors' })}>
+                          <Undo2 className="me-2 h-4 w-4 rotate-180" />
+                          {t('reimbursements.linkAsReimbursement')}
+                        </ContextMenuItem>
+                      )}
 
                       {selectedSingleTx && (
                         <ContextMenuItem onSelect={() => handleCreateRuleFromTransaction(selectedSingleTx)}>
@@ -2534,6 +2572,14 @@ export default function TransactionsPage() {
           createCounterpartMutation.mutate({ anchorId, toAccountId })
         }}
         loading={linkTransferMutation.isPending || createCounterpartMutation.isPending}
+      />
+
+      <ReimbursementDialog
+        open={reimbursementTarget != null}
+        onClose={() => setReimbursementTarget(null)}
+        transaction={reimbursementTarget?.tx ?? null}
+        mode={reimbursementTarget?.mode ?? 'counterparts'}
+        accounts={accountsList ?? []}
       />
 
       {/* Transfer Dialog */}

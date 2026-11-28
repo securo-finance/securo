@@ -910,7 +910,9 @@
     "ratesRefreshed": "Tassi di cambio aggiornati",
     "ratesError": "Impossibile aggiornare i tassi di cambio",
     "cashBalance": "Liquidità",
-    "investmentAccounts": "Conti di investimento"
+    "investmentAccounts": "Conti di investimento",
+    "balanceReimbursements": "Al netto dei rimborsi",
+    "balanceReimbursementsHint": "Attivo: rimborsi e resi contano solo per la tua parte. Disattivo: il saldo reale dei tuoi conti."
   },
   "transactions": {
     "title": "Transazioni",
@@ -1265,7 +1267,12 @@
     "suggestionBadge": "Domanda",
     "suggestionBadgeTooltip": "Un pagamento potrebbe saldare questa fattura. Apri la coda per rispondere.",
     "clearGroupFilter": "Rimuovi filtro gruppo",
-    "attachmentNoPreview": "Nessuna anteprima per questo file. Scaricalo per aprirlo."
+    "attachmentNoPreview": "Nessuna anteprima per questo file. Scaricalo per aprirlo.",
+    "reimbursementFilter": "Rimborsi",
+    "reimbursementLinked": "Collegate a rimborsi",
+    "reimbursementAnchor": "Ha rimborsi",
+    "reimbursementCounterpart": "È un rimborso",
+    "reimbursementUnlinked": "Non collegate"
   },
   "accounts": {
     "title": "Conti",
@@ -4345,6 +4352,51 @@
       "turnedOff": "Lettura documenti disattivata"
     },
     "unreadPages": "Pagine non lette (scansioni, e il modello non legge immagini): {{pages}}. Le loro righe mancano da questa revisione."
+  },
+  "reimbursements": {
+    "title": "Rimborsi e resi",
+    "manage": "Gestisci",
+    "addReimbursements": "Aggiungi rimborsi…",
+    "linkAsReimbursement": "Collega come rimborso di…",
+    "linkAsTitle": "Collega come rimborso",
+    "counterpartsDescription": "Collega i pagamenti che hanno rimborsato questa transazione, o un reso. Solo l'importo netto conta in report e budget.",
+    "anchorsDescription": "Scegli cosa rimborsa questa transazione. Solo l'importo netto conta in report e budget.",
+    "linked": "Collegati",
+    "paysBack": "Rimborsa",
+    "noLinks": "Ancora nulla di collegato",
+    "available": "{{amount}} disponibile",
+    "amountFor": "Importo per {{description}}",
+    "remove": "Rimuovi {{description}}",
+    "netPreview": "Netto conteggiato: {{amount}}",
+    "link": "Collega",
+    "searchPlaceholder": "Cerca in tutte le transazioni…",
+    "results": "Risultati",
+    "suggestions": "Suggerimenti",
+    "noCandidates": "Nessuna transazione corrispondente",
+    "overAllocated": "La banca ha ridotto questo importo dopo il collegamento; i report riducono i collegamenti in proporzione.",
+    "saved": "Rimborsi salvati",
+    "badge": "Rimborso",
+    "badgeTooltip": "Interamente collegato a ciò che rimborsa",
+    "rowNet": "Netto {{amount}}",
+    "rowLeft": "{{amount}} non collegato",
+    "sectionEmpty": "Collega i pagamenti che hanno rimborsato questa transazione, o un reso, così conta solo il netto.",
+    "sectionLinked": "Collegato a rimborsi",
+    "sectionNet": "Conta come {{amount}} nei report",
+    "sectionLeft": "{{amount}} ancora non collegato",
+    "errors": {
+      "transfer": "Un trasferimento non può essere collegato come rimborso.",
+      "excluded": "Una transazione esclusa dai report non può essere collegata come rimborso.",
+      "notLinkable": "Questa transazione non può essere collegata come rimborso.",
+      "noAmount": "Una transazione senza importo non può essere collegata come rimborso.",
+      "category": "Una transazione in una categoria ignorata o di trasferimento non può essere collegata come rimborso.",
+      "groupSplit": "Una transazione divisa tra persone non può essere collegata come rimborso.",
+      "chain": "Un rimborso non può avere rimborsi propri.",
+      "direction": "Un rimborso deve andare nella direzione opposta.",
+      "beyondAmount": "Un rimborso non può essere collegato per più del suo importo.",
+      "shrink": "L'importo non può essere inferiore a quanto già collegato da esso.",
+      "unlinkFirstDirection": "Scollega i rimborsi prima di cambiare la direzione.",
+      "unlinkFirstGroupSplit": "Scollega i rimborsi prima di dividere tra persone."
+    }
   },
   "notifications": {
     "title": "Notifiche",

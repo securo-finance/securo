@@ -1,0 +1,361 @@
+"""The reimbursement routes under /api/transactions (#1126)."""
+
+from decimal import Decimal
+
+import pytest
+from httpx import AsyncClient
+
+
+async def _account(client: AsyncClient, headers) -> dict:
+    resp = await client.post(
+        "/api/accounts",
+        headers=headers,
+        json={"name": "Wallet", "type": "checking", "balance": 0, "currency": "USD"},
+    )
+    assert resp.status_code in (200, 201), resp.text
+    return resp.json()
+
+
+async def _create(client: AsyncClient, headers, account_id, amount, type_="debit", **extra) -> dict:
+    payload = {
+        "account_id": account_id,
+        "description": extra.pop("description", "Dinner"),
+        "amount": amount,
+        "date": extra.pop("date", "2026-10-10"),
+        "type": type_,
+        "currency": "USD",
+        **extra,
+    }
+    resp = await client.post("/api/transactions", headers=headers, json=payload)
+    assert resp.status_code == 201, resp.text
+    return resp.json()
+
+
+def _body(*pairs) -> dict:
+    return {"allocations": [{"counterpart_id": tx["id"], "amount": amount} for tx, amount in pairs]}
+
+
+@pytest.mark.asyncio
+async def test_link_and_read_from_both_sides(client, auth_headers):
+    account = await _account(client, auth_headers)
+    dinner = await _create(client, auth_headers, account["id"], 100)
+    alice = await _create(client, auth_headers, account["id"], 33, "credit", description="Alice")
+    bob = await _create(client, auth_headers, account["id"], 50, "credit", description="Bob")
+
+    resp = await client.put(
+        f"/api/transactions/{dinner['id']}/reimbursements",
+        headers=auth_headers,
+        json=_body((alice, 33), (bob, 33)),
+    )
+
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert Decimal(body["net_amount"]) == Decimal("34")
+    assert {c["transaction"]["description"] for c in body["counterparts"]} == {"Alice", "Bob"}
+
+    resp = await client.get(f"/api/transactions/{bob['id']}/reimbursements", headers=auth_headers)
+    assert resp.status_code == 200
+    body = resp.json()
+    assert [a["anchor_id"] for a in body["anchors"]] == [dinner["id"]]
+    assert Decimal(body["unallocated"]) == Decimal("17")
+
+
+@pytest.mark.asyncio
+async def test_an_invariant_breaks_with_a_400(client, auth_headers):
+    account = await _account(client, auth_headers)
+    dinner = await _create(client, auth_headers, account["id"], 100)
+    other = await _create(client, auth_headers, account["id"], 20)
+
+    resp = await client.put(
+        f"/api/transactions/{dinner['id']}/reimbursements",
+        headers=auth_headers,
+        json=_body((other, 20)),
+    )
+
+    assert resp.status_code == 400
+    assert "opposite direction" in resp.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_an_amount_finer_than_cents_is_refused(client, auth_headers):
+    account = await _account(client, auth_headers)
+    dinner = await _create(client, auth_headers, account["id"], 100)
+    payback = await _create(client, auth_headers, account["id"], 20, "credit")
+
+    resp = await client.put(
+        f"/api/transactions/{dinner['id']}/reimbursements",
+        headers=auth_headers,
+        json=_body((payback, "10.001")),
+    )
+
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_a_viewer_can_read_but_not_link(
+    client, auth_headers, viewer_auth_headers, test_workspace
+):
+    account = await _account(client, auth_headers)
+    dinner = await _create(client, auth_headers, account["id"], 100)
+    payback = await _create(client, auth_headers, account["id"], 20, "credit")
+    headers = {**viewer_auth_headers, "X-Workspace-Id": str(test_workspace.id)}
+
+    resp = await client.put(
+        f"/api/transactions/{dinner['id']}/reimbursements", headers=headers, json=_body((payback, 20))
+    )
+    assert resp.status_code == 403
+    resp = await client.get(f"/api/transactions/{dinner['id']}/reimbursements", headers=headers)
+    assert resp.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_an_unknown_transaction_is_a_404(client, auth_headers):
+    resp = await client.get(
+        "/api/transactions/00000000-0000-0000-0000-000000000000/reimbursements",
+        headers=auth_headers,
+    )
+
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_candidates_go_the_other_way_and_skip_what_cannot_link(client, auth_headers):
+    account = await _account(client, auth_headers)
+    dinner = await _create(client, auth_headers, account["id"], 100)
+    near = await _create(client, auth_headers, account["id"], 30, "credit", date="2026-10-12")
+    far = await _create(client, auth_headers, account["id"], 30, "credit", date="2026-10-30")
+    await _create(client, auth_headers, account["id"], 30, "credit", date="2027-03-01", description="Later")
+    await _create(client, auth_headers, account["id"], 30, date="2026-10-11")
+    ignored = await _create(client, auth_headers, account["id"], 30, "credit", date="2026-10-11")
+    await client.patch(
+        f"/api/transactions/{ignored['id']}/ignore", headers=auth_headers, json={"is_ignored": True}
+    )
+    spent = await _create(client, auth_headers, account["id"], 10, "credit", date="2026-10-11")
+    other_dinner = await _create(client, auth_headers, account["id"], 10)
+    resp = await client.put(
+        f"/api/transactions/{other_dinner['id']}/reimbursements",
+        headers=auth_headers,
+        json=_body((spent, 10)),
+    )
+    assert resp.status_code == 200, resp.text
+
+    resp = await client.get(
+        f"/api/transactions/{dinner['id']}/reimbursement-candidates", headers=auth_headers
+    )
+
+    assert resp.status_code == 200
+    assert [row["id"] for row in resp.json()] == [near["id"], far["id"]]
+
+    resp = await client.get(
+        f"/api/transactions/{dinner['id']}/reimbursement-candidates",
+        headers=auth_headers,
+        params={"q": "Later"},
+    )
+    assert [row["description"] for row in resp.json()] == ["Later"]
+
+
+@pytest.mark.asyncio
+async def test_candidate_anchors_for_a_payback(client, auth_headers):
+    account = await _account(client, auth_headers)
+    payback = await _create(client, auth_headers, account["id"], 30, "credit")
+    dinner = await _create(client, auth_headers, account["id"], 100, date="2026-10-09")
+
+    resp = await client.get(
+        f"/api/transactions/{payback['id']}/reimbursement-candidates",
+        headers=auth_headers,
+        params={"looking_for": "anchors"},
+    )
+
+    assert [row["id"] for row in resp.json()] == [dinner["id"]]
+
+
+def test_access_tokens_reach_the_routes_through_the_transactions_scope():
+    from app.core.access_token_scopes import required_scope
+
+    path = "/api/transactions/00000000-0000-0000-0000-000000000000"
+    assert required_scope("GET", f"{path}/reimbursements") == "transactions:read"
+    assert required_scope("GET", f"{path}/reimbursement-candidates") == "transactions:read"
+    assert required_scope("PUT", f"{path}/reimbursements") == "transactions:write"
+
+
+@pytest.mark.asyncio
+async def test_the_list_and_the_row_carry_the_link(client, auth_headers):
+    account = await _account(client, auth_headers)
+    dinner = await _create(client, auth_headers, account["id"], 100)
+    payback = await _create(client, auth_headers, account["id"], 50, "credit", description="Payback")
+    resp = await client.put(
+        f"/api/transactions/{dinner['id']}/reimbursements",
+        headers=auth_headers,
+        json=_body((payback, 30)),
+    )
+    assert resp.status_code == 200, resp.text
+
+    resp = await client.get(
+        "/api/transactions", headers=auth_headers, params={"account_id": account["id"]}
+    )
+    rows = {row["id"]: row for row in resp.json()["items"]}
+    assert rows[dinner["id"]]["reimbursement_role"] == "anchor"
+    assert rows[dinner["id"]]["reimbursement_net"] == pytest.approx(70.0)
+    assert rows[payback["id"]]["reimbursement_role"] == "counterpart"
+    assert rows[payback["id"]]["reimbursement_unallocated"] == pytest.approx(20.0)
+
+    resp = await client.get(f"/api/transactions/{dinner['id']}", headers=auth_headers)
+    assert resp.json()["reimbursement_net"] == pytest.approx(70.0)
+
+
+@pytest.mark.asyncio
+async def test_balance_history_takes_a_netting_switch(client, auth_headers):
+    from datetime import timedelta
+
+    from app.core.app_clock import app_today
+
+    last_month = (app_today().replace(day=1) - timedelta(days=1)).replace(day=1)
+    account = await _account(client, auth_headers)
+    dinner = await _create(
+        client, auth_headers, account["id"], 400, date=last_month.replace(day=3).isoformat()
+    )
+    payback = await _create(
+        client, auth_headers, account["id"], 100, "credit", date=last_month.replace(day=4).isoformat()
+    )
+    resp = await client.put(
+        f"/api/transactions/{dinner['id']}/reimbursements", headers=auth_headers, json=_body((payback, 100))
+    )
+    assert resp.status_code == 200, resp.text
+
+    def day(body, number):
+        return next(p["balance"] for p in body["current"] if p["day"] == number)
+
+    params = {"month": last_month.isoformat(), "comparison_months": (last_month - timedelta(days=1)).replace(day=1).isoformat()}
+    netted = (await client.get("/api/dashboard/balance-history", headers=auth_headers, params=params)).json()
+    real = (
+        await client.get(
+            "/api/dashboard/balance-history", headers=auth_headers, params={**params, "netting": "false"}
+        )
+    ).json()
+    scoped = (
+        await client.get(
+            "/api/dashboard/balance-history",
+            headers=auth_headers,
+            params={**params, "account_ids": account["id"]},
+        )
+    ).json()
+
+    assert (netted["netted"], real["netted"], scoped["netted"]) == (True, False, False)
+    assert (day(netted, 3), day(real, 3), day(scoped, 3)) == (-300, -400, -400)
+
+
+@pytest.mark.asyncio
+async def test_the_list_and_export_filter_by_link(client, auth_headers):
+    account = await _account(client, auth_headers)
+    dinner = await _create(client, auth_headers, account["id"], 100, description="Dinner")
+    alice = await _create(client, auth_headers, account["id"], 40, "credit", description="Alice")
+    await _create(client, auth_headers, account["id"], 25, "credit", description="Stray credit")
+    await _create(client, auth_headers, account["id"], 15, description="Coffee")
+    resp = await client.put(
+        f"/api/transactions/{dinner['id']}/reimbursements", headers=auth_headers, json=_body((alice, 40))
+    )
+    assert resp.status_code == 200, resp.text
+
+    async def names(**params):
+        resp = await client.get("/api/transactions", headers=auth_headers, params=params)
+        assert resp.status_code == 200, resp.text
+        return {row["description"] for row in resp.json()["items"]}
+
+    assert await names(reimbursement="linked") == {"Dinner", "Alice"}
+    assert await names(reimbursement="anchor") == {"Dinner"}
+    assert await names(reimbursement="counterpart") == {"Alice"}
+    assert await names(reimbursement="unlinked") == {"Stray credit", "Coffee"}
+    # Narrows like any other filter: the unlinked incoming payments.
+    assert await names(reimbursement="unlinked", type="credit") == {"Stray credit"}
+
+    resp = await client.get(
+        "/api/transactions/export", headers=auth_headers, params={"reimbursement": "counterpart"}
+    )
+    assert resp.status_code == 200
+    assert "Alice" in resp.text and "Dinner" not in resp.text
+
+    resp = await client.get(
+        "/api/transactions", headers=auth_headers, params={"reimbursement": "nonsense"}
+    )
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_an_amount_too_large_for_the_column_is_a_422_not_a_500(client, auth_headers):
+    account = await _account(client, auth_headers)
+    dinner = await _create(client, auth_headers, account["id"], 100)
+    payback = await _create(client, auth_headers, account["id"], 20, "credit")
+
+    for amount in ("1e30", "9999999999999999.99"):
+        resp = await client.put(
+            f"/api/transactions/{dinner['id']}/reimbursements",
+            headers=auth_headers,
+            json=_body((payback, amount)),
+        )
+        assert resp.status_code == 422, (amount, resp.text)
+
+
+@pytest.mark.asyncio
+async def test_saving_locks_the_anchor_but_reading_does_not(client, auth_headers, monkeypatch):
+    from app.services import transaction_service
+
+    account = await _account(client, auth_headers)
+    dinner = await _create(client, auth_headers, account["id"], 100)
+    payback = await _create(client, auth_headers, account["id"], 20, "credit")
+    real = transaction_service.get_transaction
+    locked: list[bool] = []
+
+    async def spy(session, transaction_id, workspace_id, for_update=False):
+        locked.append(for_update)
+        return await real(session, transaction_id, workspace_id, for_update=for_update)
+
+    monkeypatch.setattr(transaction_service, "get_transaction", spy)
+
+    await client.get(f"/api/transactions/{dinner['id']}/reimbursements", headers=auth_headers)
+    assert locked == [False]
+    locked.clear()
+    # Two saves for the same unlinked anchor must queue, or both commit and
+    # the anchor ends with both payers.
+    await client.put(
+        f"/api/transactions/{dinner['id']}/reimbursements", headers=auth_headers, json=_body((payback, 20))
+    )
+    assert locked[0] is True
+
+
+@pytest.mark.asyncio
+async def test_candidates_rank_by_distance_before_the_limit(client, auth_headers):
+    account = await _account(client, auth_headers)
+    dinner = await _create(client, auth_headers, account["id"], 100, date="2026-10-10")
+    for day in ("2026-10-20", "2026-10-21", "2026-10-22"):
+        await _create(client, auth_headers, account["id"], 10, "credit", date=day, description=f"later {day}")
+    same_day = await _create(client, auth_headers, account["id"], 10, "credit", date="2026-10-10", description="same day")
+
+    resp = await client.get(
+        f"/api/transactions/{dinner['id']}/reimbursement-candidates",
+        headers=auth_headers,
+        params={"limit": 1},
+    )
+
+    assert [row["id"] for row in resp.json()] == [same_day["id"]]
+
+
+@pytest.mark.asyncio
+async def test_a_used_up_counterpart_does_not_take_a_candidate_slot(client, auth_headers):
+    account = await _account(client, auth_headers)
+    dinner = await _create(client, auth_headers, account["id"], 100, date="2026-10-10")
+    other = await _create(client, auth_headers, account["id"], 40, date="2026-10-10", description="other")
+    used_up = await _create(client, auth_headers, account["id"], 40, "credit", date="2026-10-10", description="used up")
+    open_one = await _create(client, auth_headers, account["id"], 40, "credit", date="2026-10-14", description="open")
+    resp = await client.put(
+        f"/api/transactions/{other['id']}/reimbursements", headers=auth_headers, json=_body((used_up, 40))
+    )
+    assert resp.status_code == 200, resp.text
+
+    resp = await client.get(
+        f"/api/transactions/{dinner['id']}/reimbursement-candidates",
+        headers=auth_headers,
+        params={"limit": 1},
+    )
+
+    # The nearest row has nothing left to give; the limit applies after that.
+    assert [row["id"] for row in resp.json()] == [open_one["id"]]

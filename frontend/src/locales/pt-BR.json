@@ -909,7 +909,9 @@
     "fxRateUsed": "Taxa de câmbio: {{rate}}",
     "refreshRates": "Atualizar taxas de câmbio",
     "ratesRefreshed": "Taxas de câmbio atualizadas",
-    "ratesError": "Erro ao atualizar taxas de câmbio"
+    "ratesError": "Erro ao atualizar taxas de câmbio",
+    "balanceReimbursements": "Líquido de reembolsos",
+    "balanceReimbursementsHint": "Ligado: reembolsos e estornos contam só a sua parte. Desligado: o saldo real das suas contas."
   },
   "transactions": {
     "title": "Transações",
@@ -1265,7 +1267,12 @@
     "suggestionBadge": "Pergunta",
     "suggestionBadgeTooltip": "Um pagamento pode quitar esta cobrança. Abra a fila para responder.",
     "clearGroupFilter": "Limpar filtro de grupo",
-    "attachmentNoPreview": "Não há prévia para este arquivo. Baixe-o para abrir."
+    "attachmentNoPreview": "Não há prévia para este arquivo. Baixe-o para abrir.",
+    "reimbursementFilter": "Reembolsos",
+    "reimbursementLinked": "Vinculadas a reembolsos",
+    "reimbursementAnchor": "Tem reembolsos",
+    "reimbursementCounterpart": "É um reembolso",
+    "reimbursementUnlinked": "Sem vínculo"
   },
   "accounts": {
     "title": "Contas",
@@ -4345,6 +4352,51 @@
       "turnedOff": "Leitura de documentos desligada"
     },
     "unreadPages": "Páginas não lidas (escaneadas, e o modelo não lê imagens): {{pages}}. As linhas delas não estão nesta revisão."
+  },
+  "reimbursements": {
+    "title": "Reembolsos e estornos",
+    "manage": "Gerenciar",
+    "addReimbursements": "Adicionar reembolsos…",
+    "linkAsReimbursement": "Vincular como reembolso de…",
+    "linkAsTitle": "Vincular como reembolso",
+    "counterpartsDescription": "Vincule os pagamentos que reembolsaram esta transação, ou um estorno. Só o valor líquido conta nos relatórios e orçamentos.",
+    "anchorsDescription": "Escolha o que esta transação reembolsa. Só o valor líquido conta nos relatórios e orçamentos.",
+    "linked": "Vinculados",
+    "paysBack": "Reembolsa",
+    "noLinks": "Nada vinculado ainda",
+    "available": "{{amount}} disponível",
+    "amountFor": "Valor de {{description}}",
+    "remove": "Remover {{description}}",
+    "netPreview": "Líquido considerado: {{amount}}",
+    "link": "Vincular",
+    "searchPlaceholder": "Buscar em todas as transações…",
+    "results": "Resultados",
+    "suggestions": "Sugestões",
+    "noCandidates": "Nenhuma transação encontrada",
+    "overAllocated": "O banco reduziu este valor depois do vínculo; os relatórios ajustam os vínculos proporcionalmente.",
+    "saved": "Reembolsos salvos",
+    "badge": "Reembolso",
+    "badgeTooltip": "Totalmente vinculado ao que reembolsa",
+    "rowNet": "Líquido {{amount}}",
+    "rowLeft": "{{amount}} sem vínculo",
+    "sectionEmpty": "Vincule pagamentos que reembolsaram esta transação, ou um estorno, para que só o líquido conte.",
+    "sectionLinked": "Vinculado a reembolsos",
+    "sectionNet": "Conta como {{amount}} nos relatórios",
+    "sectionLeft": "{{amount}} ainda sem vínculo",
+    "errors": {
+      "transfer": "Uma transferência não pode ser vinculada como reembolso.",
+      "excluded": "Uma transação fora dos relatórios não pode ser vinculada como reembolso.",
+      "notLinkable": "Esta transação não pode ser vinculada como reembolso.",
+      "noAmount": "Uma transação sem valor não pode ser vinculada como reembolso.",
+      "category": "Uma transação em categoria ignorada ou de transferência não pode ser vinculada como reembolso.",
+      "groupSplit": "Uma transação dividida entre pessoas não pode ser vinculada como reembolso.",
+      "chain": "Um reembolso não pode ter reembolsos próprios.",
+      "direction": "Um reembolso precisa ir na direção oposta.",
+      "beyondAmount": "Um reembolso não pode ser vinculado por mais do que o seu valor.",
+      "shrink": "O valor não pode ser menor do que o já vinculado a partir dele.",
+      "unlinkFirstDirection": "Desvincule os reembolsos antes de mudar a direção.",
+      "unlinkFirstGroupSplit": "Desvincule os reembolsos antes de dividir entre pessoas."
+    }
   },
   "notifications": {
     "title": "Notificações",

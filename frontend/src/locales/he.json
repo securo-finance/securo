@@ -920,7 +920,9 @@
     "fxRateUsed": "שער חליפין: {{rate}}",
     "refreshRates": "רענון שערי חליפין",
     "ratesRefreshed": "שערי החליפין עודכנו",
-    "ratesError": "עדכון שערי החליפין נכשל"
+    "ratesError": "עדכון שערי החליפין נכשל",
+    "balanceReimbursements": "נטו אחרי החזרים",
+    "balanceReimbursementsHint": "פעיל: החזרים וזיכויים נספרים רק בחלק שלך. כבוי: היתרה בפועל בחשבונות."
   },
   "transactions": {
     "title": "תנועות",
@@ -1276,7 +1278,12 @@
     "suggestionBadge": "שאלה",
     "suggestionBadgeTooltip": "ייתכן שתשלום סוגר את זה. פתחו את התור כדי לענות.",
     "clearGroupFilter": "ניקוי סינון הקבוצה",
-    "attachmentNoPreview": "אין תצוגה מקדימה לקובץ הזה. הורידו אותו כדי לפתוח."
+    "attachmentNoPreview": "אין תצוגה מקדימה לקובץ הזה. הורידו אותו כדי לפתוח.",
+    "reimbursementFilter": "החזרים",
+    "reimbursementLinked": "מקושרות להחזרים",
+    "reimbursementAnchor": "יש לה החזרים",
+    "reimbursementCounterpart": "היא החזר",
+    "reimbursementUnlinked": "לא מקושרות"
   },
   "accounts": {
     "title": "חשבונות",
@@ -4370,6 +4377,51 @@
       "turnedOff": "קריאת המסמכים כובתה"
     },
     "unreadPages": "עמודים שלא נקראו (סריקות, והמודל לא קורא תמונות): {{pages}}. השורות שלהם חסרות בבדיקה הזו."
+  },
+  "reimbursements": {
+    "title": "החזרים וזיכויים",
+    "manage": "ניהול",
+    "addReimbursements": "הוספת החזרים…",
+    "linkAsReimbursement": "קישור כהחזר עבור…",
+    "linkAsTitle": "קישור כהחזר",
+    "counterpartsDescription": "קשרו את התשלומים שהחזירו לכם את הסכום הזה, או זיכוי. בדוחות ובתקציבים נספר רק הסכום נטו.",
+    "anchorsDescription": "בחרו מה העסקה הזו מחזירה. בדוחות ובתקציבים נספר רק הסכום נטו.",
+    "linked": "מקושרים",
+    "paysBack": "מחזיר את",
+    "noLinks": "עדיין לא קושר דבר",
+    "available": "{{amount}} זמין",
+    "amountFor": "סכום עבור {{description}}",
+    "remove": "הסרת {{description}}",
+    "netPreview": "נטו שנספר: {{amount}}",
+    "link": "קישור",
+    "searchPlaceholder": "חיפוש בכל העסקאות…",
+    "results": "תוצאות",
+    "suggestions": "הצעות",
+    "noCandidates": "אין עסקאות תואמות",
+    "overAllocated": "הבנק הקטין את הסכום הזה אחרי הקישור; הדוחות מקטינים את הקישורים שלו באופן יחסי.",
+    "saved": "ההחזרים נשמרו",
+    "badge": "החזר",
+    "badgeTooltip": "מקושר במלואו למה שהוא מחזיר",
+    "rowNet": "נטו {{amount}}",
+    "rowLeft": "{{amount}} לא מקושר",
+    "sectionEmpty": "קשרו תשלומים שהחזירו לכם את הסכום הזה, או זיכוי, כך שרק הנטו ייספר.",
+    "sectionLinked": "מקושר להחזרים",
+    "sectionNet": "נספר בדוחות כ-{{amount}}",
+    "sectionLeft": "{{amount}} עדיין לא מקושר",
+    "errors": {
+      "transfer": "לא ניתן לקשר העברה כהחזר.",
+      "excluded": "לא ניתן לקשר כהחזר עסקה שאינה נכללת בדוחות.",
+      "notLinkable": "לא ניתן לקשר עסקה זו כהחזר.",
+      "noAmount": "לא ניתן לקשר כהחזר עסקה ללא סכום.",
+      "category": "לא ניתן לקשר כהחזר עסקה בקטגוריה מתעלמת או בקטגוריית העברות.",
+      "groupSplit": "לא ניתן לקשר כהחזר עסקה שמחולקת בין אנשים.",
+      "chain": "להחזר לא יכולים להיות החזרים משלו.",
+      "direction": "החזר חייב להיות בכיוון ההפוך.",
+      "beyondAmount": "לא ניתן לקשר החזר ביותר מהסכום שלו.",
+      "shrink": "הסכום לא יכול להיות קטן ממה שכבר קושר ממנו.",
+      "unlinkFirstDirection": "יש לבטל את קישור ההחזרים לפני שינוי הכיוון.",
+      "unlinkFirstGroupSplit": "יש לבטל את קישור ההחזרים לפני חלוקה בין אנשים."
+    }
   },
   "notifications": {
     "title": "התראות",

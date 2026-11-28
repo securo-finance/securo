@@ -907,7 +907,9 @@
     "ratesRefreshed": "Wechselkurse aktualisiert",
     "ratesError": "Fehler beim Aktualisieren der Wechselkurse",
     "cashBalance": "Liquide Mittel",
-    "investmentAccounts": "Anlagekonten"
+    "investmentAccounts": "Anlagekonten",
+    "balanceReimbursements": "Erstattungen verrechnen",
+    "balanceReimbursementsHint": "An: Erstattungen und Rückerstattungen zählen nur mit deinem Anteil. Aus: der tatsächliche Kontostand."
   },
   "transactions": {
     "title": "Transaktionen",
@@ -1261,7 +1263,12 @@
     "suggestionBadge": "Frage",
     "suggestionBadgeTooltip": "Eine Zahlung könnte diese Rechnung begleichen. Öffnen Sie die Warteschlange.",
     "clearGroupFilter": "Gruppenfilter entfernen",
-    "attachmentNoPreview": "Für diese Datei gibt es keine Vorschau. Lade sie herunter, um sie zu öffnen."
+    "attachmentNoPreview": "Für diese Datei gibt es keine Vorschau. Lade sie herunter, um sie zu öffnen.",
+    "reimbursementFilter": "Erstattungen",
+    "reimbursementLinked": "Mit Erstattungen verknüpft",
+    "reimbursementAnchor": "Hat Erstattungen",
+    "reimbursementCounterpart": "Ist eine Erstattung",
+    "reimbursementUnlinked": "Nicht verknüpft"
   },
   "accounts": {
     "title": "Konten",
@@ -4331,6 +4338,51 @@
       "turnedOff": "Dokumente lesen ausgeschaltet"
     },
     "unreadPages": "Nicht gelesene Seiten (Scans, und das Modell liest keine Bilder): {{pages}}. Ihre Zeilen fehlen in dieser Prüfung."
+  },
+  "reimbursements": {
+    "title": "Erstattungen & Rückerstattungen",
+    "manage": "Verwalten",
+    "addReimbursements": "Erstattungen hinzufügen…",
+    "linkAsReimbursement": "Als Erstattung verknüpfen für…",
+    "linkAsTitle": "Als Erstattung verknüpfen",
+    "counterpartsDescription": "Verknüpfe die Zahlungen, mit denen dir das zurückgezahlt wurde, oder eine Rückerstattung. Nur der Nettobetrag zählt in Berichten und Budgets.",
+    "anchorsDescription": "Wähle, was diese Buchung zurückzahlt. Nur der Nettobetrag zählt in Berichten und Budgets.",
+    "linked": "Verknüpft",
+    "paysBack": "Zahlt zurück",
+    "noLinks": "Noch nichts verknüpft",
+    "available": "{{amount}} verfügbar",
+    "amountFor": "Betrag für {{description}}",
+    "remove": "{{description}} entfernen",
+    "netPreview": "Gezählter Nettobetrag: {{amount}}",
+    "link": "Verknüpfen",
+    "searchPlaceholder": "Alle Buchungen durchsuchen…",
+    "results": "Ergebnisse",
+    "suggestions": "Vorschläge",
+    "noCandidates": "Keine passenden Buchungen",
+    "overAllocated": "Die Bank hat diesen Betrag nach dem Verknüpfen verringert; Berichte kürzen die Verknüpfungen anteilig.",
+    "saved": "Erstattungen gespeichert",
+    "badge": "Erstattung",
+    "badgeTooltip": "Vollständig mit dem verknüpft, was sie zurückzahlt",
+    "rowNet": "Netto {{amount}}",
+    "rowLeft": "{{amount}} nicht verknüpft",
+    "sectionEmpty": "Verknüpfe Zahlungen, mit denen dir das zurückgezahlt wurde, oder eine Rückerstattung, damit nur der Nettobetrag zählt.",
+    "sectionLinked": "Mit Erstattungen verknüpft",
+    "sectionNet": "Zählt in Berichten als {{amount}}",
+    "sectionLeft": "{{amount}} noch nicht verknüpft",
+    "errors": {
+      "transfer": "Eine Umbuchung kann nicht als Erstattung verknüpft werden.",
+      "excluded": "Eine aus Berichten ausgeschlossene Buchung kann nicht als Erstattung verknüpft werden.",
+      "notLinkable": "Diese Buchung kann nicht als Erstattung verknüpft werden.",
+      "noAmount": "Eine Buchung ohne Betrag kann nicht als Erstattung verknüpft werden.",
+      "category": "Eine Buchung in einer ignorierten oder Umbuchungskategorie kann nicht als Erstattung verknüpft werden.",
+      "groupSplit": "Eine unter Personen aufgeteilte Buchung kann nicht als Erstattung verknüpft werden.",
+      "chain": "Eine Erstattung kann keine eigenen Erstattungen haben.",
+      "direction": "Eine Erstattung muss in die entgegengesetzte Richtung gehen.",
+      "beyondAmount": "Eine Erstattung kann nicht über ihren Betrag hinaus verknüpft werden.",
+      "shrink": "Der Betrag darf nicht kleiner sein als das, was bereits davon verknüpft ist.",
+      "unlinkFirstDirection": "Löse die Erstattungen, bevor du die Richtung änderst.",
+      "unlinkFirstGroupSplit": "Löse die Erstattungen, bevor du unter Personen aufteilst."
+    }
   },
   "notifications": {
     "title": "Benachrichtigungen",

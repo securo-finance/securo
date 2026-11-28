@@ -33,6 +33,9 @@ import type {
   LoanSchedule,
   DescriptionSuggestion,
   Transaction,
+  TransactionReimbursements,
+  ReimbursementFilter,
+  ReimbursementLinkedTransaction,
   Payee,
   PayeeSummary,
   DeductionKind,
@@ -734,6 +737,7 @@ export const transactions = {
     flag_due?: FlagDue
     unpaid_only?: boolean
     unread_only?: boolean
+    reimbursement?: ReimbursementFilter
     tags?: string[]
     min_amount?: number
     max_amount?: number
@@ -908,6 +912,25 @@ export const transactions = {
   unlinkTransfer: async (pairId: string): Promise<void> => {
     await api.delete(`/connections/transfers/${pairId}`)
   },
+  reimbursements: async (transactionId: string): Promise<TransactionReimbursements> => {
+    const { data } = await api.get(`/transactions/${transactionId}/reimbursements`)
+    return data
+  },
+  /** Replace every counterpart of the anchor `transactionId`. */
+  replaceReimbursements: async (
+    transactionId: string,
+    allocations: { counterpart_id: string; amount: string }[],
+  ): Promise<TransactionReimbursements> => {
+    const { data } = await api.put(`/transactions/${transactionId}/reimbursements`, { allocations })
+    return data
+  },
+  reimbursementCandidates: async (
+    transactionId: string,
+    params: { looking_for: 'counterparts' | 'anchors'; q?: string; from?: string; to?: string; limit?: number },
+  ): Promise<ReimbursementLinkedTransaction[]> => {
+    const { data } = await api.get(`/transactions/${transactionId}/reimbursement-candidates`, { params })
+    return data
+  },
   previewImport: async (file: File, options?: {
     date_format?: string
     flip_amount?: boolean
@@ -972,6 +995,7 @@ export const transactions = {
     flag_due?: FlagDue
     unpaid_only?: boolean
     unread_only?: boolean
+    reimbursement?: ReimbursementFilter
     transaction_ids?: string[]
   }): Promise<void> => {
     const { data } = await api.get('/transactions/export', {
@@ -1647,6 +1671,8 @@ export const dashboard = {
     month?: string,
     accountIds?: string[],
     comparisonMonths?: string[],
+    /** Count rows linked by reimbursements for the user's share only. On unless false. */
+    netting?: boolean,
   ): Promise<BalanceHistory> => {
     const extra = acctIdsParam(accountIds)
     const { data } = await api.get('/dashboard/balance-history', {
@@ -1654,6 +1680,7 @@ export const dashboard = {
         month,
         ...(extra.params ?? {}),
         ...(comparisonMonths?.length ? { comparison_months: comparisonMonths } : {}),
+        ...(netting === false ? { netting: false } : {}),
       },
       paramsSerializer: { indexes: null },
     })

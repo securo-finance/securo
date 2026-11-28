@@ -907,7 +907,9 @@
     "fxRateUsed": "使用汇率：{{rate}}",
     "refreshRates": "刷新汇率",
     "ratesRefreshed": "汇率已更新",
-    "ratesError": "汇率更新失败"
+    "ratesError": "汇率更新失败",
+    "balanceReimbursements": "净额计算报销",
+    "balanceReimbursementsHint": "开启：报销和退款只计入你的份额。关闭：显示账户的实际余额。"
   },
   "transactions": {
     "title": "交易记录",
@@ -1261,7 +1263,12 @@
     "suggestionBadge": "待确认",
     "suggestionBadgeTooltip": "可能有一笔付款用于结算此项，打开待处理队列进行确认。",
     "clearGroupFilter": "清除群组筛选",
-    "attachmentNoPreview": "此文件不支持预览，请下载后打开。"
+    "attachmentNoPreview": "此文件不支持预览，请下载后打开。",
+    "reimbursementFilter": "报销",
+    "reimbursementLinked": "已关联报销",
+    "reimbursementAnchor": "有报销",
+    "reimbursementCounterpart": "是报销",
+    "reimbursementUnlinked": "未关联"
   },
   "accounts": {
     "title": "账户",
@@ -4330,6 +4337,51 @@
       "turnedOff": "已关闭文档识别"
     },
     "unreadPages": "未识别页面（扫描件，且当前模型不支持图像识别）：{{pages}}。这些页面的交易记录未包含在本次核对中。"
+  },
+  "reimbursements": {
+    "title": "报销与退款",
+    "manage": "管理",
+    "addReimbursements": "添加报销…",
+    "linkAsReimbursement": "关联为以下交易的报销…",
+    "linkAsTitle": "关联为报销",
+    "counterpartsDescription": "关联偿还此笔交易的付款或退款。报表和预算只计入净额。",
+    "anchorsDescription": "选择此笔交易偿还的内容。报表和预算只计入净额。",
+    "linked": "已关联",
+    "paysBack": "偿还",
+    "noLinks": "尚未关联任何交易",
+    "available": "可用 {{amount}}",
+    "amountFor": "{{description}} 的金额",
+    "remove": "移除 {{description}}",
+    "netPreview": "计入净额：{{amount}}",
+    "link": "关联",
+    "searchPlaceholder": "搜索所有交易…",
+    "results": "结果",
+    "suggestions": "建议",
+    "noCandidates": "没有匹配的交易",
+    "overAllocated": "银行在关联后调低了此金额；报表会按比例缩减其关联金额以使其相符。",
+    "saved": "报销已保存",
+    "badge": "报销",
+    "badgeTooltip": "已全额关联到其偿还的交易",
+    "rowNet": "净额 {{amount}}",
+    "rowLeft": "{{amount}} 未关联",
+    "sectionEmpty": "关联偿还此笔交易的付款或退款，使其只计入净额。",
+    "sectionLinked": "已关联报销",
+    "sectionNet": "在报表中计为 {{amount}}",
+    "sectionLeft": "{{amount}} 尚未关联",
+    "errors": {
+      "transfer": "转账不能关联为报销。",
+      "excluded": "不计入报表的交易不能关联为报销。",
+      "notLinkable": "此交易不能关联为报销。",
+      "noAmount": "没有金额的交易不能关联为报销。",
+      "category": "属于忽略或转账分类的交易不能关联为报销。",
+      "groupSplit": "已在多人之间分摊的交易不能关联为报销。",
+      "chain": "报销本身不能再有报销。",
+      "direction": "报销的方向必须与原交易相反。",
+      "beyondAmount": "报销的关联金额不能超过其自身金额。",
+      "shrink": "金额不能小于已从中关联出去的金额。",
+      "unlinkFirstDirection": "请先取消关联报销，再更改方向。",
+      "unlinkFirstGroupSplit": "请先取消关联报销，再在多人之间分摊。"
+    }
   },
   "notifications": {
     "title": "通知",

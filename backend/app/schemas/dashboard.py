@@ -75,6 +75,10 @@ class DailyBaseline(BaseModel):
 
 class BalanceHistory(BaseModel):
     current: list[DailyBalance]
+    # True when the curve counts linked rows for the user's share only
+    # (netting); False when it is the real balance, including when netting was
+    # asked for but the chart is scoped to some accounts.
+    netted: bool = False
     opening_balance: float
     baseline: list[DailyBaseline]  # cumulative change since month opening
     comparison: Optional[list[DailyBalance]] = None

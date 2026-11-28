@@ -907,7 +907,9 @@
     "fxRateUsed": "Árfolyam: {{rate}}",
     "refreshRates": "Árfolyamok frissítése",
     "ratesRefreshed": "Árfolyamok frissítve",
-    "ratesError": "Nem sikerült frissíteni az árfolyamokat"
+    "ratesError": "Nem sikerült frissíteni az árfolyamokat",
+    "balanceReimbursements": "Visszatérítésekkel csökkentve",
+    "balanceReimbursementsHint": "Be: a visszatérítések és visszáruk csak a te részed erejéig számítanak. Ki: a számláid tényleges egyenlege."
   },
   "transactions": {
     "title": "Tranzakciók",
@@ -1261,7 +1263,12 @@
     "suggestionBadge": "Kérdés",
     "suggestionBadgeTooltip": "Lehet, hogy egy befizetés kiegyenlíti ezt. Nyisd meg a sort a válaszhoz.",
     "clearGroupFilter": "Csoportszűrő törlése",
-    "attachmentNoPreview": "Ehhez a fájlhoz nincs előnézet. Töltsd le a megnyitáshoz."
+    "attachmentNoPreview": "Ehhez a fájlhoz nincs előnézet. Töltsd le a megnyitáshoz.",
+    "reimbursementFilter": "Visszatérítések",
+    "reimbursementLinked": "Visszatérítésekhez kapcsolva",
+    "reimbursementAnchor": "Vannak visszatérítései",
+    "reimbursementCounterpart": "Visszatérítés",
+    "reimbursementUnlinked": "Nincs kapcsolva"
   },
   "accounts": {
     "title": "Számlák",
@@ -4330,6 +4337,51 @@
       "turnedOff": "Dokumentumok olvasása kikapcsolva"
     },
     "unreadPages": "Be nem olvasott oldalak (szkennelt, és a modell nem olvas képeket): {{pages}}. A soraik hiányoznak ebből az áttekintésből."
+  },
+  "reimbursements": {
+    "title": "Visszatérítések és visszáruk",
+    "manage": "Kezelés",
+    "addReimbursements": "Visszatérítések hozzáadása…",
+    "linkAsReimbursement": "Összekapcsolás visszatérítésként ehhez…",
+    "linkAsTitle": "Összekapcsolás visszatérítésként",
+    "counterpartsDescription": "Kapcsold össze a kifizetéseket, amelyekkel ezt visszafizették, vagy egy visszárut. A jelentésekben és költségkeretekben csak a nettó összeg számít.",
+    "anchorsDescription": "Válaszd ki, mit fizet vissza ez a tranzakció. A jelentésekben és költségkeretekben csak a nettó összeg számít.",
+    "linked": "Összekapcsolva",
+    "paysBack": "Visszafizeti",
+    "noLinks": "Még nincs semmi összekapcsolva",
+    "available": "{{amount}} elérhető",
+    "amountFor": "Összeg ehhez: {{description}}",
+    "remove": "{{description}} eltávolítása",
+    "netPreview": "Számított nettó: {{amount}}",
+    "link": "Összekapcsolás",
+    "searchPlaceholder": "Keresés az összes tranzakcióban…",
+    "results": "Találatok",
+    "suggestions": "Javaslatok",
+    "noCandidates": "Nincs egyező tranzakció",
+    "overAllocated": "A bank az összekapcsolás után csökkentette ezt az összeget; a jelentések arányosan csökkentik a kapcsolatait.",
+    "saved": "Visszatérítések mentve",
+    "badge": "Visszatérítés",
+    "badgeTooltip": "Teljesen összekapcsolva azzal, amit visszafizet",
+    "rowNet": "Nettó {{amount}}",
+    "rowLeft": "{{amount}} nincs összekapcsolva",
+    "sectionEmpty": "Kapcsold össze a kifizetéseket, amelyekkel ezt visszafizették, vagy egy visszárut, hogy csak a nettó számítson.",
+    "sectionLinked": "Visszatérítésekkel összekapcsolva",
+    "sectionNet": "A jelentésekben {{amount}} összeggel számít",
+    "sectionLeft": "{{amount}} még nincs összekapcsolva",
+    "errors": {
+      "transfer": "Átvezetés nem kapcsolható össze visszatérítésként.",
+      "excluded": "A jelentésekből kihagyott tranzakció nem kapcsolható össze visszatérítésként.",
+      "notLinkable": "Ez a tranzakció nem kapcsolható össze visszatérítésként.",
+      "noAmount": "Összeg nélküli tranzakció nem kapcsolható össze visszatérítésként.",
+      "category": "Figyelmen kívül hagyott vagy átvezetési kategóriájú tranzakció nem kapcsolható össze visszatérítésként.",
+      "groupSplit": "Személyek között megosztott tranzakció nem kapcsolható össze visszatérítésként.",
+      "chain": "Egy visszatérítésnek nem lehetnek saját visszatérítései.",
+      "direction": "A visszatérítésnek ellenkező irányba kell mennie.",
+      "beyondAmount": "Egy visszatérítés nem kapcsolható össze az összegénél többre.",
+      "shrink": "Az összeg nem lehet kevesebb annál, amennyi már összekapcsolva van belőle.",
+      "unlinkFirstDirection": "Az irány módosítása előtt bontsd a visszatérítések kapcsolatát.",
+      "unlinkFirstGroupSplit": "A személyek közötti megosztás előtt bontsd a visszatérítések kapcsolatát."
+    }
   },
   "notifications": {
     "title": "Értesítések",

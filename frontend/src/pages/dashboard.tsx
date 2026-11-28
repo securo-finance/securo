@@ -54,6 +54,7 @@ import { TransactionDialog, type SaveAction, type TransactionSavePayload } from 
 import { extractApiError } from '@/lib/api-errors'
 import { TransactionCalendarView } from '@/components/transaction-calendar-view'
 import { TransactionsViewSwitcher, type TransactionsViewMode } from '@/components/transactions-view-switcher'
+import { Switch } from '@/components/ui/switch'
 import { RuleDialog, type RuleDialogInitialData } from '@/components/rule-dialog'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
 import { useIsMobile } from '@/hooks/use-mobile'
@@ -339,12 +340,20 @@ export default function DashboardPage() {
   })
 
 
+  // Netting counts rows linked by reimbursements for the user's share only.
+  // It is a whole-workspace view: a collection scopes the chart to some
+  // accounts, which cannot say which side of a link they hold, so the switch
+  // is only offered without one.
+  const [netting, setNetting] = useState(true)
+  const canNet = acctIds === undefined
+
   const { data: balanceHistory, isLoading: balanceHistoryLoading } = useQuery({
-    queryKey: ['dashboard', 'balance-history', selectedMonth, activeAccountIds, comparisonMonths],
+    queryKey: ['dashboard', 'balance-history', selectedMonth, activeAccountIds, comparisonMonths, netting],
     queryFn: () => dashboard.balanceHistory(
       monthParam,
       acctIds,
       comparisonMonths.length > 0 ? comparisonMonths.map((value) => `${value}-01`) : undefined,
+      netting,
     ),
     enabled: !noAccounts && !comparisonMonthsLoading && shows('balance-flow'),
   })
@@ -1329,6 +1338,18 @@ export default function DashboardPage() {
                       )}
                     </PopoverContent>
                   </Popover>
+                  {canNet && (
+                    <span className="inline-flex items-center gap-1.5" title={t('dashboard.balanceReimbursementsHint')}>
+                      <span id="balance-reimbursements-label" className="text-[11px] font-medium text-muted-foreground">
+                        {t('dashboard.balanceReimbursements')}
+                      </span>
+                      <Switch
+                        checked={netting}
+                        onCheckedChange={setNetting}
+                        aria-labelledby="balance-reimbursements-label"
+                      />
+                    </span>
+                  )}
                 </div>
                 <p className="text-xs text-muted-foreground mt-0.5">
                   {new Date(`${selectedMonth}-01T00:00:00`).toLocaleDateString(dateLocale)} → {new Date(`${selectedMonth}-${String(lastCurrentPoint?.day ?? monthLastDay(selectedMonth)).padStart(2, '0')}T00:00:00`).toLocaleDateString(dateLocale)}

@@ -909,7 +909,9 @@
     "ratesRefreshed": "Taxas de câmbio atualizadas",
     "ratesError": "Erro ao atualizar taxas de câmbio",
     "cashBalance": "Caixa",
-    "investmentAccounts": "Contas de investimento"
+    "investmentAccounts": "Contas de investimento",
+    "balanceReimbursements": "Líquido de reembolsos",
+    "balanceReimbursementsHint": "Ligado: reembolsos e devoluções contam só a sua parte. Desligado: o saldo real das suas contas."
   },
   "transactions": {
     "title": "Transações",
@@ -1264,7 +1266,12 @@
     "suggestionBadge": "Pergunta",
     "suggestionBadgeTooltip": "Um pagamento pode liquidar esta cobrança. Abra a fila para responder.",
     "clearGroupFilter": "Limpar filtro de grupo",
-    "attachmentNoPreview": "Não há pré-visualização para este ficheiro. Transfira-o para o abrir."
+    "attachmentNoPreview": "Não há pré-visualização para este ficheiro. Transfira-o para o abrir.",
+    "reimbursementFilter": "Reembolsos",
+    "reimbursementLinked": "Associadas a reembolsos",
+    "reimbursementAnchor": "Tem reembolsos",
+    "reimbursementCounterpart": "É um reembolso",
+    "reimbursementUnlinked": "Sem associação"
   },
   "accounts": {
     "title": "Contas",
@@ -4344,6 +4351,51 @@
       "turnedOff": "Leitura de documentos desligada"
     },
     "unreadPages": "Páginas não lidas (digitalizadas, e o modelo não lê imagens): {{pages}}. As linhas delas não estão nesta revisão."
+  },
+  "reimbursements": {
+    "title": "Reembolsos e devoluções",
+    "manage": "Gerir",
+    "addReimbursements": "Adicionar reembolsos…",
+    "linkAsReimbursement": "Associar como reembolso de…",
+    "linkAsTitle": "Associar como reembolso",
+    "counterpartsDescription": "Associe os pagamentos que reembolsaram esta transação, ou uma devolução. Só o valor líquido conta nos relatórios e orçamentos.",
+    "anchorsDescription": "Escolha o que esta transação reembolsa. Só o valor líquido conta nos relatórios e orçamentos.",
+    "linked": "Associados",
+    "paysBack": "Reembolsa",
+    "noLinks": "Nada associado ainda",
+    "available": "{{amount}} disponível",
+    "amountFor": "Montante de {{description}}",
+    "remove": "Remover {{description}}",
+    "netPreview": "Líquido considerado: {{amount}}",
+    "link": "Associar",
+    "searchPlaceholder": "Pesquisar em todas as transações…",
+    "results": "Resultados",
+    "suggestions": "Sugestões",
+    "noCandidates": "Nenhuma transação encontrada",
+    "overAllocated": "O banco reduziu este montante depois da associação; os relatórios ajustam as associações proporcionalmente.",
+    "saved": "Reembolsos guardados",
+    "badge": "Reembolso",
+    "badgeTooltip": "Totalmente associado ao que reembolsa",
+    "rowNet": "Líquido {{amount}}",
+    "rowLeft": "{{amount}} por associar",
+    "sectionEmpty": "Associe pagamentos que reembolsaram esta transação, ou uma devolução, para que só o líquido conte.",
+    "sectionLinked": "Associado a reembolsos",
+    "sectionNet": "Conta como {{amount}} nos relatórios",
+    "sectionLeft": "{{amount}} ainda por associar",
+    "errors": {
+      "transfer": "Uma transferência não pode ser associada como reembolso.",
+      "excluded": "Uma transação fora dos relatórios não pode ser associada como reembolso.",
+      "notLinkable": "Esta transação não pode ser associada como reembolso.",
+      "noAmount": "Uma transação sem montante não pode ser associada como reembolso.",
+      "category": "Uma transação numa categoria ignorada ou de transferência não pode ser associada como reembolso.",
+      "groupSplit": "Uma transação dividida entre pessoas não pode ser associada como reembolso.",
+      "chain": "Um reembolso não pode ter reembolsos próprios.",
+      "direction": "Um reembolso tem de ir no sentido oposto.",
+      "beyondAmount": "Um reembolso não pode ser associado por mais do que o seu montante.",
+      "shrink": "O montante não pode ser inferior ao já associado a partir dele.",
+      "unlinkFirstDirection": "Desassocie os reembolsos antes de mudar o sentido.",
+      "unlinkFirstGroupSplit": "Desassocie os reembolsos antes de dividir entre pessoas."
+    }
   },
   "notifications": {
     "title": "Notificações",

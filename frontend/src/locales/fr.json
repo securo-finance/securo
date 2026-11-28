@@ -910,7 +910,9 @@
     "ratesRefreshed": "Taux de change mis à jour",
     "ratesError": "Échec de la mise à jour des taux de change",
     "cashBalance": "Liquidités",
-    "investmentAccounts": "Comptes d'investissement"
+    "investmentAccounts": "Comptes d'investissement",
+    "balanceReimbursements": "Net des remboursements",
+    "balanceReimbursementsHint": "Activé : les remboursements et retours ne comptent que pour votre part. Désactivé : le solde réel de vos comptes."
   },
   "transactions": {
     "title": "Transactions",
@@ -1265,7 +1267,12 @@
     "suggestionBadge": "Question",
     "suggestionBadgeTooltip": "Un paiement peut solder cette facture. Ouvrez la file pour répondre.",
     "clearGroupFilter": "Effacer le filtre de groupe",
-    "attachmentNoPreview": "Pas d'aperçu pour ce fichier. Téléchargez-le pour l'ouvrir."
+    "attachmentNoPreview": "Pas d'aperçu pour ce fichier. Téléchargez-le pour l'ouvrir.",
+    "reimbursementFilter": "Remboursements",
+    "reimbursementLinked": "Liées à des remboursements",
+    "reimbursementAnchor": "A des remboursements",
+    "reimbursementCounterpart": "Est un remboursement",
+    "reimbursementUnlinked": "Non liées"
   },
   "accounts": {
     "title": "Comptes",
@@ -4345,6 +4352,51 @@
       "turnedOff": "Lecture de documents désactivée"
     },
     "unreadPages": "Pages non lues (numérisées, et le modèle ne lit pas les images) : {{pages}}. Leurs lignes manquent dans cette vérification."
+  },
+  "reimbursements": {
+    "title": "Remboursements et retours",
+    "manage": "Gérer",
+    "addReimbursements": "Ajouter des remboursements…",
+    "linkAsReimbursement": "Lier comme remboursement de…",
+    "linkAsTitle": "Lier comme remboursement",
+    "counterpartsDescription": "Liez les paiements qui ont remboursé cette transaction, ou un retour. Seul le montant net compte dans les rapports et les budgets.",
+    "anchorsDescription": "Choisissez ce que cette transaction rembourse. Seul le montant net compte dans les rapports et les budgets.",
+    "linked": "Liés",
+    "paysBack": "Rembourse",
+    "noLinks": "Rien de lié pour l'instant",
+    "available": "{{amount}} disponible",
+    "amountFor": "Montant pour {{description}}",
+    "remove": "Retirer {{description}}",
+    "netPreview": "Net comptabilisé : {{amount}}",
+    "link": "Lier",
+    "searchPlaceholder": "Rechercher dans toutes les transactions…",
+    "results": "Résultats",
+    "suggestions": "Suggestions",
+    "noCandidates": "Aucune transaction correspondante",
+    "overAllocated": "La banque a réduit ce montant après la liaison ; les rapports réduisent ses liens en proportion.",
+    "saved": "Remboursements enregistrés",
+    "badge": "Remboursement",
+    "badgeTooltip": "Entièrement lié à ce qu'il rembourse",
+    "rowNet": "Net {{amount}}",
+    "rowLeft": "{{amount}} non lié",
+    "sectionEmpty": "Liez les paiements qui ont remboursé cette transaction, ou un retour, pour ne compter que le net.",
+    "sectionLinked": "Lié à des remboursements",
+    "sectionNet": "Compte pour {{amount}} dans les rapports",
+    "sectionLeft": "{{amount}} pas encore lié",
+    "errors": {
+      "transfer": "Un virement ne peut pas être lié comme remboursement.",
+      "excluded": "Une transaction exclue des rapports ne peut pas être liée comme remboursement.",
+      "notLinkable": "Cette transaction ne peut pas être liée comme remboursement.",
+      "noAmount": "Une transaction sans montant ne peut pas être liée comme remboursement.",
+      "category": "Une transaction dans une catégorie ignorée ou de virement ne peut pas être liée comme remboursement.",
+      "groupSplit": "Une transaction partagée entre personnes ne peut pas être liée comme remboursement.",
+      "chain": "Un remboursement ne peut pas avoir ses propres remboursements.",
+      "direction": "Un remboursement doit aller dans le sens opposé.",
+      "beyondAmount": "Un remboursement ne peut pas être lié pour plus que son montant.",
+      "shrink": "Le montant ne peut pas être inférieur à ce qui en est déjà lié.",
+      "unlinkFirstDirection": "Déliez les remboursements avant de changer le sens.",
+      "unlinkFirstGroupSplit": "Déliez les remboursements avant de partager entre personnes."
+    }
   },
   "notifications": {
     "title": "Notifications",

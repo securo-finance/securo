@@ -25,7 +25,7 @@ from app.models.transaction import Transaction
 from app.schemas.transaction import BulkAddToGroupRequest, BulkCategorizeRequest, DescriptionSuggestion, BulkFlagRequest, BulkTagsRequest, CreateCounterpartRequest, FlaggedSummary, InstallmentSeriesCreate, LinkTransferRequest, TransactionBulkDeleteRequest, TransactionCreate, TransactionRead, TransactionTransferCounterpart, TransactionUpdate, TransferCreate, TransferRead
 from app.schemas.transaction_calendar import TransactionCalendarResponse
 from app.services import transaction_service
-from app.services.transaction_service import FlagDue
+from app.services.transaction_service import FlagDue, ReimbursementFilter
 from app.services.category_line_service import csv_export_parts
 from app.services.csv_safety import csv_safe as _csv_safe
 from app.services.admin_service import get_credit_card_accounting_mode
@@ -290,6 +290,7 @@ async def list_transactions(
     unpaid_only: bool = Query(False, description="Return only rows not yet marked as paid (issue #15)"),
     flag_due: Optional[FlagDue] = Query(None, description="Flagged rows past their reminder date (overdue) or due within a week (soon)"),
     unread_only: bool = Query(False, description="Only rows nobody has reviewed yet (issue #636)"),
+    reimbursement: Optional[ReimbursementFilter] = Query(None, description="Rows by their place in a reimbursement link: `linked` (either side), `anchor` (has reimbursements linked to it), `counterpart` (is a reimbursement of another row) or `unlinked`"),
     tags: Optional[List[str]] = Query(None),
     min_amount: Optional[float] = Query(None, ge=0, description="Filter to transactions with absolute amount >= this value (primary currency)."),
     max_amount: Optional[float] = Query(None, ge=0, description="Filter to transactions with absolute amount <= this value (primary currency)."),
@@ -314,6 +315,7 @@ async def list_transactions(
         flag_due=flag_due,
         unpaid_only=unpaid_only,
         unread_only=unread_only,
+        reimbursement=reimbursement,
         status=status,
         accounting_mode=accounting_mode,
         tags=tags,
@@ -413,6 +415,7 @@ async def export_transactions(
     unpaid_only: bool = Query(False, description="Export only rows not yet marked as paid (issue #15)"),
     flag_due: Optional[FlagDue] = Query(None, description="Flagged rows past their reminder date (overdue) or due within a week (soon)"),
     unread_only: bool = Query(False, description="Export only rows nobody has reviewed yet (issue #636)"),
+    reimbursement: Optional[ReimbursementFilter] = Query(None, description="Rows by their place in a reimbursement link: `linked` (either side), `anchor` (has reimbursements linked to it), `counterpart` (is a reimbursement of another row) or `unlinked`"),
     tags: Optional[List[str]] = Query(None),
     transaction_ids: Optional[List[uuid.UUID]] = Query(None, description="If set, exports exactly these rows (scoped to the workspace); other filters are ignored."),
     ctx: WorkspaceContext = Depends(current_workspace),
@@ -442,6 +445,7 @@ async def export_transactions(
             flag_due=flag_due,
             unpaid_only=unpaid_only,
             unread_only=unread_only,
+            reimbursement=reimbursement,
             tags=tags,
         )
 

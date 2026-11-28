@@ -907,7 +907,9 @@
     "fxRateUsed": "FX rate: {{rate}}",
     "refreshRates": "Refresh FX rates",
     "ratesRefreshed": "FX rates updated",
-    "ratesError": "Failed to update FX rates"
+    "ratesError": "Failed to update FX rates",
+    "balanceReimbursements": "Net reimbursements",
+    "balanceReimbursementsHint": "On: reimbursements and refunds count for your share only. Off: the real balance of your accounts."
   },
   "transactions": {
     "title": "Transactions",
@@ -1261,7 +1263,12 @@
     "suggestionBadge": "Question",
     "suggestionBadgeTooltip": "A payment may settle this. Open the queue to answer.",
     "clearGroupFilter": "Clear group filter",
-    "attachmentNoPreview": "There's no preview for this file. Download it to open it."
+    "attachmentNoPreview": "There's no preview for this file. Download it to open it.",
+    "reimbursementFilter": "Reimbursements",
+    "reimbursementLinked": "Linked to reimbursements",
+    "reimbursementAnchor": "Has reimbursements",
+    "reimbursementCounterpart": "Is a reimbursement",
+    "reimbursementUnlinked": "Not linked"
   },
   "accounts": {
     "title": "Accounts",
@@ -4330,6 +4337,51 @@
       "turnedOff": "Document reading turned off"
     },
     "unreadPages": "Pages not read (scans, and the model does not read images): {{pages}}. Their lines are missing from this review."
+  },
+  "reimbursements": {
+    "title": "Reimbursements & refunds",
+    "manage": "Manage",
+    "addReimbursements": "Add reimbursements…",
+    "linkAsReimbursement": "Link as reimbursement of…",
+    "linkAsTitle": "Link as a reimbursement",
+    "counterpartsDescription": "Link the payments that paid this back, or a refund. Only the net amount counts in reports and budgets.",
+    "anchorsDescription": "Choose what this pays back. Only the net amount counts in reports and budgets.",
+    "linked": "Linked",
+    "paysBack": "Pays back",
+    "noLinks": "Nothing linked yet",
+    "available": "{{amount}} available",
+    "amountFor": "Amount for {{description}}",
+    "remove": "Remove {{description}}",
+    "netPreview": "Net counted: {{amount}}",
+    "link": "Link",
+    "searchPlaceholder": "Search all transactions…",
+    "results": "Results",
+    "suggestions": "Suggestions",
+    "noCandidates": "No matching transactions",
+    "overAllocated": "The bank lowered this amount after it was linked; reports scale its links down to fit.",
+    "saved": "Reimbursements saved",
+    "badge": "Reimbursement",
+    "badgeTooltip": "Fully linked to what it pays back",
+    "rowNet": "Net {{amount}}",
+    "rowLeft": "{{amount}} not linked",
+    "sectionEmpty": "Link payments that paid this back, or a refund, so only the net counts.",
+    "sectionLinked": "Linked to reimbursements",
+    "sectionNet": "Counts as {{amount}} in reports",
+    "sectionLeft": "{{amount}} not linked yet",
+    "errors": {
+      "transfer": "A transfer cannot be linked as a reimbursement.",
+      "excluded": "A transaction left out of reports cannot be linked as a reimbursement.",
+      "notLinkable": "This transaction cannot be linked as a reimbursement.",
+      "noAmount": "A transaction with no amount cannot be linked as a reimbursement.",
+      "category": "A transaction in an ignored or transfer category cannot be linked as a reimbursement.",
+      "groupSplit": "A transaction split among people cannot be linked as a reimbursement.",
+      "chain": "A reimbursement cannot have reimbursements of its own.",
+      "direction": "A reimbursement must go in the opposite direction.",
+      "beyondAmount": "A reimbursement cannot be linked for more than its amount.",
+      "shrink": "The amount cannot be less than what is linked out of it.",
+      "unlinkFirstDirection": "Unlink the reimbursements before changing the direction.",
+      "unlinkFirstGroupSplit": "Unlink the reimbursements before splitting among people."
+    }
   },
   "notifications": {
     "title": "Notifications",

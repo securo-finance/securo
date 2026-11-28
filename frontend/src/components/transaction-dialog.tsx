@@ -51,6 +51,7 @@ import { RuleDialog, type RuleDialogInitialData } from '@/components/rule-dialog
 import { TransactionAttachments } from '@/components/transaction-attachments'
 import type { AttachmentPreview } from '@/components/transaction-attachments'
 import { TransactionSplitsSection, type TransactionSettleInput } from '@/components/transaction-splits-section'
+import { TransactionReimbursementsSection } from '@/components/transaction-reimbursements-section'
 import { buildInstallmentSeriesInput, hasNonStatusChange, isManualInstallmentSeriesRow } from '@/lib/installment-series'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
 import type { Transaction, RecurringTransaction, TransactionSplitsInput, TransactionEditPayload, InstallmentSeriesInput, TransactionApplyScope, CategoryGroup, Category, CategoryLineShareType, Rule, RuleCondition, RuleConditionNode, Payee } from '@/types'
@@ -2031,6 +2032,15 @@ function TransactionForm({
 
       {!isCreating && !splitByCategory && !transaction?.has_category_lines && transaction?.type === 'debit' && transaction.status === 'posted' && !transaction.is_ignored && !transaction.transfer_pair_id && !transaction.category?.is_ignored && Number(transaction.amount) > 0 && accounts.find(a => a.id === transaction.account_id)?.type !== 'loan' && accounts.some(a => a.type === 'loan' && Boolean(transaction.currency) && a.currency === transaction.currency) && (
         <MortgagePaymentEditor transaction={transaction} accounts={accounts} />
+      )}
+
+      {/* Rows reports already leave out, or net another way (transfers,
+          settlements, splits among people), cannot be linked. */}
+      {!isCreating && transaction && !transaction.is_shared && !transaction.transfer_pair_id
+        && !transaction.is_ignored && !transaction.exclude_from_pnl
+        && transaction.source !== 'settlement' && transaction.source !== 'opening_balance'
+        && !splits?.splits.length && (
+        <TransactionReimbursementsSection transaction={transaction} accounts={accounts} hideAmounts={hideAmounts} />
       )}
 
       {!isCreating && transaction ? (
