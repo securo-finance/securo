@@ -277,7 +277,10 @@ async def list_transactions(
     status: Optional[str] = Query(None, description="Filter by transaction status (posted|pending)"),
     page: int = Query(1, ge=1),
     limit: int = Query(50, ge=1, le=500),
-    include_opening_balance: bool = Query(False),
+    include_opening_balance: bool = Query(
+        False,
+        description="Include synthetic opening_balance rows in items and `total`; excluded by default so counts and lists omit account-seeding rows unless true",
+    ),
     include_running_balance: bool = Query(False, description="Fill running_balance per row (issue #1202): one account, `from` set, include_opening_balance, default order, and no filter beyond a credit card's statement window (`bill_id`/`unbilled_only`); null otherwise"),
     exclude_transfers: bool = Query(False),
     user_pnl_only: bool = Query(False, description="Return only rows that count toward dashboard/user income/expense totals"),

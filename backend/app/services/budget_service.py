@@ -414,7 +414,10 @@ async def get_budget_vs_actual(
     # paid by a friend are still the user's expense in the budget
     # picture for the matching category. FX-convert per currency to
     # match the rest of the budget (everything else is in primary).
-    from app.services._query_filters import viewer_shared_spending_by_category
+    from app.services._query_filters import (
+        resolve_viewer_category_map,
+        viewer_shared_spending_by_category,
+    )
 
     shared_by_cat = await viewer_shared_spending_by_category(
         session, user_id, month_start, month_end,
@@ -422,11 +425,16 @@ async def get_budget_vs_actual(
         primary_currency=primary_currency,
         exclude_workspace_id=workspace_id,
     )
-    for cat_uuid, total in shared_by_cat.items():
-        if cat_uuid is None:
-            continue
-        cat_id = str(cat_uuid)
-        spending_map[cat_id] = spending_map.get(cat_id, Decimal("0")) + Decimal(str(total))
+    if shared_by_cat:
+        shared_cat_map = await resolve_viewer_category_map(
+            session, shared_by_cat.keys(), workspace_id
+        )
+        for cat_uuid, total in shared_by_cat.items():
+            mapped_cat = shared_cat_map.get(cat_uuid) if cat_uuid is not None else None
+            if mapped_cat is None:
+                continue
+            cat_id = str(mapped_cat.id)
+            spending_map[cat_id] = spending_map.get(cat_id, Decimal("0")) + Decimal(str(total))
 
     projected_spending_map = dict(spending_map)
 
@@ -529,11 +537,16 @@ async def get_budget_vs_actual(
         primary_currency=primary_currency,
         exclude_workspace_id=workspace_id,
     )
-    for cat_uuid, total in prev_shared_by_cat.items():
-        if cat_uuid is None:
-            continue
-        cat_id = str(cat_uuid)
-        prev_spending_map[cat_id] = prev_spending_map.get(cat_id, Decimal("0")) + Decimal(str(total))
+    if prev_shared_by_cat:
+        prev_shared_cat_map = await resolve_viewer_category_map(
+            session, prev_shared_by_cat.keys(), workspace_id
+        )
+        for cat_uuid, total in prev_shared_by_cat.items():
+            mapped_cat = prev_shared_cat_map.get(cat_uuid) if cat_uuid is not None else None
+            if mapped_cat is None:
+                continue
+            cat_id = str(mapped_cat.id)
+            prev_spending_map[cat_id] = prev_spending_map.get(cat_id, Decimal("0")) + Decimal(str(total))
 
     projected_prev_spending_map = dict(prev_spending_map)
 
@@ -723,10 +736,6 @@ async def get_budget_suggestions(
     for cat_uuid, d, net in daily_result.all():
         key = (str(cat_uuid), d.replace(day=1))
         monthly_net[key] = monthly_net.get(key, Decimal("0")) + (net or Decimal("0"))
-    months_with_data: dict[str, set] = {}
-    for (cat_id, month_start), net in monthly_net.items():
-        if net > 0:
-            months_with_data.setdefault(cat_id, set()).add(month_start)
 
     own_offset = await owner_split_offset_by_category(
         session,
@@ -748,22 +757,52 @@ async def get_budget_suggestions(
         else:
             total_by_cat[cat_id] = net
 
-    from app.services._query_filters import viewer_shared_spending_by_category
-
-    shared_by_cat = await viewer_shared_spending_by_category(
-        session,
-        user_id,
-        window_start,
-        window_end,
-        use_effective_date=accounting_mode == "accrual",
-        primary_currency=primary_currency,
-        exclude_workspace_id=workspace_id,
+    from app.services._query_filters import (
+        _viewer_shared_filters,
+        resolve_viewer_category_map,
+        viewer_shares_in_primary,
     )
-    for cat_uuid, total in shared_by_cat.items():
-        if cat_uuid is None:
-            continue
-        cat_id = str(cat_uuid)
-        total_by_cat[cat_id] = total_by_cat.get(cat_id, Decimal("0")) + Decimal(str(total))
+
+    shared_where = (
+        *_viewer_shared_filters(
+            user_id,
+            window_start,
+            window_end,
+            use_effective_date=accounting_mode == "accrual",
+            exclude_workspace_id=workspace_id,
+        ),
+        Transaction.type == "debit",
+    )
+    shared_by_day_cat = await viewer_shares_in_primary(
+        session,
+        (report_date, Transaction.category_id),
+        shared_where,
+        primary_currency,
+        viewer,
+    )
+    if shared_by_day_cat:
+        shared_cat_ids = {
+            cat_uuid for (_d, cat_uuid) in shared_by_day_cat if cat_uuid is not None
+        }
+        sugg_cat_map = await resolve_viewer_category_map(
+            session, shared_cat_ids, workspace_id
+        )
+        for (d, cat_uuid), (_income, expense) in shared_by_day_cat.items():
+            if not expense:
+                continue
+            mapped_cat = sugg_cat_map.get(cat_uuid) if cat_uuid is not None else None
+            if mapped_cat is None:
+                continue
+            cat_id = str(mapped_cat.id)
+            total_by_cat[cat_id] = total_by_cat.get(cat_id, Decimal("0")) + expense
+            month_start = d.replace(day=1)
+            key = (cat_id, month_start)
+            monthly_net[key] = monthly_net.get(key, Decimal("0")) + expense
+
+    months_with_data: dict[str, set] = {}
+    for (cat_id, month_start), net in monthly_net.items():
+        if net > 0:
+            months_with_data.setdefault(cat_id, set()).add(month_start)
 
     budget_map = await _build_budget_map(session, workspace_id, target)
     divisor = Decimal(len(analyzed))

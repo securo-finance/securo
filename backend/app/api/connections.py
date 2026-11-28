@@ -147,6 +147,9 @@ async def oauth_callback(
                 reconnect_connection_id=data.reconnect_connection_id,
             )
         return connection
+    except HTTPException:
+        # A refusal already shaped for the client, such as the quota (ADR 0049).
+        raise
     except ProviderUserActionRequired as e:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,

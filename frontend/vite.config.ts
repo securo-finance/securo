@@ -1,9 +1,27 @@
 import tailwindcss from '@tailwindcss/vite'
 import react from '@vitejs/plugin-react'
+import { readdirSync } from 'node:fs'
 import path from 'node:path'
 import { defineConfig, loadEnv } from 'vite'
 import { VitePWA } from 'vite-plugin-pwa'
 import { resolveAppVersion } from './build/version.ts'
+
+// Must match the statically bundled locales in src/lib/i18n.ts; every other
+// file in src/locales/*.json is emitted as a lazy chunk and loaded on demand.
+const BUNDLED_LOCALES = new Set(['en', 'pt-BR'])
+
+function getLazyLocaleCodes(): string[] {
+  const localesDir = path.resolve(import.meta.dirname, './src/locales')
+  return readdirSync(localesDir)
+    .filter((file) => file.endsWith('.json'))
+    .map((file) => file.replace(/\.json$/, ''))
+    .filter((code) => !BUNDLED_LOCALES.has(code))
+    .sort()
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
 
 function getFrontendHost(frontendUrl?: string) {
   if (!frontendUrl) return []
@@ -19,6 +37,10 @@ export default defineConfig(async ({ mode }) => {
   const appVersion = await resolveAppVersion(
     appVersionRoot || import.meta.dirname,
     env.VITE_APP_VERSION || process.env.VITE_APP_VERSION,
+  )
+  const lazyLocaleCodes = getLazyLocaleCodes()
+  const lazyLocaleUrlPattern = new RegExp(
+    `/static/(?:${lazyLocaleCodes.map(escapeRegExp).join('|')})-[^/]+\\.js$`,
   )
 
   return {
@@ -52,6 +74,32 @@ export default defineConfig(async ({ mode }) => {
           // preview needs it offline); `json` covers the hand-written
           // manifest.json copied from public/ (issue #201).
           globPatterns: ['**/*.{js,css,html,png,ico,mjs,json}'],
+          // Optional locales load on demand in src/lib/i18n.ts; skip them in
+          // the eager precache so every SW update doesn't download megabytes of
+          // unused translations, and cache whichever locale the user picks via
+          // runtimeCaching below.
+          globIgnores: [
+            '**/node_modules/**/*',
+            'sw.js',
+            'workbox-*.js',
+            ...lazyLocaleCodes.map((code) => `static/${code}-*.js`),
+          ],
+          runtimeCaching: [
+            {
+              urlPattern: lazyLocaleUrlPattern,
+              handler: 'CacheFirst',
+              options: {
+                cacheName: 'securo-locales',
+                expiration: {
+                  maxEntries: 32,
+                  maxAgeSeconds: 60 * 60 * 24 * 365,
+                },
+                cacheableResponse: {
+                  statuses: [0, 200],
+                },
+              },
+            },
+          ],
           // Workbox skips any asset over 2 MiB by default, and the PDF.js
           // worker is ~2.17 MiB, so the default would leave it out even with
           // the pattern above. Leave headroom above its current size.

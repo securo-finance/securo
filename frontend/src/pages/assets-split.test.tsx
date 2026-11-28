@@ -17,6 +17,7 @@ import type { Asset, AssetTransaction } from '@/types'
 const api = vi.hoisted(() => ({
   assets: {
     list: vi.fn(),
+    archivedCount: vi.fn(),
     portfolioTrend: vi.fn(),
     allTransactions: vi.fn(),
     transactions: vi.fn(),
@@ -144,6 +145,7 @@ beforeEach(() => {
   vi.clearAllMocks()
   // Only Date is faked, so the dialog opens on a known day.
   vi.setSystemTime(new Date('2026-10-27T12:00:00'))
+  api.assets.archivedCount.mockResolvedValue({ count: 0, by_wallet: {}, ungrouped: 0 })
   api.assets.addTransaction.mockResolvedValue(makeHolding())
   api.fxRates.status.mockResolvedValue({ configured: true })
 })

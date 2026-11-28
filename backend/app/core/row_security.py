@@ -162,8 +162,20 @@ def setup_statements(tables: dict[str, Table], role: str, schema: str, quote: An
         f"JOIN {sch}.groups g ON g.id = m.group_id "
         f"WHERE m.linked_user_id = {viewer} "
         f"OR (m.is_self AND g.user_id = {viewer}) $f$",
+        # How many bank connections the workspaces a user created hold, for the
+        # quota (ADR 0049). A count and nothing else: returning rows here would
+        # be a hole in the boundary.
+        f"CREATE OR REPLACE FUNCTION {sch}.securo_owned_bank_connections(p_user uuid) RETURNS bigint "
+        "LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog AS $f$ "
+        f"SELECT count(*) FROM {sch}.bank_connections c "
+        f"JOIN {sch}.workspaces w ON w.id = c.workspace_id "
+        "WHERE w.created_by_user_id = p_user AND NOT w.is_archived $f$",
     ]
-    for signature in ("securo_row_workspace(text, uuid)", "securo_shared_with_viewer()"):
+    for signature in (
+        "securo_row_workspace(text, uuid)",
+        "securo_shared_with_viewer()",
+        "securo_owned_bank_connections(uuid)",
+    ):
         out.append(f"REVOKE ALL ON FUNCTION {sch}.{signature} FROM PUBLIC")
         out.append(f"GRANT EXECUTE ON FUNCTION {sch}.{signature} TO {rol}")
     for name in covered_tables(tables):

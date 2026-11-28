@@ -31,6 +31,7 @@ from app.services._query_filters import (
     owner_split_offset_pnl,
     reporting_date_col,
     reporting_date_value,
+    resolve_viewer_category_map,
     signed_amount_expr,
     viewer_shared_pnl,
     viewer_shared_spending_by_category,
@@ -961,30 +962,48 @@ async def get_spending_by_category(
         exclude_workspace_id=workspace_id,
     )
     if shared_by_cat:
-        cat_meta_cache: dict[str, dict] = {}
-        for cat_uuid, share_total in shared_by_cat.items():
-            cat_id = str(cat_uuid) if cat_uuid else None
-            if cat_id and cat_id not in cat_meta_cache and cat_id not in spending_map:
-                meta_row = (
-                    await session.execute(
-                        select(Category.name, Category.icon, Category.color).where(
-                            Category.id == cat_uuid
-                        )
+        cat_map = await resolve_viewer_category_map(
+            session, shared_by_cat.keys(), workspace_id
+        )
+        unmapped_ids = {
+            cid
+            for cid in shared_by_cat
+            if cid is not None and cat_map.get(cid) is None
+        }
+        unmapped_meta: dict[uuid.UUID, dict] = {}
+        if unmapped_ids:
+            meta_rows = (
+                await session.execute(
+                    select(Category.id, Category.name, Category.icon, Category.color).where(
+                        Category.id.in_(unmapped_ids)
                     )
-                ).one_or_none()
-                if meta_row:
-                    cat_meta_cache[cat_id] = {
-                        "name": meta_row[0],
-                        "icon": meta_row[1],
-                        "color": meta_row[2],
-                    }
+                )
+            ).all()
+            unmapped_meta = {
+                row[0]: {"name": row[1], "icon": row[2], "color": row[3]}
+                for row in meta_rows
+            }
+        for cat_uuid, share_total in shared_by_cat.items():
+            mapped_cat = cat_map.get(cat_uuid) if cat_uuid is not None else None
+            if mapped_cat is not None:
+                cat_id = str(mapped_cat.id)
+                meta = {
+                    "name": mapped_cat.name,
+                    "icon": mapped_cat.icon,
+                    "color": mapped_cat.color,
+                }
+            elif cat_uuid is not None:
+                cat_id = str(cat_uuid)
+                meta = unmapped_meta.get(
+                    cat_uuid,
+                    {"name": "Sem categoria", "icon": "circle-help", "color": "#6B7280"},
+                )
+            else:
+                cat_id = None
+                meta = {"name": "Sem categoria", "icon": "circle-help", "color": "#6B7280"}
             if cat_id in spending_map:
                 spending_map[cat_id]["total"] += share_total
             else:
-                meta = cat_meta_cache.get(
-                    cat_id,
-                    {"name": "Sem categoria", "icon": "circle-help", "color": "#6B7280"},
-                )
                 spending_map[cat_id] = {
                     "name": meta["name"],
                     "icon": meta["icon"],
