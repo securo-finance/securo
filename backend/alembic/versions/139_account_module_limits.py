@@ -4,8 +4,8 @@ A neutral list of module ids per user, written by the operator, and its copy
 on each workspace the user created, read only when MANAGED_INSTANCE is on
 (ADR 0054). No row, and a null copy, mean every module.
 
-Revision ID: 137
-Revises: 136
+Revision ID: 139
+Revises: 138
 """
 
 from typing import Sequence, Union
@@ -14,8 +14,8 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
-revision: str = "137"
-down_revision: Union[str, None] = "136"
+revision: str = "139"
+down_revision: Union[str, None] = "138"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
