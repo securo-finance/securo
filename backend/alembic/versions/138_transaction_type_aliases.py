@@ -9,8 +9,8 @@ translate the two words; this repairs the rows already stored.
 The repaired rows start counting on upgrade, so an account that holds one
 shows a different balance afterwards: the one its rows always added up to.
 
-Revision ID: 136
-Revises: 135
+Revision ID: 138
+Revises: 137
 """
 
 from typing import Sequence, Union
@@ -18,8 +18,8 @@ from typing import Sequence, Union
 import sqlalchemy as sa
 from alembic import op
 
-revision: str = "136"
-down_revision: Union[str, None] = "135"
+revision: str = "138"
+down_revision: Union[str, None] = "137"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
