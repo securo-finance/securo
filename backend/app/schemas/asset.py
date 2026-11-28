@@ -6,6 +6,7 @@ from typing import Literal, Optional
 from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator
 
 from app.core.money import MAX_MONEY_AMOUNT, bounded_asset_value
+from app.schemas.ordering import OrderedIds
 
 
 def _bounded_asset_amount(value: Optional[Decimal], field: str) -> Optional[Decimal]:
@@ -104,6 +105,12 @@ class AssetUpdate(BaseModel):
     @classmethod
     def bound_amounts(cls, value: Optional[Decimal], info: ValidationInfo) -> Optional[Decimal]:
         return _bounded_asset_amount(value, info.field_name or "amount")
+
+
+class AssetReorder(BaseModel):
+    """The holdings of one wallet (or of no wallet) in the order to show them."""
+
+    asset_ids: OrderedIds
 
 
 class AssetRead(BaseModel):
@@ -247,6 +254,14 @@ class AssetPriceRefreshResult(BaseModel):
     refreshed: int
     skipped: int
     rate_limited: int
+
+
+class ArchivedAssetCountsRead(BaseModel):
+    """Archived holding counts for a workspace, broken down by wallet."""
+
+    count: int
+    by_wallet: dict[str, int]
+    ungrouped: int
 
 
 class MarketSymbolMatch(BaseModel):

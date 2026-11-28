@@ -51,8 +51,14 @@ export const i18nReady = i18n
     detection: {
       order: ['querystring', 'localStorage', 'cookie'],
       caches: ['localStorage'],
-      // 'iw' is the pre-1989 code for Hebrew; load he.json for it too.
-      convertDetectedLanguage: (lng: string) => (/^iw(-|$)/i.test(lng) ? 'he' : lng),
+      // 'iw' is the pre-1989 code for Hebrew; normalize it and any Chinese
+      // variant ('zh', 'zh-cn', 'zh-Hans', ...) so dynamic locale lookup hits
+      // the bundled file instead of silently falling back to English.
+      convertDetectedLanguage: (lng: string) => {
+        if (/^iw(-|$)/i.test(lng)) return 'he'
+        if (/^zh(-|$)/i.test(lng)) return 'zh-CN'
+        return lng
+      },
     },
     interpolation: {
       escapeValue: false,
@@ -81,6 +87,7 @@ export type SupportedLang =
   | 'hi'
   | 'ja'
   | 'he'
+  | 'zh-CN'
 
 // Single source of truth for language pickers. When adding a locale, register
 // a locale JSON file and add one entry here; every picker stays in sync instead
@@ -105,6 +112,7 @@ export const SUPPORTED_LANGS: { code: SupportedLang; label: string }[] = [
   { code: 'hi', label: 'हिन्दी' },
   { code: 'ja', label: '日本語' },
   { code: 'he', label: 'עברית' },
+  { code: 'zh-CN', label: '简体中文' },
 ]
 
 // Normalise any browser/i18n language tag to one of our supported keys. The
@@ -135,6 +143,7 @@ export function resolveSupportedLang(lng?: string | null): SupportedLang {
   if (tag.startsWith('ja')) return 'ja'
   // 'iw' is the pre-1989 code some browsers and Android versions still send.
   if (tag.startsWith('he') || tag.startsWith('iw')) return 'he'
+  if (tag.startsWith('zh')) return 'zh-CN'
   return 'en'
 }
 

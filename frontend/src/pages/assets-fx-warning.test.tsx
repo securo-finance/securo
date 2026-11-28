@@ -6,7 +6,7 @@ import { renderWithProviders, t } from '@/test/utils'
 import type { Asset } from '@/types'
 
 const api = vi.hoisted(() => ({
-  assets: { list: vi.fn(), portfolioTrend: vi.fn() },
+  assets: { list: vi.fn(), archivedCount: vi.fn(), portfolioTrend: vi.fn() },
   assetGroups: { list: vi.fn() },
   currencies: { list: vi.fn() },
   fxRates: { status: vi.fn() },
@@ -53,6 +53,7 @@ beforeEach(() => {
   vi.clearAllMocks()
   auth.isSuperuser = true
   api.assets.list.mockResolvedValue([asset('EUR')])
+  api.assets.archivedCount.mockResolvedValue({ count: 0, by_wallet: {}, ungrouped: 0 })
   api.assets.portfolioTrend.mockResolvedValue({ assets: [], trend: [], total: 0 })
   api.assetGroups.list.mockResolvedValue([])
   api.currencies.list.mockResolvedValue([])

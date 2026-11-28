@@ -6,8 +6,8 @@ overflow and a 500. One billion is an ordinary flat in IDR, VND, KRW or JPY,
 and transaction amounts and purchase prices already hold thirteen digits.
 Numeric(19, 6) keeps the six decimals and gives the same thirteen.
 
-Revision ID: 137
-Revises: 136
+Revision ID: 143
+Revises: 141
 """
 
 from typing import Sequence, Union
@@ -15,8 +15,8 @@ from typing import Sequence, Union
 import sqlalchemy as sa
 from alembic import op
 
-revision: str = "137"
-down_revision: Union[str, None] = "136"
+revision: str = "143"
+down_revision: Union[str, None] = "141"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
