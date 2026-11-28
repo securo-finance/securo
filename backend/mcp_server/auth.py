@@ -39,14 +39,16 @@ class CallContext:
     # database on every tool call. None only when a handler is invoked
     # directly (tests), never on a request that went through the server.
     role: Optional[str] = None
+    # The workspace is suspended (ADR 0052), set by `authorize_call` too.
+    suspended: bool = False
 
     @property
     def can_write(self) -> bool:
-        """False only for a role known to be read-only.
+        """False only for a role known to be read-only or a suspended workspace.
 
-        Mirrors `WorkspaceContext.can_write` on the HTTP side.
+        Mirrors `WorkspaceContext.require_write` on the HTTP side.
         """
-        return self.role is None or self.role in WRITE_ROLES
+        return not self.suspended and (self.role is None or self.role in WRITE_ROLES)
 
 
 WRITE_ROLES = frozenset({"owner", "editor", "manager"})
@@ -70,7 +72,7 @@ async def authorize_call(session, ctx: CallContext) -> uuid.UUID:
     the workspace id.
     """
     from app.models.user import User
-    from app.models.workspace import MANAGER_VIRTUAL_ROLE, Workspace
+    from app.models.workspace import MANAGER_VIRTUAL_ROLE, WORKSPACE_ACTIVE, Workspace
     from app.services.workspace_service import (
         get_default_workspace,
         get_membership,
@@ -103,6 +105,7 @@ async def authorize_call(session, ctx: CallContext) -> uuid.UUID:
 
     ctx.workspace_id = workspace_id
     ctx.role = role
+    ctx.suspended = workspace.status != WORKSPACE_ACTIVE
     return workspace_id
 
 

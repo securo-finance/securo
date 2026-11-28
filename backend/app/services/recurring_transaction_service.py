@@ -25,10 +25,12 @@ from app.services import category_line_service, category_service, recurring_matc
 from app.services.credit_card_service import apply_effective_date
 from app.services.fx_rate_service import (
     convert_or_none,
+    rates_in_callers_transaction,
     resolve_primary_stamp,
     stamp_primary_amount,
 )
 from app.services.rule_service import apply_rules_to_transaction
+from app.services.workspace_status_service import hold_active, in_active_workspace
 
 
 class RecurringConflictError(Exception):
@@ -685,9 +687,26 @@ async def generate_pending(
     another workspace the user merely belongs to; unattended runs leave it
     unset and cover all of them.
     Returns the count of transactions generated."""
-    # Unattended runs only touch schedules that opted in to auto-generation.
-    generation_filter = (
-        true() if include_manual else RecurringTransaction.auto_generate == True
+    # A rate fetched for a new row must not commit midway: the commit would
+    # release the workspaces held below while the loop still writes.
+    with rates_in_callers_transaction():
+        return await _generate_pending(
+            session, user_id, up_to, include_manual, workspace_id
+        )
+
+
+async def _generate_pending(
+    session: AsyncSession,
+    user_id: uuid.UUID,
+    up_to: Optional[date],
+    include_manual: bool,
+    workspace_id: Optional[uuid.UUID],
+) -> int:
+    # Unattended runs only touch schedules that opted in to auto-generation,
+    # and nothing is written into a suspended workspace (ADR 0052).
+    generation_filter = and_(
+        true() if include_manual else RecurringTransaction.auto_generate == True,
+        in_active_workspace(RecurringTransaction.workspace_id),
     )
     if workspace_id is not None:
         generation_filter = and_(
@@ -756,11 +775,22 @@ async def generate_pending(
         own_categories = {(row.id, row.workspace_id) for row in rows}
 
     count = 0
+    # Whether each workspace was still active when its first bill came up.
+    # The selection above may be older than a suspension of a workspace whose
+    # bills come later in the loop, so each one is read again, and held until
+    # the commit, before anything is written into it (ADR 0052).
+    held: dict[uuid.UUID, bool] = {}
     for recurring in recurring_list:
         # Legacy rows may exist with a null account_id from before account_id
         # was required. Skip them rather than crashing on Transaction's NOT NULL
         # constraint — the user should edit the recurring to fix it.
         if recurring.account_id is None:
+            continue
+        if recurring.workspace_id not in held:
+            held[recurring.workspace_id] = recurring.workspace_id in await hold_active(
+                session, [recurring.workspace_id]
+            )
+        if not held[recurring.workspace_id]:
             continue
         account = await session.get(Account, recurring.account_id)
         # Sync can move the account to another workspace. Nothing this bill

@@ -29,6 +29,7 @@ from app.providers.market_price import (
     get_market_price_provider,
 )
 from app.schemas.asset import (
+    ArchivedAssetCountsRead,
     AssetCreate,
     AssetUpdate,
     AssetValueCreate,
@@ -36,6 +37,7 @@ from app.schemas.asset import (
     AssetValueRead,
     MarketSymbolMatch,
 )
+from app.services.ordering import place_in_order
 from app.services.asset_group_service import ensure_group_in_workspace
 from app.services.fx_rate_service import (
     DatedRateBook,
@@ -44,6 +46,7 @@ from app.services.fx_rate_service import (
     has_rate,
     stamp_primary_amount,
 )
+from app.services.workspace_status_service import hold_active, in_active_workspace
 
 logger = logging.getLogger(__name__)
 
@@ -51,6 +54,13 @@ ValueRecord = tuple[date, Decimal, Optional[Decimal]]  # (date, amount, price_pe
 TxRecord = tuple[date, str, Decimal, Optional[Decimal]]  # (date, kind, quantity, price_per_share)
 GrossValueRecord = tuple[date, Decimal, Optional[Decimal]]  # (date, net, gross)
 SplitRecord = tuple[date, int, int]  # (date, old_units, new_units)
+
+
+# The order holdings list in. Asset.position counts from 1 within a wallet, and
+# 0 means nobody placed the holding yet: those list after the placed ones, by
+# name, so a new or moved holding lands at the end of an order someone set,
+# whichever path created it.
+_LIST_ORDER = (Asset.position == 0, Asset.position, Asset.name, Asset.id)
 
 
 def _next_due_date(last_date: date, frequency: str) -> date:
@@ -797,7 +807,7 @@ async def get_assets(
     query = select(Asset).where(Asset.workspace_id == workspace_id)
     if not include_archived:
         query = query.where(Asset.is_archived == False)
-    query = query.order_by(Asset.position, Asset.name)
+    query = query.order_by(*_LIST_ORDER)
 
     result = await session.execute(query)
     assets = list(result.scalars().all())
@@ -810,6 +820,28 @@ async def get_assets(
         reads.append(_asset_to_read(asset, latest, count, tx_counts.get(asset.id, 0)))
     await _fill_closed_positions(session, workspace_id, assets, reads)
     return reads
+
+
+async def get_archived_asset_counts(
+    session: AsyncSession, workspace_id: uuid.UUID
+) -> ArchivedAssetCountsRead:
+    """Count archived holdings in a workspace, broken down by wallet."""
+    result = await session.execute(
+        select(Asset.group_id, func.count(Asset.id))
+        .where(Asset.workspace_id == workspace_id, Asset.is_archived.is_(True))
+        .group_by(Asset.group_id)
+    )
+    by_wallet: dict[str, int] = {}
+    ungrouped = 0
+    total = 0
+    for group_id, row_count in result.all():
+        n = int(row_count)
+        total += n
+        if group_id is None:
+            ungrouped += n
+        else:
+            by_wallet[str(group_id)] = n
+    return ArchivedAssetCountsRead(count=total, by_wallet=by_wallet, ungrouped=ungrouped)
 
 
 async def _fill_closed_positions(
@@ -1150,6 +1182,59 @@ _LEDGER_DERIVED_FIELDS = (
 )
 
 
+class MixedWalletsError(Exception):
+    """A reorder named holdings from more than one wallet."""
+
+
+async def reorder_assets(
+    session: AsyncSession, workspace_id: uuid.UUID, asset_ids: list[uuid.UUID]
+) -> bool:
+    """Put the named holdings of one wallet in this order.
+
+    The other holdings of that wallet (sold, archived) keep their places, and
+    every holding of the wallet is numbered from 1, which places the ones that
+    were not placed yet. False when an id is not a holding of this workspace;
+    MixedWalletsError when the ids span wallets.
+
+    Locked the way wallets are (#1944): in id order, which concurrent reorders
+    don't change, so two of them can't deadlock; then read in list order, so
+    names that tie keep the order the database's collation shows.
+    """
+    named = await session.execute(
+        select(Asset.group_id).where(Asset.workspace_id == workspace_id, Asset.id.in_(asset_ids))
+    )
+    group_ids = list(named.scalars().all())
+    if len(group_ids) != len(asset_ids):
+        return False
+    if len(set(group_ids)) > 1:
+        raise MixedWalletsError()
+
+    group_id = group_ids[0]
+    in_wallet = Asset.group_id.is_(None) if group_id is None else Asset.group_id == group_id
+    locked_ids = (
+        await session.execute(
+            select(Asset.id)
+            .where(Asset.workspace_id == workspace_id, in_wallet)
+            .order_by(Asset.id)
+            .with_for_update()
+        )
+    ).scalars().all()
+    result = await session.execute(
+        select(Asset)
+        .where(Asset.id.in_(locked_ids))
+        .order_by(*_LIST_ORDER)
+        .execution_options(populate_existing=True)
+    )
+    holdings = list(result.scalars().all())
+    reordered = place_in_order(holdings, asset_ids)
+    if reordered is None:  # moved to another wallet since the first read
+        return False
+    for position, asset in enumerate(reordered, start=1):
+        asset.position = position
+    await session.commit()
+    return True
+
+
 async def update_asset(
     session: AsyncSession,
     asset_id: uuid.UUID,
@@ -1169,6 +1254,9 @@ async def update_asset(
     update_data = data.model_dump(exclude_unset=True)
     if "group_id" in update_data:
         await ensure_group_in_workspace(session, update_data["group_id"], workspace_id)
+        if update_data["group_id"] != asset.group_id:
+            # Its place belonged to the old wallet: unplaced, it goes to the end.
+            update_data.setdefault("position", 0)
     # Prevent changing valuation_method on existing assets
     update_data.pop("valuation_method", None)
     # Stored uppercase, as on create, so the ledger's ticker filter (which
@@ -1440,7 +1528,7 @@ async def get_portfolio_trend(
         if not selection_filters:
             return {"assets": [], "trend": [], "total": 0.0}
         query = query.where(or_(*selection_filters))
-    result = await session.execute(query.order_by(Asset.position, Asset.name))
+    result = await session.execute(query.order_by(*_LIST_ORDER))
     active_assets = list(result.scalars().all())
 
     if not active_assets:
@@ -1846,6 +1934,7 @@ async def refresh_all_market_prices(
         Asset.is_archived == False,
         Asset.sell_date.is_(None),
         Asset.ticker.isnot(None),
+        in_active_workspace(Asset.workspace_id),
     ]
     if workspace_id is not None:
         conditions.append(Asset.workspace_id == workspace_id)
@@ -1916,6 +2005,11 @@ async def refresh_all_market_prices(
     # predicate, lock them and use these rows for the write: an id-only
     # recheck would still write the AAPL quote into a holding that became
     # MSFT, and a write to a deleted row rolls back every price in the batch.
+    # Their workspaces are held first: the re-read then leaves out one
+    # suspended while the provider answered, and a suspension that comes later
+    # waits for this commit instead of landing between the re-read and the
+    # writes (ADR 0052).
+    await hold_active(session, {asset.workspace_id for asset in assets})
     locked = await session.execute(
         select(Asset)
         .where(Asset.id.in_([asset.id for asset in assets]), *conditions)

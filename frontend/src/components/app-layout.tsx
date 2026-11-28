@@ -65,6 +65,7 @@ import { usePrivacyMode } from '@/hooks/use-privacy-mode'
 import { ChangePasswordDialog } from '@/components/change-password-dialog'
 import { BackupDialog } from '@/components/backup-dialog'
 import { AccessLogDialog } from '@/components/access-log-dialog'
+import { WorkspaceSuspendedNotice } from '@/components/workspace-suspended-notice'
 import { TwoFactorSetup } from '@/components/two-factor-setup'
 import { PasskeyManagementDialog } from '@/components/passkey-management-dialog'
 import { CommandPalette } from '@/components/command-palette'
@@ -679,6 +680,7 @@ export function AppLayout() {
             </div>
           </div>
           <div className="p-6 max-w-7xl mx-auto">
+            <WorkspaceSuspendedNotice />
             <Outlet />
           </div>
         </main>
@@ -1033,6 +1035,15 @@ function UserMenu({
               >
                 <span className="flex-1">עברית</span>
                 {currentLang === 'he' && (
+                  <Check size={13} className="text-primary" />
+                )}
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() => i18n.changeLanguage('zh-CN')}
+                className="flex items-center gap-2"
+              >
+                <span className="flex-1">简体中文</span>
+                {currentLang === 'zh-CN' && (
                   <Check size={13} className="text-primary" />
                 )}
               </DropdownMenuItem>

@@ -32,6 +32,21 @@ export interface AdminUserList {
   total: number
 }
 
+export interface AdminWorkspace {
+  id: string
+  name: string
+  kind: string
+  status: WorkspaceStatus
+  status_changed_at: string | null
+  /** Emails of the members with the owner role. */
+  owners: string[]
+}
+
+export interface AdminWorkspaceList {
+  items: AdminWorkspace[]
+  total: number
+}
+
 /** One field an administrative action touched, with its old and new value. */
 export interface AccessLogFieldChange {
   from?: string | boolean | null
@@ -46,8 +61,12 @@ export interface AccessLogFieldChange {
 export interface AdminAccessLogEntry {
   id: string
   actor_email: string
-  target_email: string
+  /** The account's address; null for an entry about a workspace. */
+  target_email: string | null
   target_user_id: string | null
+  /** The workspace acted on, with the name it had at the time. */
+  target_workspace_id?: string | null
+  target_workspace_name?: string | null
   action: string
   /** Every field the action changed, keyed by field name (#556). */
   changes?: Record<string, AccessLogFieldChange> | null
@@ -86,6 +105,9 @@ export type WorkspaceRole = 'owner' | 'editor' | 'viewer' | 'manager'
 
 export type WorkspaceKind = 'personal' | 'business'
 
+/** A suspended workspace is read and exported, never changed (ADR 0052). */
+export type WorkspaceStatus = 'active' | 'suspended'
+
 export interface Workspace {
   id: string
   name: string
@@ -93,6 +115,7 @@ export interface Workspace {
   // still has to render. Writes are narrowed to WorkspaceKind.
   kind: string
   is_archived: boolean
+  status: WorkspaceStatus
   default_currency: string
   locale: string | null
   /** The calendar this workspace keeps its books in, or null to follow the
@@ -1820,6 +1843,12 @@ export interface AssetPriceRefreshResult {
   refreshed: number
   skipped: number
   rate_limited: number
+}
+
+export interface ArchivedAssetCounts {
+  count: number
+  by_wallet: Record<string, number>
+  ungrouped: number
 }
 
 export interface AssetGroup {

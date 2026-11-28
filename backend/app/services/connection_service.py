@@ -89,11 +89,17 @@ from app.services.transfer_detection_service import detect_transfer_pairs
 from app.services.fx_rate_service import (
     ACCOUNT_AMOUNT_FROM_BANK,
     ACCOUNT_AMOUNT_FROM_USER,
+    rates_in_callers_transaction,
     stamp_account_amount,
     stamp_primary_amount,
 )
 from app.services.payee_service import find_payee_by_name, get_or_create_payee
 from app.services.transaction_match_service import find_unique_transaction_match
+from app.services.workspace_status_service import (
+    SUSPENDED_DETAIL,
+    hold_active,
+    is_suspended,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -1159,6 +1165,7 @@ async def _sync_holdings(
             and asset.group_id != group.id
         ):
             asset.group_id = group.id
+            asset.position = 0  # its place was in the old wallet
         # Seed a historical value at purchase_date so users get a real
         # evolution curve from day one — not just today's snapshot.
         # Idempotent: skips if any AssetValue already exists at that date.
@@ -4816,6 +4823,24 @@ async def sync_connection(
     and the provider serves what it returned (`app.plugins.provider`). Its
     credentials stay sealed with the plugin connection, so there are none here.
     """
+    # A rate fetched for an imported row must not commit midway: the run
+    # writes nothing until its own commit, which holds the workspace first.
+    with rates_in_callers_transaction():
+        return await _sync_connection(
+            session, connection_id, workspace_id, requesting_user_id,
+            trigger_provider_refresh, retry_trade_import, provider,
+        )
+
+
+async def _sync_connection(
+    session: AsyncSession,
+    connection_id: uuid.UUID,
+    workspace_id: uuid.UUID,
+    requesting_user_id: uuid.UUID,
+    trigger_provider_refresh: bool,
+    retry_trade_import: bool,
+    provider: BankProvider | None,
+) -> tuple[BankConnection, int, SyncOutcome]:
     connection = await get_connection(
         session, connection_id, workspace_id, for_update=True
     )
@@ -4829,6 +4854,11 @@ async def sync_connection(
         raise ProviderNotConfiguredError("This connection is synced by its plugin.")
     if provider is None and not connection.credentials:
         raise ValueError("Credentials not found")
+    # The lock above may have waited behind another run, and an administrator
+    # may have suspended the workspace meanwhile. Stop before the provider and
+    # before anything is written (ADR 0052).
+    if await is_suspended(session, workspace_id):
+        raise WorkspaceSuspendedError(SUSPENDED_DETAIL)
 
     # Authorization is workspace-scoped and happens before this service is
     # called. Data imported from a bank connection, however, must always be
@@ -4895,6 +4925,10 @@ async def sync_connection(
                 # Surfacing reconnect immediately is better than silently
                 # reading stale data the user knows is stale.
                 connection.status = "error"
+                # This commit keeps the refreshed credentials too, so it is
+                # held like the final one (ADR 0052).
+                if workspace_id not in await hold_active(session, [workspace_id]):
+                    raise WorkspaceSuspendedError(SUSPENDED_DETAIL)
                 await session.commit()
                 raise ProviderUserActionRequired(
                     "Provider needs the user to reconnect before fetching fresh data",
@@ -4980,6 +5014,11 @@ async def sync_connection(
         holdings: Optional[list[HoldingData]] = None
         if _sync_assets_enabled(conn_settings):
             holdings = await _fetch_holdings(session, connection, credentials, provider)
+        # The provider answered slowly enough for an administrator to suspend
+        # the workspace meanwhile: stop before the bank is asked for each
+        # account's rows. The check that holds is the one before the commit.
+        if await is_suspended(session, workspace_id):
+            raise WorkspaceSuspendedError(SUSPENDED_DETAIL)
         auto_invested_deducted = await _resolve_auto_invested_deductions(
             session, connection, holdings, accounts_data
         )
@@ -5856,6 +5895,13 @@ async def sync_connection(
         else:
             connection.status = "active"
         connection.settings = _with_sync_failure(connection.settings, failure)
+        # Everything above is still uncommitted. The account loop asks the
+        # provider again for each account, so the workspace is held only from
+        # here to the commit: a suspension that landed during the run is read
+        # now and nothing is written, and one that comes later waits for this
+        # commit (ADR 0052).
+        if workspace_id not in await hold_active(session, [workspace_id]):
+            raise WorkspaceSuspendedError(SUSPENDED_DETAIL)
         await notification_service.connection_changed(session, connection)
         if rate_limited_accounts:
             logger.warning(
@@ -5914,6 +5960,11 @@ async def sync_connection(
         # Report "rate_limited" so the caller (manual sync endpoint, UI) knows
         # no fresh data was pulled and can say so instead of a success toast.
         return refreshed or connection, 0, "rate_limited"
+    except WorkspaceSuspendedError:
+        # Suspended during the run: nothing it read is kept, and the
+        # connection is not marked failed, since nothing is wrong with it.
+        await session.rollback()
+        raise
     except Exception as exc:
         # Mark connection as errored so UI shows reconnect banner. If some
         # account was also throttled in this run, its Retry-After is kept as
@@ -5953,10 +6004,15 @@ async def _mark_failed_sync(
 
     `retry_after` is the provider's Retry-After on a throttled sync, noted as
     a floor on the scheduler backoff. `failure` is why the sync failed, kept
-    until a sync succeeds (issue #1405)."""
+    until a sync succeeds (issue #1405).
+
+    A workspace suspended meanwhile is left as it is: nothing is written into
+    it, a connection's status included (ADR 0052)."""
     async with session.begin():
         conn = await session.get(BankConnection, connection_id, with_for_update=True)
         if conn is None or conn.status == DISCONNECTED_STATUS:
+            return
+        if conn.workspace_id not in await hold_active(session, [conn.workspace_id]):
             return
         if conn.status not in keep:
             conn.status = status
@@ -6000,6 +6056,10 @@ async def _mark_initial_import_failed(
 
 class ConnectionDisconnectedError(Exception):
     """A sync was asked of a connection the user disconnected."""
+
+
+class WorkspaceSuspendedError(Exception):
+    """The workspace was suspended before the sync could write."""
 
 
 async def unlink_connection(

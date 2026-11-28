@@ -1,0 +1,1018 @@
+"""Suspending a workspace stops every write and scheduled job, and nothing else."""
+import uuid
+from datetime import date, datetime, timedelta, timezone
+from decimal import Decimal
+from unittest.mock import AsyncMock, patch
+
+import pytest
+from fastapi import HTTPException
+from sqlalchemy import func, select, update
+
+from app.models.account import Account
+from app.models.admin_access_log import AdminAccessLog
+from app.models.asset import Asset
+from app.models.asset_value import AssetValue
+from app.models.bank_connection import BankConnection
+from app.models.group_settlement import GroupSettlement
+from app.models.plugin_connection import PluginConnection, PluginConnectionRoutine
+from app.models.recurring_transaction import RecurringTransaction
+from app.models.transaction import Transaction
+from app.models.user import User
+from app.models.workspace import Workspace
+from app.providers.base import AccountData, TransactionData
+from app.providers.market_price import LatestClose
+from app.schemas.group import GroupCreate, GroupMemberCreate
+from app.schemas.group_settlement import GroupSettlementCreate, GroupSettlementUpdate
+from app.schemas.transaction import TransactionPaybackInput
+from app.services import (
+    connection_service,
+    group_service,
+    invoice_schedule_service,
+    recurring_transaction_service,
+    settlement_service,
+    workspace_service,
+)
+from app.services.asset_service import refresh_all_market_prices
+from app.services.invoice_schedule_service import due_schedule_ids
+from app.services.workspace_status_service import SUSPENDED_DETAIL, in_active_workspace, is_suspended
+from app.tasks import asset_tasks, plugin_tasks, sync_tasks
+
+
+@pytest.fixture
+async def suspended(session, test_workspace):
+    test_workspace.status = "suspended"
+    await session.commit()
+    return test_workspace
+
+
+REASON = "Support asked for a pause while the books are audited"
+
+
+async def _set(client, headers, workspace_id, status, **extra):
+    return await client.patch(
+        f"/api/admin/workspaces/{workspace_id}/status",
+        headers=headers,
+        json={"status": status, "reason": REASON, **extra},
+    )
+
+
+def _category():
+    return {"name": f"c-{uuid.uuid4().hex[:8]}", "type": "expense"}
+
+
+# --- transitions -----------------------------------------------------------
+
+
+async def test_a_workspace_starts_active(client, auth_headers, test_workspace):
+    resp = await client.get("/api/workspaces/current", headers=auth_headers)
+    assert resp.json()["status"] == "active"
+
+
+async def test_suspend_then_reactivate(
+    client, auth_headers, admin_auth_headers, test_workspace, test_categories
+):
+    resp = await _set(client, admin_auth_headers, test_workspace.id, "suspended")
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["status"] == "suspended"
+    assert resp.json()["status_changed_at"] is not None
+
+    refused = await client.post("/api/categories", headers=auth_headers, json=_category())
+    assert refused.status_code == 403
+    assert refused.json()["detail"] == SUSPENDED_DETAIL
+
+    resp = await _set(client, admin_auth_headers, test_workspace.id, "active")
+    assert resp.json()["status"] == "active"
+    allowed = await client.post("/api/categories", headers=auth_headers, json=_category())
+    assert allowed.status_code == 201, allowed.text
+
+
+async def test_setting_the_same_status_keeps_its_date(client, admin_auth_headers, test_workspace):
+    first = await _set(client, admin_auth_headers, test_workspace.id, "suspended")
+    again = await _set(client, admin_auth_headers, test_workspace.id, "suspended")
+    # SQLite gives the date back without its offset.
+    dates = [r.json()["status_changed_at"].rstrip("Z") for r in (first, again)]
+    assert dates[0] == dates[1]
+
+
+async def test_a_status_change_needs_a_reason(client, session, admin_auth_headers, test_workspace):
+    """ADR 0042: the reason is part of the request, not an optional note."""
+    for body in ({"status": "suspended"}, {"status": "suspended", "reason": "  "}):
+        resp = await client.patch(
+            f"/api/admin/workspaces/{test_workspace.id}/status",
+            headers=admin_auth_headers,
+            json=body,
+        )
+        assert resp.status_code == 422, resp.text
+    workspace = await session.get(Workspace, test_workspace.id)
+    await session.refresh(workspace)
+    assert workspace.status == "active"
+    assert await session.scalar(select(func.count()).select_from(AdminAccessLog)) == 0
+
+
+async def test_the_change_is_recorded_and_the_owner_reads_it(
+    client, session, admin_auth_headers, auth_headers, viewer_auth_headers, test_workspace
+):
+    resp = await _set(client, admin_auth_headers, test_workspace.id, "suspended")
+    assert resp.status_code == 200, resp.text
+
+    entry = await session.scalar(
+        select(AdminAccessLog).where(AdminAccessLog.action == "workspace.status")
+    )
+    assert entry is not None
+    assert entry.actor_email == "admin@example.com"
+    assert entry.target_user_id is None
+    assert entry.target_email is None
+    assert entry.target_workspace_id == test_workspace.id
+    assert entry.target_workspace_name == test_workspace.name
+    assert entry.reason == REASON
+    assert entry.changes == {"status": {"from": "active", "to": "suspended"}}
+    assert entry.ip is not None
+
+    mine = await client.get("/api/access-log/mine", headers=auth_headers)
+    assert mine.status_code == 200, mine.text
+    items = mine.json()["items"]
+    assert [item["target_workspace_name"] for item in items] == [test_workspace.name]
+    assert items[0]["reason"] == REASON
+    assert items[0]["target_email"] is None
+    assert items[0]["changes"] == {"status": {"from": "active", "to": "suspended"}}
+
+    # A member who is not an owner runs the workspace day to day but does not
+    # answer for it, so the record of a suspension is not theirs to read.
+    member = await client.get("/api/access-log/mine", headers=viewer_auth_headers)
+    assert member.status_code == 200, member.text
+    assert member.json()["total"] == 0
+
+
+async def test_asking_for_the_status_it_has_leaves_no_record(
+    client, session, admin_auth_headers, test_workspace
+):
+    assert (await _set(client, admin_auth_headers, test_workspace.id, "suspended")).status_code == 200
+    assert (await _set(client, admin_auth_headers, test_workspace.id, "suspended")).status_code == 200
+    count = await session.scalar(select(func.count()).select_from(AdminAccessLog))
+    assert count == 1
+
+
+async def test_an_unknown_status_is_refused(client, admin_auth_headers, test_workspace):
+    assert (await _set(client, admin_auth_headers, test_workspace.id, "paused")).status_code == 422
+
+
+async def test_an_unknown_or_archived_workspace_is_not_found(
+    client, session, admin_auth_headers, test_workspace
+):
+    assert (await _set(client, admin_auth_headers, uuid.uuid4(), "suspended")).status_code == 404
+    test_workspace.is_archived = True
+    await session.commit()
+    resp = await _set(client, admin_auth_headers, test_workspace.id, "suspended")
+    assert resp.status_code == 404
+
+
+async def test_only_an_administrator_changes_the_status(client, auth_headers, suspended):
+    assert (await _set(client, auth_headers, suspended.id, "active")).status_code == 403
+    resp = await client.get("/api/admin/workspaces", headers=auth_headers)
+    assert resp.status_code == 403
+
+
+async def test_the_owner_cannot_lift_it_through_the_workspace_route(
+    client, session, auth_headers, suspended
+):
+    await client.patch(
+        f"/api/workspaces/{suspended.id}", headers=auth_headers, json={"status": "active"}
+    )
+    assert await is_suspended(session, suspended.id)
+
+
+async def test_the_list_finds_by_name_and_by_owner(
+    client, admin_auth_headers, test_workspace, test_user
+):
+    for term in (test_workspace.name, test_user.email):
+        resp = await client.get(
+            "/api/admin/workspaces", params={"search": term}, headers=admin_auth_headers
+        )
+        assert resp.status_code == 200, resp.text
+        found = [w for w in resp.json()["items"] if w["id"] == str(test_workspace.id)]
+        assert found and found[0]["owners"] == [test_user.email]
+        assert found[0]["status"] == "active"
+    none = await client.get(
+        "/api/admin/workspaces", params={"search": "100%_none"}, headers=admin_auth_headers
+    )
+    assert none.json() == {"items": [], "total": 0}
+
+
+# --- what a suspended workspace keeps and loses ----------------------------
+
+
+async def test_reading_and_exporting_still_work(client, auth_headers, suspended, test_account):
+    for path in ("/api/transactions", "/api/accounts", "/api/categories", "/api/budgets"):
+        resp = await client.get(path, headers=auth_headers)
+        assert resp.status_code == 200, f"{path}: {resp.text}"
+    export = await client.get("/api/export/backup", headers=auth_headers)
+    assert export.status_code == 200
+    assert export.content[:2] == b"PK"
+
+
+async def test_a_viewer_is_still_told_about_the_role(client, viewer_auth_headers, suspended):
+    resp = await client.post("/api/categories", headers=viewer_auth_headers, json=_category())
+    assert resp.status_code == 403
+    assert "read-only" in resp.json()["detail"].lower()
+
+
+async def test_settings_and_roster_cannot_grow(client, auth_headers, suspended, test_user):
+    rename = await client.patch(
+        f"/api/workspaces/{suspended.id}", headers=auth_headers, json={"name": "Renamed"}
+    )
+    invite = await client.post(
+        f"/api/workspaces/{suspended.id}/members",
+        headers=auth_headers,
+        json={"email": "someone@example.com", "role": "editor", "password": "password123"},
+    )
+    role = await client.patch(
+        f"/api/workspaces/{suspended.id}/members/{test_user.id}",
+        headers=auth_headers,
+        json={"role": "owner"},
+    )
+    for resp in (rename, invite, role):
+        assert resp.status_code == 403
+        assert resp.json()["detail"] == SUSPENDED_DETAIL
+
+
+async def test_a_member_can_still_leave(
+    client, session, auth_headers, viewer_auth_headers, suspended
+):
+    members = await client.get(f"/api/workspaces/{suspended.id}/members", headers=auth_headers)
+    viewer = next(m for m in members.json() if m["role"] == "viewer")
+    resp = await client.delete(
+        f"/api/workspaces/{suspended.id}/members/{viewer['user_id']}", headers=viewer_auth_headers
+    )
+    assert resp.status_code == 204
+
+
+async def test_another_workspace_is_untouched(client, auth_headers, suspended):
+    created = await client.post(
+        "/api/workspaces",
+        headers=auth_headers,
+        json={"name": "Other", "kind": "personal", "self_membership": True},
+    )
+    headers = {**auth_headers, "X-Workspace-Id": created.json()["id"]}
+    resp = await client.post("/api/categories", headers=headers, json=_category())
+    assert resp.status_code == 201, resp.text
+
+
+async def test_an_external_agent_cannot_apply(session, test_user, suspended):
+    from mcp_server.auth import CallContext, ToolAccessDenied
+    from mcp_server.registry import call_tool
+    import mcp_server.tools.proposals  # noqa: F401
+
+    ctx = CallContext(user_id=test_user.id, workspace_id=suspended.id, external=True)
+    with pytest.raises(ToolAccessDenied, match="suspended"):
+        await call_tool(session, ctx, "propose_categorize", {"apply": True})
+    assert ctx.can_write is False
+
+
+async def _shared_group(session, owner, workspace):
+    """A group of `workspace` whose payer acts from a workspace of their own."""
+    payer = User(
+        id=uuid.uuid4(), email="payer@example.com", hashed_password="x", is_active=True,
+        is_verified=True, preferences={"currency_display": "BRL"},
+    )
+    session.add(payer)
+    await session.flush()
+    payer_ws = await workspace_service.create_personal_workspace_for_user(
+        session, payer, commit=True
+    )
+    group = await group_service.create_group(
+        session, workspace.id, owner.id, GroupCreate(name="Trip", default_currency="BRL")
+    )
+    me = await group_service.create_member(
+        session, group.id, workspace.id, GroupMemberCreate(name="Me", is_self=True)
+    )
+    member = await group_service.create_member(
+        session, group.id, workspace.id,
+        GroupMemberCreate(name="Payer", linked_user_id=payer.id),
+    )
+    assert me is not None and member is not None
+    data = GroupSettlementCreate(
+        from_member_id=member.id, to_member_id=me.id,
+        amount=Decimal("3.00"), currency="BRL", date=date.today(),
+    )
+    return group, payer, payer_ws, data
+
+
+async def test_a_linked_member_cannot_settle_into_it(session, test_user, test_workspace):
+    group, payer, payer_ws, data = await _shared_group(session, test_user, test_workspace)
+    settlement = await settlement_service.create_settlement(
+        session, group.id, payer_ws.id, payer.id, data
+    )
+    assert settlement is not None
+    test_workspace.status = "suspended"
+    await session.commit()
+    where = (session, group.id, settlement.id, payer_ws.id, payer.id)
+    for attempt in (
+        settlement_service.create_settlement(session, group.id, payer_ws.id, payer.id, data),
+        settlement_service.update_settlement(*where, GroupSettlementUpdate(amount=Decimal("4"))),
+        settlement_service.delete_settlement(*where),
+    ):
+        with pytest.raises(HTTPException) as refused:
+            await attempt
+        assert refused.value.detail == SUSPENDED_DETAIL
+    assert await settlement_service.list_settlements(
+        session, group.id, payer_ws.id, payer.id
+    ) == [settlement]
+
+
+async def test_replacing_a_payback_does_not_write_into_a_suspended_group(
+    session, test_user, test_workspace, test_account
+):
+    """The replaced settlements may belong to a suspended workspace, while
+    the credit being saved lives in an active one: the delete is refused
+    before it happens, not after (#1875 review)."""
+    group, _payer, _payer_ws, data = await _shared_group(session, test_user, test_workspace)
+    credit = Transaction(
+        id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+        account_id=test_account.id, description="Received", amount=Decimal("10.00"),
+        currency="BRL", type="credit", source="manual", date=date.today(),
+    )
+    session.add(credit)
+    await session.flush()
+    settlement = await settlement_service.create_settlement(
+        session, group.id, test_workspace.id, test_user.id,
+        data.model_copy(update={"receiver_transaction_id": credit.id}),
+    )
+    assert settlement is not None
+    settlement_id, credit_id = settlement.id, credit.id
+    test_workspace.status = "suspended"
+    await session.commit()
+    with pytest.raises(HTTPException) as refused:
+        await settlement_service.replace_receiver_settlements(
+            session, await session.get(Transaction, credit_id),
+            TransactionPaybackInput(), test_workspace.id, test_user.id,
+        )
+    assert refused.value.detail == SUSPENDED_DETAIL
+    assert await session.get(GroupSettlement, settlement_id) is not None
+
+
+async def test_clearing_a_payback_checks_the_group_workspace_too(
+    session, test_user, test_workspace
+):
+    """The settlement records the workspace it was written from (the owner's
+    second workspace), while its group lives in another. Suspending the
+    group's workspace must stop the replacement even though the row's own
+    workspace is still active (#1875 review)."""
+    group, _payer, _payer_ws, data = await _shared_group(session, test_user, test_workspace)
+    # The group's owner also belongs to a second workspace, and records the
+    # payback from there with their own incoming credit (the only way
+    # `create_settlement` lets the writer and the receiver differ).
+    other = await workspace_service.create_workspace(
+        session, name="Other", creator=test_user, self_membership=True
+    )
+    other_account = Account(
+        id=uuid.uuid4(), user_id=test_user.id, workspace_id=other.id,
+        name="Cash", type="checking", currency="BRL", balance=Decimal("0"),
+    )
+    session.add(other_account)
+    credit = Transaction(
+        id=uuid.uuid4(), user_id=test_user.id, workspace_id=other.id,
+        account_id=other_account.id, description="Received", amount=Decimal("10.00"),
+        currency="BRL", type="credit", source="manual", date=date.today(),
+    )
+    session.add(credit)
+    await session.flush()
+    settlement = await settlement_service.create_settlement(
+        session, group.id, other.id, test_user.id,
+        data.model_copy(update={"receiver_transaction_id": credit.id}),
+    )
+    assert settlement is not None
+    assert settlement.workspace_id == other.id
+    settlement_id, credit_id = settlement.id, credit.id
+    # The group's workspace goes away; the row's own does not.
+    test_workspace.status = "suspended"
+    await session.commit()
+    with pytest.raises(HTTPException) as refused:
+        await settlement_service.replace_receiver_settlements(
+            session, await session.get(Transaction, credit_id),
+            TransactionPaybackInput(), other.id, test_user.id,
+        )
+    assert refused.value.detail == SUSPENDED_DETAIL
+    assert await session.get(GroupSettlement, settlement_id) is not None
+
+
+async def test_editing_and_deleting_a_settlement_from_a_suspended_workspace_are_refused(
+    session, test_user, test_workspace
+):
+    """The payer records the settlement from their own workspace; the owner
+    of an active group must not edit or delete that row once the payer's
+    workspace is suspended (#1875 review)."""
+    group, payer, payer_ws, data = await _shared_group(session, test_user, test_workspace)
+    settlement = await settlement_service.create_settlement(
+        session, group.id, payer_ws.id, payer.id, data
+    )
+    assert settlement is not None
+    settlement_id = settlement.id
+    payer_ws.status = "suspended"
+    await session.commit()
+    where = (session, group.id, settlement_id, test_workspace.id, test_user.id)
+    for attempt in (
+        settlement_service.update_settlement(*where, GroupSettlementUpdate(amount=Decimal("4"))),
+        settlement_service.delete_settlement(*where),
+    ):
+        with pytest.raises(HTTPException) as refused:
+            await attempt
+        assert refused.value.detail == SUSPENDED_DETAIL
+    assert await session.get(GroupSettlement, settlement_id) is not None
+
+
+@pytest.mark.parametrize("status,picked", [("suspended", False), ("active", True)])
+async def test_a_settlement_credit_skips_its_accounts(
+    session, test_user, test_workspace, test_account, status, picked
+):
+    test_workspace.status = status
+    test_account.type = "checking"
+    await session.commit()
+    account = await settlement_service._pick_default_account_for_user(session, test_user.id)
+    assert (account is not None and account.id == test_account.id) is picked
+
+
+# --- scheduled work --------------------------------------------------------
+
+
+def _bank(user, workspace_id):
+    return BankConnection(
+        id=uuid.uuid4(),
+        user_id=user.id,
+        workspace_id=workspace_id,
+        provider="test",
+        external_id=uuid.uuid4().hex,
+        institution_name="Test Bank",
+        credentials={"token": "fake"},
+        status="active",
+        last_sync_at=None,
+        created_at=datetime.now(timezone.utc),
+    )
+
+
+class _Engine:
+    async def dispose(self):
+        return None
+
+
+@pytest.mark.parametrize("status,calls", [("suspended", 0), ("active", 1)])
+async def test_the_scheduled_bank_sync(session, test_user, test_workspace, status, calls):
+    test_workspace.status = status
+    session.add(_bank(test_user, test_workspace.id))
+    await session.commit()
+    with (
+        patch.object(sync_tasks, "_make_session_maker", lambda: (_Engine(), lambda: session)),
+        patch.object(sync_tasks, "_sync_one", new_callable=AsyncMock, return_value="refreshed") as one,
+    ):
+        result = await sync_tasks._sync_all()
+    assert one.await_count == calls
+    assert result["synced"] == calls
+
+
+@pytest.mark.parametrize("status,calls", [("suspended", 0), ("active", 1)])
+async def test_a_sync_already_queued(session, test_user, test_workspace, status, calls):
+    """Suspended between being picked up and run."""
+    conn = _bank(test_user, test_workspace.id)
+    session.add(conn)
+    test_workspace.status = status
+    await session.commit()
+    with (
+        patch.object(sync_tasks, "_make_session_maker", lambda: (_Engine(), lambda: session)),
+        patch.object(
+            sync_tasks.connection_service,
+            "sync_connection",
+            new_callable=AsyncMock,
+            return_value=(conn, 0, "refreshed"),
+        ) as sync,
+    ):
+        await sync_tasks._sync_one(lambda: session, conn.id, test_user.id)
+        assert sync.await_count == calls
+        await sync_tasks._sync_one_celery(str(conn.id), str(test_user.id))
+        assert sync.await_count == calls * 2
+
+
+@pytest.mark.parametrize("status,calls", [("suspended", 0), ("active", 1)])
+async def test_the_plugin_sync(session, test_user, test_workspace, status, calls):
+    connection = PluginConnection(
+        id=uuid.uuid4(),
+        plugin_id="demo",
+        integration="demo",
+        name="Demo",
+        workspace_id=test_workspace.id,
+        created_by=test_user.id,
+        sync_minutes=15,
+        status="active",
+    )
+    session.add(connection)
+    test_workspace.status = status
+    await session.commit()
+    with (
+        patch.object(plugin_tasks, "_session_maker", lambda: (_Engine(), lambda: session)),
+        patch.object(plugin_tasks, "close_redis", new_callable=AsyncMock),
+        patch.object(plugin_tasks.connections, "due", lambda c: True),
+        patch.object(plugin_tasks.connections, "sync", new_callable=AsyncMock) as sync,
+    ):
+        assert await plugin_tasks.sync_due(session) == calls
+        await plugin_tasks._sync_one(str(connection.id))
+        assert sync.await_count == calls * 2
+
+
+async def test_a_queued_sync_refuses_when_the_lock_comes_after_a_suspension(
+    session, test_user, test_workspace
+):
+    """The suspension lands while the run waits for the connection lock. The
+    sync stops there: the provider is never asked and nothing is written."""
+    conn = _bank(test_user, test_workspace.id)
+    session.add(conn)
+    await session.commit()
+    provider = AsyncMock()
+    locked_lookup = connection_service.get_connection
+
+    async def lock_then_suspend(*args, **kwargs):
+        # The workspace is active while the run waits; the suspension lands
+        # once the real locked lookup has returned the connection.
+        found = await locked_lookup(*args, **kwargs)
+        await _suspend(session, test_workspace.id)
+        return found
+
+    with (
+        patch.object(connection_service, "get_connection", side_effect=lock_then_suspend),
+        pytest.raises(connection_service.WorkspaceSuspendedError),
+    ):
+        await connection_service.sync_connection(
+            session, conn.id, test_workspace.id, test_user.id, provider=provider
+        )
+
+    assert provider.mock_calls == []
+    accounts = await session.scalar(
+        select(func.count()).select_from(Account).where(Account.workspace_id == test_workspace.id)
+    )
+    assert accounts == 0
+
+
+async def _suspend(session, workspace_id):
+    """The administrator's change, as the next statement of the run reads it."""
+    await session.execute(
+        update(Workspace).where(Workspace.id == workspace_id).values(status="suspended")
+    )
+
+
+def _bank_provider():
+    provider = AsyncMock()
+    provider.refresh_credentials.return_value = {"token": "fake"}
+    provider.get_institution_logo.return_value = None
+    provider.get_holdings.return_value = []
+    provider.rereads_by_date = False
+    provider.rate_limited_account_ids = set()
+    provider.rate_limit_retry_after = None
+    provider.presence_required_account_ids = set()
+    provider.action_required_warnings = []
+    provider.get_accounts.return_value = [
+        AccountData(
+            external_id="acc-1", name="Checking", type="checking",
+            balance=Decimal("100.00"), currency="BRL",
+        )
+    ]
+    provider.get_transactions.return_value = [
+        TransactionData(
+            external_id="tx-1", description="Coffee", amount=Decimal("5.00"),
+            date=date.today(), type="debit", currency="BRL",
+        )
+    ]
+    return provider
+
+
+async def _synced_rows(session, workspace_id):
+    accounts = await session.scalar(
+        select(func.count()).select_from(Account).where(Account.workspace_id == workspace_id)
+    )
+    transactions = await session.scalar(
+        select(func.count()).select_from(Transaction).where(Transaction.workspace_id == workspace_id)
+    )
+    return accounts, transactions
+
+
+@pytest.mark.parametrize("during", ["get_accounts", "get_transactions"])
+async def test_a_sync_suspended_while_the_provider_answers_writes_nothing(
+    session, test_user, test_workspace, during
+):
+    """The workspace is suspended after the run took the connection lock, while
+    the bank answers: before the account loop, or inside it. The run stops,
+    writes nothing and leaves the connection as it was, not failed."""
+    workspace_id, user_id = test_workspace.id, test_user.id
+    conn = _bank(test_user, workspace_id)
+    session.add(conn)
+    await session.commit()
+    conn_id = conn.id
+    provider = _bank_provider()
+    answer = getattr(provider, during).return_value
+
+    async def suspend_then_answer(*_args, **_kwargs):
+        await _suspend(session, workspace_id)
+        return answer
+
+    getattr(provider, during).side_effect = suspend_then_answer
+
+    with (
+        patch("app.services.connection_service.detect_transfer_pairs", new_callable=AsyncMock),
+        pytest.raises(connection_service.WorkspaceSuspendedError),
+    ):
+        await connection_service.sync_connection(
+            session, conn_id, workspace_id, user_id, provider=provider
+        )
+
+    assert await _synced_rows(session, workspace_id) == (0, 0)
+    status, last_sync_at = (
+        await session.execute(
+            select(BankConnection.status, BankConnection.last_sync_at).where(
+                BankConnection.id == conn_id
+            )
+        )
+    ).one()
+    assert (status, last_sync_at) == ("active", None)
+    if during == "get_accounts":
+        # Stopped before the bank was asked for each account's rows.
+        provider.get_transactions.assert_not_awaited()
+
+
+@pytest.mark.parametrize("ending", ["needs_user_action", "provider_error"])
+async def test_a_sync_suspended_before_it_fails_leaves_the_connection_alone(
+    session, test_user, test_workspace, ending
+):
+    """The run fails after the workspace was suspended: the bank asks for a
+    reconnect on refresh, or the provider errors. Neither marks the connection,
+    since nothing is written into a suspended workspace."""
+    workspace_id = test_workspace.id
+    conn = _bank(test_user, workspace_id)
+    session.add(conn)
+    await session.commit()
+    conn_id = conn.id
+    provider = _bank_provider()
+
+    async def suspend_then(*_args, **_kwargs):
+        # Committed, as the administrator's own transaction would be: the
+        # run's rollback must not take the suspension back with it.
+        await _suspend(session, workspace_id)
+        await session.commit()
+        if ending == "provider_error":
+            raise RuntimeError("bank is down")
+        return "needs_user_action"
+
+    if ending == "provider_error":
+        provider.get_accounts.side_effect = suspend_then
+    else:
+        provider.trigger_refresh.side_effect = suspend_then
+
+    with (
+        patch("app.services.connection_service.detect_transfer_pairs", new_callable=AsyncMock),
+        pytest.raises((connection_service.WorkspaceSuspendedError, RuntimeError)),
+    ):
+        await connection_service.sync_connection(
+            session, conn_id, workspace_id, test_user.id,
+            trigger_provider_refresh=ending == "needs_user_action", provider=provider,
+        )
+
+    status = await session.scalar(
+        select(BankConnection.status).where(BankConnection.id == conn_id)
+    )
+    assert status == "active"
+
+
+async def test_the_same_sync_writes_while_the_workspace_stays_active(
+    session, test_user, test_workspace
+):
+    """The run the test above stops, left alone: it does write, so the zeros
+    there come from the suspension."""
+    conn = _bank(test_user, test_workspace.id)
+    session.add(conn)
+    await session.commit()
+    with patch("app.services.connection_service.detect_transfer_pairs", new_callable=AsyncMock):
+        await connection_service.sync_connection(
+            session, conn.id, test_workspace.id, test_user.id, provider=_bank_provider()
+        )
+    accounts, transactions = await _synced_rows(session, test_workspace.id)
+    assert accounts == 1 and transactions > 0
+
+
+@pytest.mark.parametrize("status,calls", [("suspended", 0), ("active", 1)])
+async def test_the_plugin_routines(session, test_user, test_workspace, status, calls):
+    connection = PluginConnection(
+        id=uuid.uuid4(),
+        plugin_id="demo",
+        integration="demo",
+        name="Demo",
+        workspace_id=test_workspace.id,
+        created_by=test_user.id,
+        status="active",
+    )
+    session.add(connection)
+    await session.flush()
+    session.add(
+        PluginConnectionRoutine(connection_id=connection.id, routine="tidy", every_minutes=15)
+    )
+    test_workspace.status = status
+    await session.commit()
+    with (
+        patch.object(plugin_tasks, "_session_maker", lambda: (_Engine(), lambda: session)),
+        patch.object(plugin_tasks, "close_redis", new_callable=AsyncMock),
+        patch.object(plugin_tasks.connections, "routine_due", lambda r, c: True),
+        patch.object(
+            plugin_tasks.connections, "run_routine", new_callable=AsyncMock, return_value="ran"
+        ) as run,
+    ):
+        assert await plugin_tasks.run_due_routines(session) == calls
+        await plugin_tasks._run_routines_of(str(connection.id))
+        assert run.await_count == calls * 2
+
+
+async def test_the_plugin_routines_stop_when_a_suspension_lands_between_two(
+    session, test_user, test_workspace
+):
+    """The round started while the workspace was active; the suspension lands
+    while the first routine runs. The next one does not run."""
+    connection = PluginConnection(
+        id=uuid.uuid4(),
+        plugin_id="demo",
+        integration="demo",
+        name="Demo",
+        workspace_id=test_workspace.id,
+        created_by=test_user.id,
+        status="active",
+    )
+    session.add(connection)
+    await session.flush()
+    session.add_all(
+        [
+            PluginConnectionRoutine(connection_id=connection.id, routine="tidy", every_minutes=15),
+            PluginConnectionRoutine(connection_id=connection.id, routine="sweep", every_minutes=15),
+        ]
+    )
+    await session.commit()
+
+    async def suspend_while_running(*_args, **_kwargs):
+        await session.execute(
+            update(Workspace).where(Workspace.id == test_workspace.id).values(status="suspended")
+        )
+        return "ran"
+
+    with (
+        patch.object(plugin_tasks, "_session_maker", lambda: (_Engine(), lambda: session)),
+        patch.object(plugin_tasks, "close_redis", new_callable=AsyncMock),
+        patch.object(plugin_tasks.connections, "routine_due", lambda r, c: True),
+        patch.object(
+            plugin_tasks.connections,
+            "run_routine",
+            new_callable=AsyncMock,
+            side_effect=suspend_while_running,
+        ) as run,
+    ):
+        assert await plugin_tasks._run_routines_of(str(connection.id)) == []
+    assert run.await_count == 1
+
+
+@pytest.mark.parametrize("status,calls", [("suspended", 0), ("active", 1)])
+async def test_the_recurring_job(session, test_user, test_workspace, test_account, status, calls):
+    session.add(
+        RecurringTransaction(
+            id=uuid.uuid4(),
+            user_id=test_user.id,
+            workspace_id=test_workspace.id,
+            account_id=test_account.id,
+            description="Rent",
+            amount=Decimal("10.00"),
+            currency=test_account.currency,
+            type="debit",
+            frequency="yearly",
+            start_date=date.today() - timedelta(days=1),
+            next_occurrence=date.today() - timedelta(days=1),
+            auto_generate=True,
+            is_active=True,
+        )
+    )
+    test_workspace.status = status
+    await session.commit()
+    assert await recurring_transaction_service.generate_pending(session, test_user.id) == calls
+    count = await session.scalar(
+        select(func.count()).select_from(Transaction).where(Transaction.description == "Rent")
+    )
+    assert count == calls
+
+
+async def test_the_recurring_job_rechecks_each_workspace_before_its_bills(
+    session, test_user, test_workspace
+):
+    """The job picked bills of two workspaces while both were active; one is
+    suspended while the other's bill is being written. The suspended one's
+    bill is left as it was: no transaction, pointer not moved."""
+    other = await workspace_service.create_workspace(
+        session, name="Other", creator=test_user, seed_defaults=False
+    )
+    due = date.today() - timedelta(days=1)
+    bills = {}
+    for workspace in (test_workspace, other):
+        account = Account(
+            id=uuid.uuid4(), user_id=test_user.id, workspace_id=workspace.id,
+            name=f"Account {workspace.name}", type="checking", balance=Decimal("0"),
+            currency="BRL",
+        )
+        bill = RecurringTransaction(
+            id=uuid.uuid4(), user_id=test_user.id, workspace_id=workspace.id,
+            account_id=account.id, description=f"Rent {workspace.name}",
+            amount=Decimal("10.00"), currency="BRL", type="debit", frequency="yearly",
+            start_date=due, next_occurrence=due, auto_generate=True, is_active=True,
+        )
+        session.add_all([account, bill])
+        bills[workspace.id] = bill.id
+    await session.commit()
+
+    match = recurring_transaction_service.recurring_match_service.find_real_tx_for_occurrence
+    suspended_ids = []
+
+    async def suspend_the_other(_session, recurring, occurrence):
+        # The first bill to be written: the administrator suspends the
+        # workspace of the other one meanwhile.
+        if not suspended_ids:
+            target = other.id if recurring.workspace_id == test_workspace.id else test_workspace.id
+            await _suspend(session, target)
+            suspended_ids.append(target)
+        return await match(_session, recurring, occurrence)
+
+    with patch.object(
+        recurring_transaction_service.recurring_match_service,
+        "find_real_tx_for_occurrence",
+        side_effect=suspend_the_other,
+    ):
+        assert await recurring_transaction_service.generate_pending(session, test_user.id) == 1
+
+    [suspended_id] = suspended_ids
+    written = await session.scalar(
+        select(func.count()).select_from(Transaction).where(Transaction.workspace_id == suspended_id)
+    )
+    assert written == 0
+    left = await session.get(RecurringTransaction, bills[suspended_id])
+    await session.refresh(left)
+    assert left.next_occurrence == due
+
+
+@pytest.mark.parametrize("status,calls", [("suspended", 0), ("active", 1)])
+async def test_the_invoice_job(session, test_user, test_workspace, status, calls):
+    """The statement the job runs, over a schedule row of this workspace."""
+    from app.models.invoice_schedule import InvoiceSchedule
+    from app.models.payee import Payee
+
+    payee = Payee(id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id, name="ACME")
+    session.add(payee)
+    await session.flush()
+    session.add(
+        InvoiceSchedule(
+            id=uuid.uuid4(),
+            user_id=test_user.id,
+            workspace_id=test_workspace.id,
+            payee_id=payee.id,
+            status="active",
+            origin="local",
+            currency="BRL",
+            name="Retainer",
+            frequency="monthly",
+            start_date=date.today(),
+        )
+    )
+    test_workspace.status = status
+    await session.commit()
+    assert len(await due_schedule_ids(session)) == calls
+
+
+async def test_the_invoice_job_rechecks_the_workspace_before_emitting(
+    session, test_user, test_workspace
+):
+    """The job's select ran while the workspace was active; the suspension
+    lands before the row is locked. Nothing is emitted into it."""
+    from app.models.invoice import Invoice
+    from app.models.invoice_schedule import InvoiceSchedule
+    from app.models.payee import Payee
+
+    payee = Payee(id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id, name="ACME")
+    session.add(payee)
+    await session.flush()
+    schedule = InvoiceSchedule(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        payee_id=payee.id,
+        status="active",
+        origin="local",
+        currency="BRL",
+        name="Retainer",
+        frequency="monthly",
+        start_date=date.today(),
+    )
+    session.add(schedule)
+    await session.commit()
+    # What the job did first: it picked the schedule while the workspace was
+    # active, and loaded it.
+    schedule_id = schedule.id
+    assert await due_schedule_ids(session) == [schedule_id]
+    loaded = await session.get(InvoiceSchedule, schedule_id)
+    test_workspace.status = "suspended"
+    await session.commit()
+
+    assert await invoice_schedule_service.generate_due(session, loaded) == []
+    count = await session.scalar(
+        select(func.count()).select_from(Invoice).where(Invoice.schedule_id == schedule_id)
+    )
+    assert count == 0
+
+
+def _asset(user, workspace_id, **kw):
+    return Asset(
+        id=uuid.uuid4(), user_id=user.id, workspace_id=workspace_id, name="A", type="other",
+        currency="BRL", **kw,
+    )
+
+
+@pytest.mark.parametrize("status,calls", [("suspended", 0), ("active", 1)])
+async def test_the_growth_job(session, test_user, test_workspace, status, calls):
+    asset = _asset(
+        test_user, test_workspace.id, valuation_method="growth_rule", growth_type="absolute",
+        growth_rate=Decimal("1"), growth_frequency="yearly",
+    )
+    session.add(asset)
+    await session.flush()
+    session.add(
+        AssetValue(asset_id=asset.id, amount=Decimal("5"), date=date.today() - timedelta(days=400), source="manual")
+    )
+    test_workspace.status = status
+    await session.commit()
+    with patch.object(asset_tasks, "_make_session_maker", lambda: (_Engine(), lambda: session)):
+        assert await asset_tasks._apply_growth_rules() == calls
+
+
+async def test_the_growth_job_rechecks_the_workspace_before_writing(
+    session, test_user, test_workspace
+):
+    """The job picked the asset while the workspace was active; the suspension
+    lands before the asset's own session opens. Nothing is written into it."""
+    asset = _asset(
+        test_user, test_workspace.id, valuation_method="growth_rule", growth_type="absolute",
+        growth_rate=Decimal("1"), growth_frequency="yearly",
+    )
+    session.add(asset)
+    await session.flush()
+    session.add(
+        AssetValue(asset_id=asset.id, amount=Decimal("5"), date=date.today() - timedelta(days=400), source="manual")
+    )
+    await session.commit()
+    asset_id = asset.id
+
+    class _SuspendingMaker:
+        """The session the job opens per asset, after the administrator acted."""
+
+        calls = 0
+
+        def __call__(self):
+            self.calls += 1
+            return self
+
+        async def __aenter__(self):
+            if self.calls == 2:
+                await session.execute(
+                    update(Workspace)
+                    .where(Workspace.id == test_workspace.id)
+                    .values(status="suspended")
+                )
+            return session
+
+        async def __aexit__(self, *_exc):
+            return False
+
+    with patch.object(asset_tasks, "_make_session_maker", lambda: (_Engine(), _SuspendingMaker())):
+        assert await asset_tasks._apply_growth_rules() == 0
+    count = await session.scalar(
+        select(func.count()).select_from(AssetValue).where(AssetValue.asset_id == asset_id)
+    )
+    assert count == 1
+
+
+@pytest.mark.parametrize("status,asked", [("suspended", 0), ("active", 1)])
+async def test_the_price_job(session, test_user, test_workspace, status, asked):
+    asset = _asset(test_user, test_workspace.id, valuation_method="market_price", ticker="TEST")
+    session.add(asset)
+    test_workspace.status = status
+    await session.commit()
+    asset_id = asset.id
+    provider = AsyncMock()
+    # A real close, so the run has a price to write: the assertions below are
+    # about what lands in the row, not only about the provider being asked.
+    provider.get_latest_closes.return_value = {"TEST": LatestClose(Decimal("42.50"), date.today())}
+    provider.get_quote.return_value = None
+    await refresh_all_market_prices(session, market_provider=provider)
+    assert provider.get_latest_closes.await_count == asked
+    stored = await session.get(Asset, asset_id)
+    # The scheduled sweep leaves a suspended workspace out of its writes too.
+    assert stored.last_price == (Decimal("42.50") if asked else None)
+
+
+async def test_a_row_without_a_workspace_is_not_dropped(session):
+    from sqlalchemy import Uuid, literal
+
+    assert await session.scalar(select(in_active_workspace(literal(None, Uuid())))) in (True, 1)
+

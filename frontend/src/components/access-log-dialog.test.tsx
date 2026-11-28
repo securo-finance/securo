@@ -74,6 +74,30 @@ describe('AccessLogDialog', () => {
     expect(screen.getByText('Also changed: is_active')).toBeInTheDocument()
   })
 
+  it('shows a workspace whose status was changed', async () => {
+    api.accessLog.mine.mockResolvedValue({
+      items: [
+        entry({
+          target_email: null,
+          target_user_id: null,
+          target_workspace_id: 'ws-1',
+          target_workspace_name: 'Pessoal',
+          action: 'workspace.status',
+          changes: { status: { from: 'active', to: 'suspended' } },
+        }),
+      ],
+      total: 1,
+    })
+
+    renderWithProviders(<AccessLogDialog open onClose={vi.fn()} />)
+
+    expect(await screen.findByText('Workspace status changed')).toBeInTheDocument()
+    expect(screen.getByText('Workspace Pessoal')).toBeInTheDocument()
+    // The states are named for the person reading the log, not as the record has them.
+    expect(screen.getByText('Status Active → Suspended')).toBeInTheDocument()
+    expect(screen.getByText('Support ticket 12')).toBeInTheDocument()
+  })
+
   it('says so when nothing was recorded', async () => {
     api.accessLog.mine.mockResolvedValue({ items: [], total: 0 })
 
