@@ -2,7 +2,8 @@ FROM python:3.14-slim AS builder
 
 # uv comes from its official image (https://docs.astral.sh/uv/guides/integration/docker/)
 # and stays in this stage: it is a build tool, not a runtime dependency.
-# Renovate bumps the tag together with the other uv pins.
+# Renovate bumps the tag from PyPI, together with the other uv pins.
+# renovate: datasource=pypi depName=uv
 COPY --from=ghcr.io/astral-sh/uv:0.13.8 /uv /bin/uv
 
 # The environment lives outside /app so the development bind mount of
