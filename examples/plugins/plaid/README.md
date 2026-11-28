@@ -12,14 +12,15 @@ runner and exercises Hosted Link, Update Mode, `/transactions/sync`,
 
 ## What it syncs
 
-- **Depository & wallet accounts** (checking, savings, PayPal): live balances
-  and cursor-based incremental `/transactions/sync` updates (`added`, `modified`,
-  `removed`, and explicit `pending_transaction_id` settlement).
+- **Depository & wallet accounts** (checking, savings, PayPal): balances
+  reported by Plaid and cursor-based incremental `/transactions/sync` updates
+  (`added`, `modified`, `removed`, and explicit `pending_transaction_id`
+  settlement).
 - **Credit cards**: balance, credit limit, minimum payment, due/close days,
   latest statement bill (from `/liabilities/get`), and transactions.
 - **Loans & mortgages** (e.g. Nelnet student loans, home mortgages): principal
-  balance, loan kind, original amount, APR, term, origination date, payment due
-  day, and minimum payment (from `/liabilities/get`).
+  balance, loan kind, original amount, APR, reported term (when provided),
+  payment due day, and minimum payment (from `/liabilities/get`).
 - **Investments** (e.g. M1 Finance, brokerages): holdings with tickers/ISINs,
   buy/sell trade history (`/investments/transactions/get`), and
   `auto_invested_balance` deduction so brokerage cash and holdings are never

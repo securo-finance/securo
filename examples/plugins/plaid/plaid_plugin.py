@@ -295,17 +295,6 @@ def _parse_loan_term_months(raw_term: Any) -> int | None:
     return months if 1 <= months <= 600 else None
 
 
-def _months_between(start_iso: str | None, end_iso: str | None) -> int | None:
-    if not start_iso or not end_iso:
-        return None
-    try:
-        start = dt.date.fromisoformat(start_iso)
-        end = dt.date.fromisoformat(end_iso)
-    except ValueError:
-        return None
-    months = (end.year - start.year) * 12 + (end.month - start.month)
-    return months if 1 <= months <= 600 else None
-
 
 def _map_holding_type(security_type: Any) -> str:
     kind = str(security_type or "").strip().lower()
@@ -477,10 +466,16 @@ class PlaidPlugin:
             ]
             if not primary_products:
                 primary_products = ["transactions"]
+            enable_investments = _bool_config(context.config, "enable_investments", True)
+            enable_liabilities = _bool_config(context.config, "enable_liabilities", True)
+            if "investments" in primary_products and not enable_investments:
+                raise ValueError("products includes 'investments' while enable_investments is false")
+            if "liabilities" in primary_products and not enable_liabilities:
+                raise ValueError("products includes 'liabilities' while enable_liabilities is false")
             optional_products: list[str] = []
-            if _bool_config(context.config, "enable_investments", True) and "investments" not in primary_products:
+            if enable_investments and "investments" not in primary_products:
                 optional_products.append("investments")
-            if _bool_config(context.config, "enable_liabilities", True) and "liabilities" not in primary_products:
+            if enable_liabilities and "liabilities" not in primary_products:
                 optional_products.append("liabilities")
             if "transactions" not in primary_products:
                 optional_products.append("transactions")
@@ -821,6 +816,7 @@ class PlaidPlugin:
         holdings: list[dict[str, Any]] = []
         auto_invested: dict[str, Decimal] = {}
         seen_holding_ids: set[str] = set()
+        incomplete = False
 
         for raw in resp.get("holdings") or []:
             if not isinstance(raw, dict):
@@ -837,7 +833,10 @@ class PlaidPlugin:
 
             current_value = _decimal(raw.get("institution_value"))
             if current_value is None:
-                continue
+                # A live position without a current valuation cannot be omitted
+                # from a full snapshot without Securo archiving the existing asset.
+                incomplete = True
+                break
             ext_id = f"{acc_id}:{sec_id}"[:255]
             if ext_id in seen_holding_ids:
                 continue
@@ -887,11 +886,16 @@ class PlaidPlugin:
             if trades_by_key is not None:
                 holding["trades"] = trades_by_key.get((acc_id, sec_id), [])
 
-            if len(holdings) < MAX_SYNC_HOLDINGS:
-                holdings.append(holding)
-                if current_value > 0 and currency == acc_currency:
-                    auto_invested[acc_id] = auto_invested.get(acc_id, Decimal(0)) + current_value
+            if len(holdings) >= MAX_SYNC_HOLDINGS:
+                # Publishing a truncated snapshot would archive positions beyond the cap.
+                incomplete = True
+                break
+            holdings.append(holding)
+            if current_value > 0 and currency == acc_currency:
+                auto_invested[acc_id] = auto_invested.get(acc_id, Decimal(0)) + current_value
 
+        if incomplete:
+            return None, {}
         return holdings, auto_invested
 
     def _fetch_investment_trades(
@@ -1014,16 +1018,9 @@ class PlaidPlugin:
             if rate is not None and Decimal(0) <= rate <= Decimal(100):
                 account_payload["loan_interest_rate"] = _rate_str(rate)
                 account_payload["loan_rate_period"] = "yearly_nominal"
-            orig_date = _iso_date(data.get("origination_date"))
-            if not orig_date:
-                disbursements = data.get("disbursement_dates") or []
-                if isinstance(disbursements, list) and disbursements:
-                    orig_date = _iso_date(disbursements[0])
-            if orig_date:
-                account_payload["loan_first_payment_date"] = orig_date
-            term = _months_between(orig_date, _iso_date(data.get("expected_payoff_date")))
-            if term is not None:
-                account_payload["loan_term_months"] = term
+            # Plaid StudentLoan exposes origination/disbursement and expected payoff
+            # dates, which include in-school deferment and do not establish first
+            # payment date or repayment term; leave those for the user to set.
             due_day = _day_of_month(data.get("next_payment_due_date"))
             if due_day is not None:
                 account_payload["payment_due_day"] = due_day
@@ -1042,12 +1039,7 @@ class PlaidPlugin:
             if rate is not None and Decimal(0) <= rate <= Decimal(100):
                 account_payload["loan_interest_rate"] = _rate_str(rate)
                 account_payload["loan_rate_period"] = "yearly_nominal"
-            orig_date = _iso_date(data.get("origination_date"))
-            if orig_date:
-                account_payload["loan_first_payment_date"] = orig_date
             term = _parse_loan_term_months(data.get("loan_term"))
-            if term is None:
-                term = _months_between(orig_date, _iso_date(data.get("maturity_date")))
             if term is not None:
                 account_payload["loan_term_months"] = term
             due_day = _day_of_month(data.get("next_payment_due_date"))
@@ -1069,17 +1061,12 @@ class PlaidPlugin:
             if rate is not None and Decimal(0) <= rate <= Decimal(100):
                 account_payload["loan_interest_rate"] = _rate_str(rate)
                 account_payload["loan_rate_period"] = "yearly_nominal"
-            orig_date = _iso_date(data.get("origination_date"))
-            if orig_date:
-                account_payload["loan_first_payment_date"] = orig_date
             raw_term = data.get("loan_term_months")
             term: int | None = (
                 int(raw_term)
                 if isinstance(raw_term, int) and not isinstance(raw_term, bool) and 1 <= raw_term <= 600
                 else None
             )
-            if term is None:
-                term = _months_between(orig_date, _iso_date(data.get("maturity_date")))
             if term is not None:
                 account_payload["loan_term_months"] = term
             due_day = _day_of_month(data.get("next_payment_due_date"))

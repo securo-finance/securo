@@ -2993,7 +2993,6 @@ async def bulk_update_category(
         select(Transaction).where(
             *target,
             Transaction.source == "sync",
-            Transaction.status == "pending",
             Transaction.category_id.is_distinct_from(category_id),
         )
     )).scalars()

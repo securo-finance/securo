@@ -981,3 +981,74 @@ plugin = Plugin()
     )
     assert reauth.status_code == 200
     assert reauth.json()["oauth_state"]
+
+
+@pytest.mark.asyncio
+async def test_authorize_url_holds_sync_lock_and_refreshes_rotated_secrets(
+    session: AsyncSession, ids, catalog, plugin_runner, states, sync_locks
+):
+    """authorize_url / start_oauth must hold the per-connection lock and refresh
+    the connection so saving handshake secrets cannot clobber a token rotated by
+    a concurrent sync."""
+    from sqlalchemy import update
+
+    hosted_source = '''
+class Plugin:
+    def oauth_url(self, params, context):
+        return {
+            "url": "https://hosted.example.com/reauth",
+            "secrets": {"pending_link_token": "link-tok-2"},
+        }
+
+    def oauth_exchange(self, params, context):
+        return {"secrets": {"refresh_token": "rot-1", "pending_link_token": None}}
+
+    def sync(self, params, context):
+        return {"state": {}}
+
+plugin = Plugin()
+'''
+    catalog.archives[V1] = _tarball(hosted_source)
+    workspace_id, user_id = ids
+    await _apply(session, workspace_id, user_id)
+    connection, _, state = await connections.create_with_oauth(
+        session,
+        workspace_id=workspace_id,
+        user_id=user_id,
+        can_write=True,
+        plugin_id=PLUGIN,
+        integration_key="signin",
+        name="Locked",
+        values={"client": "c1"},
+        lang="en",
+    )
+    assert state is not None
+    await connections.finish_oauth(
+        session, workspace_id=workspace_id, user_id=user_id, code=None, state=state, params={}
+    )
+
+    # 1. While the per-connection lock is held, authorize_url / start_oauth refuse with busy error.
+    lock_key = f"plugin-sync:{connection.id}"
+    sync_locks.add(lock_key)
+    with pytest.raises(connections.PluginConnectionError, match="syncing right now"):
+        await connections.authorize_url(session, connection, user_id=user_id)
+    with pytest.raises(connections.PluginConnectionError, match="syncing right now"):
+        await connections.start_oauth(session, connection, user_id=user_id)
+    sync_locks.discard(lock_key)
+
+    # 2. Simulate a concurrent sync rotating refresh_token behind the stale ORM copy.
+    current_secrets = vault.unseal(connection.secrets)
+    rotated = vault.seal({**current_secrets, "refresh_token": "rot-2"})
+    await session.execute(
+        update(PluginConnection)
+        .where(PluginConnection.id == connection.id)
+        .values(secrets=rotated)
+        .execution_options(synchronize_session=False)
+    )
+    await session.commit()
+
+    url, _ = await connections.start_oauth(session, connection, user_id=user_id)
+    assert url == "https://hosted.example.com/reauth"
+    unsealed = vault.unseal(connection.secrets)
+    assert unsealed["refresh_token"] == "rot-2"
+    assert unsealed["pending_link_token"] == "link-tok-2"

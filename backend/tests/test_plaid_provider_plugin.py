@@ -630,13 +630,14 @@ async def test_plaid_full_hosted_link_sync_liabilities_investments_and_update_mo
     assert bill.total_amount == Decimal("320.50")
     assert bill.due_date.isoformat() == "2026-12-15"
 
-    # Nelnet student loan & mortgage terms
+    # Nelnet student loan & mortgage terms (only Plaid-established schedule fields)
     nelnet = accounts["acc-nelnet"]
     assert (nelnet.type, nelnet.balance, nelnet.loan_kind) == ("loan", Decimal("18250.40"), "student")
     assert nelnet.loan_original_amount == Decimal("22000.00")
     assert nelnet.loan_interest_rate == Decimal("5.05")
     assert nelnet.loan_rate_period == "yearly_nominal"
-    assert nelnet.loan_term_months == 120
+    assert nelnet.loan_term_months is None
+    assert nelnet.loan_first_payment_date is None
     assert nelnet.payment_due_day == 20
     assert nelnet.minimum_payment == Decimal("233.75")
 
@@ -647,6 +648,7 @@ async def test_plaid_full_hosted_link_sync_liabilities_investments_and_update_mo
         360,
         "price",
     )
+    assert mort.loan_first_payment_date is None
     assert mort.loan_interest_rate == Decimal("6.125")
 
     # M1 Finance investment account: 2750 total - 2500 VTI holding = 250 cash residual!
@@ -1223,8 +1225,11 @@ def test_plaid_sync_edge_cases_not_ready_unsupported_loan_txns_cursor_guard_and_
 async def test_nelnet_student_loan_computes_loan_schedule(
     session: AsyncSession, ids, plaid_catalog, plugin_runner, states, monkeypatch
 ):
-    """Nelnet student loan on default/standard repayment sets loan_amortization='price'
-    so Securo's loan schedule endpoint configures automatically."""
+    """Nelnet student loan sets Plaid-established fields without fabricating
+    first_payment_date/term from origination/deferment, and once the user fills
+    those schedule inputs in, subsequent Plaid syncs preserve them."""
+    from datetime import date
+
     mod = _module()
     fake = FakePlaidServer(mod)
     fake.liabilities_only = True
@@ -1256,10 +1261,29 @@ async def test_nelnet_student_loan_computes_loan_schedule(
     )
     await connections.sync(session, connection)
     bank = await _bank(session, connection)
-    (nelnet,) = await _rows(session, Account, connection_id=bank.id)
+    bank_id = bank.id
+    (nelnet,) = await _rows(session, Account, connection_id=bank_id)
+    nelnet_id = nelnet.id
     assert nelnet.loan_amortization == "price"
-    schedule = await account_service.get_loan_schedule(session, nelnet.id, workspace_id)
-    assert schedule is not None and schedule["configured"] is True
+    assert nelnet.loan_term_months is None
+    assert nelnet.loan_first_payment_date is None
+
+    # Before user supplies repayment start/term, schedule reports the exact missing fields.
+    schedule_before = await account_service.get_loan_schedule(session, nelnet_id, workspace_id)
+    assert schedule_before is not None and schedule_before["configured"] is False
+    assert set(schedule_before["missing"]) == {"loan_term_months", "loan_first_payment_date"}
+
+    # User sets their actual post-deferment start date and repayment term; sync preserves them.
+    nelnet.loan_first_payment_date = date(2024, 1, 20)
+    nelnet.loan_term_months = 120
+    await session.commit()
+
+    await connections.sync(session, connection)
+    (nelnet_after,) = await _rows(session, Account, connection_id=bank_id)
+    assert nelnet_after.loan_first_payment_date == date(2024, 1, 20)
+    assert nelnet_after.loan_term_months == 120
+    schedule_after = await account_service.get_loan_schedule(session, nelnet_id, workspace_id)
+    assert schedule_after is not None and schedule_after["configured"] is True
 
 
 def test_plaid_nonascii_unofficial_currency_falls_back_without_payload_error():
@@ -1415,3 +1439,117 @@ def test_plaid_oauth_exchange_sorts_reverse_chronological_link_sessions():
     exchanged = mod.PlaidPlugin(requester=rev_newer_success).oauth_exchange({"params": {}}, ctx)
     assert exchanged["secrets"]["access_token"] == "acc-newer"
     assert exchanged["state"]["institution_name"] == "New Bank"
+
+
+def test_plaid_rejects_primary_product_when_opted_out_before_calling_plaid():
+    """Conflicting products + enable_*=false must be rejected before calling
+    /link/token/create so Plaid is never initialized for an opted-out product."""
+    mod = _module()
+    calls: list[tuple[str, dict[str, Any]]] = []
+
+    def recorder(url: str, payload: dict[str, Any]) -> dict[str, Any]:
+        calls.append((url, payload))
+        return {"hosted_link_url": "https://hosted.plaid.com/link/ok", "link_token": "link-ok"}
+
+    def _ctx(config: dict[str, Any]):
+        return type(
+            "Context",
+            (),
+            {
+                "secrets": MappingProxyType({"secret": "sec-1"}),
+                "config": MappingProxyType({"client_id": "cid-1", "environment": "sandbox", **config}),
+                "securo": MappingProxyType({"connection_id": "c-1"}),
+            },
+        )()
+
+    with pytest.raises(ValueError, match="enable_investments is false"):
+        mod.PlaidPlugin(requester=recorder).oauth_url(
+            {"redirect_uri": "https://securo.example/plugins/oauth/callback"},
+            _ctx({"products": "investments", "enable_investments": "false"}),
+        )
+    with pytest.raises(ValueError, match="enable_liabilities is false"):
+        mod.PlaidPlugin(requester=recorder).oauth_url(
+            {"redirect_uri": "https://securo.example/plugins/oauth/callback"},
+            _ctx({"products": "liabilities", "enable_liabilities": "false"}),
+        )
+    assert calls == []
+
+    # Allowing investments as a primary product when enabled still works.
+    res = mod.PlaidPlugin(requester=recorder).oauth_url(
+        {"redirect_uri": "https://securo.example/plugins/oauth/callback"},
+        _ctx({"products": "investments", "enable_investments": "true"}),
+    )
+    assert res["url"] == "https://hosted.plaid.com/link/ok"
+    assert calls[0][1]["products"] == ["investments"]
+
+
+def test_plaid_incomplete_holdings_snapshot_omits_holdings_instead_of_archiving(monkeypatch):
+    """A holdings response with a null institution_value or exceeding the cap
+    must omit `holdings` from data so Securo does not archive live positions,
+    while a confirmed empty portfolio still sends `holdings: []`."""
+    mod = _module()
+    ctx = type(
+        "Context",
+        (),
+        {
+            "secrets": MappingProxyType({"secret": "sec-1", "access_token": "acc-1"}),
+            "config": MappingProxyType({"client_id": "cid-1", "environment": "sandbox"}),
+            "securo": MappingProxyType({}),
+        },
+    )()
+
+    def _make_requester(holdings_rows: list[dict[str, Any]]):
+        def req(url: str, payload: dict[str, Any]) -> dict[str, Any]:
+            if url.endswith("/accounts/get"):
+                return {
+                    "item": {},
+                    "accounts": [
+                        {
+                            "account_id": "acc-m1",
+                            "name": "M1 Brokerage",
+                            "type": "investment",
+                            "subtype": "brokerage",
+                            "balances": {"current": 5000.0, "iso_currency_code": "USD"},
+                        }
+                    ],
+                }
+            if url.endswith("/investments/holdings/get"):
+                return {
+                    "securities": [
+                        {"security_id": f"sec-{i}", "name": f"ETF {i}", "ticker_symbol": f"E{i}", "type": "etf"}
+                        for i in range(5)
+                    ],
+                    "holdings": holdings_rows,
+                }
+            if url.endswith("/investments/transactions/get"):
+                return {"investment_transactions": [], "total_investment_transactions": 0}
+            raise AssertionError(url)
+
+        return req
+
+    # 1. Null institution_value -> omit holdings so existing positions aren't archived.
+    res_null = mod.PlaidPlugin(
+        requester=_make_requester(
+            [
+                {"account_id": "acc-m1", "security_id": "sec-0", "quantity": 10, "institution_value": 2500.0},
+                {"account_id": "acc-m1", "security_id": "sec-1", "quantity": 5, "institution_value": None},
+            ]
+        )
+    ).sync({"state": {}}, ctx)
+    assert "holdings" not in res_null["data"]
+
+    # 2. Exceeding MAX_SYNC_HOLDINGS -> omit holdings rather than publishing a truncated list.
+    monkeypatch.setattr(mod, "MAX_SYNC_HOLDINGS", 2)
+    res_cap = mod.PlaidPlugin(
+        requester=_make_requester(
+            [
+                {"account_id": "acc-m1", "security_id": f"sec-{i}", "quantity": 1, "institution_value": 100.0}
+                for i in range(3)
+            ]
+        )
+    ).sync({"state": {}}, ctx)
+    assert "holdings" not in res_cap["data"]
+
+    # 3. Confirmed empty portfolio -> still sends holdings: [].
+    res_empty = mod.PlaidPlugin(requester=_make_requester([])).sync({"state": {}}, ctx)
+    assert res_empty["data"]["holdings"] == []

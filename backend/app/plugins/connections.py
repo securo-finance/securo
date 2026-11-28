@@ -518,29 +518,38 @@ async def authorize_url(
     A plugin may return ``secrets`` and/or ``state`` alongside ``url`` (for
     example a PKCE verifier or a Hosted Link token, ADR 0051); those are kept
     on the connection so ``oauth_exchange`` can read them when the browser
-    returns.
+    returns. Holds ``plugin-sync:{connection.id}`` and refreshes the connection
+    first so saving handshake state cannot overwrite a token rotated by a
+    concurrent sync.
     """
-    token = state or await _new_oauth_state(connection, user_id)
-    result, secrets = await _call(
-        session,
-        connection,
-        "oauth_url",
-        {
-            "redirect_uri": redirect_uri(),
-            "state": token,
-            "connection_state": dict(connection.state or {}),
-        },
-        record,
-    )
-    url = result.get("url") if isinstance(result, dict) else result
-    if not isinstance(url, str) or urlsplit(url).scheme != "https":
-        raise PluginConnectionError("the plugin didn't return an https sign-in link")
-    if isinstance(result, dict) and (
-        isinstance(result.get("secrets"), dict) or isinstance(result.get("state"), dict)
-    ):
-        _keep(connection, result, secrets)
-        await session.commit()
-    return url
+    lock = f"plugin-sync:{connection.id}"
+    if not await _acquire(lock):
+        raise PluginConnectionError("this connection is syncing right now; try again in a moment")
+    try:
+        await session.refresh(connection)
+        token = state or await _new_oauth_state(connection, user_id)
+        result, secrets = await _call(
+            session,
+            connection,
+            "oauth_url",
+            {
+                "redirect_uri": redirect_uri(),
+                "state": token,
+                "connection_state": dict(connection.state or {}),
+            },
+            record,
+        )
+        url = result.get("url") if isinstance(result, dict) else result
+        if not isinstance(url, str) or urlsplit(url).scheme != "https":
+            raise PluginConnectionError("the plugin didn't return an https sign-in link")
+        if isinstance(result, dict) and (
+            isinstance(result.get("secrets"), dict) or isinstance(result.get("state"), dict)
+        ):
+            _keep(connection, result, secrets)
+            await session.commit()
+        return url
+    finally:
+        await _release(lock)
 
 
 async def start_oauth(

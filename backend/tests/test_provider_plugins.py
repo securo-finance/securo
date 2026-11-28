@@ -1525,6 +1525,8 @@ async def test_replaces_external_id_restamps_fx_to_settled_date(
     (account,) = await _rows(session, Account, connection_id=bank_connection.id)
     account_id = account.id
     before = {r.external_id: r for r in await _rows(session, Transaction, account_id=account_id)}
+    same_amt_id = before["fx-hold-same-amt"].id
+    tip_id = before["fx-hold-tip"].id
     # On 2026-11-14 (1 USD = 0.8 EUR -> 1 EUR = 1.25 USD): 100 EUR -> 125.00 USD, 40 EUR -> 50.00 USD.
     assert before["fx-hold-same-amt"].amount_primary == Decimal("125.00")
     assert before["fx-hold-tip"].amount_primary == Decimal("50.00")
@@ -1557,6 +1559,9 @@ async def test_replaces_external_id_restamps_fx_to_settled_date(
     await _pipeline(session, bank_connection, delta, test_user)
 
     after = {r.external_id: r for r in await _rows(session, Transaction, account_id=account_id)}
+    assert set(after) == {"fx-posted-same-amt", "fx-posted-tip"}
+    assert after["fx-posted-same-amt"].id == same_amt_id
+    assert after["fx-posted-tip"].id == tip_id
     # On 2026-11-16 (1 USD = 0.5 EUR -> 1 EUR = 2.00 USD): 100 EUR -> 200.00 USD, 50 EUR -> 100.00 USD.
     assert after["fx-posted-same-amt"].amount_primary == Decimal("200.00")
     assert after["fx-posted-same-amt"].amount_account == Decimal("200.00")
@@ -1640,3 +1645,255 @@ async def test_replaces_external_id_preserves_user_account_amount_on_date_shift_
     assert after.amount_primary_typed == Decimal("130.00")
     assert after.amount_account == Decimal("130.00")
     assert after.amount_account_source == "user"
+
+
+@pytest.mark.asyncio
+async def test_replaces_external_id_updates_currency_and_restamps_fx_on_same_date_and_amount(
+    session: AsyncSession, bank_connection, test_user
+):
+    """When a pending hold settles under a different currency with the same date
+    and numeric amount, settlement must adopt the posted currency, drop any stale
+    conversion typed for the old currency, and restamp primary/account FX."""
+    from app.models.fx_rate import FxRate
+    from app.schemas.transaction import TransactionUpdate
+    from app.services import transaction_service
+
+    test_user.preferences = {**(test_user.preferences or {}), "currency_display": "USD"}
+    session.add_all(
+        [
+            FxRate(base_currency="USD", quote_currency="EUR", date=date(2026, 11, 14), rate=Decimal("0.8"), source="test"),
+            FxRate(base_currency="USD", quote_currency="GBP", date=date(2026, 11, 14), rate=Decimal("0.5"), source="test"),
+        ]
+    )
+    await session.commit()
+
+    pending = [
+        {
+            "external_id": "fx-ccy-hold",
+            "description": "Cross-Border",
+            "amount": "100.00",
+            "currency": "EUR",
+            "date": "2026-11-14",
+            "type": "debit",
+            "status": "pending",
+        }
+    ]
+    await _pipeline(session, bank_connection, payload_data(transactions=pending, holdings=None), test_user)
+    (account,) = await _rows(session, Account, connection_id=bank_connection.id)
+    account_id = account.id
+    (stored,) = await _rows(session, Transaction, account_id=account_id)
+    stored_id = stored.id
+
+    await transaction_service.update_transaction(
+        session,
+        stored_id,
+        bank_connection.workspace_id,
+        test_user.id,
+        TransactionUpdate(amount_primary=Decimal("130.00")),
+    )
+
+    settled = [
+        {
+            "external_id": "fx-ccy-posted",
+            "replaces_external_id": "fx-ccy-hold",
+            "description": "Cross-Border",
+            "amount": "100.00",
+            "currency": "GBP",
+            "date": "2026-11-14",
+            "type": "debit",
+            "status": "posted",
+        }
+    ]
+    delta = payload_data(transactions=settled, holdings=None)
+    delta["accounts"][0]["incremental"] = True
+    delta["accounts"][0]["removed_transaction_ids"] = ["fx-ccy-hold"]
+    await _pipeline(session, bank_connection, delta, test_user)
+
+    (after,) = await _rows(session, Transaction, account_id=account_id)
+    assert after.id == stored_id
+    assert after.external_id == "fx-ccy-posted"
+    assert after.status == "posted"
+    assert after.currency == "GBP"
+    assert after.amount_primary_typed is None
+    assert after.amount_primary == Decimal("200.00")
+    assert after.amount_account == Decimal("200.00")
+
+
+@pytest.mark.asyncio
+async def test_removed_transaction_ids_preserves_mortgage_breakdown_and_bulk_cleared_posted_category(
+    session: AsyncSession, bank_connection, test_user
+):
+    """Explicit removals must preserve posted synced payments linked to a
+    MortgagePaymentAllocation and posted synced rows whose category was cleared
+    through bulk_update_category."""
+    from app.models.category import Category
+    from app.models.mortgage_payment_allocation import MORTGAGE_PRINCIPAL_SOURCE, MortgagePaymentAllocation
+    from app.services import transaction_service
+
+    cat = Category(
+        user_id=test_user.id,
+        workspace_id=bank_connection.workspace_id,
+        name="Bills",
+        icon="home",
+        color="#3366FF",
+    )
+    loan = Account(
+        user_id=test_user.id,
+        workspace_id=bank_connection.workspace_id,
+        name="Home Mortgage",
+        type="loan",
+        balance=Decimal("-200000.00"),
+        currency="USD",
+    )
+    session.add_all([cat, loan])
+    await session.flush()
+    cat_id = cat.id
+    loan_id = loan.id
+
+    txns = [
+        {
+            "external_id": "mort-pmt",
+            "description": "Mortgage Payment",
+            "amount": "1500.00",
+            "date": "2026-11-14",
+            "type": "debit",
+            "status": "posted",
+        },
+        {
+            "external_id": "bulk-cleared",
+            "description": "Utility Charge",
+            "amount": "75.00",
+            "date": "2026-11-14",
+            "type": "debit",
+            "status": "posted",
+        },
+        {
+            "external_id": "untouched-posted",
+            "description": "Reversed Fee",
+            "amount": "10.00",
+            "date": "2026-11-14",
+            "type": "debit",
+            "status": "posted",
+        },
+    ]
+    await _pipeline(session, bank_connection, payload_data(transactions=txns, holdings=None), test_user)
+    (account,) = await _rows(session, Account, connection_id=bank_connection.id)
+    account_id = account.id
+    by_ext = {r.external_id: r for r in await _rows(session, Transaction, account_id=account_id)}
+    mort_pmt_id = by_ext["mort-pmt"].id
+    bulk_cleared_id = by_ext["bulk-cleared"].id
+
+    # Attach a MortgagePaymentAllocation to mort-pmt.
+    principal_tx = Transaction(
+        user_id=test_user.id,
+        workspace_id=bank_connection.workspace_id,
+        account_id=loan_id,
+        date=date(2026, 11, 14),
+        description="Mortgage principal",
+        amount=Decimal("600.00"),
+        type="credit",
+        currency="USD",
+        source=MORTGAGE_PRINCIPAL_SOURCE,
+    )
+    session.add(principal_tx)
+    await session.flush()
+    principal_tx_id = principal_tx.id
+    alloc = MortgagePaymentAllocation(
+        workspace_id=bank_connection.workspace_id,
+        payment_transaction_id=mort_pmt_id,
+        loan_account_id=loan_id,
+        loan_transaction_id=principal_tx_id,
+        principal_amount=Decimal("600.00"),
+        interest_amount=Decimal("900.00"),
+    )
+    session.add(alloc)
+    # Give bulk-cleared an initial category, then clear it via bulk_update_category.
+    by_ext["bulk-cleared"].category_id = cat_id
+    await session.commit()
+
+    updated = await transaction_service.bulk_update_category(
+        session, bank_connection.workspace_id, [bulk_cleared_id], category_id=None
+    )
+    assert updated == 1
+
+    delta = payload_data(transactions=[], holdings=None)
+    delta["accounts"][0]["incremental"] = True
+    delta["accounts"][0]["removed_transaction_ids"] = ["mort-pmt", "bulk-cleared", "untouched-posted"]
+    await _pipeline(session, bank_connection, delta, test_user)
+
+    remaining = {r.external_id for r in await _rows(session, Transaction, account_id=account_id)}
+    assert remaining == {"mort-pmt", "bulk-cleared"}
+    assert len(await _rows(session, MortgagePaymentAllocation, payment_transaction_id=mort_pmt_id)) == 1
+    assert await session.get(Transaction, principal_tx_id) is not None
+
+
+@pytest.mark.asyncio
+async def test_phantom_cleanup_skips_accounts_omitted_from_reply_without_rate_limiting(
+    session: AsyncSession, bank_connection, test_user
+):
+    """When a provider omits a previously synced account from its reply (even
+    with no rate-limited accounts), phantom cleanup must skip that omitted
+    account rather than deleting a legitimate same-day repeat transfer."""
+    first = {
+        "contract": 1,
+        "accounts": [
+            {
+                "external_id": "acc-a",
+                "name": "Checking A",
+                "type": "checking",
+                "balance": "100.00",
+                "currency": "USD",
+                "transactions": [],
+            },
+            {
+                "external_id": "acc-b",
+                "name": "Checking B",
+                "type": "checking",
+                "balance": "200.00",
+                "currency": "USD",
+                "transactions": [
+                    {
+                        "external_id": "b-xfer-1",
+                        "description": "Transfer Out",
+                        "amount": "50.00",
+                        "date": "2026-11-15",
+                        "type": "debit",
+                        "status": "posted",
+                    },
+                    {
+                        "external_id": "b-xfer-2",
+                        "description": "Transfer Out",
+                        "amount": "50.00",
+                        "date": "2026-11-15",
+                        "type": "debit",
+                        "status": "posted",
+                    },
+                ],
+            },
+        ],
+    }
+    await _pipeline(session, bank_connection, first, test_user)
+    accounts = {a.external_id: a for a in await _rows(session, Account, connection_id=bank_connection.id)}
+    acc_b_id = accounts["acc-b"].id
+    b_txns = {t.external_id: t for t in await _rows(session, Transaction, account_id=acc_b_id)}
+    b_txns["b-xfer-1"].transfer_pair_id = uuid.uuid4()
+    await session.commit()
+
+    # Second sync returns only acc-a (acc-b is omitted, with zero rate-limited accounts).
+    second = {
+        "contract": 1,
+        "accounts": [
+            {
+                "external_id": "acc-a",
+                "name": "Checking A",
+                "type": "checking",
+                "balance": "100.00",
+                "currency": "USD",
+                "transactions": [],
+            }
+        ],
+    }
+    await _pipeline(session, bank_connection, second, test_user)
+
+    remaining_b = {t.external_id for t in await _rows(session, Transaction, account_id=acc_b_id)}
+    assert remaining_b == {"b-xfer-1", "b-xfer-2"}

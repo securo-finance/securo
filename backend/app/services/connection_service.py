@@ -32,6 +32,7 @@ from app.models.invoice_schedule import InvoiceSchedule
 from app.models.goal import Goal
 from app.models.collection import collection_asset_groups
 from app.models.credit_card_bill import CreditCardBill
+from app.models.mortgage_payment_allocation import MortgagePaymentAllocation
 from app.models.payee import Payee, PayeeMapping
 from app.models.rule import Rule
 from app.models.transaction import USER_EDITED_KEY, Transaction
@@ -4164,6 +4165,17 @@ async def _settle_replaced_pending(
     manual_description = await read_description_is_manual(session, pending_tx)
     payee_was_empty = pending_tx.payee_id is None
     amount_before = pending_tx.amount
+    incoming_currency = (txn_data.currency or "").strip().upper() or None
+    currency_changed = bool(
+        incoming_currency and incoming_currency != (pending_tx.currency or "").upper()
+    )
+    if currency_changed and incoming_currency is not None:
+        pending_tx.currency = incoming_currency
+        # A typed conversion or stored account charge for the old currency no
+        # longer describes the posted currency.
+        pending_tx.amount_primary_typed = None
+        pending_tx.amount_primary_typed_currency = None
+        pending_tx.amount_account_source = None
     date_changed = pending_tx.date != txn_data.date
     if date_changed:
         pending_tx.date = txn_data.date
@@ -4185,7 +4197,7 @@ async def _settle_replaced_pending(
         account_currency=account_currency,
         user_currency=user_currency,
     )
-    if date_changed and pending_tx.amount == amount_before:
+    if (date_changed or currency_changed) and pending_tx.amount == amount_before:
         user_kept_account_amount = (
             pending_tx.amount_account_source == ACCOUNT_AMOUNT_FROM_USER
         )
@@ -4197,7 +4209,7 @@ async def _settle_replaced_pending(
                 pending_tx,
                 converted,
                 None if user_kept_account_amount else txn_data.amount_in_account_currency,
-                restamp_account=(pending_tx.amount_account_source is None),
+                restamp_account=(currency_changed or pending_tx.amount_account_source is None),
             )
         elif (
             (
@@ -4361,6 +4373,7 @@ async def _rows_with_links(
         TransactionAttachment.transaction_id,
         TransactionSplit.transaction_id,
         InvoiceAllocation.transaction_id,
+        MortgagePaymentAllocation.payment_transaction_id,
     ):
         kept.update(
             tx_id for tx_id in (await session.execute(
@@ -6057,21 +6070,18 @@ async def sync_connection(
         # row, whose external_id can still be the uid of an earlier session
         # (a reauthorisation re-keys it only when the account comes through),
         # so every stored row the provider did not return this run counts.
-        throttled_account_ids: set[uuid.UUID] = set()
+        # Skip phantom cleanup for any account omitted from this reply (it has
+        # no live id set this run) as well as any rate-limited account.
+        omitted_filters = []
         if rate_limited_accounts:
-            throttled_account_ids = set(
-                (
-                    await session.execute(
-                        select(Account.id).where(
-                            Account.connection_id == connection.id,
-                            or_(
-                                Account.external_id.in_(rate_limited_accounts),
-                                Account.external_id.not_in(incoming_external_ids),
-                            ),
-                        )
-                    )
-                ).scalars()
-            )
+            omitted_filters.append(Account.external_id.in_(rate_limited_accounts))
+        if incoming_external_ids:
+            omitted_filters.append(Account.external_id.is_(None))
+            omitted_filters.append(Account.external_id.not_in(incoming_external_ids))
+        omitted_query = select(Account.id).where(Account.connection_id == connection.id)
+        if omitted_filters:
+            omitted_query = omitted_query.where(or_(*omitted_filters))
+        throttled_account_ids = set((await session.execute(omitted_query)).scalars())
         touched_account_ids = await _cleanup_phantom_duplicates(
             session, connection.id, live_txn_external_ids,
             promoted_external_ids=promoted_txn_external_ids,

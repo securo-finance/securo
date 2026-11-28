@@ -1,8 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { waitFor } from '@testing-library/react'
+import { screen, waitFor } from '@testing-library/react'
 import { Route, Routes } from 'react-router-dom'
 import { renderWithProviders } from '@/test/utils'
-import { clearPluginOAuthState, rememberPluginOAuthState } from '@/lib/plugin-oauth'
+import { clearPluginOAuthState, peekPluginOAuthState, rememberPluginOAuthState } from '@/lib/plugin-oauth'
 import PluginOAuthCallbackPage from './plugin-oauth-callback'
 
 const api = vi.hoisted(() => ({
@@ -51,6 +51,8 @@ describe('PluginOAuthCallbackPage', () => {
       ),
     )
     await waitFor(() => expect(toast.success).toHaveBeenCalled())
+    await waitFor(() => expect(screen.getByText('plugin-detail')).toBeInTheDocument())
+    expect(peekPluginOAuthState()).toBeNull()
   })
 
   it('completes a traditional OAuth callback with code and state in the URL', async () => {
@@ -78,6 +80,7 @@ describe('PluginOAuthCallbackPage', () => {
       ),
     )
     await waitFor(() => expect(toast.success).toHaveBeenCalled())
+    await waitFor(() => expect(screen.getByText('plugin-detail')).toBeInTheDocument())
   })
 
   it('fails cleanly when state is missing from both URL and sessionStorage', async () => {
@@ -90,6 +93,7 @@ describe('PluginOAuthCallbackPage', () => {
     )
 
     await waitFor(() => expect(toast.error).toHaveBeenCalled())
+    await waitFor(() => expect(screen.getByText('plugins-list')).toBeInTheDocument())
     expect(api.plugins.oauthCallback).not.toHaveBeenCalled()
   })
 })
