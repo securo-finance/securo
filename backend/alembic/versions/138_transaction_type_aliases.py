@@ -30,12 +30,16 @@ ALIASES = {"expense": "debit", "income": "credit"}
 def upgrade() -> None:
     conn = op.get_bind()
     for table in TABLES:
-        for alias, type_ in ALIASES.items():
-            # Any case and padding, as the schemas read it.
-            conn.execute(
-                sa.text(f"UPDATE {table} SET type = :type WHERE lower(trim(type)) = :alias"),
-                {"type": type_, "alias": alias},
-            )
+        stored = conn.execute(sa.text(f"SELECT DISTINCT type FROM {table} WHERE type IS NOT NULL")).scalars()
+        for value in list(stored):
+            # Normalized in Python with the schemas' own strip().lower(): SQL
+            # trim() drops only spaces, so a tab or newline would be left.
+            type_ = ALIASES.get(value.strip().lower())
+            if type_ is not None and type_ != value:
+                conn.execute(
+                    sa.text(f"UPDATE {table} SET type = :type WHERE type = :value"),
+                    {"type": type_, "value": value},
+                )
 
 
 def downgrade() -> None:

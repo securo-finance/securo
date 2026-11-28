@@ -15,7 +15,7 @@ assert _SPEC is not None and _SPEC.loader is not None
 migration = importlib.util.module_from_spec(_SPEC)
 _SPEC.loader.exec_module(migration)
 
-STORED = ["debit", "credit", "expense", "income", " Expense ", "INCOME", "transfer"]
+STORED = ["debit", "credit", "expense", "income", " Expense ", "INCOME", "transfer", "\tExpense\n", "\r\nIncome\t"]
 
 
 def _upgrade_over(stored: list[str]) -> dict[str, list[str]]:
@@ -39,5 +39,5 @@ def _upgrade_over(stored: list[str]) -> dict[str, list[str]]:
 
 
 def test_upgrade_stores_the_aliases_as_debit_and_credit_in_both_tables():
-    expected = ["debit", "credit", "debit", "credit", "debit", "credit", "transfer"]
+    expected = ["debit", "credit", "debit", "credit", "debit", "credit", "transfer", "debit", "credit"]
     assert _upgrade_over(STORED) == {table: expected for table in migration.TABLES}
