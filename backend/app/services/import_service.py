@@ -1541,13 +1541,21 @@ async def import_transactions(
             # the account's own (#1073): the row takes the charged currency.
             currency_changed = placeholder.currency != txn_currency
             placeholder.currency = txn_currency
-            amount_changed = placeholder.amount != txn_data.amount
+            amount_changed = (
+                as_stored_amount(Decimal(str(placeholder.amount)))
+                != as_stored_amount(Decimal(str(txn_data.amount)))
+            )
             if amount_changed or txn_data.fx_rate or currency_changed:
                 # Matched under a tolerance, or the file says what the charge
                 # cost in the primary currency: the row now stands for what was
                 # actually charged, not for what the bill expected.
                 expected_amount = placeholder.amount
                 placeholder.amount = txn_data.amount
+                # A conversion typed for the placeholder's expected amount or
+                # currency no longer holds once the imported charge replaces it
+                # (ADR 0031, #1796).
+                placeholder.amount_primary_typed = None
+                placeholder.amount_primary_typed_currency = None
                 if currency_changed:
                     # The stamp on the row was made from the bill's currency.
                     # Keeping it through a rate lookup that finds nothing
