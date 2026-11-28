@@ -843,7 +843,20 @@ async def test_primary_restamp_matches_live_half_up_rounding(
     await session.commit()
     assert tx.amount_primary == Decimal("1.01")
 
-    await restamp_user_primary_amounts(session, test_user.id)
+    # Persist a stale half-even value so the test fails if restamping is skipped
+    # or reverts to half-even rounding.
+    tx.amount_primary = Decimal("1.00")
+    await session.commit()
+
+    stats = await restamp_user_primary_amounts(session, test_user.id)
     await session.commit()
     await session.refresh(tx)
+    assert stats["transactions"] == 1
+    assert tx.amount_primary == Decimal("1.01")
+
+    # Running a second time is a no-op once live and restamped rounding match.
+    repeat_stats = await restamp_user_primary_amounts(session, test_user.id)
+    await session.commit()
+    await session.refresh(tx)
+    assert repeat_stats["transactions"] == 0
     assert tx.amount_primary == Decimal("1.01")
