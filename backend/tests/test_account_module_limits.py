@@ -15,7 +15,6 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
-from app.models.account import Account
 from app.models.user import User
 from app.models.user_module_limit import UserModuleLimit
 from app.models.workspace import Workspace
@@ -118,15 +117,21 @@ async def test_the_gate_answers_404_and_the_data_survives_off_and_on(
     business = await workspace_service.create_workspace(
         session, name="Shop", creator=test_user, kind="business"
     )
-    account = Account(
-        id=uuid.uuid4(), workspace_id=business.id, user_id=test_user.id,
-        name="Till", type="checking", balance=0, currency="USD",
-    )
-    session.add(account)
     await session.commit()
     headers = {**auth_headers, "X-Workspace-Id": str(business.id)}
 
-    assert (await client.get("/api/invoices", headers=headers)).status_code == 200
+    created = await client.post(
+        "/api/invoices",
+        headers=headers,
+        json={
+            "total": "100.00",
+            "due_date": "2030-01-31",
+            "lines": [{"description": "Service", "quantity": "1", "unit_price": "100.00"}],
+            "as_draft": True,
+        },
+    )
+    assert created.status_code == 201, created.text
+    invoice_id = created.json()["id"]
 
     await module_limit_service.set_limit(session, test_user.id, _without(ModuleId.INVOICES))
     await session.commit()
@@ -137,9 +142,9 @@ async def test_the_gate_answers_404_and_the_data_survives_off_and_on(
 
     await module_limit_service.set_limit(session, test_user.id, None)
     await session.commit()
-    assert (await client.get("/api/invoices", headers=headers)).status_code == 200
-    kept = await session.execute(select(Account.id).where(Account.workspace_id == business.id))
-    assert kept.scalar_one() == account.id
+    restored = await client.get(f"/api/invoices/{invoice_id}", headers=headers)
+    assert restored.status_code == 200, restored.text
+    assert restored.json()["total"] in ("100.00", "100.0", 100.0)
 
 
 async def test_without_operator_token_the_route_does_not_exist(
