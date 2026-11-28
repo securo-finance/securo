@@ -1,8 +1,8 @@
 """link reimbursements and refunds to the transaction they pay back, so user
 P&L counts only the net (issue #1126, ADR 0033)
 
-Revision ID: 136
-Revises: 135
+Revision ID: 137
+Revises: 136
 """
 
 import sqlalchemy as sa
@@ -10,8 +10,8 @@ from sqlalchemy.dialects import postgresql
 
 from alembic import op
 
-revision = "136"
-down_revision = "135"
+revision = "137"
+down_revision = "136"
 branch_labels = None
 depends_on = None
 
