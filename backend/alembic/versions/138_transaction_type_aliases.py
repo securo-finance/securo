@@ -1,0 +1,48 @@
+"""store expense and income as debit and credit
+
+The API stored ``type`` as given, so a transaction or recurring bill created
+with ``expense`` or ``income`` (the agent tools among the callers) kept that
+word. Every balance, total and projection reads only ``debit`` and
+``credit``, so those rows were left out of all of them. The schemas now
+translate the two words; this repairs the rows already stored.
+
+The repaired rows start counting on upgrade, so an account that holds one
+shows a different balance afterwards: the one its rows always added up to.
+
+Revision ID: 138
+Revises: 137
+"""
+
+from typing import Sequence, Union
+
+import sqlalchemy as sa
+from alembic import op
+
+revision: str = "138"
+down_revision: Union[str, None] = "137"
+branch_labels: Union[str, Sequence[str], None] = None
+depends_on: Union[str, Sequence[str], None] = None
+
+TABLES = ("transactions", "recurring_transactions")
+ALIASES = {"expense": "debit", "income": "credit"}
+
+
+def upgrade() -> None:
+    conn = op.get_bind()
+    for table in TABLES:
+        stored = conn.execute(sa.text(f"SELECT DISTINCT type FROM {table} WHERE type IS NOT NULL")).scalars()
+        for value in list(stored):
+            # Normalized in Python with the schemas' own strip().lower(): SQL
+            # trim() drops only spaces, so a tab or newline would be left.
+            type_ = ALIASES.get(value.strip().lower())
+            if type_ is not None and type_ != value:
+                conn.execute(
+                    sa.text(f"UPDATE {table} SET type = :type WHERE type = :value"),
+                    {"type": type_, "value": value},
+                )
+
+
+def downgrade() -> None:
+    # Which rows were stored with the alias is not kept, and debit/credit is
+    # what every version reads, so there is nothing to undo.
+    pass
