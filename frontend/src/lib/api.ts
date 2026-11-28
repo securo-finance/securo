@@ -59,6 +59,7 @@ import type {
   InvoiceSettings,
   InvoiceSummary,
   RecurringTransaction,
+  HolidayCalendarCountry,
   RecurringPriceChange,
   RecurringPriceChangeHistory,
   RecurringMonthSummary,
@@ -1506,6 +1507,10 @@ export const recurring = {
   },
   generate: async (): Promise<{ generated: number }> => {
     const { data } = await api.post('/recurring-transactions/generate')
+    return data
+  },
+  holidayCalendars: async (): Promise<HolidayCalendarCountry[]> => {
+    const { data } = await api.get('/recurring-transactions/holiday-calendars')
     return data
   },
   // Read-only price-change projections. Explicit methods keep the

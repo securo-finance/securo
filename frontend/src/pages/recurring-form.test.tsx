@@ -2,7 +2,7 @@ import { screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { RecurringForm } from '@/pages/recurring'
-import { currencies } from '@/lib/api'
+import { currencies, recurring as recurringApi } from '@/lib/api'
 import { renderWithProviders, t } from '@/test/utils'
 import type { RecurringTransaction } from '@/types'
 
@@ -20,6 +20,7 @@ vi.mock('@/contexts/auth-context', () => ({
 vi.mock('@/lib/api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/api')>()),
   currencies: { list: vi.fn() },
+  recurring: { holidayCalendars: vi.fn() },
 }))
 
 const account = { id: 'acct-1', name: 'Checking' }
@@ -44,6 +45,12 @@ function recurring(amount: number): RecurringTransaction {
     next_occurrence: '2026-12-08',
     amount_primary: null,
     fx_rate_used: null,
+    business_day: null,
+    count_saturdays: false,
+    holiday_calendar: null,
+    grace_days: 0,
+    match_keywords: null,
+    amount_tolerance_percent: 0,
   }
 }
 
@@ -73,6 +80,7 @@ function accountField() {
 
 beforeEach(() => {
   vi.mocked(currencies.list).mockResolvedValue([])
+  vi.mocked(recurringApi.holidayCalendars).mockResolvedValue([])
 })
 
 describe('RecurringForm amount field', () => {
@@ -120,5 +128,70 @@ describe('RecurringForm amount field', () => {
     await user.click(screen.getByRole('button', { name: t('common.save') }))
 
     expect(onSave).not.toHaveBeenCalled()
+  })
+})
+
+describe('RecurringForm matching rules', () => {
+  it('saves a stored two-decimal tolerance when only the description changes', async () => {
+    const onSave = vi.fn()
+    const { user } = renderForm({ ...recurring(100), amount_tolerance_percent: 1.25 }, onSave)
+    const tolerance = screen.getByDisplayValue('1.25')
+
+    // The input's step allows the two decimals the API stores, so the
+    // browser does not block the save on a step mismatch.
+    expect(tolerance).toHaveAttribute('step', '0.01')
+    expect((tolerance as HTMLInputElement).validity.valid).toBe(true)
+    await user.type(screen.getByLabelText(t('recurring.description')), ' 2')
+    await user.click(screen.getByRole('button', { name: t('common.save') }))
+
+    expect(onSave).toHaveBeenCalledTimes(1)
+    expect(onSave.mock.calls[0][0].amount_tolerance_percent).toBe(1.25)
+  })
+})
+
+describe('RecurringForm holiday calendars', () => {
+  it('says the calendars failed to load and retries, rather than offering none', async () => {
+    vi.mocked(recurringApi.holidayCalendars)
+      .mockRejectedValueOnce(new Error('offline'))
+      .mockResolvedValueOnce([{ country: 'BR', subdivisions: [] }])
+    const { user } = renderForm(recurring(100))
+
+    expect(await screen.findByText(t('recurring.holidayCalendarsLoadError'))).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: t('common.retry') }))
+
+    expect(await screen.findByRole('option', { name: /bra/i })).toBeInTheDocument()
+    expect(screen.queryByText(t('recurring.holidayCalendarsLoadError'))).not.toBeInTheDocument()
+    expect(recurringApi.holidayCalendars).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe('RecurringForm yearly schedules', () => {
+  it('keeps a yearly bill\'s business day and holiday calendar on an unchanged save', async () => {
+    vi.mocked(recurringApi.holidayCalendars).mockResolvedValue([
+      { country: 'BR', subdivisions: [{ code: 'SP', name: 'São Paulo' }] },
+    ])
+    const onSave = vi.fn()
+    const { user } = renderForm(
+      {
+        ...recurring(100),
+        frequency: 'yearly',
+        business_day: 5,
+        count_saturdays: true,
+        holiday_calendar: 'BR-SP',
+      },
+      onSave,
+    )
+
+    // The API treats yearly as month-based, so the rules show and are saved.
+    expect(await screen.findByDisplayValue('5')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: t('common.save') }))
+
+    expect(onSave).toHaveBeenCalledTimes(1)
+    expect(onSave.mock.calls[0][0]).toMatchObject({
+      frequency: 'yearly',
+      business_day: 5,
+      count_saturdays: true,
+      holiday_calendar: 'BR-SP',
+    })
   })
 })

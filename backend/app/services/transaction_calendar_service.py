@@ -31,8 +31,10 @@ from app.services.admin_service import get_credit_card_accounting_mode
 from app.services.fx_rate_service import convert as fx_convert
 from app.services.viewer_currency import ViewerCurrency, viewer_currency
 from app.services.recurring_transaction_service import (
-    adjust_weekend_date,
+    MAX_EFFECTIVE_SHIFT_DAYS,
+    effective_date_for,
     get_occurrences_in_range,
+    occurrence_rules,
 )
 
 
@@ -546,15 +548,11 @@ def _forecast_item(
 def _count_occurrences_before(recurring: RecurringTransaction, end: date) -> int:
     """Count still-virtual effective occurrences before ``end`` without truncating."""
     nominal_start = recurring.next_occurrence
-    first_effective = adjust_weekend_date(
-        nominal_start, recurring.weekend_adjustment
-    )
+    first_effective = effective_date_for(recurring, nominal_start)
     range_start = min(nominal_start, first_effective)
     range_end = end
     if recurring.end_date is not None:
-        final_effective = adjust_weekend_date(
-            recurring.end_date, recurring.weekend_adjustment
-        )
+        final_effective = effective_date_for(recurring, recurring.end_date)
         range_end = min(range_end, final_effective + timedelta(days=1))
 
     # The helper stops at the requested range, so a long carry horizon is read
@@ -567,7 +565,7 @@ def _count_occurrences_before(recurring: RecurringTransaction, end: date) -> int
         range_start=range_start,
         range_end=range_end,
         intended_day=recurring.day_of_month or recurring.start_date.day,
-        weekend_adjustment=recurring.weekend_adjustment,
+        **occurrence_rules(recurring),
     ))
 
 
@@ -588,7 +586,7 @@ async def _project_recurring_items(
         .where(
             RecurringTransaction.workspace_id == workspace_id,
             RecurringTransaction.is_active == True,
-            RecurringTransaction.start_date < end + timedelta(days=2),
+            RecurringTransaction.start_date < end + timedelta(days=MAX_EFFECTIVE_SHIFT_DAYS),
             Account.is_closed == False,
         )
         .options(
@@ -614,7 +612,7 @@ async def _project_recurring_items(
             range_start=start,
             range_end=end,
             intended_day=rec.day_of_month or rec.start_date.day,
-            weekend_adjustment=rec.weekend_adjustment,
+            **occurrence_rules(rec),
         )
         category = rec.category
         account = rec.account
