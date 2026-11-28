@@ -9,7 +9,7 @@ import uuid
 from typing import Optional
 
 from fastapi import HTTPException
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
@@ -350,6 +350,30 @@ async def add_member(
     session.add(member)
     await session.flush()
     return member
+
+
+async def drop_unattached_account(session: AsyncSession, user_id: uuid.UUID) -> bool:
+    """Delete an account made for a refused invite, unless it belongs anywhere.
+
+    Once created, the account is visible to other invites: a parallel one in
+    another workspace can add it and commit before this refusal. Deleting it
+    then would cascade away that membership, so the account is removed only
+    while it has no workspace at all. The row lock waits for an insert that
+    references it still in flight, so the count below sees that member.
+    Returns whether the account was deleted; the caller commits.
+    """
+    await session.execute(
+        select(User.id).where(User.id == user_id).with_for_update()
+    )
+    memberships = await session.scalar(
+        select(func.count()).select_from(WorkspaceMember).where(
+            WorkspaceMember.user_id == user_id
+        )
+    )
+    if memberships:
+        return False
+    await session.execute(delete(User).where(User.id == user_id))
+    return True
 
 
 async def _lock_workspace(session: AsyncSession, workspace_id: uuid.UUID) -> None:

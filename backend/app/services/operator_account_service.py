@@ -288,4 +288,3 @@ async def describe(session: AsyncSession, user: User) -> AccountView:
     fit = await quota_service.check_fit(session, user.id, limits)
     usage = [CounterUsage(f.counter, f.current, f.target) for f in fit.counters]
     return AccountView(user=user, workspaces=workspaces, usage=usage)
-
