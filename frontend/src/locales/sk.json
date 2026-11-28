@@ -2530,6 +2530,8 @@
     "chartDrawMode": "Vykreslenie grafu",
     "chartStacked": "Skladané",
     "chartLines": "Čiary",
+    "chartInvested": "Čisto investované",
+    "chartInvestedHint": "Čisto vložené peniaze: nákupy a poplatky mínus výnosy z predajov, podľa kurzu každého dňa",
     "portfolioValue": "Hodnota portfólia",
     "total": "Spolu",
     "confirmRegenerateTitle": "Prepočítať hodnoty?",

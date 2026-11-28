@@ -2405,6 +2405,8 @@
     "chartDrawMode": "Tracé du graphique",
     "chartStacked": "Empilé",
     "chartLines": "Lignes",
+    "chartInvested": "Investi net",
+    "chartInvestedHint": "Argent net investi : achats et frais moins le produit des ventes, au taux de change de chaque jour",
     "portfolioValue": "Valeur du portefeuille",
     "tabPerformance": "Performance",
     "performanceTitle": "Performance du portefeuille",

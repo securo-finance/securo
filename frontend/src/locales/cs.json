@@ -2548,6 +2548,8 @@
     "chartDrawMode": "Vykreslení grafu",
     "chartStacked": "Skládaný",
     "chartLines": "Čáry",
+    "chartInvested": "Čistě investováno",
+    "chartInvestedHint": "Čistě vložené peníze: nákupy a poplatky minus výnosy z prodejů, podle kurzu každého dne",
     "portfolioValue": "Hodnota portfolia",
     "tabPerformance": "Výkonnost",
     "performanceTitle": "Výkonnost portfolia",

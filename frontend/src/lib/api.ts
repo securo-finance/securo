@@ -143,6 +143,7 @@ import type {
   DocumentExtraction,
   DocumentKind,
   DocumentReceiptTransaction,
+  PortfolioInvestedPoint,
 } from '@/types'
 
 const api = axios.create({
@@ -1721,6 +1722,14 @@ export const assets = {
   },
   portfolioTrend: async (): Promise<{ assets: { id: string; name: string; type: string; group_id: string | null }[]; trend: Record<string, unknown>[]; total: number }> => {
     const { data } = await api.get('/assets/portfolio-trend')
+    return data
+  },
+  portfolioInvested: async (assetGroupIds?: string[] | null): Promise<PortfolioInvestedPoint[]> => {
+    const hasGroups = assetGroupIds != null && assetGroupIds.length > 0
+    const { data } = await api.get('/assets/portfolio-invested', {
+      params: hasGroups ? { asset_group_ids: assetGroupIds } : {},
+      paramsSerializer: { indexes: null as null },
+    })
     return data
   },
   benchmarkSearch: async (q: string, limit = 15): Promise<BenchmarkMatch[]> => {

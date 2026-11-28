@@ -2398,6 +2398,8 @@
     "chartDrawMode": "Diagram megjelenítése",
     "chartStacked": "Halmozott",
     "chartLines": "Vonalak",
+    "chartInvested": "Nettó befektetve",
+    "chartInvestedHint": "Nettó befektetett pénz: vásárlások és díjak mínusz az eladásokból befolyt összeg, az adott napi árfolyamon",
     "portfolioValue": "Portfólió értéke",
     "tabPerformance": "Teljesítmény",
     "performanceTitle": "Portfólió teljesítménye",

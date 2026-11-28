@@ -2396,6 +2396,8 @@
     "chartDrawMode": "图表样式",
     "chartStacked": "堆叠",
     "chartLines": "折线",
+    "chartInvested": "净投入",
+    "chartInvestedHint": "净投入资金：买入与手续费减去卖出所得，按当日汇率折算",
     "portfolioValue": "投资组合价值",
     "tabPerformance": "收益表现",
     "performanceTitle": "投资组合表现",

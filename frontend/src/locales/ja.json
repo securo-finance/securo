@@ -2396,6 +2396,8 @@
     "chartDrawMode": "チャートの描画",
     "chartStacked": "積み上げ",
     "chartLines": "折れ線",
+    "chartInvested": "純投資額",
+    "chartInvestedHint": "純投入額：購入と手数料から売却で得た金額を差し引いたもの（各日の為替レート換算）",
     "portfolioValue": "ポートフォリオ価値",
     "total": "合計",
     "confirmRegenerateTitle": "価値を再生成しますか?",

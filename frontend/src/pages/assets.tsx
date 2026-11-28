@@ -44,7 +44,8 @@ import { Badge } from '@/components/ui/badge'
 import { AssetRowContextMenu, AssetRowMenuButton, type AssetRowAction } from '@/components/asset-row-actions'
 import { Skeleton } from '@/components/ui/skeleton'
 import { DatePickerInput } from '@/components/ui/date-picker-input'
-import type { Asset, AssetGroup, AssetTransaction, AssetValue, MarketSymbolMatch, MarketSymbolQuote } from '@/types'
+import type { Asset, AssetGroup, AssetTransaction, AssetValue, MarketSymbolMatch, MarketSymbolQuote, PortfolioInvestedPoint } from '@/types'
+import { withInvested } from '@/lib/portfolio-invested'
 import {
   Home,
   Car,
@@ -73,6 +74,7 @@ import {
 import {
   AreaChart,
   Area,
+  Line,
   XAxis,
   YAxis,
   Tooltip as RechartsTooltip,
@@ -491,6 +493,15 @@ export default function AssetsPage() {
     queryKey: ['portfolio-trend'],
     queryFn: () => assets.portfolioTrend(),
   })
+  // Net money put in, for the chart's Invested line. The `portfolio-trend`
+  // prefix makes every existing refresh of the trend refresh this too. A
+  // collection with no wallets asks for nothing.
+  const walletKey = activeWalletIds ? [...activeWalletIds].sort() : null
+  const { data: invested } = useQuery({
+    queryKey: ['portfolio-trend', 'invested', walletKey],
+    queryFn: () => assets.portfolioInvested(activeWalletIds),
+    enabled: activeWalletIds == null || activeWalletIds.length > 0,
+  })
   // Loans secured against a property show up in that property's detail.
   const { data: accountsList } = useQuery({
     queryKey: ['accounts'],
@@ -718,6 +729,7 @@ export default function AssetsPage() {
       // Deleting a wallet un-groups its assets (backend sets group_id=null).
       queryClient.refetchQueries({ queryKey: ['asset-groups'] })
       queryClient.refetchQueries({ queryKey: ['assets'] })
+      queryClient.refetchQueries({ queryKey: ['portfolio-trend'] })
       queryClient.invalidateQueries({ queryKey: ['asset-performance'] })
       setDeletingWalletId(null)
       toast.success(t('assets.walletDeleted'))
@@ -776,6 +788,7 @@ export default function AssetsPage() {
     onSuccess: () => {
       queryClient.refetchQueries({ queryKey: ['assets'] })
       queryClient.refetchQueries({ queryKey: ['asset-groups'] })
+      queryClient.refetchQueries({ queryKey: ['portfolio-trend'] })
       queryClient.invalidateQueries({ queryKey: ['asset-performance'] })
       setMovingAsset(null)
       toast.success(t('assets.moved'))
@@ -1860,6 +1873,7 @@ export default function AssetsPage() {
       {portfolioData && portfolioData.trend.length > 0 && (
         <PortfolioChart
           data={portfolioData}
+          invested={invested}
           wallets={sortedWallets}
           currency={userCurrency}
           locale={locale}
@@ -2554,8 +2568,9 @@ export default function AssetsPage() {
 // The theme's series colors, as every chart uses them.
 const PORTFOLIO_COLORS = Array.from({ length: 12 }, (_, i) => `var(--chart-${i + 1})`)
 
-function PortfolioChart({ data, wallets, currency, locale: loc, dateLocale: dateLoc, mask }: {
+function PortfolioChart({ data, invested, wallets, currency, locale: loc, dateLocale: dateLoc, mask }: {
   data: { assets: { id: string; name: string; type: string; group_id: string | null }[]; trend: Record<string, unknown>[]; total: number }
+  invested?: PortfolioInvestedPoint[]
   wallets: AssetGroup[]
   currency: string
   locale: string
@@ -2563,14 +2578,17 @@ function PortfolioChart({ data, wallets, currency, locale: loc, dateLocale: date
   mask: (v: string) => string
 }) {
   const { t } = useTranslation()
-  // Default to wallet mode: with many synced CDBs the asset view turns
-  // into a cluttered rainbow legend that's hard to parse. Keep stacked as
-  // the default drawing style, while letting users switch to true lines when
-  // they need to compare each wallet/asset's own value instead of the running
-  // cumulative total.
-  const [mode, setMode] = useState<'wallet' | 'asset'>('wallet')
+  // Default to the single Total area with the Invested line: the simple view.
+  // Wallet mode is next (with many synced CDBs the asset view turns into a
+  // cluttered rainbow legend). Stacked is the default drawing style for those,
+  // while users can switch to true lines to compare each wallet/asset's own
+  // value instead of the running cumulative total.
+  const [mode, setMode] = useState<'total' | 'wallet' | 'asset'>('total')
   const [drawMode, setDrawMode] = useState<'stacked' | 'lines'>('stacked')
-  const isStacked = drawMode === 'stacked'
+  const isStacked = mode === 'total' || drawMode === 'stacked'
+  const hasInvested = (invested?.length ?? 0) > 0
+  const lastInvested = hasInvested ? invested![invested!.length - 1].amount : 0
+  const gain = Math.round((data.total - lastInvested) * 100) / 100 || 0
 
   const formatCompact = (v: number) => {
     const abs = Math.abs(v)
@@ -2584,6 +2602,20 @@ function PortfolioChart({ data, wallets, currency, locale: loc, dateLocale: date
   // series (using the wallet's own color); ungrouped assets keep their
   // individual lines so nothing disappears from the chart.
   const { series, displayTrend } = useMemo(() => {
+    if (mode === 'total') {
+      const s = [{
+        key: 'total_all',
+        name: t('assets.total'),
+        color: PORTFOLIO_COLORS[0],
+        sourceAssetIds: data.assets.map(a => a.id),
+      }]
+      const rows = data.trend.map(row => {
+        let sum = 0
+        for (const aid of s[0].sourceAssetIds) sum += (row[aid] as number) ?? 0
+        return { date: row.date, _total: row._total, total_all: sum } as Record<string, unknown>
+      })
+      return { series: s, displayTrend: rows }
+    }
     if (mode === 'asset') {
       const s = data.assets.map((a, i) => ({
         key: a.id,
@@ -2661,6 +2693,11 @@ function PortfolioChart({ data, wallets, currency, locale: loc, dateLocale: date
       return bv - av || a.name.localeCompare(b.name)
     })
   }, [series, displayTrend])
+  const chartRows = useMemo(
+    () => withInvested(displayTrend as { date: string }[], invested ?? []) as Record<string, unknown>[],
+    [displayTrend, invested],
+  )
+  const showInvestedLine = isStacked && hasInvested
 
   return (
     <div className="border border-border rounded-xl bg-card shadow-sm p-5">
@@ -2669,6 +2706,14 @@ function PortfolioChart({ data, wallets, currency, locale: loc, dateLocale: date
           <h3 className="text-sm font-semibold text-foreground">{t('assets.portfolioValue')}</h3>
           <div className="flex flex-wrap items-center gap-2">
             <div role="group" aria-label={t('assets.chartGroupMode')} className="inline-flex items-center rounded-lg border border-border p-0.5 bg-muted/40">
+              <button
+                type="button"
+                aria-pressed={mode === 'total'}
+                onClick={() => setMode('total')}
+                className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition-colors ${mode === 'total' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+              >
+                {t('assets.total')}
+              </button>
               <button
                 type="button"
                 aria-pressed={mode === 'wallet'}
@@ -2686,24 +2731,26 @@ function PortfolioChart({ data, wallets, currency, locale: loc, dateLocale: date
                 {t('assets.chartByAsset')}
               </button>
             </div>
-            <div role="group" aria-label={t('assets.chartDrawMode')} className="inline-flex items-center rounded-lg border border-border p-0.5 bg-muted/40">
-              <button
-                type="button"
-                aria-pressed={drawMode === 'stacked'}
-                onClick={() => setDrawMode('stacked')}
-                className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition-colors ${drawMode === 'stacked' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
-              >
-                {t('assets.chartStacked')}
-              </button>
-              <button
-                type="button"
-                aria-pressed={drawMode === 'lines'}
-                onClick={() => setDrawMode('lines')}
-                className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition-colors ${drawMode === 'lines' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
-              >
-                {t('assets.chartLines')}
-              </button>
-            </div>
+            {mode !== 'total' && (
+              <div role="group" aria-label={t('assets.chartDrawMode')} className="inline-flex items-center rounded-lg border border-border p-0.5 bg-muted/40">
+                <button
+                  type="button"
+                  aria-pressed={drawMode === 'stacked'}
+                  onClick={() => setDrawMode('stacked')}
+                  className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition-colors ${drawMode === 'stacked' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+                >
+                  {t('assets.chartStacked')}
+                </button>
+                <button
+                  type="button"
+                  aria-pressed={drawMode === 'lines'}
+                  onClick={() => setDrawMode('lines')}
+                  className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition-colors ${drawMode === 'lines' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+                >
+                  {t('assets.chartLines')}
+                </button>
+              </div>
+            )}
           </div>
         </div>
         <div className="text-start sm:text-end">
@@ -2711,11 +2758,25 @@ function PortfolioChart({ data, wallets, currency, locale: loc, dateLocale: date
           <p className="text-lg font-bold tabular-nums text-foreground">
             {mask(formatCurrency(data.total, currency, loc))}
           </p>
+          {hasInvested && (
+            <div className="mt-1 space-y-0.5 text-[11px] tabular-nums">
+              <p className="text-muted-foreground">
+                {t('assets.chartInvested')}{' '}
+                <span className="font-medium text-foreground">{mask(formatCurrency(lastInvested, currency, loc))}</span>
+              </p>
+              <p className="text-muted-foreground">
+                {t('assets.gainLoss')}{' '}
+                <span dir="ltr" className={`font-medium ${gain >= 0 ? 'text-emerald-600' : 'text-rose-500'}`}>
+                  {gain >= 0 ? '+' : ''}{mask(formatCurrency(gain, currency, loc))}
+                </span>
+              </p>
+            </div>
+          )}
         </div>
       </div>
       <div className="h-56">
         <ResponsiveContainer width="100%" height="100%">
-          <AreaChart data={displayTrend} margin={{ top: 4, right: 12, left: 0, bottom: 0 }}>
+          <AreaChart data={chartRows} margin={{ top: 4, right: 12, left: 0, bottom: 0 }}>
             <defs>
               {isStacked && sortedSeries.map(s => (
                 <linearGradient key={s.key} id={`portfolio-grad-${s.key}`} x1="0" y1="0" x2="0" y2="1">
@@ -2730,7 +2791,7 @@ function PortfolioChart({ data, wallets, currency, locale: loc, dateLocale: date
               tick={{ fontSize: 10, fill: 'var(--muted-foreground)' }}
               axisLine={false}
               tickLine={false}
-              tickFormatter={dateTickFormatter(displayTrend.map(row => String(row.date)), dateLoc)}
+              tickFormatter={dateTickFormatter(chartRows.map(row => String(row.date)), dateLoc)}
             />
             <YAxis
               tick={{ fontSize: 10, fill: 'var(--muted-foreground)' }}
@@ -2742,15 +2803,16 @@ function PortfolioChart({ data, wallets, currency, locale: loc, dateLocale: date
             <RechartsTooltip
               content={({ active, payload, label }) => {
                 if (!active || !payload?.length) return null
-                const row = displayTrend.find(r => r.date === label)
+                const row = chartRows.find(r => r.date === label)
                 const dateTotal = row ? ((row._total as number) ?? 0) : 0
-                const items = sortedSeries
+                const dateInvested = row ? ((row._invested as number) ?? 0) : 0
+                const items = (mode === 'total' ? [] : sortedSeries)
                   .map(s => {
                     const val = row ? ((row[s.key] as number) ?? 0) : 0
                     return { key: s.key, name: s.name, value: val, color: s.color }
                   })
                   .filter(item => item.value !== 0)
-                if (items.length === 0) return null
+                if (items.length === 0 && mode !== 'total' && !showInvestedLine) return null
                 return (
                   <div style={{ background: 'var(--card)', color: 'var(--foreground)', border: '1px solid var(--border)', borderRadius: '0.75rem', fontSize: '12px', boxShadow: '0 4px 12px rgba(0,0,0,0.08)', padding: '10px 12px' }}>
                     <p style={{ fontWeight: 600, marginBottom: 6 }}>
@@ -2765,10 +2827,16 @@ function PortfolioChart({ data, wallets, currency, locale: loc, dateLocale: date
                         <span style={{ fontWeight: 500, fontVariantNumeric: 'tabular-nums' }}>{mask(formatCurrency(item.value, currency, loc))}</span>
                       </div>
                     ))}
-                    <div style={{ borderTop: '1px solid var(--border)', marginTop: 6, paddingTop: 6, display: 'flex', justifyContent: 'space-between', fontWeight: 700 }}>
+                    <div style={{ borderTop: items.length > 0 ? '1px solid var(--border)' : undefined, marginTop: items.length > 0 ? 6 : 0, paddingTop: items.length > 0 ? 6 : 0, display: 'flex', justifyContent: 'space-between', fontWeight: 700 }}>
                       <span>{t('assets.total')}</span>
                       <span style={{ fontVariantNumeric: 'tabular-nums' }}>{mask(formatCurrency(dateTotal, currency, loc))}</span>
                     </div>
+                    {showInvestedLine && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16, marginTop: 2 }}>
+                        <span>{t('assets.chartInvested')}</span>
+                        <span style={{ fontWeight: 500, fontVariantNumeric: 'tabular-nums' }}>{mask(formatCurrency(dateInvested, currency, loc))}</span>
+                      </div>
+                    )}
                   </div>
                 )
               }}
@@ -2791,6 +2859,17 @@ function PortfolioChart({ data, wallets, currency, locale: loc, dateLocale: date
                 Y axis scales to the largest single series instead of the portfolio
                 total, which would otherwise squash every line against the baseline. */}
             <Area dataKey="_total" stroke="none" fill="none" dot={false} activeDot={false} hide={!isStacked} />
+            {showInvestedLine && (
+              <Line
+                type="stepAfter"
+                dataKey="_invested"
+                stroke="var(--muted-foreground)"
+                strokeWidth={1.5}
+                strokeDasharray="4 4"
+                dot={false}
+                activeDot={false}
+              />
+            )}
           </AreaChart>
         </ResponsiveContainer>
       </div>
@@ -2802,6 +2881,14 @@ function PortfolioChart({ data, wallets, currency, locale: loc, dateLocale: date
             <span className="text-[11px] text-muted-foreground">{s.name}</span>
           </div>
         ))}
+        {showInvestedLine && (
+          <div className="flex items-center gap-1.5" title={t('assets.chartInvestedHint')}>
+            <svg width="14" height="4" aria-hidden="true">
+              <line x1="0" y1="2" x2="14" y2="2" stroke="var(--muted-foreground)" strokeWidth="1.5" strokeDasharray="4 3" />
+            </svg>
+            <span className="text-[11px] text-muted-foreground">{t('assets.chartInvested')}</span>
+          </div>
+        )}
       </div>
     </div>
   )

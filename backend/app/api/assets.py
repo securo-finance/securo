@@ -49,6 +49,7 @@ from app.schemas.asset import (
     HoldingTradeImportRead,
     MarketSymbolMatch,
     MarketSymbolQuote,
+    PortfolioInvestedPoint,
     PortfolioPerformanceRead,
 )
 from app.services import (
@@ -56,6 +57,7 @@ from app.services import (
     asset_service,
     asset_transaction_service,
     connection_service,
+    portfolio_invested_service,
     portfolio_performance_service,
 )
 
@@ -395,6 +397,17 @@ async def portfolio_trend(
     session: AsyncSession = Depends(get_async_session),
 ):
     return await asset_service.get_portfolio_trend(session, ctx.workspace.id, ctx.user_id)
+
+
+@router.get("/portfolio-invested", response_model=list[PortfolioInvestedPoint])
+async def portfolio_invested(
+    asset_group_ids: list[uuid.UUID] | None = Query(None),
+    ctx: WorkspaceContext = Depends(current_workspace),
+    session: AsyncSession = Depends(get_async_session),
+):
+    return await portfolio_invested_service.get_invested_capital(
+        session, ctx.workspace.id, ctx.user_id, asset_group_ids
+    )
 
 
 # ----------------------------------------------------------------------------

@@ -2405,6 +2405,8 @@
     "chartDrawMode": "Visualizzazione grafico",
     "chartStacked": "Impilato",
     "chartLines": "Linee",
+    "chartInvested": "Investito netto",
+    "chartInvestedHint": "Denaro netto investito: acquisti e commissioni meno il ricavato delle vendite, al cambio di ogni giorno",
     "portfolioValue": "Valore del portafoglio",
     "tabPerformance": "Rendimento",
     "performanceTitle": "Rendimento del portafoglio",

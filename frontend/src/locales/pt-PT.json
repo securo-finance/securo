@@ -2404,6 +2404,8 @@
     "chartDrawMode": "Desenho do gráfico",
     "chartStacked": "Empilhado",
     "chartLines": "Linhas",
+    "chartInvested": "Investido líquido",
+    "chartInvestedHint": "Dinheiro líquido aplicado: compras e comissões menos o que as vendas renderam, à taxa de câmbio de cada dia",
     "portfolioValue": "Valor do Património",
     "tabPerformance": "Desempenho",
     "performanceTitle": "Desempenho da carteira",

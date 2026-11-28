@@ -2405,6 +2405,8 @@
     "chartDrawMode": "Trazado del gráfico",
     "chartStacked": "Apilado",
     "chartLines": "Líneas",
+    "chartInvested": "Invertido neto",
+    "chartInvestedHint": "Dinero neto aportado: compras y comisiones menos lo cobrado en ventas, al cambio de cada día",
     "portfolioValue": "Valor de la cartera",
     "tabPerformance": "Rendimiento",
     "performanceTitle": "Rendimiento de la cartera",
