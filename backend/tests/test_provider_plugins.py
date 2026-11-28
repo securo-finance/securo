@@ -1406,3 +1406,159 @@ async def test_synced_loan_account_persists_terms_and_preserves_them_when_omitte
     assert loan.loan_interest_rate == Decimal("4.99")
     assert loan.payment_due_day == 21
     assert loan.minimum_payment == Decimal("185.00")
+
+
+@pytest.mark.asyncio
+async def test_removed_transaction_ids_protects_payee_id_and_typed_fx_edits_on_posted_rows(
+    session: AsyncSession, bank_connection, test_user
+):
+    """Reassigning or clearing `payee_id`, setting `payee_id` on a payeeless row,
+    or setting `amount_primary_typed` on a posted synced row must protect it from
+    `removed_transaction_ids`, while untouched auto-matched payee rows still delete."""
+    from app.models.payee import Payee
+    from app.schemas.transaction import TransactionUpdate
+    from app.services import transaction_service
+
+    custom_payee = Payee(
+        user_id=test_user.id,
+        workspace_id=bank_connection.workspace_id,
+        name="User Reassigned Payee",
+        source="manual",
+    )
+    session.add(custom_payee)
+    await session.flush()
+    custom_payee_id = custom_payee.id
+
+    txns = [
+        {"external_id": "untouched-with-payee", "description": "Fee", "payee": "Bank", "amount": "5.00", "date": "2026-11-14", "type": "debit", "status": "posted"},
+        {"external_id": "reassigned-payee", "description": "Coffee", "payee": "Bank", "amount": "6.00", "date": "2026-11-14", "type": "debit", "status": "posted"},
+        {"external_id": "cleared-payee", "description": "Snack", "payee": "Bank", "amount": "7.00", "date": "2026-11-14", "type": "debit", "status": "posted"},
+        {"external_id": "added-payee", "description": "Transfer", "amount": "8.00", "date": "2026-11-14", "type": "debit", "status": "posted"},
+        {"external_id": "typed-fx", "description": "Euro Shop", "amount": "10.00", "currency": "EUR", "date": "2026-11-14", "type": "debit", "status": "posted"},
+        {"external_id": "reverted-payee-patch", "description": "Patched", "payee": "Bank", "amount": "9.00", "date": "2026-11-14", "type": "debit", "status": "posted"},
+    ]
+    await _pipeline(session, bank_connection, payload_data(transactions=txns, holdings=None), test_user)
+    (account,) = await _rows(session, Account, connection_id=bank_connection.id)
+    account_id = account.id
+    by_ext = {row.external_id: row for row in await _rows(session, Transaction, account_id=account_id)}
+
+    original_bank_payee_id = by_ext["reverted-payee-patch"].payee_id
+    assert original_bank_payee_id is not None
+
+    by_ext["reassigned-payee"].payee_id = custom_payee_id
+    by_ext["cleared-payee"].payee_id = None
+    by_ext["added-payee"].payee_id = custom_payee_id
+    by_ext["typed-fx"].amount_primary_typed = Decimal("11.25")
+    by_ext["typed-fx"].amount_primary_typed_currency = "USD"
+    await session.commit()
+
+    # Edit via update_transaction and revert back to verify USER_EDITED_KEY holds on posted rows too.
+    await transaction_service.update_transaction(
+        session,
+        by_ext["reverted-payee-patch"].id,
+        bank_connection.workspace_id,
+        test_user.id,
+        TransactionUpdate(payee_id=custom_payee_id),
+    )
+    await transaction_service.update_transaction(
+        session,
+        by_ext["reverted-payee-patch"].id,
+        bank_connection.workspace_id,
+        test_user.id,
+        TransactionUpdate(payee_id=original_bank_payee_id),
+    )
+
+    delta = payload_data(transactions=[], holdings=None)
+    delta["accounts"][0]["incremental"] = True
+    delta["accounts"][0]["removed_transaction_ids"] = list(txns_id["external_id"] for txns_id in txns)
+    await _pipeline(session, bank_connection, delta, test_user)
+
+    remaining = {row.external_id for row in await _rows(session, Transaction, account_id=account_id)}
+    assert remaining == {
+        "reassigned-payee",
+        "cleared-payee",
+        "added-payee",
+        "typed-fx",
+        "reverted-payee-patch",
+    }
+
+
+@pytest.mark.asyncio
+async def test_replaces_external_id_restamps_fx_to_settled_date(
+    session: AsyncSession, bank_connection, test_user
+):
+    """When a foreign-currency pending transaction settles on a new date via
+    `replaces_external_id` (both with and without an amount change), FX stamps
+    use the settled date's rate rather than the old pending date's rate."""
+    from app.models.fx_rate import FxRate
+
+    test_user.preferences = {**(test_user.preferences or {}), "currency_display": "USD"}
+    session.add_all(
+        [
+            FxRate(base_currency="USD", quote_currency="EUR", date=date(2026, 11, 14), rate=Decimal("0.8"), source="test"),
+            FxRate(base_currency="USD", quote_currency="EUR", date=date(2026, 11, 16), rate=Decimal("0.5"), source="test"),
+        ]
+    )
+    await session.commit()
+
+    pending = [
+        {
+            "external_id": "fx-hold-same-amt",
+            "description": "Hotel Auth",
+            "amount": "100.00",
+            "currency": "EUR",
+            "date": "2026-11-14",
+            "type": "debit",
+            "status": "pending",
+        },
+        {
+            "external_id": "fx-hold-tip",
+            "description": "Dinner Auth",
+            "amount": "40.00",
+            "currency": "EUR",
+            "date": "2026-11-14",
+            "type": "debit",
+            "status": "pending",
+        },
+    ]
+    await _pipeline(session, bank_connection, payload_data(transactions=pending, holdings=None), test_user)
+    (account,) = await _rows(session, Account, connection_id=bank_connection.id)
+    account_id = account.id
+    before = {r.external_id: r for r in await _rows(session, Transaction, account_id=account_id)}
+    # On 2026-11-14 (1 USD = 0.8 EUR -> 1 EUR = 1.25 USD): 100 EUR -> 125.00 USD, 40 EUR -> 50.00 USD.
+    assert before["fx-hold-same-amt"].amount_primary == Decimal("125.00")
+    assert before["fx-hold-tip"].amount_primary == Decimal("50.00")
+
+    settled = [
+        {
+            "external_id": "fx-posted-same-amt",
+            "replaces_external_id": "fx-hold-same-amt",
+            "description": "Hotel Settled",
+            "amount": "100.00",
+            "currency": "EUR",
+            "date": "2026-11-16",
+            "type": "debit",
+            "status": "posted",
+        },
+        {
+            "external_id": "fx-posted-tip",
+            "replaces_external_id": "fx-hold-tip",
+            "description": "Dinner Settled",
+            "amount": "50.00",
+            "currency": "EUR",
+            "date": "2026-11-16",
+            "type": "debit",
+            "status": "posted",
+        },
+    ]
+    delta = payload_data(transactions=settled, holdings=None)
+    delta["accounts"][0]["incremental"] = True
+    delta["accounts"][0]["removed_transaction_ids"] = ["fx-hold-same-amt", "fx-hold-tip"]
+    await _pipeline(session, bank_connection, delta, test_user)
+
+    after = {r.external_id: r for r in await _rows(session, Transaction, account_id=account_id)}
+    # On 2026-11-16 (1 USD = 0.5 EUR -> 1 EUR = 2.00 USD): 100 EUR -> 200.00 USD, 50 EUR -> 100.00 USD.
+    assert after["fx-posted-same-amt"].amount_primary == Decimal("200.00")
+    assert after["fx-posted-same-amt"].amount_account == Decimal("200.00")
+    assert after["fx-posted-tip"].amount_primary == Decimal("100.00")
+    assert after["fx-posted-tip"].amount_account == Decimal("100.00")

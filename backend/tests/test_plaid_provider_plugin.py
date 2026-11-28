@@ -16,10 +16,12 @@ from __future__ import annotations
 import importlib.util
 import io
 import json
+import subprocess
+import sys
 import tarfile
 from decimal import Decimal
 from pathlib import Path
-from types import ModuleType, SimpleNamespace
+from types import MappingProxyType, ModuleType
 from typing import Any
 
 import pytest
@@ -32,6 +34,7 @@ from app.models.credit_card_bill import CreditCardBill
 from app.models.transaction import Transaction
 from app.plugins import connections, runner, vault
 from app.plugins.manifest import parse_manifest
+from app.services import account_service
 from tests import test_code_plugins as code_plugins
 from tests.test_code_plugins import PLUGIN, REPO, V1, _apply
 from tests.test_provider_plugins import _bank, _rows
@@ -469,7 +472,7 @@ class FakePlaidServer:
 
 
 def _wire_fake_plaid(monkeypatch, fake: FakePlaidServer) -> None:
-    """Route runner calls to the real PlaidPlugin class backed by `fake`."""
+    """Route runner calls to PlaidPlugin via MappingProxyType + JSON roundtrip, matching host.py."""
     instance = fake.mod.PlaidPlugin(requester=fake)
 
     async def fake_call(
@@ -484,13 +487,19 @@ def _wire_fake_plaid(monkeypatch, fake: FakePlaidServer) -> None:
         commit: str | None = None,
         timeout: int | None = None,
     ) -> Any:
-        ctx = SimpleNamespace(
-            secrets=dict(secrets or {}),
-            config=dict(config or {}),
-            securo=dict(securo or {}),
-        )
+        ctx = type(
+            "Context",
+            (),
+            {
+                "secrets": MappingProxyType(json.loads(json.dumps(secrets or {}))),
+                "config": MappingProxyType(json.loads(json.dumps(config or {}))),
+                "securo": MappingProxyType(json.loads(json.dumps(securo or {}))),
+            },
+        )()
+        wire_params = json.loads(json.dumps(params or {}))
         try:
-            return getattr(instance, method)(dict(params or {}), ctx)
+            result = getattr(instance, method)(wire_params, ctx)
+            return json.loads(json.dumps(result, default=str))
         except Exception as exc:
             raise runner.PluginCallFailed(type(exc).__name__, str(exc)) from None
 
@@ -754,3 +763,500 @@ async def test_plaid_graceful_fallbacks_for_loan_only_product_not_ready_and_rate
     fake.unsupported_optional = True
     await connections.sync(session, connection)
     assert connection.status == "active" and connection.last_error is None
+
+
+def test_plaid_executes_via_host_subprocess_with_mapping_proxy_and_json_roundtrip():
+    """Executes `examples/plugins/plaid` directly through `plugin_runner/host.py`
+    with `python -I -S` to verify stdlib-only isolation, MappingProxyType context,
+    and JSON stdin/stdout error/result serialization."""
+    host_py = Path(__file__).resolve().parents[1] / "plugin_runner" / "host.py"
+
+    def run_host(payload: dict[str, Any]) -> dict[str, Any]:
+        proc = subprocess.run(
+            [sys.executable, "-I", "-S", str(host_py), str(EXAMPLE), "plaid_plugin:plugin"],
+            input=json.dumps(payload),
+            text=True,
+            capture_output=True,
+            check=True,
+            timeout=15,
+        )
+        return json.loads(proc.stdout)
+
+    missing_token = run_host(
+        {
+            "method": "sync",
+            "params": {"state": {}},
+            "secrets": {"secret": "sec-1"},
+            "config": {"client_id": "cid-1", "environment": "sandbox"},
+            "securo": {},
+        }
+    )
+    assert missing_token["ok"] is False
+    assert missing_token["error"]["type"] == "NeedsAuth"
+
+    exited = run_host(
+        {
+            "method": "oauth_exchange",
+            "params": {"params": {"status": "exited"}},
+            "secrets": {"access_token": "acc-1", "pending_link_token": "link-1"},
+            "config": {"client_id": "cid-1", "environment": "sandbox"},
+            "securo": {},
+        }
+    )
+    assert exited["ok"] is False
+    assert exited["error"]["type"] == "RuntimeError"
+    assert "closed before finishing" in exited["error"]["message"]
+
+
+def test_plaid_hosted_link_update_mode_exit_and_legacy_fallbacks():
+    """Voluntary Hosted Link exit in Update Mode (exit.error is None) and on_exit
+    must fail instead of succeeding; multi-session & on_success fallback work."""
+    mod = _module()
+    ctx = type(
+        "Context",
+        (),
+        {
+            "secrets": MappingProxyType(
+                {"secret": "sec-1", "access_token": "access-existing", "pending_link_token": "link-upd"}
+            ),
+            "config": MappingProxyType({"client_id": "cid-1", "environment": "sandbox"}),
+            "securo": MappingProxyType({}),
+        },
+    )()
+
+    # 1. Voluntary Update Mode exit: finished_at is set and exit.error is None.
+    def exit_no_error(url: str, payload: dict[str, Any]) -> dict[str, Any]:
+        assert url.endswith("/link/token/get")
+        return {
+            "link_token": "link-upd",
+            "link_sessions": [
+                {
+                    "link_session_id": "ls-exit",
+                    "finished_at": "2026-11-27T12:00:00Z",
+                    "exit": {"error": None, "metadata": {"status": "requires_credentials"}},
+                    "results": {"item_add_results": []},
+                }
+            ],
+        }
+
+    plugin = mod.PlaidPlugin(requester=exit_no_error)
+    with pytest.raises(RuntimeError, match="closed before finishing"):
+        plugin.oauth_exchange({"params": {}}, ctx)
+
+    # 2. Deprecated on_exit with error=None must also reject Update Mode.
+    def legacy_on_exit(url: str, payload: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "link_token": "link-upd",
+            "link_sessions": [
+                {
+                    "link_session_id": "ls-old-exit",
+                    "finished_at": "2026-11-27T12:00:00Z",
+                    "on_exit": {"error": None, "metadata": {"status": "requires_account_selection"}},
+                }
+            ],
+        }
+
+    with pytest.raises(RuntimeError, match="closed before finishing"):
+        mod.PlaidPlugin(requester=legacy_on_exit).oauth_exchange({"params": {}}, ctx)
+
+    # 3. Multi-session: earlier exit followed by finished success in Update Mode succeeds;
+    #    earlier finished session followed by trailing exited session rejects.
+    def multi_success(url: str, payload: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "link_token": "link-upd",
+            "link_sessions": [
+                {
+                    "link_session_id": "ls-1",
+                    "finished_at": "2026-11-27T11:55:00Z",
+                    "exit": {"error": None, "metadata": {}},
+                },
+                {
+                    "link_session_id": "ls-2",
+                    "finished_at": "2026-11-27T12:00:00Z",
+                    "results": {"item_add_results": []},
+                },
+            ],
+        }
+
+    res = mod.PlaidPlugin(requester=multi_success).oauth_exchange({"params": {}}, ctx)
+    assert res["secrets"] == {"access_token": "access-existing", "pending_link_token": None}
+
+    def multi_trailing_exit(url: str, payload: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "link_token": "link-upd",
+            "link_sessions": [
+                {"link_session_id": "ls-1", "finished_at": "2026-11-27T11:55:00Z", "results": {"item_add_results": []}},
+                {"link_session_id": "ls-2", "finished_at": "2026-11-27T12:00:00Z", "exit": {"error": None, "metadata": {}}},
+            ],
+        }
+
+    with pytest.raises(RuntimeError, match="closed before finishing"):
+        mod.PlaidPlugin(requester=multi_trailing_exit).oauth_exchange({"params": {}}, ctx)
+
+    # 4. Deprecated on_success.public_token fallback when results.item_add_results is empty.
+    init_ctx = type(
+        "Context",
+        (),
+        {
+            "secrets": MappingProxyType({"secret": "sec-1", "pending_link_token": "link-new"}),
+            "config": MappingProxyType({"client_id": "cid-1", "environment": "sandbox"}),
+            "securo": MappingProxyType({}),
+        },
+    )()
+
+    def legacy_on_success(url: str, payload: dict[str, Any]) -> dict[str, Any]:
+        if url.endswith("/link/token/get"):
+            return {
+                "link_token": "link-new",
+                "link_sessions": [
+                    {
+                        "link_session_id": "ls-legacy",
+                        "finished_at": "2026-11-27T12:00:00Z",
+                        "results": {"item_add_results": []},
+                        "on_success": {
+                            "public_token": "public-legacy-123",
+                            "metadata": {"institution": {"institution_id": "ins_1", "name": "Legacy Bank"}},
+                        },
+                    }
+                ],
+            }
+        assert url.endswith("/item/public_token/exchange")
+        assert payload["public_token"] == "public-legacy-123"
+        return {"access_token": "acc-legacy", "item_id": "item-legacy"}
+
+    exchanged = mod.PlaidPlugin(requester=legacy_on_success).oauth_exchange({"params": {}}, init_ctx)
+    assert exchanged["secrets"]["access_token"] == "acc-legacy"
+    assert exchanged["state"]["institution_name"] == "Legacy Bank"
+
+
+@pytest.mark.parametrize(
+    "error_code",
+    [
+        "ITEM_LOGIN_REQUIRED",
+        "ITEM_LOCKED",
+        "INVALID_CREDENTIALS",
+        "USER_SETUP_REQUIRED",
+        "PASSWORD_RESET_REQUIRED",
+        "MFA_NOT_SUPPORTED",
+        "INSUFFICIENT_CREDENTIALS",
+        "ADDITIONAL_CONSENT_REQUIRED",
+    ],
+)
+def test_plaid_auth_error_codes_raise_needs_auth_on_primary_calls(error_code: str):
+    mod = _module()
+    ctx = type(
+        "Context",
+        (),
+        {
+            "secrets": MappingProxyType({"secret": "sec-1", "access_token": "acc-1"}),
+            "config": MappingProxyType({"client_id": "cid-1", "environment": "sandbox"}),
+            "securo": MappingProxyType({}),
+        },
+    )()
+
+    def fail_accounts(url: str, payload: dict[str, Any]) -> dict[str, Any]:
+        raise mod.PlaidAPIError(
+            f"{error_code}: action needed",
+            status_code=400,
+            error_type="ITEM_ERROR",
+            error_code=error_code,
+        )
+
+    with pytest.raises(mod.NeedsAuth):
+        mod.PlaidPlugin(requester=fail_accounts).sync({"state": {}}, ctx)
+
+
+def test_plaid_sync_edge_cases_not_ready_unsupported_loan_txns_cursor_guard_and_liabilities():
+    mod = _module()
+    ctx = type(
+        "Context",
+        (),
+        {
+            "secrets": MappingProxyType({"secret": "sec-1", "access_token": "acc-1"}),
+            "config": MappingProxyType({"client_id": "cid-1", "environment": "sandbox"}),
+            "securo": MappingProxyType({}),
+        },
+    )()
+
+    # 1. 200 OK with transactions_update_status == "NOT_READY" & empty next_cursor returns data=None.
+    def sync_200_not_ready(url: str, payload: dict[str, Any]) -> dict[str, Any]:
+        if url.endswith("/accounts/get"):
+            return {
+                "item": {},
+                "accounts": [
+                    {
+                        "account_id": "acc-1",
+                        "name": "Checking",
+                        "type": "depository",
+                        "subtype": "checking",
+                        "balances": {"current": 100.0, "iso_currency_code": "USD"},
+                    }
+                ],
+            }
+        if url.endswith("/transactions/sync"):
+            return {
+                "transactions_update_status": "NOT_READY",
+                "accounts": [],
+                "added": [],
+                "modified": [],
+                "removed": [],
+                "next_cursor": "",
+                "has_more": False,
+            }
+        raise AssertionError(url)
+
+    not_ready_res = mod.PlaidPlugin(requester=sync_200_not_ready).sync({"state": {}}, ctx)
+    assert not_ready_res["data"] is None
+
+    # 2. ADDITIONAL_CONSENT_REQUIRED on optional liabilities/investments + PRODUCTS_NOT_SUPPORTED on
+    #    /transactions/sync still imports accounts & marks incremental transactions=[] (not incomplete).
+    def sync_unsupported_txns_and_unconsented_optional(url: str, payload: dict[str, Any]) -> dict[str, Any]:
+        if url.endswith("/accounts/get"):
+            return {
+                "item": {},
+                "accounts": [
+                    {
+                        "account_id": "acc-chk",
+                        "name": "Checking",
+                        "type": "depository",
+                        "subtype": "checking",
+                        "balances": {"current": 500.0, "iso_currency_code": "USD"},
+                    },
+                    {
+                        "account_id": "acc-brk",
+                        "name": "Legacy Brokerage",
+                        "type": "brokerage",
+                        "subtype": "brokerage",
+                        "balances": {"current": 1200.0, "iso_currency_code": "USD"},
+                    },
+                ],
+            }
+        if url.endswith("/transactions/sync"):
+            raise mod.PlaidAPIError(
+                "PRODUCTS_NOT_SUPPORTED",
+                status_code=400,
+                error_type="ITEM_ERROR",
+                error_code="PRODUCTS_NOT_SUPPORTED",
+            )
+        if url.endswith("/investments/holdings/get"):
+            raise mod.PlaidAPIError(
+                "ADDITIONAL_CONSENT_REQUIRED",
+                status_code=400,
+                error_type="INVALID_INPUT",
+                error_code="ADDITIONAL_CONSENT_REQUIRED",
+            )
+        raise AssertionError(url)
+
+    unsupported_res = mod.PlaidPlugin(requester=sync_unsupported_txns_and_unconsented_optional).sync(
+        {"state": {}}, ctx
+    )
+    accts = {a["external_id"]: a for a in unsupported_res["data"]["accounts"]}
+    assert accts["acc-chk"]["transactions"] == []
+    assert accts["acc-chk"]["incremental"] is True
+    assert accts["acc-brk"]["type"] == "investment"
+
+    # 3. has_more=True with unchanged or empty next_cursor raises instead of infinite loop.
+    def non_advancing_cursor(url: str, payload: dict[str, Any]) -> dict[str, Any]:
+        if url.endswith("/accounts/get"):
+            return {
+                "item": {},
+                "accounts": [
+                    {
+                        "account_id": "acc-1",
+                        "name": "Checking",
+                        "type": "depository",
+                        "subtype": "checking",
+                        "balances": {"current": 100.0, "iso_currency_code": "USD"},
+                    }
+                ],
+            }
+        return {
+            "transactions_update_status": "HISTORICAL_UPDATE_COMPLETE",
+            "added": [],
+            "modified": [],
+            "removed": [],
+            "next_cursor": "same-cur",
+            "has_more": True,
+        }
+
+    with pytest.raises(RuntimeError, match="without advancing next_cursor"):
+        mod.PlaidPlugin(requester=non_advancing_cursor).sync(
+            {"state": {"transactions_cursor": "same-cur"}}, ctx
+        )
+
+    # 4. Loan account /transactions/sync + liabilities.loan + line_of_credit + M1 holdings unofficial currencies.
+    def rich_sync(url: str, payload: dict[str, Any]) -> dict[str, Any]:
+        if url.endswith("/accounts/get"):
+            return {
+                "item": {},
+                "accounts": [
+                    {
+                        "account_id": "acc-auto",
+                        "name": "Auto Loan",
+                        "type": "loan",
+                        "subtype": "auto",
+                        "balances": {"current": 12000.0, "iso_currency_code": "USD"},
+                    },
+                    {
+                        "account_id": "acc-stu-idr",
+                        "name": "IDR Student Loan",
+                        "type": "loan",
+                        "subtype": "student",
+                        "balances": {"current": 9000.0, "iso_currency_code": "USD"},
+                    },
+                    {
+                        "account_id": "acc-loc",
+                        "name": "Personal Line",
+                        "type": "credit",
+                        "subtype": "line of credit",
+                        "balances": {"current": 800.0, "limit": 5000.0, "iso_currency_code": "USD"},
+                    },
+                    {
+                        "account_id": "acc-m1",
+                        "name": "M1 Crypto & Stock",
+                        "type": "brokerage",
+                        "subtype": "brokerage",
+                        "balances": {"current": 3000.0, "iso_currency_code": "USD"},
+                    },
+                ],
+            }
+        if url.endswith("/transactions/sync"):
+            return {
+                "transactions_update_status": "HISTORICAL_UPDATE_COMPLETE",
+                "added": [
+                    {
+                        "transaction_id": "tx-loan-pmt",
+                        "account_id": "acc-auto",
+                        "amount": -350.0,
+                        "iso_currency_code": "USD",
+                        "date": "2026-11-10",
+                        "name": "AUTO LOAN PAYMENT",
+                        "pending": False,
+                    }
+                ],
+                "modified": [],
+                "removed": [],
+                "next_cursor": "cur-loan-1",
+                "has_more": False,
+            }
+        if url.endswith("/liabilities/get"):
+            return {
+                "liabilities": {
+                    "credit": [],
+                    "mortgage": [],
+                    "student": [
+                        {
+                            "account_id": "acc-stu-idr",
+                            "origination_principal_amount": 10000.0,
+                            "interest_rate_percentage": 4.5,
+                            "origination_date": "2022-01-01",
+                            "expected_payoff_date": "2032-01-01",
+                            "repayment_plan": {"type": "income-based repayment", "description": "IBR"},
+                        }
+                    ],
+                    "loan": [
+                        {
+                            "account_id": "acc-auto",
+                            "origination_principal_amount": 18000.0,
+                            "interest_rate": {"percentage": 5.25, "type": "fixed"},
+                            "origination_date": "2024-06-01",
+                            "loan_term_months": 60,
+                            "payment_frequency": "monthly",
+                            "next_payment_due_date": "2026-12-05",
+                            "next_payment_amount": 341.75,
+                        }
+                    ],
+                    "line_of_credit": [
+                        {
+                            "account_id": "acc-loc",
+                            "credit_limit": 5000.0,
+                            "minimum_payment_amount": 25.0,
+                            "next_payment_due_date": "2026-12-12",
+                            "last_statement_issue_date": "2026-11-12",
+                            "last_statement_balance": 800.0,
+                        }
+                    ],
+                }
+            }
+        if url.endswith("/investments/holdings/get"):
+            return {
+                "securities": [
+                    {"security_id": "sec-btc", "name": "Bitcoin", "ticker_symbol": "BTC", "type": "cryptocurrency"},
+                    {"security_id": "sec-usdt", "name": "Tether", "ticker_symbol": "USDT", "type": "cryptocurrency"},
+                ],
+                "holdings": [
+                    {
+                        "account_id": "acc-m1",
+                        "security_id": "sec-btc",
+                        "quantity": 0.05,
+                        "institution_price": 60000.0,
+                        "institution_value": 3000.0,
+                        "unofficial_currency_code": "BTC",
+                    },
+                    {
+                        "account_id": "acc-m1",
+                        "security_id": "sec-usdt",
+                        "quantity": 100.0,
+                        "institution_price": 1.0,
+                        "institution_value": 100.0,
+                        "unofficial_currency_code": "USDT",
+                    },
+                ],
+            }
+        if url.endswith("/investments/transactions/get"):
+            return {"total_investment_transactions": 0, "investment_transactions": []}
+        raise AssertionError(url)
+
+    rich_res = mod.PlaidPlugin(requester=rich_sync).sync({"state": {}}, ctx)
+    rich_accts = {a["external_id"]: a for a in rich_res["data"]["accounts"]}
+    assert [t["external_id"] for t in rich_accts["acc-auto"]["transactions"]] == ["tx-loan-pmt"]
+    assert rich_accts["acc-auto"]["loan_term_months"] == 60
+    assert rich_accts["acc-auto"]["loan_amortization"] == "price"
+    assert rich_accts["acc-auto"]["minimum_payment"] == "341.75"
+    assert "loan_amortization" not in rich_accts["acc-stu-idr"]
+    assert rich_accts["acc-loc"]["bills"][0]["total_amount"] == "800.00"
+    # 3-char unofficial_currency_code BTC kept, 4-char USDT skipped without crashing.
+    assert [(h["ticker"], h["currency"]) for h in rich_res["data"]["holdings"]] == [("BTC", "BTC")]
+
+
+@pytest.mark.asyncio
+async def test_nelnet_student_loan_computes_loan_schedule(
+    session: AsyncSession, ids, plaid_catalog, plugin_runner, states, monkeypatch
+):
+    """Nelnet student loan on default/standard repayment sets loan_amortization='price'
+    so Securo's loan schedule endpoint configures automatically."""
+    mod = _module()
+    fake = FakePlaidServer(mod)
+    fake.liabilities_only = True
+    _wire_fake_plaid(monkeypatch, fake)
+
+    workspace_id, user_id = ids
+    await _apply(session, workspace_id, user_id)
+
+    connection, _, state = await connections.create_with_oauth(
+        session,
+        workspace_id=workspace_id,
+        user_id=user_id,
+        can_write=True,
+        plugin_id=PLUGIN,
+        integration_key="plaid",
+        name="Nelnet Schedule",
+        values={
+            "client_id": "cid-1",
+            "secret": "sec-secret-99",
+            "environment": "sandbox",
+            "products": "liabilities",
+            "enable_investments": "false",
+        },
+        lang="en",
+    )
+    assert state is not None
+    await connections.finish_oauth(
+        session, workspace_id=workspace_id, user_id=user_id, code=None, state=state, params={"status": "success"}
+    )
+    await connections.sync(session, connection)
+    bank = await _bank(session, connection)
+    (nelnet,) = await _rows(session, Account, connection_id=bank.id)
+    assert nelnet.loan_amortization == "price"
+    schedule = await account_service.get_loan_schedule(session, nelnet.id, workspace_id)
+    assert schedule is not None and schedule["configured"] is True

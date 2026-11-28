@@ -39,6 +39,13 @@ MAX_MUTATION_RETRIES = 3
 # Update Mode or fix their Plaid credentials.
 _AUTH_ERROR_CODES = frozenset({
     "ITEM_LOGIN_REQUIRED",
+    "ITEM_LOCKED",
+    "INVALID_CREDENTIALS",
+    "USER_SETUP_REQUIRED",
+    "PASSWORD_RESET_REQUIRED",
+    "MFA_NOT_SUPPORTED",
+    "INSUFFICIENT_CREDENTIALS",
+    "ADDITIONAL_CONSENT_REQUIRED",
     "INVALID_ACCESS_TOKEN",
     "USER_PERMISSION_REVOKED",
     "INVALID_API_KEYS",
@@ -46,14 +53,15 @@ _AUTH_ERROR_CODES = frozenset({
     "ITEM_NOT_FOUND",
 })
 
-# Plaid error codes indicating an optional product is unavailable for this item
-# or institution — safe to skip without failing the sync.
+# Plaid error codes indicating an optional product is unavailable or not
+# consented for this item/institution — safe to skip when allow_unsupported=True.
 _UNSUPPORTED_PRODUCT_CODES = frozenset({
     "PRODUCTS_NOT_SUPPORTED",
     "NO_INVESTMENT_ACCOUNTS",
     "NO_LIABILITY_ACCOUNTS",
     "NO_ACCOUNTS",
     "ACCESS_NOT_GRANTED",
+    "ADDITIONAL_CONSENT_REQUIRED",
     "INVALID_PRODUCT",
 })
 
@@ -139,12 +147,16 @@ def _day_of_month(value: Any) -> int | None:
     return int(iso[8:10])
 
 
-def _currency(value: Any, fallback: str = "USD") -> str:
+def _valid_currency(value: Any) -> str | None:
     if isinstance(value, str):
         code = value.strip().upper()
         if len(code) == 3 and code.isascii() and code.isalpha():
             return code
-    return fallback
+    return None
+
+
+def _currency(value: Any, fallback: str = "USD") -> str:
+    return _valid_currency(value) or fallback
 
 
 def _mask_last4(value: Any) -> str | None:
@@ -247,7 +259,7 @@ def _map_account_type(plaid_type: Any, plaid_subtype: Any) -> str:
         return "credit_card"
     if ptype == "loan":
         return "loan"
-    if ptype == "investment":
+    if ptype in ("investment", "brokerage"):
         return "investment"
     if ptype == "depository":
         if subtype in ("savings", "money market", "cd", "hsa"):
@@ -508,12 +520,40 @@ class PlaidPlugin:
             if not sessions and not public_token:
                 raise RuntimeError("Plaid Hosted Link session has not completed yet")
             if sessions:
-                latest = sessions[-1] if isinstance(sessions[-1], dict) else {}
-                exit_info = latest.get("exit")
-                if isinstance(exit_info, dict) and exit_info.get("error"):
-                    err = exit_info["error"]
-                    msg = err.get("display_message") or err.get("error_message") or "Link exited with error"
-                    raise RuntimeError(f"Plaid Link failed: {msg}")
+                dict_sessions = [s for s in sessions if isinstance(s, dict)]
+                finished_sessions = [
+                    s
+                    for s in dict_sessions
+                    if s.get("finished_at")
+                    or s.get("exit") is not None
+                    or s.get("on_exit") is not None
+                    or (
+                        isinstance(s.get("results"), dict)
+                        and bool(s["results"].get("item_add_results"))
+                    )
+                    or isinstance(s.get("on_success"), dict)
+                ]
+                latest = (
+                    finished_sessions[-1]
+                    if finished_sessions
+                    else (dict_sessions[-1] if dict_sessions else {})
+                )
+                exit_info = (
+                    latest.get("exit")
+                    if latest.get("exit") is not None
+                    else latest.get("on_exit")
+                )
+                if exit_info is not None:
+                    err = exit_info.get("error") if isinstance(exit_info, dict) else None
+                    if isinstance(err, dict) and err:
+                        msg = (
+                            err.get("display_message")
+                            or err.get("error_message")
+                            or "Link exited with error"
+                        )
+                        raise RuntimeError(f"Plaid Link failed: {msg}")
+                    raise RuntimeError("Plaid Link was closed before finishing")
+
                 results = latest.get("results") or {}
                 item_adds = results.get("item_add_results") or []
                 if item_adds and isinstance(item_adds[0], dict):
@@ -521,6 +561,15 @@ class PlaidPlugin:
                     if not public_token:
                         public_token = str(first.get("public_token") or "").strip()
                     inst = first.get("institution")
+                    if isinstance(inst, dict):
+                        institution_name = str(inst.get("name") or "").strip() or None
+                        institution_id = str(inst.get("institution_id") or "").strip() or None
+                elif isinstance(latest.get("on_success"), dict):
+                    on_success = latest["on_success"]
+                    if not public_token:
+                        public_token = str(on_success.get("public_token") or "").strip()
+                    meta = on_success.get("metadata")
+                    inst = meta.get("institution") if isinstance(meta, dict) else None
                     if isinstance(inst, dict):
                         institution_name = str(inst.get("name") or "").strip() or None
                         institution_id = str(inst.get("institution_id") or "").strip() or None
@@ -593,12 +642,11 @@ class PlaidPlugin:
         context: Any,
         access_token: str,
         initial_cursor: str | None,
-    ) -> tuple[dict[str, list[dict[str, Any]]], dict[str, list[str]], str | None, bool]:
+    ) -> tuple[dict[str, list[dict[str, Any]]], dict[str, list[str]], str | None, str]:
         """Pull incremental transaction updates from `/transactions/sync`.
 
-        Returns ``(txns_by_account, removed_by_account, next_cursor, ready)``.
-        ``ready=False`` means Plaid reported ``PRODUCT_NOT_READY`` or the product
-        is unsupported on this item.
+        Returns ``(txns_by_account, removed_by_account, next_cursor, status)``
+        where ``status`` is ``"ready"``, ``"not_ready"``, or ``"unsupported"``.
         """
         for _attempt in range(MAX_MUTATION_RETRIES):
             cursor = initial_cursor
@@ -626,16 +674,30 @@ class PlaidPlugin:
                     )
                 except PlaidAPIError as exc:
                     if exc.error_code == "PRODUCT_NOT_READY":
-                        return {}, {}, initial_cursor, False
+                        return {}, {}, initial_cursor, "not_ready"
                     if exc.error_code == "TRANSACTIONS_SYNC_MUTATION_DURING_PAGINATION":
                         mutation_restarted = True
                         break
                     raise
                 if resp is None:
-                    return {}, {}, initial_cursor, False
+                    return {}, {}, initial_cursor, "unsupported"
 
                 page_added = list(resp.get("added") or []) + list(resp.get("modified") or [])
                 page_removed = list(resp.get("removed") or [])
+                next_page_cursor = str(resp.get("next_cursor") or "")
+                has_more = bool(resp.get("has_more"))
+
+                if (
+                    resp.get("transactions_update_status") == "NOT_READY"
+                    and committed_cursor == initial_cursor
+                    and total_txns == 0
+                    and total_removed == 0
+                    and not page_added
+                    and not page_removed
+                    and not has_more
+                    and not next_page_cursor
+                ):
+                    return {}, {}, initial_cursor, "not_ready"
 
                 # Respect Securo's contract caps by stopping at the previous
                 # page boundary when adding this page would exceed the limit.
@@ -679,9 +741,13 @@ class PlaidPlugin:
                         rem_bucket.add(rem_id)
                         total_removed += 1
 
-                cursor = str(resp.get("next_cursor") or "") or cursor
+                if has_more and (not next_page_cursor or next_page_cursor == cursor):
+                    raise RuntimeError(
+                        "Plaid /transactions/sync returned has_more=True without advancing next_cursor"
+                    )
+                cursor = next_page_cursor or cursor
                 committed_cursor = cursor
-                if not resp.get("has_more"):
+                if not has_more:
                     break
 
             if not mutation_restarted:
@@ -689,7 +755,7 @@ class PlaidPlugin:
                     {acc: list(rows.values()) for acc, rows in txns_by_account.items()},
                     {acc: sorted(ids) for acc, ids in removed_by_account.items()},
                     committed_cursor,
-                    True,
+                    "ready",
                 )
 
         raise RuntimeError("Plaid transactions changed repeatedly during pagination; retry on next sync")
@@ -713,7 +779,7 @@ class PlaidPlugin:
             return {}
         liabilities = resp.get("liabilities") or {}
         by_account: dict[str, dict[str, Any]] = {}
-        for kind in ("credit", "student", "mortgage"):
+        for kind in ("credit", "student", "mortgage", "loan", "line_of_credit"):
             for entry in liabilities.get(kind) or []:
                 if isinstance(entry, dict) and entry.get("account_id"):
                     by_account[str(entry["account_id"])] = {"kind": kind, "data": entry}
@@ -775,10 +841,20 @@ class PlaidPlugin:
 
             acc_info = accounts_by_id.get(acc_id) or {}
             acc_currency = acc_info.get("currency") or "USD"
-            currency = _currency(
-                raw.get("iso_currency_code") or sec.get("iso_currency_code"),
-                acc_currency,
+            raw_currency = (
+                raw.get("iso_currency_code")
+                or raw.get("unofficial_currency_code")
+                or sec.get("iso_currency_code")
+                or sec.get("unofficial_currency_code")
             )
+            if isinstance(raw_currency, str) and raw_currency.strip():
+                currency = _valid_currency(raw_currency)
+                if currency is None:
+                    # Skip holdings in non-ISO 4+ char unofficial codes (e.g. USDT)
+                    # that Securo's 3-letter Currency contract cannot represent.
+                    continue
+            else:
+                currency = acc_currency
             holding: dict[str, Any] = {
                 "external_id": ext_id,
                 "name": str(sec.get("name") or sec.get("ticker_symbol") or sec_id).strip()[:255],
@@ -817,7 +893,7 @@ class PlaidPlugin:
     def _fetch_investment_trades(
         self, context: Any, access_token: str
     ) -> dict[tuple[str, str], list[dict[str, Any]]] | None:
-        end_date = dt.date.today()
+        end_date = dt.datetime.now(dt.timezone.utc).date()
         start_date = end_date - dt.timedelta(days=_days_requested(context.config))
         trades_by_key: dict[tuple[str, str], list[dict[str, Any]]] = {}
         seen_ids: set[str] = set()
@@ -919,6 +995,14 @@ class PlaidPlugin:
 
         elif kind == "student" and account_payload["type"] == "loan":
             account_payload["loan_kind"] = "student"
+            repayment = data.get("repayment_plan")
+            plan_type = (
+                str(repayment.get("type") or "").strip().lower() or None
+                if isinstance(repayment, dict)
+                else None
+            )
+            if plan_type in (None, "standard", "extended standard"):
+                account_payload["loan_amortization"] = "price"
             orig_amt = _decimal(data.get("origination_principal_amount"))
             if orig_amt is not None and orig_amt > 0:
                 account_payload["loan_original_amount"] = _money_str(orig_amt)
@@ -954,18 +1038,82 @@ class PlaidPlugin:
             if rate is not None and Decimal(0) <= rate <= Decimal(100):
                 account_payload["loan_interest_rate"] = _rate_str(rate)
                 account_payload["loan_rate_period"] = "yearly_nominal"
-            term = _parse_loan_term_months(data.get("loan_term"))
-            if term is not None:
-                account_payload["loan_term_months"] = term
             orig_date = _iso_date(data.get("origination_date"))
             if orig_date:
                 account_payload["loan_first_payment_date"] = orig_date
+            term = _parse_loan_term_months(data.get("loan_term"))
+            if term is None:
+                term = _months_between(orig_date, _iso_date(data.get("maturity_date")))
+            if term is not None:
+                account_payload["loan_term_months"] = term
             due_day = _day_of_month(data.get("next_payment_due_date"))
             if due_day is not None:
                 account_payload["payment_due_day"] = due_day
             next_pmt = _decimal(data.get("next_monthly_payment"))
             if next_pmt is not None and next_pmt >= 0:
                 account_payload["minimum_payment"] = _money_str(next_pmt)
+
+        elif kind == "loan" and account_payload["type"] == "loan":
+            freq = str(data.get("payment_frequency") or "").strip().lower() or None
+            if freq in (None, "monthly"):
+                account_payload["loan_amortization"] = "price"
+            orig_amt = _decimal(data.get("origination_principal_amount"))
+            if orig_amt is not None and orig_amt > 0:
+                account_payload["loan_original_amount"] = _money_str(orig_amt)
+            interest = data.get("interest_rate") if isinstance(data.get("interest_rate"), dict) else {}
+            rate = _decimal(interest.get("percentage"))
+            if rate is not None and Decimal(0) <= rate <= Decimal(100):
+                account_payload["loan_interest_rate"] = _rate_str(rate)
+                account_payload["loan_rate_period"] = "yearly_nominal"
+            orig_date = _iso_date(data.get("origination_date"))
+            if orig_date:
+                account_payload["loan_first_payment_date"] = orig_date
+            raw_term = data.get("loan_term_months")
+            term: int | None = (
+                int(raw_term)
+                if isinstance(raw_term, int) and not isinstance(raw_term, bool) and 1 <= raw_term <= 600
+                else None
+            )
+            if term is None:
+                term = _months_between(orig_date, _iso_date(data.get("maturity_date")))
+            if term is not None:
+                account_payload["loan_term_months"] = term
+            due_day = _day_of_month(data.get("next_payment_due_date"))
+            if due_day is not None:
+                account_payload["payment_due_day"] = due_day
+            next_pmt = _decimal(data.get("next_payment_amount"))
+            if next_pmt is not None and next_pmt >= 0:
+                account_payload["minimum_payment"] = _money_str(next_pmt)
+
+        elif kind == "line_of_credit":
+            due_day = _day_of_month(data.get("next_payment_due_date"))
+            if due_day is not None:
+                account_payload["payment_due_day"] = due_day
+            min_pay = _decimal(data.get("minimum_payment_amount"))
+            if min_pay is None:
+                min_pay = _decimal(data.get("next_payment_amount"))
+            if min_pay is not None and min_pay >= 0:
+                account_payload["minimum_payment"] = _money_str(min_pay)
+            if account_payload["type"] == "credit_card":
+                limit = _decimal(data.get("credit_limit"))
+                if limit is not None and limit >= 0 and "credit_limit" not in account_payload:
+                    account_payload["credit_limit"] = _money_str(limit)
+                close_day = _day_of_month(data.get("last_statement_issue_date"))
+                if close_day is not None:
+                    account_payload["statement_close_day"] = close_day
+                stmt_date = _iso_date(data.get("last_statement_issue_date"))
+                stmt_balance = _decimal(data.get("last_statement_balance"))
+                due_date = _iso_date(data.get("next_payment_due_date")) or stmt_date
+                if stmt_date and stmt_balance is not None and due_date:
+                    bill = {
+                        "external_id": f"plaid-stmt-{account_payload['external_id']}-{stmt_date}"[:255],
+                        "due_date": due_date,
+                        "total_amount": _money_str(stmt_balance),
+                        "currency": currency,
+                    }
+                    if min_pay is not None and min_pay >= 0:
+                        bill["minimum_payment"] = _money_str(min_pay)
+                    account_payload["bills"] = [bill]
 
     def sync(self, params: dict[str, Any], context: Any) -> dict[str, Any]:
         """Run one incremental Plaid sync and return contract v1 records."""
@@ -1007,7 +1155,7 @@ class PlaidPlugin:
                 "name": name,
                 "balances": balances,
             }
-            if acc_type in ("checking", "savings", "credit_card", "wallet"):
+            if acc_type in ("checking", "savings", "credit_card", "wallet", "loan"):
                 has_txn_accounts = True
             if acc_type in ("credit_card", "loan"):
                 has_liability_accounts = True
@@ -1017,14 +1165,19 @@ class PlaidPlugin:
         # 1. Incremental transactions via /transactions/sync
         txns_by_account: dict[str, list[dict[str, Any]]] = {}
         removed_by_account: dict[str, list[str]] = {}
-        txns_ready = False
+        txns_status = "unsupported"
         if has_txn_accounts:
-            txns_by_account, removed_by_account, next_cursor, txns_ready = self._sync_transactions(
+            txns_by_account, removed_by_account, next_cursor, txns_status = self._sync_transactions(
                 context, access_token, state.get("transactions_cursor")
             )
             if next_cursor:
                 state["transactions_cursor"] = next_cursor
-            elif not txns_ready and not state.get("transactions_cursor") and not has_liability_accounts and not has_investment_accounts:
+            elif (
+                txns_status == "not_ready"
+                and not state.get("transactions_cursor")
+                and not has_liability_accounts
+                and not has_investment_accounts
+            ):
                 # Initial history is still being prepared by Plaid; retry next run.
                 return {"state": state, "data": None}
 
@@ -1090,8 +1243,8 @@ class PlaidPlugin:
             if liability is not None:
                 self._apply_liability(entry, liability, currency)
 
-            if acc_type in ("checking", "savings", "credit_card", "wallet"):
-                if txns_ready:
+            if acc_type in ("checking", "savings", "credit_card", "wallet", "loan"):
+                if txns_status == "ready":
                     acc_txns = txns_by_account.get(acc_id, [])
                     tx_ext_ids = {t["external_id"] for t in acc_txns}
                     acc_removed = [
@@ -1103,10 +1256,15 @@ class PlaidPlugin:
                     entry["transactions"] = acc_txns
                     if acc_removed:
                         entry["removed_transaction_ids"] = acc_removed
+                elif txns_status == "unsupported":
+                    # Institution/item does not support /transactions/sync; mark an empty
+                    # incremental list so balances/liabilities sync and last_sync_at advances.
+                    entry["incremental"] = True
+                    entry["transactions"] = []
             else:
-                # Loan and investment accounts do not use /transactions/sync
-                # (trades travel under holdings); mark an empty incremental list
-                # so Securo advances last_sync_at normally.
+                # Investment accounts do not use /transactions/sync (trades travel
+                # under holdings); mark an empty incremental list so Securo advances
+                # last_sync_at normally.
                 entry["incremental"] = True
                 entry["transactions"] = []
 

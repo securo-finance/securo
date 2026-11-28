@@ -4052,6 +4052,7 @@ def _holds_user_work(tx: Transaction) -> bool:
         tx.reporting_date_override is not None
         or tx.effective_bill_date is not None
         or tx.recurring_transaction_id is not None
+        or tx.amount_primary_typed is not None
     ):
         return True
     if tx.has_category_lines:
@@ -4162,16 +4163,9 @@ async def _settle_replaced_pending(
 
     manual_description = await read_description_is_manual(session, pending_tx)
     payee_was_empty = pending_tx.payee_id is None
-    await _refresh_provider_values(
-        session,
-        provider,
-        pending_tx,
-        txn_data,
-        payee_source=payee_source,
-        account_currency=account_currency,
-        user_currency=user_currency,
-    )
-    if pending_tx.date != txn_data.date and pending_tx.reporting_date_override is None:
+    amount_before = pending_tx.amount
+    date_changed = pending_tx.date != txn_data.date
+    if date_changed:
         pending_tx.date = txn_data.date
         if pending_tx.effective_bill_date is None:
             bill = (
@@ -4181,6 +4175,36 @@ async def _settle_replaced_pending(
             )
             apply_effective_date(
                 pending_tx, account, bill_due_date=bill.due_date if bill else None
+            )
+    await _refresh_provider_values(
+        session,
+        provider,
+        pending_tx,
+        txn_data,
+        payee_source=payee_source,
+        account_currency=account_currency,
+        user_currency=user_currency,
+    )
+    if date_changed and pending_tx.amount == amount_before:
+        if pending_tx.amount_primary_typed is None:
+            converted = _bank_converted_amount(txn_data, account_currency, user_currency)
+            await _stamp_synced_primary_amount(
+                session,
+                pending_tx.user_id,
+                pending_tx,
+                converted,
+                txn_data.amount_in_account_currency,
+                restamp_account=(pending_tx.amount_account_source is None),
+            )
+        elif (
+            txn_data.amount_in_account_currency is not None
+            or pending_tx.amount_account_source is None
+        ):
+            await stamp_account_amount(
+                session,
+                pending_tx,
+                bank_amount=txn_data.amount_in_account_currency,
+                recompute=(pending_tx.amount_account_source is None),
             )
     _merge_sync_metadata(pending_tx, txn_data, replace_external_id=True)
     pending_tx.status = "posted"
@@ -4204,13 +4228,18 @@ async def _settle_replaced_pending(
     return pending_tx
 
 
-def _holds_user_work_for_removed(tx: Transaction) -> bool:
+def _holds_user_work_for_removed(
+    tx: Transaction,
+    *,
+    expected_payee_id: Optional[uuid.UUID] = None,
+    check_payee_id: bool = False,
+) -> bool:
     """Whether a row named in ``removed_transaction_ids`` carries user work.
 
     Pending rows carry ``SYNC_CATEGORY_KEY`` from insert, so ``_holds_user_work``
     is exact for them. Posted plugin rows do not stamp ``SYNC_CATEGORY_KEY``,
-    so we check ``SYNCED_TEXT`` for payee/notes edits and keep any categorized
-    posted row (preserving manual or bulk categorization).
+    so we check ``SYNCED_TEXT`` for payee/notes/payee_id edits and keep any
+    categorized or FX-typed posted row (preserving manual or bulk edits).
     """
     raw = tx.raw_data if isinstance(tx.raw_data, dict) else {}
     if tx.status == "pending" or SYNC_CATEGORY_KEY in raw:
@@ -4223,6 +4252,7 @@ def _holds_user_work_for_removed(tx: Transaction) -> bool:
         or tx.recurring_transaction_id is not None
         or tx.has_category_lines
         or tx.category_id is not None
+        or tx.amount_primary_typed is not None
         or tx.original_description is None
     ):
         return True
@@ -4230,9 +4260,18 @@ def _holds_user_work_for_removed(tx: Transaction) -> bool:
         return True
     sent = raw.get(SYNCED_TEXT)
     if isinstance(sent, dict):
-        if (tx.payee or "").strip() != (sent.get("payee") or "").strip():
+        sent_payee = (sent.get("payee") or "").strip()
+        if (tx.payee or "").strip() != sent_payee:
             return True
         if (tx.notes or "").strip() != (sent.get("notes") or "").strip():
+            return True
+        if not sent_payee:
+            if tx.payee_id is not None:
+                return True
+        elif check_payee_id:
+            if tx.payee_id != expected_payee_id:
+                return True
+        elif tx.payee_id is None:
             return True
         return False
     return bool(tx.payee_id is not None or (tx.notes or "").strip())
@@ -4272,7 +4311,26 @@ async def _delete_removed_transactions(
         )
         .with_for_update()
     )
-    gone = [tx for tx in result.scalars().all() if not _holds_user_work_for_removed(tx)]
+    candidates = list(result.scalars().all())
+    payee_cache: dict[tuple[uuid.UUID, str], Optional[uuid.UUID]] = {}
+    gone: list[Transaction] = []
+    for tx in candidates:
+        raw = tx.raw_data if isinstance(tx.raw_data, dict) else {}
+        sent = raw.get(SYNCED_TEXT)
+        sent_payee = (sent.get("payee") or "").strip() if isinstance(sent, dict) else ""
+        expected_payee_id: Optional[uuid.UUID] = None
+        if sent_payee:
+            cache_key = (tx.workspace_id, sent_payee.casefold())
+            if cache_key not in payee_cache:
+                payee_row = await find_payee_by_name(session, tx.workspace_id, sent_payee)
+                payee_cache[cache_key] = payee_row.id if payee_row else None
+            expected_payee_id = payee_cache[cache_key]
+        if not _holds_user_work_for_removed(
+            tx,
+            expected_payee_id=expected_payee_id,
+            check_payee_id=bool(sent_payee),
+        ):
+            gone.append(tx)
     if not gone:
         return
     kept = await _rows_with_links(session, [tx.id for tx in gone])

@@ -2620,11 +2620,11 @@ def _check_category_lines_update(
 
 
 def _mark_user_edited_hold(row: Transaction, row_update: dict) -> None:
-    """Note on a pending synced row that the user changed its category or
-    payee, so the bank sync never expires it with that work (issue #1232).
+    """Note on a synced row that the user changed its category or payee, so
+    neither pending-hold expiry nor incremental removal drops that work (#1232).
     Recorded at the edit because the final value alone cannot show it: the
     user may clear it, or change it and change it back."""
-    if row.source != "sync" or row.status != "pending":
+    if row.source != "sync":
         return
     if not any(
         field in row_update and row_update[field] != getattr(row, field)

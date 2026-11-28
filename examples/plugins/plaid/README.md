@@ -29,10 +29,13 @@ runner and exercises Hosted Link, Update Mode, `/transactions/sync`,
 
 1. Create a Plaid developer account (free **Sandbox** or **Production** Trial /
    Pay-As-You-Go) and copy your `client_id` and environment `secret`.
-2. In the Plaid Dashboard under **Team Settings → API → Allowed redirect URIs**,
-   register Securo's plugin callback URL shown in the connection dialog:
-   `https://<your-securo-host>/plugins/oauth/callback` (or
-   `http://localhost:3000/plugins/oauth/callback` in local Sandbox development).
+2. Hosted Link redirects back to Securo's callback URL automatically via
+   `hosted_link.completion_redirect_uri` (`https://<your-securo-host>/plugins/oauth/callback`,
+   or `http://localhost:3000/plugins/oauth/callback` in local Sandbox
+   development). Registering this URL under **Team Settings → API → Allowed
+   redirect URIs** in the Plaid Dashboard is optional for desktop/mobile web
+   Hosted Link (it is only required if you later configure an OAuth
+   `redirect_uri` for native mobile app-to-app flows).
 3. Enable Securo plugins (`PLUGINS_ENABLED=true`, `COMPOSE_PROFILES=plugins`)
    and install this plugin from your catalog.
 4. Add a connection per institution:
