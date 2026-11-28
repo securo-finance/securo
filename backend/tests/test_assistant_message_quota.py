@@ -180,15 +180,30 @@ async def test_the_month_follows_the_instance_timezone(session: AsyncSession):
 
 
 @pytest.mark.asyncio
-async def test_check_fit_reports_the_months_messages(session: AsyncSession):
+async def test_check_fit_reports_the_months_messages_but_never_an_excess(session: AsyncSession):
+    """A monthly rate is refused at the gate and resets: nothing to remove (ADR 0053, ADR 0055)."""
     owner = await _user(session, "owner@example.com")
     conv = await _conversation(session, await _workspace(session, owner), owner)
     await _messages(session, conv, 3, at=datetime.now(timezone.utc))
 
     fit = await quota_service.check_fit(session, owner.id, {ASSISTANT: 1})
     counter = next(c for c in fit.counters if c.counter == ASSISTANT)
-    assert (counter.current, counter.target, counter.excess) == (3, 1, 2)
-    assert fit.allowed is False
+    assert (counter.current, counter.target, counter.excess) == (3, 1, 0)
+    assert fit.allowed is True
+
+
+@pytest.mark.asyncio
+async def test_a_spent_monthly_number_does_not_put_the_account_above(
+    managed, client: AsyncClient, session, test_user, test_agent, auth_headers
+):
+    await _limit(session, test_user.id, **{ASSISTANT: 2})
+    await _sent_this_month(session, test_agent, test_user, 3)
+
+    body = (await client.get("/api/quotas/mine", headers=auth_headers)).json()
+
+    assert body["above"] is False
+    counter = next(c for c in body["counters"] if c["counter"] == ASSISTANT)
+    assert (counter["current"], counter["maximum"], counter["excess"]) == (3, 2, 0)
 
 
 # --- The chat gate ---------------------------------------------------------------

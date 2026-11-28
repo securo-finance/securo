@@ -42,6 +42,8 @@ COUNTERS = (
     MEMBERS_PER_WORKSPACE,
     ASSISTANT_MESSAGES,
 )
+#: A monthly rate is refused at the gate and resets, so it is never an excess (ADR 0053).
+RATE_COUNTERS = (ASSISTANT_MESSAGES,)
 
 _WORKSPACE_COUNTER = {"personal": PERSONAL_WORKSPACES, "business": BUSINESS_WORKSPACES}
 
@@ -420,7 +422,7 @@ async def check_fit(
     fits = []
     for counter in COUNTERS:
         limit = target.get(counter)
-        if limit is None:
+        if limit is None or counter in RATE_COUNTERS:
             excess = 0
         elif counter == MEMBERS_PER_WORKSPACE:
             excess = sum(max(0, seats - limit) for seats in members)
