@@ -461,10 +461,11 @@ export default function AssetsPage() {
     queryFn: () => assets.list(true),
     enabled: showArchived,
   })
-  const { data: archivedCounts } = useQuery({
+  const archivedCountsQuery = useQuery({
     queryKey: ['assets', 'archived-count'],
     queryFn: () => assets.archivedCount(),
   })
+  const archivedCounts = archivedCountsQuery.data
   const rawAssetsList = showArchived && withArchived.data ? withArchived.data : defaultAssets
 
   // Active Collection filter (issue #105): when a collection is active, scope
@@ -475,6 +476,9 @@ export default function AssetsPage() {
     activeWalletIds === null
       ? (archivedCounts?.count ?? 0)
       : activeWalletIds.reduce((sum, id) => sum + (archivedCounts?.by_wallet[id] ?? 0), 0)
+  // Fall back to showing archive access if the count query fails so a transient
+  // error never locks the user out of archived holdings behind a false zero.
+  const canShowArchived = visibleArchivedCount > 0 || archivedCountsQuery.isError
   const assetsList = useMemo(() => {
     if (!activeWalletIds) return rawAssetsList
     const allowed = new Set(activeWalletIds)
@@ -1794,7 +1798,7 @@ export default function AssetsPage() {
         {/* Archived holdings never enter performance, and the toggle is only
             shown when archived holdings exist (or while already on so it can be
             turned back off). */}
-        {activeTab !== 'performance' && (visibleArchivedCount > 0 || showArchived) && (
+        {activeTab !== 'performance' && (canShowArchived || showArchived) && (
           <label className="flex items-center gap-2 text-xs text-muted-foreground">
             <input
               type="checkbox"
@@ -1963,7 +1967,7 @@ export default function AssetsPage() {
               <p>{t('assets.noAssets')}</p>
               {/* A portfolio that is entirely archived reads as empty here
                   (issue #1046), so the way to it starts from this box. */}
-              {!showArchived && visibleArchivedCount > 0 && (
+              {!showArchived && canShowArchived && (
                 <button
                   onClick={() => toggleArchived(true)}
                   className="mt-3 rounded-md border border-border px-3 py-1.5 text-xs font-medium text-foreground hover:bg-muted"
