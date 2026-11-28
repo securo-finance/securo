@@ -81,6 +81,7 @@ export type SupportedLang =
   | 'hi'
   | 'ja'
   | 'he'
+  | 'zh-CN'
 
 // Single source of truth for language pickers. When adding a locale, register
 // a locale JSON file and add one entry here; every picker stays in sync instead
@@ -105,6 +106,7 @@ export const SUPPORTED_LANGS: { code: SupportedLang; label: string }[] = [
   { code: 'hi', label: 'हिन्दी' },
   { code: 'ja', label: '日本語' },
   { code: 'he', label: 'עברית' },
+  { code: 'zh-CN', label: '简体中文' },
 ]
 
 // Normalise any browser/i18n language tag to one of our supported keys. The
@@ -135,6 +137,7 @@ export function resolveSupportedLang(lng?: string | null): SupportedLang {
   if (tag.startsWith('ja')) return 'ja'
   // 'iw' is the pre-1989 code some browsers and Android versions still send.
   if (tag.startsWith('he') || tag.startsWith('iw')) return 'he'
+  if (tag.startsWith('zh')) return 'zh-CN'
   return 'en'
 }
 
