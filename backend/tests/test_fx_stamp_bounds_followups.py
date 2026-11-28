@@ -788,3 +788,62 @@ async def test_sync_connection_resync_overflow_preserves_all_stamped_fx_fields(
     assert refreshed.fx_rate_used == Decimal("5.4510000000")
     assert refreshed.amount_account == Decimal("545.10")
     assert refreshed.amount_account_source == ACCOUNT_AMOUNT_FROM_BANK
+
+
+@pytest.mark.asyncio
+async def test_primary_restamp_matches_live_half_up_rounding(
+    session: AsyncSession, test_user: User, test_workspace: Workspace
+):
+    """Restamping uses the same half-up policy as live stamps so an exact
+    half-cent conversion (1.00 USD * 1.005 = 1.005 -> 1.01 BRL) does not drift
+    by a cent after a primary-currency restamp."""
+    from app.services.fx_rate_service import stamp_primary_amount
+    from app.services.primary_restamp_service import restamp_user_primary_amounts
+
+    on_date = date(2026, 6, 15)
+    test_user.preferences = {**(test_user.preferences or {}), "currency_display": "BRL"}
+    session.add(
+        FxRate(
+            base_currency="USD",
+            quote_currency="BRL",
+            date=on_date,
+            rate=Decimal("1.005"),
+            source="test",
+        )
+    )
+    acct = Account(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        name="USD Checking",
+        type="checking",
+        currency="USD",
+        balance=Decimal("0.00"),
+    )
+    session.add(acct)
+    await session.flush()
+
+    tx = Transaction(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        account_id=acct.id,
+        description="Half-cent test",
+        amount=Decimal("1.00"),
+        currency="USD",
+        type="debit",
+        date=on_date,
+        status="posted",
+        source="manual",
+    )
+    session.add(tx)
+    await session.flush()
+
+    await stamp_primary_amount(session, test_user.id, tx, allow_fetch=False)
+    await session.commit()
+    assert tx.amount_primary == Decimal("1.01")
+
+    await restamp_user_primary_amounts(session, test_user.id)
+    await session.commit()
+    await session.refresh(tx)
+    assert tx.amount_primary == Decimal("1.01")
