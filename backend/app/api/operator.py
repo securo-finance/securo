@@ -247,13 +247,13 @@ async def open_account(
         ) from exc
     if not opened.created:
         response.status_code = status.HTTP_200_OK
-    # The limits that hold for the account: its own row, or none (unbounded).
-    quota = await quota_service.get_quota(session, opened.user.id)
+    # The limits that hold for the account: its own row, else the defaults, else unbounded.
+    limits, _source = await quota_service.effective_limits(session, opened.user.id)
     return OpenedAccountRead(
         user_id=opened.user.id,
         email=opened.user.email,
         external_reference=opened.user.external_reference or body.external_reference,
         created=opened.created,
         workspaces=[OpenedWorkspaceRead.model_validate(w, from_attributes=True) for w in opened.workspaces],
-        quotas=QuotaValues(**{c: getattr(quota, c) if quota else None for c in quota_service.COUNTERS}),
+        quotas=QuotaValues(**limits),
     )
