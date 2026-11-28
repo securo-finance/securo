@@ -16,6 +16,7 @@ from app.schemas.forecast import (
     CadenceEnum,
     CashflowForecastResponse,
     DailyForecastPoint,
+    DetectedRecurringItem,
     FlowDirectionEnum,
     ForecastSummary,
     SubscriptionStatusEnum,
@@ -128,6 +129,57 @@ def _matches_manual_rule(item, rule: dict) -> bool:
     )
 
 
+async def _semimonthly_payroll_duplicates(
+    session: AsyncSession,
+    workspace_id: uuid.UUID,
+    items: list[DetectedRecurringItem],
+    monthly_income_days: dict[tuple[uuid.UUID, str, Decimal], list[int]],
+) -> set[str]:
+    candidates: list[tuple[DetectedRecurringItem, int, int]] = []
+    for item in items:
+        if (
+            item.direction != FlowDirectionEnum.INFLOW
+            or item.cadence != CadenceEnum.BI_WEEKLY
+            or item.account_id is None
+            or len(item.sample_transaction_ids) < 4
+        ):
+            continue
+        days = monthly_income_days.get((item.account_id, item.normalized_key, item.average_amount), [])
+        if len(days) == 2 and days[0] != days[1]:
+            candidates.append((item, days[0], days[1]))
+
+    if not candidates:
+        return set()
+    sample_ids = {tx_id for item, _, _ in candidates for tx_id in item.sample_transaction_ids}
+    rows = await session.execute(
+        select(Transaction.id, Transaction.date, Transaction.account_id).where(
+            Transaction.workspace_id == workspace_id, Transaction.id.in_(sample_ids),
+        )
+    )
+    samples = {tx_id: (tx_date, account_id) for tx_id, tx_date, account_id in rows}
+
+    duplicates: set[str] = set()
+    for item, first_day, second_day in candidates:
+        dates = {
+            samples[tx_id][0] for tx_id in item.sample_transaction_ids
+            if tx_id in samples and samples[tx_id][1] == item.account_id
+        }
+        if len(dates) != len(item.sample_transaction_ids):
+            continue
+        # A real biweekly schedule drifts around the month. Require every
+        # sampled deposit to land on exactly one of the two fixed monthly days.
+        first = second = 0
+        for tx_date in dates:
+            last_day = calendar.monthrange(tx_date.year, tx_date.month)[1]
+            on_first = tx_date.day == min(first_day, last_day)
+            on_second = tx_date.day == min(second_day, last_day)
+            first += int(on_first and not on_second)
+            second += int(on_second and not on_first)
+        if first >= 2 and second >= 2 and first + second == len(dates):
+            duplicates.add(item.normalized_key)
+    return duplicates
+
+
 def _is_manual_bill_payment(name_key: str, amount: Decimal, rule: dict) -> bool:
     """Whether a single unlinked debit is a payment of a manual outflow rule."""
     return (
@@ -227,16 +279,19 @@ async def generate_cashflow_forecast(
     # What each manual rule looks like to the detector, to drop detected
     # patterns that are the same bill under another payee name.
     manual_rules: list[dict] = []
+    monthly_income_days: dict[tuple[uuid.UUID, str, Decimal], list[int]] = {}
     for r in manual_recurrings:
         direction = FlowDirectionEnum.INFLOW if r.type == "credit" else FlowDirectionEnum.OUTFLOW
         amount, _ = await convert_or_none(
             session, Decimal(str(r.amount)), r.currency, base_currency, today
         )
+        name_key = (
+            recurring_detector_service.normalize_merchant_name(r.description).lower()
+            if r.description else ""
+        )
         manual_rules.append(
             {
-                "name_key": recurring_detector_service.normalize_merchant_name(r.description).lower()
-                if r.description
-                else "",
+                "name_key": name_key,
                 "direction": direction,
                 "amount": amount,
                 "cadence": _FREQUENCY_TO_CADENCE.get(r.frequency),
@@ -247,6 +302,18 @@ async def generate_cashflow_forecast(
         if amount is None:
             unconverted_currencies.add(r.currency)
             continue
+        if (
+            direction == FlowDirectionEnum.INFLOW
+            and r.account_id is not None
+            and name_key
+            and r.frequency == "monthly"
+            and r.end_date is None
+            and r.weekend_adjustment == "none"
+            and r.next_occurrence <= today + timedelta(days=31)
+        ):
+            monthly_income_days.setdefault((r.account_id, name_key, amount), []).append(
+                r.day_of_month or r.start_date.day
+            )
         occurrences = get_occurrences_in_range(
             start=r.next_occurrence,
             frequency=r.frequency,
@@ -268,7 +335,12 @@ async def generate_cashflow_forecast(
     # labelled pending. Pending inflows are left out, so a late paycheck
     # cannot hide a shortfall. Lapsed items have stopped and stay out.
     schedule_items = []
+    semimonthly_duplicates = await _semimonthly_payroll_duplicates(
+        session, workspace_id, detected_res.items, monthly_income_days,
+    )
     for item in detected_res.items:
+        if item.direction == FlowDirectionEnum.INFLOW and item.normalized_key in semimonthly_duplicates:
+            continue
         if any(_matches_manual_rule(item, rule) for rule in manual_rules):
             continue
         if item.status == SubscriptionStatusEnum.PENDING:
