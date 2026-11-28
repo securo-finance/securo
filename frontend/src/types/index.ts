@@ -72,6 +72,27 @@ export interface Passkey {
   last_used_at: string | null
 }
 
+export interface AccessToken {
+  id: string
+  /** The member who created the token. */
+  user_id: string
+  name: string
+  token_prefix: string
+  /** `<resource>:read` or `<resource>:write`; write includes read. */
+  scopes: string[]
+  created_at: string
+  expires_at: string | null
+  last_used_at: string | null
+  revoked_at: string | null
+  /** False once the token is revoked or expired. */
+  is_active: boolean
+}
+
+export interface AccessTokenCreated extends AccessToken {
+  /** Plaintext secret. Only present in the create response. */
+  token: string
+}
+
 export interface PasskeyOptionsResponse {
   challenge_id: string
   options: Record<string, unknown>
