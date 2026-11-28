@@ -18,10 +18,15 @@ export const QUOTA_COUNTERS = [
 
 /**
  * Counters whose number belongs to whoever created the workspace. The monthly
- * assistant messages are the owner's too (ADR 0053), but its one sentence
- * already reads true for a member, so it keeps a single key.
+ * assistant messages are the owner's too (ADR 0053): its "reached" sentence
+ * already reads true for a member, so only a limit of 0 names the owner.
  */
-const OWNER_COUNTERS = new Set(['max_bank_connections', 'max_members_per_workspace'])
+const OWNER_COUNTERS = new Set([
+  'max_bank_connections',
+  'max_members_per_workspace',
+  'max_assistant_messages_per_month',
+])
+const ONE_REACHED_SENTENCE = new Set(['max_assistant_messages_per_month'])
 
 export function readQuotaRefusal(error: unknown): QuotaUsage | null {
   return quotaFromDetail((error as { response?: { data?: { detail?: unknown } } } | null)?.response?.data?.detail)
@@ -54,7 +59,7 @@ export function quotaMessageKey(counter: string, ownedByOther: boolean, maximum?
   if (!(QUOTA_COUNTERS as readonly string[]).includes(counter)) return 'quota.reachedGeneric'
   const owners = ownedByOther && OWNER_COUNTERS.has(counter)
   if (maximum === 0) return owners ? 'quota.ownerNone' : 'quota.none'
-  return owners ? `quota.ownerReached.${counter}` : `quota.reached.${counter}`
+  return owners && !ONE_REACHED_SENTENCE.has(counter) ? `quota.ownerReached.${counter}` : `quota.reached.${counter}`
 }
 
 /** The values every quota sentence reads, the counter's translated name included. */

@@ -267,11 +267,23 @@ async def test_the_quota_counts_assistant_messages_across_workspaces_and_reads_n
     messages = TABLES["agent_messages"]
     async with _unchecked(stack) as session:
         await session.execute(TABLES["workspaces"].update().values(created_by_user_id=user))
-        await session.execute(messages.update().values(role="user", instance_llm=True))
+        await session.execute(messages.update().values(
+            role="user", instance_llm=True, created_at=datetime(2026, 11, 10, 12, tzinfo=timezone.utc),
+        ))
+    november, october = date(2026, 11, 15), date(2026, 10, 15)
     async with stack.bound(A)() as session:
         assert await session.scalar(select(func.count()).select_from(messages)) == 1
-        assert await quota_service.count_assistant_messages(session, user) == 2
-        assert await quota_service.count_assistant_messages(session, uuid.uuid4()) == 0
+        assert await quota_service.count_assistant_messages(session, user, today=november) == 2
+        assert await quota_service.count_assistant_messages(session, uuid.uuid4(), today=november) == 0
+    # The function bounds the month too: B's message moves to October.
+    async with _unchecked(stack) as session:
+        await session.execute(messages.update().where(messages.c.id == stack.rows["agent_messages", B]["id"]).values(
+            created_at=datetime(2026, 10, 31, 12, tzinfo=timezone.utc),
+        ))
+    async with stack.bound(A)() as session:
+        assert await quota_service.count_assistant_messages(session, user, today=november) == 1
+        assert await quota_service.count_assistant_messages(session, user, today=october) == 1
+        assert await quota_service.count_assistant_messages(session, user, today=date(2026, 12, 15)) == 0
     async with stack.owner() as session:
         public = await session.scalar(text(
             "SELECT has_function_privilege('public', "

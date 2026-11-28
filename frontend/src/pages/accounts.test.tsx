@@ -420,14 +420,24 @@ describe('AccountsPage disconnect dialog', () => {
   })
 
   it('reads the usage limits again once a connection is gone, so a freed place opens the bank picker', async () => {
+    const limits = (current: number) => ({
+      enforced: true,
+      info_url: null,
+      counters: [{ counter: 'max_bank_connections', current, maximum: 2 }],
+    })
+    quota.creator = 'me'
+    quota.mine.mockResolvedValueOnce(limits(2)).mockResolvedValue(limits(1))
     api.connectionsList.mockResolvedValue([makeConnection({ id: 'conn-d', status: 'active' })])
     const { user } = renderWithProviders(<AccountsPage />, { route: '/accounts' })
 
     await user.click(await screen.findByTitle(t('accounts.disconnect')))
     await waitFor(() => expect(quota.mine).toHaveBeenCalledTimes(1))
     await user.click(screen.getByRole('button', { name: t('accounts.disconnect') }))
-
     await waitFor(() => expect(quota.mine).toHaveBeenCalledTimes(2))
+
+    await user.click(await screen.findByRole('button', { name: 'connect bank' }))
+    expect(await screen.findByTestId('connector-select')).toBeInTheDocument()
+    expect(toast.error).not.toHaveBeenCalled()
   })
 
   it('offers reconnect and removal for a disconnected connection', async () => {

@@ -356,12 +356,11 @@ class AgentExecutor:
         page_context: Optional[dict[str, Any]] = None,
         instance_llm: bool = False,
     ) -> AsyncIterator[ExecutorEvent]:
-        # 1. Persist the user message first so it survives crashes. Whether the
-        #    instance's own connection answers it is what the monthly
-        #    assistant limit counts (ADR 0053).
-        await conversation_service.append_message(
+        # 1. Persist the user message first so it survives crashes. It counts
+        #    toward the monthly assistant limit only once the instance's own
+        #    model has answered it (ADR 0053), so it is stored uncounted here.
+        user_msg = await conversation_service.append_message(
             session, conversation_id=conversation_id, role="user", content=user_message,
-            instance_llm=instance_llm,
         )
         await conversation_service.update_title_if_empty(session, conversation_id, user_message)
 
@@ -466,6 +465,17 @@ class AgentExecutor:
         try:
             provider, model = await _provider_and_model_for(session, agent)
         except Exception:  # noqa: BLE001
+            if not instance_llm:
+                # The account's own connection is broken. Falling back would
+                # have the instance's model answer, uncounted (ADR 0053).
+                logger.exception("the agent's own LLM connection could not be built")
+                yield ExecutorEvent(
+                    type="error",
+                    error_code="config",
+                    error_message="The agent's LLM connection could not be used. Check its settings.",
+                )
+                yield ExecutorEvent(type="done", finish_reason="error")
+                return
             logger.exception("provider resolution failed; falling back to legacy path")
             provider = _provider_for(agent)
             model = _model_for(agent)
@@ -518,6 +528,11 @@ class AgentExecutor:
                 yield ExecutorEvent(type="error", error_code="unknown", error_message=str(exc))
                 yield ExecutorEvent(type="done", finish_reason="error")
                 return
+
+            if instance_llm and iteration == 0:
+                # The instance's model answered: the message counts, committed
+                # with the assistant turn below.
+                user_msg.instance_llm = True
 
             assistant_text = "".join(text_buf)
             assembled_calls: list[ToolCall] = []

@@ -10,7 +10,7 @@ from __future__ import annotations
 import uuid
 from datetime import date, datetime, timezone
 from typing import Any, AsyncIterator
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from httpx import AsyncClient
@@ -21,7 +21,7 @@ from app.agents.config import get_agent_settings
 from app.agents.models.agent import Agent
 from app.agents.models.connection import LlmConnection
 from app.agents.models.conversation import Conversation, Message
-from app.agents.providers.base import ChatChunk
+from app.agents.providers.base import ChatChunk, LLMError
 from app.agents.runtime.executor import AgentExecutor
 from app.core.app_clock import invalidate_timezone_cache
 from app.core.config import get_settings
@@ -340,3 +340,83 @@ async def test_the_executor_marks_the_persons_message_and_nothing_else(
     )).all()
     assert ("user", True) in rows
     assert all(not flag for role, flag in rows if role != "user")
+
+
+async def _run(session, test_user, test_agent, test_conversation, *, instance_llm: bool) -> list:
+    executor = AgentExecutor(mcp=_FakeMCP(tools=[]))
+    return [ev async for ev in executor.run(
+        session=session, agent=test_agent, user_id=test_user.id,
+        conversation_id=test_conversation.id, user_message="hi", instance_llm=instance_llm,
+    )]
+
+
+async def _user_flags(session, conversation: Conversation) -> list[bool]:
+    return list((await session.scalars(
+        select(Message.instance_llm).where(Message.conversation_id == conversation.id, Message.role == "user")
+    )).all())
+
+
+@pytest.mark.asyncio
+async def test_a_message_without_a_model_to_answer_it_is_not_spent(
+    session, test_user, test_agent: Agent, test_conversation: Conversation
+):
+    provider = _ScriptedProvider([])
+    with patch(
+        "app.agents.runtime.executor._provider_and_model_for", AsyncMock(return_value=(provider, ""))
+    ):
+        events = await _run(session, test_user, test_agent, test_conversation, instance_llm=True)
+
+    assert any(ev.type == "error" and ev.error_code == "config" for ev in events)
+    assert await _user_flags(session, test_conversation) == [False]
+
+
+class _FailingProvider(_ScriptedProvider):
+    async def chat_stream(  # type: ignore[override]
+        self, messages, *, model, tools=None, temperature=0.4, max_tokens=None
+    ) -> AsyncIterator[ChatChunk]:
+        raise LLMError("upstream down")
+        yield  # pragma: no cover
+
+
+@pytest.mark.asyncio
+async def test_a_message_the_instance_model_failed_to_answer_is_not_spent(
+    session, test_user, test_agent: Agent, test_conversation: Conversation
+):
+    with patch("app.agents.runtime.executor._provider_for", return_value=_FailingProvider([])):
+        events = await _run(session, test_user, test_agent, test_conversation, instance_llm=True)
+
+    assert any(ev.type == "error" for ev in events)
+    assert await _user_flags(session, test_conversation) == [False]
+
+
+@pytest.mark.asyncio
+async def test_a_broken_own_connection_never_falls_back_to_the_instance_model(
+    session, test_user, test_agent: Agent, test_conversation: Conversation
+):
+    fallback = _ScriptedProvider([[ChatChunk(type="finish", finish_reason="stop")]])
+    with patch(
+        "app.agents.runtime.executor._provider_and_model_for", AsyncMock(side_effect=RuntimeError("bad key"))
+    ), patch("app.agents.runtime.executor._provider_for", return_value=fallback) as legacy:
+        events = await _run(session, test_user, test_agent, test_conversation, instance_llm=False)
+
+    assert [ev.type for ev in events][-2:] == ["error", "done"]
+    assert events[-2].error_code == "config"
+    legacy.assert_not_called()
+    assert fallback.requests == []
+    assert await _user_flags(session, test_conversation) == [False]
+
+
+@pytest.mark.asyncio
+async def test_an_openai_compatible_connection_keeps_its_endpoint(client: AsyncClient, auth_headers):
+    """Clearing the address would send its messages to the instance's model, uncounted."""
+    created = await client.post("/api/agents/connections", json={
+        "name": "Local", "kind": "openai_compatible", "base_url": "http://llm.example.com/v1",
+    }, headers=auth_headers)
+    assert created.status_code in (200, 201), created.text
+
+    resp = await client.patch(
+        f"/api/agents/connections/{created.json()['id']}", json={"base_url": "  "}, headers=auth_headers
+    )
+
+    assert resp.status_code == 400
+    assert resp.json()["detail"] == "openai_compatible requires base_url"

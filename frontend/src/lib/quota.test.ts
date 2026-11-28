@@ -52,7 +52,11 @@ describe('quotaMessageKey', () => {
   it('has one sentence for the monthly assistant limit, true for the owner and for a member', () => {
     expect(quotaMessageKey('max_assistant_messages_per_month', false)).toBe('quota.reached.max_assistant_messages_per_month')
     expect(quotaMessageKey('max_assistant_messages_per_month', true)).toBe('quota.reached.max_assistant_messages_per_month')
-    expect(quotaMessageKey('max_assistant_messages_per_month', true, 0)).toBe('quota.none')
+  })
+
+  it("names the owner's zero assistant limit to a member, not the member's own account", () => {
+    expect(quotaMessageKey('max_assistant_messages_per_month', false, 0)).toBe('quota.none')
+    expect(quotaMessageKey('max_assistant_messages_per_month', true, 0)).toBe('quota.ownerNone')
   })
 
   it('falls back to a generic sentence for a counter it does not know', () => {
