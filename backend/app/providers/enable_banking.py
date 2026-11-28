@@ -39,6 +39,10 @@ from app.providers.base import (
     SessionExpiredError,
     TransactionData,
     default_oauth_redirect_uri,
+    fingerprint_uses_current_key,
+    fingerprint_uses_fallback_key,
+    hash_account_identifier,
+    hash_account_identifier_with_fallbacks,
     mask_last4,
 )
 from app.providers.psu import current_psu_context
@@ -494,18 +498,55 @@ DEFAULT_PSU_HEADERS = ("Psu-Ip-Address", "Psu-User-Agent")
 ACCOUNT_DETAILS_KEY = "account_details"
 
 
-def _details_summary(raw: dict) -> dict[str, Optional[str]]:
+def _stable_account_id(raw: dict) -> Optional[str]:
+    """Session-independent account identifier from an Enable Banking payload."""
+    ident = raw.get("identification_hash")
+    if isinstance(ident, str) and ident.strip():
+        return ident.strip()
+    hashes = raw.get("identification_hashes")
+    if isinstance(hashes, list):
+        for entry in hashes:
+            if isinstance(entry, str) and entry.strip():
+                return entry.strip()
+    return None
+
+
+_DISPLAY_FALLBACK_ASPSP_NAMES = frozenset({"bank"})
+
+
+def _aspsp_institution_key(aspsp: Optional[dict]) -> Optional[str]:
+    """Institution scope for Enable Banking fingerprints (ASPSP name + country)."""
+    if not isinstance(aspsp, dict):
+        return None
+    name = aspsp.get("name")
+    country = aspsp.get("country")
+    clean_name = " ".join(name.strip().lower().split()) if isinstance(name, str) else ""
+    clean_country = country.strip().upper() if isinstance(country, str) else ""
+    if not clean_name or clean_name in _DISPLAY_FALLBACK_ASPSP_NAMES:
+        return None
+    return f"{clean_country}:{clean_name}" if clean_country else clean_name
+
+
+def _details_summary(
+    raw: dict, *, institution: Optional[str] = None
+) -> dict[str, Optional[str]]:
     """The part of an account's details payload the sync uses.
 
-    The masked number is kept rather than the identifier itself, so the cache
-    holds nothing the account row does not already show.
+    The masked number and keyed HMAC fingerprint are kept rather than the
+    identifier itself, so the cache holds nothing the account row does not
+    already show and never exposes a raw IBAN.
     """
     name = raw.get("display_name") or raw.get("product") or raw.get("name")
+    ident = _account_identifier(raw)
     return {
         "name": name if isinstance(name, str) else None,
         "cash_account_type": raw.get("cash_account_type"),
         "currency": raw.get("currency"),
-        "masked_number": mask_last4(_account_identifier(raw)),
+        "masked_number": mask_last4(ident),
+        "account_fingerprint": hash_account_identifier(
+            "enable_banking", ident, institution=institution
+        ),
+        "account_fingerprint_scope": institution,
     }
 
 
@@ -625,6 +666,7 @@ class EnableBankingProvider(BankProvider):
         # of the connection being synced. None while unknown.
         self._required_psu_headers: Optional[list[str]] = None
         self._institution_name = "The bank"
+        self._institution_key: Optional[str] = None
         # Accounts whose transactions this sync fetched only in part; the
         # sync then leaves last_sync_at alone so the rest is asked for again.
         self.incomplete_account_ids: set[str] = set()
@@ -652,6 +694,7 @@ class EnableBankingProvider(BankProvider):
             self._required_psu_headers = [h for h in required if isinstance(h, str)]
         if isinstance(aspsp.get("name"), str) and aspsp["name"]:
             self._institution_name = aspsp["name"]
+        self._institution_key = _aspsp_institution_key(aspsp)
 
     @property
     def name(self) -> str:
@@ -989,19 +1032,27 @@ class EnableBankingProvider(BankProvider):
             )
 
         aspsp = data.get("aspsp") or {}
-        institution_name = aspsp.get("name") or "Bank"
+        raw_aspsp_name = aspsp.get("name")
+        clean_aspsp_name = (
+            raw_aspsp_name.strip()
+            if isinstance(raw_aspsp_name, str) and raw_aspsp_name.strip()
+            else None
+        )
+        institution_key = _aspsp_institution_key(aspsp)
+        institution_name = clean_aspsp_name or "Bank"
         access = data.get("access") or {}
         valid_until = access.get("valid_until")
         stored_aspsp: dict[str, Any] = {
-            "name": institution_name,
+            "name": clean_aspsp_name,
             "country": aspsp.get("country"),
         }
         required_psu_headers = await self._lookup_required_psu_headers(
-            aspsp.get("name"), aspsp.get("country")
+            clean_aspsp_name, aspsp.get("country")
         )
         if required_psu_headers is not None:
             stored_aspsp["required_psu_headers"] = required_psu_headers
         self._use_credentials({"aspsp": stored_aspsp})
+        self._institution_key = institution_key
 
         accounts: list[AccountData] = []
         account_details: dict[str, dict] = {}
@@ -1013,11 +1064,18 @@ class EnableBankingProvider(BankProvider):
             # authorization code is single-use, so failing here would make a
             # reconnect start over at the bank. The next sync reads the balance.
             accounts.append(
-                await self._build_account(raw_acc, tolerate_presence_refusal=True)
+                await self._build_account(
+                    raw_acc,
+                    _stable_account_id(raw_acc),
+                    institution=institution_key,
+                    tolerate_presence_refusal=True,
+                )
             )
             uid = raw_acc.get("uid") or raw_acc.get("account_uid")
             if uid:
-                account_details[uid] = _details_summary(raw_acc)
+                account_details[uid] = _details_summary(
+                    raw_acc, institution=institution_key
+                )
 
         encrypted_session = encrypt(session_id) or session_id
         credentials: dict[str, Any] = {
@@ -1053,6 +1111,7 @@ class EnableBankingProvider(BankProvider):
         raw: dict,
         stable_external_id: Optional[str] = None,
         *,
+        institution: Optional[str] = None,
         tolerate_presence_refusal: bool = False,
         require_balance: bool = False,
     ) -> AccountData:
@@ -1093,6 +1152,11 @@ class EnableBankingProvider(BankProvider):
             or raw.get("name")
             or "Account"
         )
+        ident = _account_identifier(raw)
+        inst_scope = institution if institution is not None else self._institution_key
+        account_fingerprint, fallback_fingerprints = hash_account_identifier_with_fallbacks(
+            "enable_banking", ident, institution=inst_scope
+        )
         return AccountData(
             external_id=uid,
             name=name,
@@ -1101,14 +1165,21 @@ class EnableBankingProvider(BankProvider):
             currency=currency,
             credit_limit=credit_limit,
             available_credit=available_credit,
-            masked_number=mask_last4(_account_identifier(raw)),
+            masked_number=mask_last4(ident),
             # From the session payload: `uid` is scoped to one session, this
             # hash is what lets a later session find the same account again.
             stable_external_id=stable_external_id,
+            account_fingerprint=account_fingerprint,
+            fallback_account_fingerprints=fallback_fingerprints,
         )
 
     async def _build_cached_account(
-        self, uid: str, cached: dict, stable_external_id: Optional[str]
+        self,
+        uid: str,
+        cached: dict,
+        stable_external_id: Optional[str],
+        *,
+        institution: Optional[str] = None,
     ) -> AccountData:
         """An account named from cached details; only its balance is fetched.
 
@@ -1125,10 +1196,27 @@ class EnableBankingProvider(BankProvider):
                 "cash_account_type": cached.get("cash_account_type"),
             },
             stable_external_id,
+            institution=institution,
             require_balance=True,
         )
         masked = cached.get("masked_number")
         account.masked_number = masked if isinstance(masked, str) else None
+        fp = cached.get("account_fingerprint")
+        inst_scope = institution if institution is not None else self._institution_key
+        if (
+            isinstance(fp, str)
+            and inst_scope is not None
+            and cached.get("account_fingerprint_scope") == inst_scope
+        ):
+            if fingerprint_uses_current_key(fp):
+                account.account_fingerprint = fp
+            elif fingerprint_uses_fallback_key(fp):
+                account.account_fingerprint = None
+                account.fallback_account_fingerprints = (fp,)
+            else:
+                account.account_fingerprint = None
+        else:
+            account.account_fingerprint = None
         return account
 
     # ----- account / transaction fetches -----
@@ -1190,9 +1278,10 @@ class EnableBankingProvider(BankProvider):
         # in the same payload we just fetched, so carry it through; otherwise a
         # reconnect re-keys every account and the sync duplicates them all.
         stable_external_ids = {
-            entry.get("uid"): entry.get("identification_hash")
+            uid: _stable_account_id(entry)
             for entry in (data.get("accounts_data") or [])
-            if isinstance(entry, dict) and entry.get("uid")
+            if isinstance(entry, dict)
+            and (uid := entry.get("uid") or entry.get("account_uid"))
         }
         # A background sync names known accounts from the cached details:
         # banks cap unattended calls per endpoint (often 4 a day), and some do
@@ -1202,6 +1291,30 @@ class EnableBankingProvider(BankProvider):
         if not isinstance(cached_details, dict):
             cached_details = {}
             credentials[ACCOUNT_DETAILS_KEY] = cached_details
+        data_aspsp = data.get("aspsp")
+        raw_aspsp: dict[str, Any] = data_aspsp if isinstance(data_aspsp, dict) else {}
+        creds_aspsp_val = credentials.get("aspsp")
+        cred_aspsp: dict[str, Any] = (
+            creds_aspsp_val if isinstance(creds_aspsp_val, dict) else {}
+        )
+        raw_name = raw_aspsp.get("name")
+        cred_name = cred_aspsp.get("name")
+        raw_country = raw_aspsp.get("country")
+        cred_country = cred_aspsp.get("country")
+        institution_key = _aspsp_institution_key(
+            {
+                "name": (
+                    raw_name.strip()
+                    if isinstance(raw_name, str) and raw_name.strip()
+                    else cred_name
+                ),
+                "country": (
+                    raw_country.strip()
+                    if isinstance(raw_country, str) and raw_country.strip()
+                    else cred_country
+                ),
+            }
+        )
         # Present means the requests carry the user's headers: a user-present
         # sync that cannot send them reaches the bank as a background one.
         user_present = bool(self._present_psu_headers())
@@ -1217,17 +1330,25 @@ class EnableBankingProvider(BankProvider):
                     # rather than syncing a zero balance.
                     result.append(
                         await self._build_cached_account(
-                            uid, cached, stable_external_ids.get(uid)
+                            uid,
+                            cached,
+                            stable_external_ids.get(uid),
+                            institution=institution_key,
                         )
                     )
                     continue
                 details = await self._request("GET", f"/accounts/{uid}/details")
-                cached_details[uid] = _details_summary(details)
+                cached_details[uid] = _details_summary(
+                    details, institution=institution_key
+                )
                 # A balance that cannot be read is skipped like the cached
                 # path above, never synced as a 0.00 over the real one.
                 result.append(
                     await self._build_account(
-                        details, stable_external_ids.get(uid), require_balance=True
+                        details,
+                        stable_external_ids.get(uid),
+                        institution=institution_key,
+                        require_balance=True,
                     )
                 )
             except ProviderRateLimited as exc:

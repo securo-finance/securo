@@ -1478,7 +1478,15 @@
     "disconnectAlsoDelete": "Ook rekeningen en transacties verwijderen",
     "disconnectedKept": "Bank losgekoppeld. Rekeningen en geschiedenis zijn bewaard.",
     "removeConnection": "Verbinding verwijderen",
-    "connectionDisconnected": "Losgekoppeld. Verbind opnieuw om weer te synchroniseren"
+    "connectionDisconnected": "Losgekoppeld. Verbind opnieuw om weer te synchroniseren",
+    "jointAccount": "Gezamenlijke rekening",
+    "jointSecondaryFeed": "Gezamenlijk · secundaire feed",
+    "pendingLinkCandidateTitle": "Mogelijke gezamenlijke rekening gevonden",
+    "pendingLinkCandidateDesc": "Deze verbinding vond een rekening die overeenkomt met \"{{account}}\" (al gesynchroniseerd via {{connection}}). Koppelen als gezamenlijke rekening of apart houden?",
+    "confirmJointAccount": "Koppelen als gezamenlijke rekening",
+    "keepSeparateAccount": "Apart houden",
+    "jointAccountConfirmed": "Rekeningen gekoppeld als gezamenlijke rekening",
+    "jointAccountKeptSeparate": "Als aparte rekeningen behouden"
   },
   "loans": {
     "title": "Leningcontract",

@@ -18,6 +18,7 @@ from sqlalchemy.orm import contains_eager
 from app.core.app_clock import app_today
 from app.models.account import Account
 from app.models.account_card import AccountCard
+from app.models.account_connection_link import AccountConnectionLink
 from app.models.asset import LOAN_COLLATERAL_TYPES, Asset
 from app.models.bank_connection import BankConnection
 from app.models.credit_card_bill import CreditCardBill
@@ -383,6 +384,56 @@ def _accounts_with_balances_query(
     )
 
 
+async def _load_active_connection_links(
+    session: AsyncSession, workspace_id: uuid.UUID, account_ids: list[uuid.UUID]
+) -> dict[uuid.UUID, list[dict]]:
+    if not account_ids:
+        return {}
+    rows = (
+        await session.execute(
+            select(AccountConnectionLink, BankConnection, Account)
+            .join(Account, Account.id == AccountConnectionLink.account_id)
+            .outerjoin(
+                BankConnection,
+                BankConnection.id == AccountConnectionLink.connection_id,
+            )
+            .where(
+                AccountConnectionLink.workspace_id == workspace_id,
+                AccountConnectionLink.account_id.in_(account_ids),
+                AccountConnectionLink.status == "active",
+            )
+            .order_by(
+                AccountConnectionLink.is_primary_feed.desc(),
+                AccountConnectionLink.created_at.asc(),
+            )
+        )
+    ).all()
+    by_account: dict[uuid.UUID, list[dict]] = {}
+    for link, conn, acc in rows:
+        by_account.setdefault(link.account_id, []).append(
+            {
+                "id": link.id,
+                "account_id": link.account_id,
+                "connection_id": link.connection_id,
+                "external_id": link.external_id,
+                "is_primary_feed": link.is_primary_feed,
+                "status": link.status,
+                "last_synced_at": link.last_synced_at,
+                "created_at": link.created_at,
+                "account_name": acc.display_name or acc.name,
+                "account_masked_number": acc.masked_number,
+                "account_currency": acc.currency,
+                "connection_name": (
+                    (conn.display_name or conn.institution_name) if conn else None
+                ),
+                "institution_name": conn.institution_name if conn else None,
+                "provider": conn.provider if conn else None,
+                "connection_status": conn.status if conn else None,
+            }
+        )
+    return by_account
+
+
 async def get_accounts(session: AsyncSession, workspace_id: uuid.UUID, include_closed: bool = False) -> list[dict]:
     account_ids = await _account_ids_in_scope(
         session, workspace_id, include_closed=include_closed
@@ -392,27 +443,31 @@ async def get_accounts(session: AsyncSession, workspace_id: uuid.UUID, include_c
     query = _accounts_with_balances_query(
         workspace_id, account_ids, app_today()
     ).order_by(Account.name)
-    result = await session.execute(query)
+    rows = (await session.execute(query)).all()
+    links_by_account = await _load_active_connection_links(
+        session, workspace_id, [acc.id for acc, *_ in rows]
+    )
     return [
-            serialize_account(
-                acc,
-                current_balance,
-                previous_balance,
-                connection,
-                future_charges=future_charges,
-                open_bill_total=open_bill_total,
-                balance_date=balance_date,
-            )
-            for (
-                acc,
-                connection,
-                current_balance,
-                previous_balance,
-                future_charges,
-                open_bill_total,
-                balance_date,
-            ) in result.all()
-        ]
+        serialize_account(
+            acc,
+            current_balance,
+            previous_balance,
+            connection,
+            future_charges=future_charges,
+            open_bill_total=open_bill_total,
+            balance_date=balance_date,
+            connection_links=links_by_account.get(acc.id, []),
+        )
+        for (
+            acc,
+            connection,
+            current_balance,
+            previous_balance,
+            future_charges,
+            open_bill_total,
+            balance_date,
+        ) in rows
+    ]
 
 
 async def get_account_with_balances(
@@ -427,6 +482,7 @@ async def get_account_with_balances(
     if row is None:
         return None
     acc, connection, current_balance, previous_balance, future_charges, open_bill_total, balance_date = row
+    links_by_account = await _load_active_connection_links(session, workspace_id, [acc.id])
     return serialize_account(
         acc,
         current_balance,
@@ -435,6 +491,7 @@ async def get_account_with_balances(
         future_charges=future_charges,
         open_bill_total=open_bill_total,
         balance_date=balance_date,
+        connection_links=links_by_account.get(acc.id, []),
     )
 
 
@@ -469,6 +526,7 @@ def serialize_account(
     future_charges: Optional[Decimal] = None,
     open_bill_total: Optional[Decimal] = None,
     balance_date: Optional[_Date] = None,
+    connection_links: Optional[list[dict]] = None,
 ) -> dict:
     # Connected credit cards and loans store positive for debt → negate.
     # Manual accounts: transaction math already gives correct sign.
@@ -537,6 +595,7 @@ def serialize_account(
         "available_credit": None,
         "next_close_date": None,
         "next_due_date": None,
+        "connection_links": list(connection_links or []),
     }
 
     if acc.type == "credit_card":

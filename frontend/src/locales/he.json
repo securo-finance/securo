@@ -1491,7 +1491,15 @@
     "disconnectAlsoDelete": "מחיקה גם של החשבונות והתנועות",
     "disconnectedKept": "הבנק נותק. החשבונות וההיסטוריה נשמרו.",
     "removeConnection": "הסרת חיבור",
-    "connectionDisconnected": "מנותק. חברו מחדש כדי לסנכרן שוב"
+    "connectionDisconnected": "מנותק. חברו מחדש כדי לסנכרן שוב",
+    "jointAccount": "חשבון משותף",
+    "jointSecondaryFeed": "משותף · הזנה משנית",
+    "pendingLinkCandidateTitle": "התאמה אפשרית לחשבון משותף",
+    "pendingLinkCandidateDesc": "חיבור זה מצא חשבון התואם ל-\"{{account}}\" (מסונכרן כבר דרך {{connection}}). לקשר כחשבון משותף או לשמור בנפרד?",
+    "confirmJointAccount": "קשר כחשבון משותף",
+    "keepSeparateAccount": "שמור בנפרד",
+    "jointAccountConfirmed": "החשבונות קושרו כחשבון משותף",
+    "jointAccountKeptSeparate": "נשמרו כחשבונות נפרדים"
   },
   "loans": {
     "title": "חוזה ההלוואה",

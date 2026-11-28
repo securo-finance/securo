@@ -1482,7 +1482,15 @@
     "disconnectAlsoDelete": "Elimina anche conti e transazioni",
     "disconnectedKept": "Banca scollegata. Conti e storico sono stati mantenuti.",
     "removeConnection": "Rimuovi connessione",
-    "connectionDisconnected": "Scollegata. Ricollega per sincronizzare di nuovo"
+    "connectionDisconnected": "Scollegata. Ricollega per sincronizzare di nuovo",
+    "jointAccount": "Conto cointestato",
+    "jointSecondaryFeed": "Cointestato · feed secondario",
+    "pendingLinkCandidateTitle": "Possibile corrispondenza conto cointestato",
+    "pendingLinkCandidateDesc": "Questa connessione ha trovato un conto corrispondente a \"{{account}}\" (già sincronizzato tramite {{connection}}). Collegarli come conto cointestato o mantenerli separati?",
+    "confirmJointAccount": "Collega come conto cointestato",
+    "keepSeparateAccount": "Mantieni separato",
+    "jointAccountConfirmed": "Conti collegati come conto cointestato",
+    "jointAccountKeptSeparate": "Mantenuti come conti separati"
   },
   "loans": {
     "title": "Contratto del prestito",

@@ -20,6 +20,8 @@ import type {
   CategoryUsage,
   CategoryGroup,
   BankConnection,
+  AccountConnectionLink,
+  AccountConnectionLinkAction,
   ConnectionSettings,
   SyncResult,
   Account,
@@ -574,6 +576,14 @@ export const connections = {
     settings: Partial<ConnectionSettings> & { display_name?: string | null },
   ): Promise<BankConnection> => {
     const { data } = await api.patch(`/connections/${id}/settings`, settings)
+    return data
+  },
+  resolveAccountLink: async (
+    connectionId: string,
+    linkId: string,
+    action: AccountConnectionLinkAction,
+  ): Promise<AccountConnectionLink> => {
+    const { data } = await api.post(`/connections/${connectionId}/account-links/${linkId}`, { action })
     return data
   },
   // Disconnecting keeps the accounts and their history unless the caller

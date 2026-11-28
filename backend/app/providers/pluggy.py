@@ -23,6 +23,7 @@ from app.providers.base import (
     RefreshOutcome,
     ReservedBalanceData,
     TransactionData,
+    hash_account_identifier_with_fallbacks,
     mask_last4,
 )
 from app.providers.pluggy_constants import pluggy_icon_for_compe
@@ -677,7 +678,72 @@ def _auto_invested_portion(account: dict) -> Decimal:
     return min(_auto_invested_balance(account), balance)
 
 
-def _build_account_data(acc: dict, type_mapper) -> AccountData:
+def _usable_connector_id(value: object) -> Optional[str]:
+    """Return a stripped non-empty Pluggy connector id string, or None when unusable."""
+    if value is None or isinstance(value, bool):
+        return None
+    cid = str(value).strip()
+    return cid or None
+
+
+def _pluggy_institution_scope(
+    connector_id: object = None,
+    connector_name: object = None,
+    acc: Optional[dict] = None,
+) -> tuple[Optional[str], Optional[str]]:
+    """Return ``(institution, sub_institution)`` scope for Pluggy fingerprints.
+
+    Pluggy's ``number`` is a branch/account string with no bank code, so two
+    different banks (e.g. Itaú ``1234-56789`` and Bradesco ``1234/5678-9``)
+    normalize to identical digits. The primary scope binds the stable Pluggy
+    connector identity; when ``bankData.transferNumber`` exposes a COMPE code,
+    it is bound as ``sub_institution`` so two distinct COMPE institutions under
+    the same connector never share a fingerprint across feeds while a feed that
+    omits optional ``transferNumber`` still matches a feed that includes it.
+    Falls back to COMPE as the primary scope only when connector metadata is
+    unavailable.
+    """
+    compe = (
+        _compe_from_transfer_number((acc.get("bankData") or {}).get("transferNumber"))
+        if isinstance(acc, dict)
+        else None
+    )
+    sub_inst = f"compe:{compe}" if compe else None
+    cid = _usable_connector_id(connector_id)
+    if cid is not None:
+        return f"connector:{cid}", sub_inst
+    if isinstance(connector_name, str) and connector_name.strip():
+        cname = " ".join(connector_name.strip().lower().split())
+        if cname and cname != "unknown bank":
+            return f"connector_name:{cname}", sub_inst
+    if sub_inst:
+        return sub_inst, None
+    return None, None
+
+
+def _pluggy_name_fallback_scope(
+    connector_id: object = None,
+    connector_name: object = None,
+) -> Optional[str]:
+    """Legacy connector-name scope emitted as a fallback digest when a usable
+    ``connector_id`` is also known, allowing accounts initially stored without
+    ``connector_id`` to match and upgrade without equating different known IDs."""
+    if _usable_connector_id(connector_id) is None:
+        return None
+    if isinstance(connector_name, str) and connector_name.strip():
+        cname = " ".join(connector_name.strip().lower().split())
+        if cname and cname != "unknown bank":
+            return f"connector_name:{cname}"
+    return None
+
+
+def _build_account_data(
+    acc: dict,
+    type_mapper,
+    *,
+    connector_id: object = None,
+    connector_name: object = None,
+) -> AccountData:
     """Map a Pluggy account payload to AccountData, including creditData when present."""
     account_type = type_mapper(acc.get("type", ""), acc.get("subtype"))
     credit_data = acc.get("creditData") or {}
@@ -706,6 +772,37 @@ def _build_account_data(acc: dict, type_mapper) -> AccountData:
         )
 
     account_currency = acc.get("currencyCode", "USD")
+    raw_number = acc.get("number")
+    raw_number_str = raw_number if isinstance(raw_number, str) else None
+    institution_key, sub_institution_key = _pluggy_institution_scope(
+        connector_id=connector_id,
+        connector_name=connector_name,
+        acc=acc,
+    )
+    account_fingerprint, fallback_fingerprints = hash_account_identifier_with_fallbacks(
+        "pluggy",
+        raw_number_str,
+        institution=institution_key,
+        sub_institution=sub_institution_key,
+    )
+    name_fallback_scope = _pluggy_name_fallback_scope(
+        connector_id=connector_id,
+        connector_name=connector_name,
+    )
+    if name_fallback_scope:
+        name_fp, name_fallbacks = hash_account_identifier_with_fallbacks(
+            "pluggy",
+            raw_number_str,
+            institution=name_fallback_scope,
+            sub_institution=sub_institution_key,
+        )
+        extra_fallbacks = tuple(
+            fp
+            for fp in (name_fp, *name_fallbacks)
+            if fp and fp != account_fingerprint and fp not in fallback_fingerprints
+        )
+        if extra_fallbacks:
+            fallback_fingerprints = (*fallback_fingerprints, *extra_fallbacks)
 
     return AccountData(
         external_id=acc["id"],
@@ -721,8 +818,10 @@ def _build_account_data(acc: dict, type_mapper) -> AccountData:
         card_level=card_level,
         # Brazil has no IBAN; Pluggy's `number` is the branch/account number
         # (or the card number for credit cards), which serves the same purpose.
-        masked_number=mask_last4(acc.get("number")),
+        masked_number=mask_last4(raw_number),
         shared_balance_group=shared_balance_group,
+        account_fingerprint=account_fingerprint,
+        fallback_account_fingerprints=fallback_fingerprints,
         auto_invested_balance=(
             Decimal(0) if account_type == "credit_card" else _auto_invested_portion(acc)
         ),
@@ -841,19 +940,35 @@ class PluggyProvider(BankProvider):
             accounts_resp.raise_for_status()
             accounts_data = accounts_resp.json()
 
-        connector = item_data.get("connector", {})
-        institution_name = connector.get("name", "Unknown Bank")
+        connector = item_data.get("connector") or {}
+        connector_id = connector.get("id")
+        connector_name = connector.get("name")
+        institution_name = connector_name or "Unknown Bank"
 
         raw_accounts = accounts_data.get("results", [])
         account_list = []
         for acc in raw_accounts:
-            account_list.append(_build_account_data(acc, self._map_account_type))
+            account_list.append(
+                _build_account_data(
+                    acc,
+                    self._map_account_type,
+                    connector_id=connector_id,
+                    connector_name=connector_name,
+                )
+            )
         await _annotate_institutions(raw_accounts, account_list)
+
+        creds: dict = {"item_id": item_id}
+        usable_connector_id = _usable_connector_id(connector_id)
+        if usable_connector_id is not None:
+            creds["connector_id"] = usable_connector_id
+        if isinstance(connector_name, str) and connector_name.strip():
+            creds["connector_name"] = connector_name.strip()
 
         return ConnectionData(
             external_id=item_id,
             institution_name=institution_name,
-            credentials={"item_id": item_id},
+            credentials=creds,
             accounts=account_list,
             logo_url=_resolve_connector_logo(connector, raw_accounts),
         )
@@ -880,8 +995,39 @@ class PluggyProvider(BankProvider):
     async def get_accounts(self, credentials: dict) -> list[AccountData]:
         item_id = credentials["item_id"]
         headers = await self._headers()
+        connector_id = _usable_connector_id(credentials.get("connector_id"))
+        raw_connector_name = credentials.get("connector_name")
+        connector_name = (
+            raw_connector_name.strip()
+            if isinstance(raw_connector_name, str) and raw_connector_name.strip()
+            else None
+        )
 
         async with httpx.AsyncClient(timeout=30.0) as client:
+            if connector_id is None:
+                # Legacy connections or callbacks that returned only a
+                # connector name lack a usable connector_id; retry lookup so
+                # fingerprints upgrade to the stable connector-id scope.
+                try:
+                    item_resp = await client.get(
+                        f"{PLUGGY_API_BASE}/items/{item_id}",
+                        headers=headers,
+                    )
+                    item_resp.raise_for_status()
+                    connector = (item_resp.json() or {}).get("connector") or {}
+                    resolved_cid = _usable_connector_id(connector.get("id"))
+                    if resolved_cid is not None:
+                        connector_id = resolved_cid
+                        credentials["connector_id"] = resolved_cid
+                    if isinstance(connector.get("name"), str) and connector["name"].strip():
+                        connector_name = connector["name"].strip()
+                        credentials["connector_name"] = connector_name
+                except Exception:
+                    logger.debug(
+                        "Could not backfill Pluggy connector metadata for item %s",
+                        item_id,
+                    )
+
             resp = await client.get(
                 f"{PLUGGY_API_BASE}/accounts",
                 headers=headers,
@@ -892,7 +1038,14 @@ class PluggyProvider(BankProvider):
 
         accounts = []
         for acc in data.get("results", []):
-            accounts.append(_build_account_data(acc, self._map_account_type))
+            accounts.append(
+                _build_account_data(
+                    acc,
+                    self._map_account_type,
+                    connector_id=connector_id,
+                    connector_name=connector_name,
+                )
+            )
         await _annotate_institutions(data.get("results", []), accounts)
         return accounts
 

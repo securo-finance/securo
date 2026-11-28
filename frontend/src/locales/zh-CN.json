@@ -1476,7 +1476,15 @@
     "disconnectAlsoDelete": "同时删除账户和交易记录",
     "disconnectedKept": "已断开银行连接，账户和历史记录已保留。",
     "removeConnection": "移除连接",
-    "connectionDisconnected": "已断开连接，重新连接即可恢复同步"
+    "connectionDisconnected": "已断开连接，重新连接即可恢复同步",
+    "jointAccount": "联名账户",
+    "jointSecondaryFeed": "联名 · 备用同步源",
+    "pendingLinkCandidateTitle": "检测到可能的联名账户",
+    "pendingLinkCandidateDesc": "此连接发现一个与“{{account}}”匹配的账户（已通过 {{connection}} 同步）。是否将其关联为同一个联名账户，或保持独立？",
+    "confirmJointAccount": "关联为联名账户",
+    "keepSeparateAccount": "保持独立",
+    "jointAccountConfirmed": "已将账户关联为联名账户",
+    "jointAccountKeptSeparate": "已保持为独立账户"
   },
   "loans": {
     "title": "贷款合同",

@@ -6,6 +6,7 @@ from typing import Literal, Optional
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.core.currency import parse_supported_currency
+from app.schemas.bank_connection import AccountConnectionLinkRead
 
 LoanKind = Literal["mortgage", "auto", "personal", "student", "other"]
 LoanRatePeriod = Literal["monthly", "yearly_effective", "yearly_nominal"]
@@ -143,6 +144,7 @@ class AccountRead(AccountBase):
     open_bill_total_primary: Optional[float] = None
     is_closed: bool = False
     closed_at: Optional[datetime] = None
+    connection_links: list[AccountConnectionLinkRead] = []
 
     model_config = ConfigDict(from_attributes=True)
 

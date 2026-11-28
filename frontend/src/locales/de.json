@@ -1477,7 +1477,15 @@
     "disconnectAlsoDelete": "Auch Konten und Transaktionen löschen",
     "disconnectedKept": "Bank getrennt. Konten und Verlauf wurden behalten.",
     "removeConnection": "Verbindung entfernen",
-    "connectionDisconnected": "Getrennt. Erneut verbinden, um wieder zu synchronisieren"
+    "connectionDisconnected": "Getrennt. Erneut verbinden, um wieder zu synchronisieren",
+    "jointAccount": "Gemeinschaftskonto",
+    "jointSecondaryFeed": "Gemeinsam · Sekundär-Feed",
+    "pendingLinkCandidateTitle": "Mögliches Gemeinschaftskonto erkannt",
+    "pendingLinkCandidateDesc": "Diese Verbindung hat ein Konto gefunden, das zu „{{account}}“ passt (bereits über {{connection}} synchronisiert). Als Gemeinschaftskonto verknüpfen oder getrennt halten?",
+    "confirmJointAccount": "Als Gemeinschaftskonto verknüpfen",
+    "keepSeparateAccount": "Getrennt halten",
+    "jointAccountConfirmed": "Konten als Gemeinschaftskonto verknüpft",
+    "jointAccountKeptSeparate": "Als getrennte Konten behalten"
   },
   "loans": {
     "title": "Kreditvertrag",

@@ -26,8 +26,8 @@ import {
 import { DatePickerInput } from '@/components/ui/date-picker-input'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
-import type { Account, BankConnection, InstalledPlugin, LoanAmortization, LoanRatePeriod, PluginConnection } from '@/types'
-import { RefreshCw, TriangleAlert, Unlink, Settings } from 'lucide-react'
+import type { Account, AccountConnectionLink, AccountConnectionLinkAction, BankConnection, InstalledPlugin, LoanAmortization, LoanRatePeriod, PluginConnection } from '@/types'
+import { RefreshCw, TriangleAlert, Unlink, Settings, Users } from 'lucide-react'
 import { AccountIcon, ConnectionLogo } from '@/components/account-icon'
 import { getAccountTypeConfig } from '@/lib/account-type-config'
 import { AccountPageActions } from '@/components/account-page-actions'
@@ -262,6 +262,52 @@ export default function AccountsPage() {
     },
   })
 
+  const resolveLinkMutation = useMutation({
+    mutationFn: ({
+      connectionId,
+      linkId,
+      action,
+    }: {
+      connectionId: string
+      linkId: string
+      action: AccountConnectionLinkAction
+    }) => connections.resolveAccountLink(connectionId, linkId, action),
+    onSuccess: (_data, { action }) => {
+      invalidateFinancialQueries(queryClient)
+      queryClient.invalidateQueries({ queryKey: ['connections'] })
+      toast.success(
+        t(action === 'confirm' ? 'accounts.jointAccountConfirmed' : 'accounts.jointAccountKeptSeparate'),
+      )
+    },
+    onError: (err) => {
+      toast.error(extractApiError(err, t('common.error')))
+    },
+  })
+
+  const activeLinksByAccountId = useMemo(() => {
+    const map = new Map<string, Map<string, AccountConnectionLink>>()
+    const add = (link: AccountConnectionLink) => {
+      if (link.status !== 'active') return
+      let byConn = map.get(link.account_id)
+      if (!byConn) {
+        byConn = new Map()
+        map.set(link.account_id, byConn)
+      }
+      byConn.set(link.connection_id, link)
+    }
+    for (const acc of accountsList ?? []) {
+      for (const link of acc.connection_links ?? []) add(link)
+    }
+    for (const conn of connectionsList ?? []) {
+      for (const link of conn.account_links ?? []) add(link)
+    }
+    const out = new Map<string, AccountConnectionLink[]>()
+    for (const [accountId, byConn] of map.entries()) {
+      out.set(accountId, [...byConn.values()])
+    }
+    return out
+  }, [accountsList, connectionsList])
+
   const openDisconnectDialog = (conn: BankConnection) => {
     setDeleteOnDisconnect(false)
     setDisconnectingConnection(conn)
@@ -435,7 +481,15 @@ export default function AccountsPage() {
           {connectionsList && connectionsList.length > 0 ? (
             <div className="space-y-3">
               {connectionsList.map((conn) => {
-                const connAccounts = bankAccounts.filter((a) => a.connection_id === conn.id)
+                const activeLinkedIds = new Set(
+                  (conn.account_links ?? [])
+                    .filter((l) => l.status === 'active')
+                    .map((l) => l.account_id),
+                )
+                const connAccounts = bankAccounts.filter(
+                  (a) => a.connection_id === conn.id || activeLinkedIds.has(a.id),
+                )
+                const pendingLinks = (conn.account_links ?? []).filter((l) => l.status === 'pending')
                 const needsReconnect = conn.status !== 'active'
                 // An error state does not always mean the token is dead: an
                 // upstream auth issue can be fixed without re-pasting, so the
@@ -573,6 +627,80 @@ export default function AccountsPage() {
                         </div>
                       )}
                     </div>
+                    {/* Pending joint-account link candidates */}
+                    {pendingLinks.length > 0 && (
+                      <div
+                        className="px-5 py-3 bg-amber-500/10 border-b border-border space-y-2"
+                        data-testid="pending-account-links"
+                      >
+                        <p className="text-xs font-semibold text-amber-800 dark:text-amber-300">
+                          {t('accounts.pendingLinkCandidateTitle')}
+                        </p>
+                        {pendingLinks.map((link) => {
+                          const targetAcc = accountsList?.find((a) => a.id === link.account_id)
+                          const targetConn = connectionsList?.find((c) => c.id === targetAcc?.connection_id)
+                          const fallbackMask = formatAccountMask({
+                            masked_number: link.account_masked_number,
+                          })
+                          const fallbackName = link.account_name ?? link.external_id
+                          const accountLabel = targetAcc
+                            ? getAccountLabel(targetAcc)
+                            : (fallbackMask ? `${fallbackName} ${fallbackMask}` : fallbackName)
+                          const connectionLabel = targetConn
+                            ? getConnectionName(targetConn, t)
+                            : (targetAcc?.institution_name ?? link.institution_name ?? '')
+                          const linkBusy =
+                            resolveLinkMutation.isPending && resolveLinkMutation.variables?.linkId === link.id
+                          return (
+                            <div
+                              key={link.id}
+                              className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between text-xs text-foreground"
+                            >
+                              <p className="text-muted-foreground">
+                                {t('accounts.pendingLinkCandidateDesc', {
+                                  account: accountLabel,
+                                  connection: connectionLabel,
+                                })}
+                              </p>
+                              {canWrite && (
+                                <div className="flex items-center gap-2 shrink-0">
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="h-7 px-2.5 text-xs"
+                                    disabled={linkBusy}
+                                    onClick={() =>
+                                      resolveLinkMutation.mutate({
+                                        connectionId: conn.id,
+                                        linkId: link.id,
+                                        action: 'confirm',
+                                      })
+                                    }
+                                  >
+                                    {t('accounts.confirmJointAccount')}
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    className="h-7 px-2.5 text-xs"
+                                    disabled={linkBusy}
+                                    onClick={() =>
+                                      resolveLinkMutation.mutate({
+                                        connectionId: conn.id,
+                                        linkId: link.id,
+                                        action: 'reject',
+                                      })
+                                    }
+                                  >
+                                    {t('accounts.keepSeparateAccount')}
+                                  </Button>
+                                </div>
+                              )}
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )}
                     {/* Accounts list */}
                     {connAccounts.length > 0 ? (
                       <div className="divide-y divide-muted">
@@ -588,12 +716,21 @@ export default function AccountsPage() {
                               : t('accounts.dueIn', { count: dueIn })
                           const dueClass = dueIn != null && dueIn <= 3 ? 'text-amber-600' : 'text-muted-foreground'
                           const accountMask = formatAccountMask(acc)
+                          const isJoint = (activeLinksByAccountId.get(acc.id)?.length ?? 0) > 1
                           return (
                             <div key={acc.id} className="group flex items-center px-5 py-3 hover:bg-muted/50 transition-colors">
                               <Link to={`/accounts/${acc.id}`} className="flex items-center gap-3 flex-1 min-w-0">
                                 <AccountIcon account={acc} />
                                 <div className="min-w-0 flex-1">
-                                  <p className="text-sm font-medium text-foreground truncate">{getAccountName(acc)}</p>
+                                  <div className="flex items-center gap-1.5 min-w-0">
+                                    <p className="text-sm font-medium text-foreground truncate">{getAccountName(acc)}</p>
+                                    {isJoint && (
+                                      <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-4 shrink-0 inline-flex items-center gap-1">
+                                        <Users className="h-2.5 w-2.5" />
+                                        {acc.connection_id === conn.id ? t('accounts.jointAccount') : t('accounts.jointSecondaryFeed')}
+                                      </Badge>
+                                    )}
+                                  </div>
                                   <p className="text-xs text-muted-foreground">
                                     {t(cfg.label)}
                                     {accountMask && <> · <span className="tabular-nums">{accountMask}</span></>}

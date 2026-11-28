@@ -246,6 +246,12 @@ async def _sync_stale(session_maker) -> dict:
                         settings, datetime.now(timezone.utc)
                     ),
                 )
+            except (
+                connection_service.ConnectionDisconnectedError,
+                connection_service.ConnectionReconnectedError,
+            ) as exc:
+                logger.info("Skipping connection %s: %s", conn_id, exc)
+                continue
             except ProviderNotConfiguredError as exc:
                 # Actionable one-liner instead of a buried traceback: this
                 # means THIS process is missing the provider's configuration.

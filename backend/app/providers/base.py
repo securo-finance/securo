@@ -1,4 +1,7 @@
+import hashlib
+import hmac
 from abc import ABC, abstractmethod
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import date
 from decimal import Decimal
@@ -55,6 +58,276 @@ def mask_last4(value: Optional[str]) -> Optional[str]:
     return cleaned[-4:]
 
 
+_UNSPECIFIED_SUB_TAG = "0" * 16
+
+
+def _fingerprint_key_tag(secret: str) -> str:
+    """Short 8-hex identifier for the SECRET_KEY that keyed a v2 fingerprint."""
+    return hmac.new(
+        secret.encode("utf-8"),
+        b"account-fingerprint-kid:v2",
+        hashlib.sha256,
+    ).hexdigest()[:8]
+
+
+def _compute_account_fingerprint(
+    secret: str,
+    provider_clean: str,
+    inst_clean: str,
+    cleaned: str,
+    sub_inst_clean: Optional[str] = None,
+) -> str:
+    """Compute a 64-hex key-tagged fingerprint: ``key_tag(8) + base(40) + sub(16)``.
+
+    The 40-hex (160-bit) ``base`` HMAC binds ``(provider, institution, account)``
+    while the trailing 16-hex (64-bit) ``sub`` HMAC binds an optional
+    sub-institution (e.g. a Pluggy COMPE code within a multi-institution
+    connector), or ``"0" * 16`` when absent. That layout lets two feeds with
+    different known sub-institutions conflict while a feed that omits optional
+    sub-institution metadata still matches one that carries it.
+    """
+    base_msg = (
+        f"account-fingerprint:v2:{provider_clean}:{inst_clean}:{cleaned}"
+    ).encode("utf-8")
+    base_digest = hmac.new(secret.encode("utf-8"), base_msg, hashlib.sha256).hexdigest()[:40]
+    if sub_inst_clean:
+        sub_msg = (
+            f"account-fingerprint-sub:v2:{provider_clean}:{inst_clean}:{sub_inst_clean}:{cleaned}"
+        ).encode("utf-8")
+        sub_digest = hmac.new(secret.encode("utf-8"), sub_msg, hashlib.sha256).hexdigest()[:16]
+        if sub_digest == _UNSPECIFIED_SUB_TAG:
+            sub_digest = f"{sub_digest[:-1]}1"
+    else:
+        sub_digest = _UNSPECIFIED_SUB_TAG
+    return f"{_fingerprint_key_tag(secret)}{base_digest}{sub_digest}"
+
+
+def fingerprint_uses_current_key(fingerprint: Optional[str]) -> bool:
+    """True when ``fingerprint`` carries the current SECRET_KEY's 8-hex key tag."""
+    if not fingerprint or len(fingerprint) != 64:
+        return False
+    from app.core.config import get_settings
+
+    secret = get_settings().secret_key.get_secret_value()
+    if not secret:
+        return False
+    return hmac.compare_digest(fingerprint[:8], _fingerprint_key_tag(secret))
+
+
+def fingerprint_uses_fallback_key(fingerprint: Optional[str]) -> bool:
+    """True when ``fingerprint`` carries the 8-hex key tag of a configured fallback key."""
+    if not fingerprint or len(fingerprint) != 64:
+        return False
+    from app.core.config import get_settings
+
+    settings = get_settings()
+    current = settings.secret_key.get_secret_value()
+    tag = fingerprint[:8]
+    for fb in dict.fromkeys(settings.secret_key_fallbacks):
+        if fb and fb != current and hmac.compare_digest(tag, _fingerprint_key_tag(fb)):
+            return True
+    return False
+
+
+def _native_fingerprints_compatible(fp_a: str, fp_b: str) -> bool:
+    """True when two 64-hex key-tagged fingerprints refer to the same account.
+
+    Matches exact digests, or matching key-tag + 160-bit base HMAC when at
+    least one side has an unspecified sub-institution tag (``"0" * 16``). Two
+    different non-zero sub-institution tags (e.g. distinct COMPE codes under
+    one Pluggy connector) never match.
+    """
+    if hmac.compare_digest(fp_a, fp_b):
+        return True
+    if len(fp_a) != 64 or len(fp_b) != 64:
+        return False
+    if not hmac.compare_digest(fp_a[:48], fp_b[:48]):
+        return False
+    return fp_a[48:] == _UNSPECIFIED_SUB_TAG or fp_b[48:] == _UNSPECIFIED_SUB_TAG
+
+
+def fingerprints_match(
+    stored_fp: Optional[str],
+    incoming_fp: Optional[str],
+    *,
+    fallback_fps: Sequence[str] = (),
+) -> bool:
+    """True when ``stored_fp`` matches ``incoming_fp`` or any fallback-key digest."""
+    if not stored_fp or (not incoming_fp and not fallback_fps):
+        return False
+    for candidate in (incoming_fp, *fallback_fps):
+        if candidate and _native_fingerprints_compatible(stored_fp, candidate):
+            return True
+    return False
+
+
+def prefer_fingerprint(
+    stored_fp: Optional[str],
+    incoming_fp: Optional[str],
+    *,
+    fallback_fps: Sequence[str] = (),
+) -> Optional[str]:
+    """Choose the fingerprint to persist, upgrading rotated keys without dropping a
+    known sub-institution tag when an incoming feed omits optional metadata."""
+    if not incoming_fp:
+        return stored_fp
+    if not stored_fp:
+        return incoming_fp
+    if (
+        len(stored_fp) == 64
+        and len(incoming_fp) == 64
+        and stored_fp[48:] != _UNSPECIFIED_SUB_TAG
+        and incoming_fp[48:] == _UNSPECIFIED_SUB_TAG
+        and (
+            fingerprint_uses_current_key(stored_fp)
+            or fingerprint_uses_fallback_key(stored_fp)
+        )
+        and any(
+            len(cand) == 64
+            and hmac.compare_digest(stored_fp[:48], cand[:48])
+            and cand[48:] == _UNSPECIFIED_SUB_TAG
+            for cand in (incoming_fp, *fallback_fps)
+        )
+    ):
+        return stored_fp
+    return incoming_fp
+
+
+def fingerprints_conflict(
+    stored_fp: Optional[str],
+    incoming_fp: Optional[str],
+    *,
+    fallback_fps: Sequence[str] = (),
+) -> bool:
+    """True when two fingerprints prove distinct underlying accounts.
+
+    Returns False when either side is absent, when ``stored_fp`` matches
+    ``incoming_fp`` (or any fallback-key digest), or when ``incoming_fp``
+    carries the current SECRET_KEY's key tag while ``stored_fp`` carries an
+    *unknown* old key tag (meaning SECRET_KEY rotated without retaining the old
+    key in ``secret_key_fallbacks``). Fingerprints tagged with either the
+    current key or a known fallback key that fail to match still conflict.
+    """
+    if not stored_fp or (not incoming_fp and not fallback_fps):
+        return False
+    if fingerprints_match(stored_fp, incoming_fp, fallback_fps=fallback_fps):
+        return False
+    known_key_tags = {
+        fp[:8]
+        for fp in (incoming_fp, *fallback_fps)
+        if fp and len(fp) == 64
+    }
+    if (
+        (incoming_fp and fingerprint_uses_current_key(incoming_fp))
+        or (not incoming_fp and bool(fallback_fps))
+    ) and not (len(stored_fp) == 64 and stored_fp[:8] in known_key_tags):
+        return False
+    return True
+
+
+def hash_account_identifier_with_fallbacks(
+    provider: str,
+    raw_id: Optional[str],
+    *,
+    institution: Optional[str] = None,
+    sub_institution: Optional[str] = None,
+    min_length: int = 6,
+) -> tuple[Optional[str], tuple[str, ...]]:
+    """Compute the current keyed HMAC-SHA256 fingerprint plus fallback-key digests.
+
+    Used to match the same underlying account across re-authorizations,
+    ``SECRET_KEY`` rotations, or two co-owners' separate bank connections (joint
+    accounts) without persisting raw IBANs or account numbers.
+
+    ``institution`` (Pluggy connector, Enable Banking ASPSP + country) is
+    required and bound into the HMAC so non-globally-unique branch/account
+    numbers or BBANs at different banks can never collide. Optional
+    ``sub_institution`` (e.g. Pluggy COMPE code) is bound into the trailing
+    sub-institution tag so distinct institutions under one connector conflict
+    while a feed omitting optional COMPE metadata still matches one that has it.
+    Returns ``(None, ())`` for missing institution or missing, masked (including
+    grouped masks like ``XX XX 1234``), trivial, or too-short inputs so
+    unrelated accounts or credit cards sharing a 4-digit tail are never merged.
+    """
+    if not raw_id or not isinstance(raw_id, str):
+        return None, ()
+    if not institution or not isinstance(institution, str):
+        return None, ()
+    inst_clean = " ".join(institution.strip().lower().split())
+    if not inst_clean:
+        return None, ()
+    sub_clean: Optional[str] = None
+    if isinstance(sub_institution, str):
+        cleaned_sub = " ".join(sub_institution.strip().lower().split())
+        sub_clean = cleaned_sub or None
+    stripped = raw_id.strip()
+    if "*" in stripped or "•" in stripped:
+        return None, ()
+    cleaned = "".join(ch for ch in stripped if ch.isalnum()).upper()
+    if "XXXX" in cleaned or len(cleaned) < min_length or len(set(cleaned)) <= 1:
+        return None, ()
+    from app.core.config import get_settings
+
+    settings = get_settings()
+    secret = settings.secret_key.get_secret_value()
+    if not secret:
+        return None, ()
+    provider_clean = provider.strip().lower()
+    primary = _compute_account_fingerprint(
+        secret, provider_clean, inst_clean, cleaned, sub_clean
+    )
+    fallbacks = tuple(
+        _compute_account_fingerprint(
+            fb, provider_clean, inst_clean, cleaned, sub_clean
+        )
+        for fb in dict.fromkeys(settings.secret_key_fallbacks)
+        if fb and fb != secret
+    )
+    return primary, fallbacks
+
+
+def hash_account_identifier(
+    provider: str,
+    raw_id: Optional[str],
+    *,
+    institution: Optional[str] = None,
+    sub_institution: Optional[str] = None,
+    min_length: int = 6,
+) -> Optional[str]:
+    """Keyed HMAC-SHA256 fingerprint of a bank-assigned account identifier."""
+    primary, _ = hash_account_identifier_with_fallbacks(
+        provider,
+        raw_id,
+        institution=institution,
+        sub_institution=sub_institution,
+        min_length=min_length,
+    )
+    return primary
+
+
+def hash_plugin_account_fingerprint(
+    provider: str, plugin_fingerprint: Optional[str]
+) -> Optional[str]:
+    """Server-HMAC a plugin-supplied account fingerprint with ``secret_key`` and ``provider``.
+
+    Plugins run without access to ``SECRET_KEY`` and emit an unkeyed 64-hex
+    digest. Re-HMACing on the host binds the fingerprint to this instance and
+    plugin provider so a plugin cannot forge a native or cross-plugin match.
+    """
+    if not plugin_fingerprint or not isinstance(plugin_fingerprint, str):
+        return None
+    cleaned = plugin_fingerprint.strip().lower()
+    if not cleaned:
+        return None
+    from app.core.config import get_settings
+
+    secret = get_settings().secret_key.get_secret_value()
+    if not secret:
+        return None
+    msg = f"plugin-account-fingerprint:v1:{provider.strip().lower()}:{cleaned}".encode("utf-8")
+    return hmac.new(secret.encode("utf-8"), msg, hashlib.sha256).hexdigest()
+
+
 @dataclass
 class ReservedBalanceData:
     """Funds an institution holds reserved/earmarked inside an account.
@@ -102,6 +375,14 @@ class AccountData:
     # survives (EB's `identification_hash`), and the sync uses it to rebind the
     # existing row to the new uid instead of duplicating the account.
     stable_external_id: Optional[str] = None
+    # Keyed HMAC-SHA256 digest of a provider account identifier (IBAN, branch/
+    # account number) computed by `hash_account_identifier`. Enables safe cross-
+    # connection joint-account matching without storing raw account numbers.
+    account_fingerprint: Optional[str] = None
+    # Fingerprints for the same identifier keyed under `secret_key_fallbacks`,
+    # allowing Tier 1 matching to survive SECRET_KEY rotations and upgrade the
+    # persisted fingerprint to the current key.
+    fallback_account_fingerprints: tuple[str, ...] = ()
     # Per-account institution override (SimpleFIN — issue #345). None = same
     # as connection. The external id is the provider's stable org id
     # (SimpleFIN conn_id) so a renamed bank updates its row instead of

@@ -19,6 +19,7 @@ from app.providers.base import (
     ConnectionData,
     HoldingData,
     TransactionData,
+    hash_plugin_account_fingerprint,
 )
 
 #: A bank connection whose provider starts with this is synced by a plugin.
@@ -100,7 +101,13 @@ class PluginPayloadProvider(BankProvider):
         return next((logo for logo in logos if logo), None)
 
     async def get_accounts(self, credentials: dict) -> list[AccountData]:
-        return [account.to_data(self._logos) for account in self._accounts]
+        accounts = [account.to_data(self._logos) for account in self._accounts]
+        for account in accounts:
+            if account.account_fingerprint:
+                account.account_fingerprint = hash_plugin_account_fingerprint(
+                    self._name, account.account_fingerprint
+                )
+        return accounts
 
     async def get_transactions(
         self,

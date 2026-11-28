@@ -21,6 +21,8 @@ from app.providers.base import (
 )
 from app.providers.psu import psu_context_from_request, psu_present
 from app.schemas.bank_connection import (
+    AccountConnectionLinkRead,
+    AccountLinkActionRequest,
     BankConnectionRead,
     ConnectionSettingsUpdate,
     ConnectTokenRequest,
@@ -69,6 +71,49 @@ async def create_connect_token(
         )
 
 
+def _serialize_link(link, *, connection=None) -> AccountConnectionLinkRead:
+    conn = connection or getattr(link, "connection", None)
+    acc = getattr(link, "account", None)
+    return AccountConnectionLinkRead(
+        id=link.id,
+        account_id=link.account_id,
+        connection_id=link.connection_id,
+        external_id=link.external_id,
+        is_primary_feed=link.is_primary_feed,
+        status=link.status,
+        last_synced_at=link.last_synced_at,
+        created_at=link.created_at,
+        account_name=(acc.display_name or acc.name) if acc is not None else None,
+        account_masked_number=acc.masked_number if acc is not None else None,
+        account_currency=acc.currency if acc is not None else None,
+        connection_name=(
+            (conn.display_name or conn.institution_name) if conn is not None else None
+        ),
+        institution_name=conn.institution_name if conn is not None else None,
+        provider=conn.provider if conn is not None else None,
+        connection_status=conn.status if conn is not None else None,
+    )
+
+
+def _serialize_connection(row, plugin=None) -> BankConnectionRead:
+    read = BankConnectionRead.model_validate(row)
+    links = [
+        _serialize_link(link, connection=row)
+        for link in (getattr(row, "account_links", None) or [])
+        if link.status != "rejected"
+    ]
+    updates: dict = {"account_links": links}
+    if plugin is not None:
+        updates.update(
+            {
+                "plugin_connection_id": plugin.id,
+                "plugin_id": plugin.plugin_id,
+                "integration": plugin.integration,
+            }
+        )
+    return read.model_copy(update=updates)
+
+
 @router.get("", response_model=list[BankConnectionRead])
 async def list_connections(
     ctx: WorkspaceContext = Depends(current_workspace),
@@ -79,16 +124,7 @@ async def list_connections(
         c.bank_connection_id: c for c in await plugin_connections.list_connections(session, ctx.workspace.id)
         if c.bank_connection_id is not None
     }
-    reads = []
-    for row in rows:
-        read = BankConnectionRead.model_validate(row)
-        plugin = plugins.get(row.id)
-        if plugin is not None:
-            read = read.model_copy(
-                update={"plugin_connection_id": plugin.id, "plugin_id": plugin.plugin_id, "integration": plugin.integration}
-            )
-        reads.append(read)
-    return reads
+    return [_serialize_connection(row, plugins.get(row.id)) for row in rows]
 
 
 @router.post("/oauth/url", response_model=OAuthUrlResponse)
@@ -146,7 +182,7 @@ async def oauth_callback(
                 sync_assets=data.sync_assets,
                 reconnect_connection_id=data.reconnect_connection_id,
             )
-        return connection
+        return _serialize_connection(connection)
     except HTTPException:
         # A refusal already shaped for the client, such as the quota (ADR 0049).
         raise
@@ -227,7 +263,7 @@ async def sync_connection(
                 # that did not add up last time, even if no position moved.
                 retry_trade_import=retry_trade_import,
             )
-        result = BankConnectionRead.model_validate(connection)
+        result = _serialize_connection(connection)
         return {
             **result.model_dump(mode="json"),
             "merged_count": merged_count,
@@ -235,7 +271,10 @@ async def sync_connection(
         }
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
-    except connection_service.ConnectionDisconnectedError as e:
+    except (
+        connection_service.ConnectionDisconnectedError,
+        connection_service.ConnectionReconnectedError,
+    ) as e:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
     except ProviderUserActionRequired as e:
         raise HTTPException(
@@ -308,7 +347,30 @@ async def update_settings(
     )
     if not connection:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Connection not found")
-    return connection
+    return _serialize_connection(connection)
+
+
+@router.post(
+    "/{connection_id}/account-links/{link_id}",
+    response_model=AccountConnectionLinkRead,
+)
+async def resolve_account_link(
+    connection_id: uuid.UUID,
+    link_id: uuid.UUID,
+    data: AccountLinkActionRequest,
+    ctx: WorkspaceContext = Depends(current_writable_workspace),
+    session: AsyncSession = Depends(get_async_session),
+):
+    """Confirm or reject a pending cross-connection joint-account link."""
+    try:
+        link = await connection_service.resolve_account_link(
+            session, ctx.workspace.id, connection_id, link_id, data.action
+        )
+    except LookupError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
+    return _serialize_link(link, connection=link.connection)
 
 
 @router.delete("/{connection_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -387,7 +449,9 @@ async def _sync_through_plugin(session: AsyncSession, plugin_connection, connect
             detail=f"Sync failed: {plugin_connection.last_error or 'the plugin failed'}",
         )
     bank = await connection_service.get_connection(session, connection_id, plugin_connection.workspace_id)
-    result = BankConnectionRead.model_validate(bank)
+    if bank is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Connection not found")
+    result = _serialize_connection(bank, plugin_connection)
     return {
         **result.model_dump(mode="json"),
         "merged_count": 0,

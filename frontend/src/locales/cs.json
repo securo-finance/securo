@@ -1562,7 +1562,15 @@
     "disconnectAlsoDelete": "Smazat také účty a transakce",
     "disconnectedKept": "Banka odpojena. Účty a historie zůstaly zachovány.",
     "removeConnection": "Odebrat připojení",
-    "connectionDisconnected": "Odpojeno. Připojte znovu pro synchronizaci"
+    "connectionDisconnected": "Odpojeno. Připojte znovu pro synchronizaci",
+    "jointAccount": "Společný účet",
+    "jointSecondaryFeed": "Společný · záložní zdroj",
+    "pendingLinkCandidateTitle": "Možná shoda společného účtu",
+    "pendingLinkCandidateDesc": "Toto připojení našlo účet odpovídající „{{account}}“ (již synchronizovaný přes {{connection}}). Propojit jako jeden společný účet, nebo ponechat odděleně?",
+    "confirmJointAccount": "Propojit jako společný",
+    "keepSeparateAccount": "Ponechat odděleně",
+    "jointAccountConfirmed": "Účty propojeny jako společný účet",
+    "jointAccountKeptSeparate": "Ponecháno jako oddělené účty"
   },
   "loans": {
     "title": "Úvěrová smlouva",

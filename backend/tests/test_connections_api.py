@@ -554,3 +554,316 @@ async def test_update_settings_success(
     )
     assert resp.status_code == 200
     assert resp.json()["settings"]["payee_source"] == "merchant"
+
+
+@pytest.mark.asyncio
+async def test_resolve_account_link_endpoint_confirm_reject_and_viewer_gate(
+    client: AsyncClient,
+    auth_headers,
+    viewer_auth_headers,
+    session: AsyncSession,
+    test_user: User,
+    test_workspace,
+):
+    from decimal import Decimal
+
+    from app.models.account import Account
+    from app.models.account_connection_link import AccountConnectionLink
+
+    conn1 = BankConnection(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        provider="pluggy",
+        external_id="ext-c1",
+        institution_name="Bank",
+        credentials={"token": "1"},
+        status="active",
+        created_at=datetime.now(timezone.utc),
+    )
+    conn2 = BankConnection(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        provider="pluggy",
+        external_id="ext-c2",
+        institution_name="Bank",
+        credentials={"token": "2"},
+        status="active",
+        created_at=datetime.now(timezone.utc),
+    )
+    session.add_all([conn1, conn2])
+    await session.flush()
+    acc = Account(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        connection_id=conn1.id,
+        external_id="a1",
+        masked_number="9988",
+        name="Joint Checking",
+        type="checking",
+        balance=Decimal("200.00"),
+        currency="USD",
+    )
+    session.add(acc)
+    await session.flush()
+    pending_link = AccountConnectionLink(
+        workspace_id=test_workspace.id,
+        account_id=acc.id,
+        connection_id=conn2.id,
+        external_id="a2",
+        is_primary_feed=False,
+        status="pending",
+    )
+    session.add(pending_link)
+    await session.commit()
+
+    viewer_resp = await client.post(
+        f"/api/connections/{conn2.id}/account-links/{pending_link.id}",
+        json={"action": "confirm"},
+        headers=viewer_auth_headers,
+    )
+    assert viewer_resp.status_code == 403
+
+    confirm_resp = await client.post(
+        f"/api/connections/{conn2.id}/account-links/{pending_link.id}",
+        json={"action": "confirm"},
+        headers=auth_headers,
+    )
+    assert confirm_resp.status_code == 200
+    body = confirm_resp.json()
+    assert body["status"] == "active"
+    assert body["account_id"] == str(acc.id)
+
+    conflict_resp = await client.post(
+        f"/api/connections/{conn2.id}/account-links/{pending_link.id}",
+        json={"action": "reject"},
+        headers=auth_headers,
+    )
+    assert conflict_resp.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_sync_connection_with_account_link_serializes_on_success_and_rate_limit(
+    client: AsyncClient,
+    auth_headers,
+    session: AsyncSession,
+    test_user: User,
+    test_workspace,
+):
+    """POST /api/connections/{id}/sync on a connection with an AccountConnectionLink
+    must refresh identity-map state (institutions, last_sync_at) and eager-load
+    link.account on both success and ProviderRateLimited."""
+    from decimal import Decimal
+
+    from app.models.account import Account
+    from app.models.account_connection_link import AccountConnectionLink
+    from app.providers.base import AccountData
+
+    conn = BankConnection(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        provider="test",
+        external_id="ext-link-sync",
+        institution_name="Linked Bank",
+        credentials={"token": "t"},
+        status="active",
+        created_at=datetime.now(timezone.utc),
+    )
+    session.add(conn)
+    await session.flush()
+    acc = Account(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        connection_id=conn.id,
+        external_id="acc-link-1",
+        name="Linked Checking",
+        display_name="My Linked Checking",
+        type="checking",
+        balance=Decimal("100.00"),
+        currency="USD",
+    )
+    session.add(acc)
+    await session.flush()
+    session.add(
+        AccountConnectionLink(
+            workspace_id=test_workspace.id,
+            account_id=acc.id,
+            connection_id=conn.id,
+            external_id="acc-link-1",
+            is_primary_feed=True,
+            status="active",
+        )
+    )
+    await session.commit()
+    conn_id = conn.id
+    acc_id = acc.id
+
+    ok_provider = AsyncMock()
+    ok_provider.refresh_credentials = AsyncMock(return_value={"token": "t"})
+    ok_provider.get_accounts = AsyncMock(
+        return_value=[
+            AccountData(
+                external_id="acc-link-1",
+                name="Linked Checking",
+                type="checking",
+                balance=Decimal("100.00"),
+                currency="USD",
+                institution_external_id="INST-1",
+                institution_name="Linked Bank",
+            )
+        ]
+    )
+    ok_provider.get_transactions = AsyncMock(return_value=[])
+    ok_provider.get_holdings = AsyncMock(return_value=[])
+    ok_provider.get_bills = AsyncMock(return_value=[])
+
+    with patch("app.services.connection_service.get_provider", return_value=ok_provider), \
+         patch("app.services.connection_service.detect_transfer_pairs", new_callable=AsyncMock), \
+         patch("app.services.connection_service.stamp_primary_amount", new_callable=AsyncMock), \
+         patch("app.services.connection_service.apply_rules_to_transaction", new_callable=AsyncMock):
+        ok_resp = await client.post(
+            f"/api/connections/{conn_id}/sync",
+            headers=auth_headers,
+        )
+
+    assert ok_resp.status_code == 200, ok_resp.text
+    ok_body = ok_resp.json()
+    assert ok_body["sync_outcome"] == "refreshed"
+    assert ok_body["last_sync_at"] is not None
+    assert [i["name"] for i in ok_body["institutions"]] == ["Linked Bank"]
+    assert len(ok_body["account_links"]) == 1
+    assert ok_body["account_links"][0]["account_id"] == str(acc_id)
+    assert ok_body["account_links"][0]["account_name"] == "My Linked Checking"
+
+    rl_provider = AsyncMock()
+    rl_provider.refresh_credentials = AsyncMock(return_value={"token": "t"})
+    rl_provider.get_accounts = AsyncMock(
+        side_effect=ProviderRateLimited("Daily request limit reached")
+    )
+    with patch("app.services.connection_service.get_provider", return_value=rl_provider):
+        rl_resp = await client.post(
+            f"/api/connections/{conn_id}/sync",
+            headers=auth_headers,
+        )
+
+    assert rl_resp.status_code == 200, rl_resp.text
+    rl_body = rl_resp.json()
+    assert rl_body["sync_outcome"] == "rate_limited"
+    assert rl_body["last_sync_at"] == ok_body["last_sync_at"]
+    assert [i["name"] for i in rl_body["institutions"]] == ["Linked Bank"]
+    assert len(rl_body["account_links"]) == 1
+    assert rl_body["account_links"][0]["account_id"] == str(acc_id)
+    assert rl_body["account_links"][0]["account_name"] == "My Linked Checking"
+
+
+@pytest.mark.asyncio
+async def test_sync_connection_rate_limited_after_mid_sync_delete_returns_404(
+    client: AsyncClient,
+    auth_headers,
+    session: AsyncSession,
+    test_user: User,
+    test_workspace,
+):
+    """POST /api/connections/{id}/sync must return 404 (never 500 MissingGreenlet)
+    when the connection is deleted mid-sync before ProviderRateLimited is raised."""
+    from sqlalchemy import delete as sa_delete
+
+    from tests.conftest import TestSessionLocal
+
+    conn = BankConnection(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        provider="test",
+        external_id="ext-api-mid-delete",
+        institution_name="API Mid-Delete Bank",
+        credentials={"token": "t"},
+        status="active",
+        created_at=datetime.now(timezone.utc),
+    )
+    session.add(conn)
+    await session.commit()
+    conn_id = conn.id
+
+    async def delete_then_rate_limit(_creds):
+        async with TestSessionLocal() as other:
+            await other.execute(
+                sa_delete(BankConnection).where(BankConnection.id == conn_id)
+            )
+            await other.commit()
+        raise ProviderRateLimited("Daily request limit reached")
+
+    rl_provider = AsyncMock()
+    rl_provider.refresh_credentials = AsyncMock(return_value={"token": "t"})
+    rl_provider.get_accounts = AsyncMock(side_effect=delete_then_rate_limit)
+
+    with patch("app.services.connection_service.get_provider", return_value=rl_provider):
+        resp = await client.post(
+            f"/api/connections/{conn_id}/sync",
+            headers=auth_headers,
+        )
+
+    assert resp.status_code == 404, resp.text
+    assert resp.json()["detail"] == "Connection not found"
+
+
+@pytest.mark.asyncio
+async def test_plugin_payload_provider_server_hmacs_account_fingerprint(monkeypatch):
+    """PluginPayloadProvider server-HMACs plugin-supplied account_fingerprint
+    with secret_key + provider."""
+    import hashlib
+    import hmac
+
+    from app.core.config import get_settings
+    from app.plugins.contract import parse_payload
+    from app.plugins.provider import PluginPayloadProvider
+    from app.providers.base import hash_account_identifier
+
+    test_secret = "plugin-fp-unit-test-secret-key"
+    monkeypatch.setenv("SECRET_KEY", test_secret)
+    get_settings.cache_clear()
+    try:
+        raw_fp = "deadbeef" * 8
+        payload = parse_payload(
+            {
+                "contract": 1,
+                "accounts": [
+                    {
+                        "external_id": "A1",
+                        "name": "Checking",
+                        "type": "checking",
+                        "balance": "100.00",
+                        "currency": "USD",
+                        "account_fingerprint": raw_fp,
+                    }
+                ],
+            },
+            ["accounts"],
+        )
+        assert payload is not None
+        p1 = PluginPayloadProvider("plugin:acme/one", payload)
+        p2 = PluginPayloadProvider("plugin:acme/two", payload)
+        (a1,) = await p1.get_accounts({})
+        (a2,) = await p2.get_accounts({})
+
+        msg = f"plugin-account-fingerprint:v1:plugin:acme/one:{raw_fp}".encode("utf-8")
+        expected_hmac = hmac.new(
+            test_secret.encode("utf-8"), msg, hashlib.sha256
+        ).hexdigest()
+        unkeyed_sha256 = hashlib.sha256(msg).hexdigest()
+
+        assert a1.account_fingerprint is not None
+        assert a1.account_fingerprint != raw_fp
+        assert a1.account_fingerprint == expected_hmac
+        assert a1.account_fingerprint != unkeyed_sha256
+        assert a1.account_fingerprint != a2.account_fingerprint
+        assert a1.account_fingerprint != hash_account_identifier(
+            "plugin:acme/one", raw_fp, institution="acme"
+        )
+    finally:
+        monkeypatch.delenv("SECRET_KEY", raising=False)
+        get_settings.cache_clear()
