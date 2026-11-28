@@ -6,6 +6,119 @@ from httpx import AsyncClient
 
 from app.models.account import Account
 from app.models.account_card import AccountCard
+from app.models.workspace import Workspace
+
+
+@pytest.mark.asyncio
+async def test_bulk_ordering_updates_all_accounts_in_one_request(
+    client: AsyncClient, auth_headers, test_account: Account,
+):
+    manual = await client.post(
+        "/api/accounts", headers=auth_headers,
+        json={"name": "Manual", "type": "checking"},
+    )
+    assert manual.status_code == 201
+    manual_id = manual.json()["id"]
+    response = await client.patch(
+        "/api/accounts/bulk_ordering", headers=auth_headers,
+        json=[
+            {"account_id": manual_id, "order": 0},
+            {"account_id": str(test_account.id), "order": 1},
+        ],
+    )
+    assert response.status_code == 204
+    accounts = (await client.get("/api/accounts", headers=auth_headers)).json()
+    assert [(item["id"], item["order"]) for item in accounts] == [
+        (manual_id, 0), (str(test_account.id), 1),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_bulk_ordering_invalid_batch_leaves_all_orders_unchanged(
+    client: AsyncClient, auth_headers, test_account: Account,
+):
+    response = await client.patch(
+        "/api/accounts/bulk_ordering", headers=auth_headers,
+        json=[
+            {"account_id": str(test_account.id), "order": 7},
+            {"account_id": str(uuid.uuid4()), "order": 8},
+        ],
+    )
+    assert response.status_code == 404
+    account = (await client.get(f"/api/accounts/{test_account.id}", headers=auth_headers)).json()
+    assert account["order"] == 0
+
+
+@pytest.mark.asyncio
+async def test_bulk_ordering_does_not_update_account_from_another_workspace(
+    client: AsyncClient,
+    auth_headers,
+    session,
+    test_user,
+    test_account: Account,
+):
+    other_workspace = Workspace(
+        id=uuid.uuid4(),
+        name="Other workspace",
+        created_by_user_id=test_user.id,
+    )
+    foreign_account = Account(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=other_workspace.id,
+        name="Foreign",
+        type="checking",
+        balance=Decimal("0.00"),
+        currency="BRL",
+        order=41,
+    )
+    session.add_all([other_workspace, foreign_account])
+    await session.commit()
+
+    response = await client.patch(
+        "/api/accounts/bulk_ordering",
+        headers=auth_headers,
+        json=[
+            {"account_id": str(test_account.id), "order": 4},
+            {"account_id": str(foreign_account.id), "order": 99},
+        ],
+    )
+
+    assert response.status_code == 204
+    await session.refresh(test_account)
+    await session.refresh(foreign_account)
+    assert test_account.order == 4
+    assert foreign_account.order == 41
+
+
+@pytest.mark.asyncio
+async def test_bulk_ordering_rejects_duplicates_and_invalid_order(
+    client: AsyncClient, auth_headers, test_account: Account,
+):
+    id = str(test_account.id)
+    duplicate = await client.patch(
+        "/api/accounts/bulk_ordering", headers=auth_headers,
+        json=[{"account_id": id, "order": 1}, {"account_id": id, "order": 2}],
+    )
+    assert duplicate.status_code == 400
+    invalid = await client.patch(
+        "/api/accounts/bulk_ordering", headers=auth_headers,
+        json=[{"account_id": id, "order": -1}],
+    )
+    assert invalid.status_code == 422
+    account = (await client.get(f"/api/accounts/{id}", headers=auth_headers)).json()
+    assert account["order"] == 0
+
+
+@pytest.mark.asyncio
+async def test_bulk_ordering_requires_write_access(
+    client: AsyncClient, viewer_auth_headers, test_account: Account,
+):
+    response = await client.patch(
+        "/api/accounts/bulk_ordering", headers=viewer_auth_headers,
+        json=[{"account_id": str(test_account.id), "order": 1}],
+    )
+    assert response.status_code == 403
 
 
 @pytest.mark.asyncio
@@ -107,6 +220,130 @@ async def test_list_accounts_empty(client: AsyncClient, auth_headers):
     assert response.status_code == 200
     data = response.json()
     assert len(data) == 0
+
+
+@pytest.mark.asyncio
+async def test_create_account_with_order(client: AsyncClient, auth_headers):
+    response = await client.post(
+        "/api/accounts", headers=auth_headers,
+        json={"name": "Zulu", "type": "checking", "order": 2},
+    )
+    assert response.status_code == 201
+    assert response.json()["order"] == 2
+
+
+@pytest.mark.asyncio
+async def test_create_account_without_order_appends_to_workspace(
+    client: AsyncClient, auth_headers, test_account: Account
+):
+    response = await client.post(
+        "/api/accounts",
+        headers=auth_headers,
+        json={"name": "Last", "type": "checking"},
+    )
+    assert response.status_code == 201
+    assert response.json()["order"] == test_account.order + 1
+
+
+@pytest.mark.asyncio
+async def test_update_connected_account_order(
+    client: AsyncClient, auth_headers, test_account: Account
+):
+    response = await client.patch(
+        f"/api/accounts/{test_account.id}", headers=auth_headers,
+        json={"order": 1},
+    )
+    assert response.status_code == 200
+    assert response.json()["order"] == 1
+
+
+@pytest.mark.asyncio
+async def test_update_account_without_order_preserves_order(
+    client: AsyncClient, auth_headers, test_account: Account,
+):
+    reordered = await client.patch(
+        f"/api/accounts/{test_account.id}", headers=auth_headers,
+        json={"order": 7},
+    )
+    assert reordered.status_code == 200
+    response = await client.patch(
+        f"/api/accounts/{test_account.id}", headers=auth_headers,
+        json={"display_name": "Renamed"},
+    )
+    assert response.status_code == 200
+    assert response.json()["order"] == 7
+    detail = await client.get(
+        f"/api/accounts/{test_account.id}", headers=auth_headers,
+    )
+    assert detail.status_code == 200
+    assert detail.json()["order"] == 7
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("order", [-1, 2_147_483_648, None])
+async def test_update_account_rejects_invalid_order(
+    client: AsyncClient, auth_headers, test_account: Account, order,
+):
+    response = await client.patch(
+        f"/api/accounts/{test_account.id}", headers=auth_headers,
+        json={"order": order},
+    )
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_list_accounts_sorts_by_order_then_absolute_primary_balance_then_display_name(
+    client: AsyncClient, auth_headers, test_account: Account
+):
+    # Default order remains zero. Equal order sorts by balance magnitude, then visible name.
+    assert test_account.order == 0
+
+    alpha = await client.post(
+        "/api/accounts", headers=auth_headers,
+        json={"name": "Alpha", "type": "checking", "balance": 100, "order": 2},
+    )
+    zulu = await client.post(
+        "/api/accounts", headers=auth_headers,
+        json={"name": "Zulu", "type": "checking", "balance": -100, "order": 2},
+    )
+    assert alpha.status_code == zulu.status_code == 201
+
+    renamed = await client.patch(
+        f"/api/accounts/{test_account.id}", headers=auth_headers,
+        json={"order": 2, "display_name": "Bills"},
+    )
+    assert renamed.status_code == 200
+
+    response = await client.get("/api/accounts", headers=auth_headers)
+    assert response.status_code == 200
+    assert [(item["name"], item["display_name"], item["order"]) for item in response.json()] == [
+        (test_account.name, "Bills", 2), ("Alpha", None, 2), ("Zulu", None, 2),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_update_manual_account_changes_list_order(
+    client: AsyncClient, auth_headers, test_account: Account
+):
+    connected = await client.patch(
+        f"/api/accounts/{test_account.id}", headers=auth_headers,
+        json={"order": 1},
+    )
+    assert connected.status_code == 200
+    created = await client.post(
+        "/api/accounts", headers=auth_headers,
+        json={"name": "Zulu", "type": "checking", "order": 2},
+    )
+    assert created.status_code == 201
+    updated = await client.patch(
+        f"/api/accounts/{created.json()['id']}", headers=auth_headers,
+        json={"order": 0},
+    )
+    assert updated.status_code == 200
+    assert updated.json()["order"] == 0
+    response = await client.get("/api/accounts", headers=auth_headers)
+    assert response.status_code == 200
+    assert [item["name"] for item in response.json()] == ["Zulu", test_account.name]
 
 
 @pytest.mark.asyncio

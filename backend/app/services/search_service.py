@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 from typing import Any, Literal, Optional
 
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.shared_scope import in_bound_workspace, invited_group_member_ids
@@ -157,7 +157,7 @@ async def search_all(
             Account.workspace_id == workspace_id,
             Account.name.ilike(pattern, escape="\\"),
         )
-        .order_by(Account.is_closed.asc(), Account.name.asc())
+        .order_by(Account.is_closed.asc(), Account.order, func.coalesce(Account.display_name, Account.name))
         .limit(per_type_limit)
     )
     for acc in acc_result.scalars().all():

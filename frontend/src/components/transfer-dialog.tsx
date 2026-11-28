@@ -1,5 +1,5 @@
-import { useState, useMemo, useId } from 'react'
-import { getAccountLabel, sortAccountsByDisplayName } from '@/lib/account-utils'
+import { useState, useId } from 'react'
+import { getAccountLabel } from '@/lib/account-utils'
 import { useTranslation } from 'react-i18next'
 import { localDateString } from '@/lib/date-utils'
 import { Button } from '@/components/ui/button'
@@ -41,8 +41,7 @@ export function TransferDialog({
 }) {
   const { t } = useTranslation()
   const id = useId()
-  const sortedAccounts = useMemo(() => sortAccountsByDisplayName(accounts), [accounts])
-  const firstAccountId = sortedAccounts[0]?.id ?? ''
+  const firstAccountId = accounts[0]?.id ?? ''
   const [fromAccountId, setFromAccountId] = useState(defaultFromAccountId || firstAccountId)
   const [toAccountId, setToAccountId] = useState('')
   const [amount, setAmount] = useState('')
@@ -51,9 +50,9 @@ export function TransferDialog({
   const [notes, setNotes] = useState('')
   const [destinationAmount, setDestinationAmount] = useState('')
 
-  const [formSource, setFormSource] = useState<{ open: boolean; defaultFromAccountId?: string; firstAccountId: string } | null>(null)
-  if (!formSource || formSource.open !== open || formSource.defaultFromAccountId !== defaultFromAccountId || formSource.firstAccountId !== firstAccountId) {
-    setFormSource({ open, defaultFromAccountId, firstAccountId })
+  const [formOpen, setFormOpen] = useState(open)
+  if (formOpen !== open) {
+    setFormOpen(open)
     if (open) {
       setFromAccountId(defaultFromAccountId || firstAccountId)
       setToAccountId('')
@@ -70,7 +69,7 @@ export function TransferDialog({
   const isCrossCurrency = fromAccount && toAccount && fromAccount.currency !== toAccount.currency
   const isSameAccount = fromAccountId && toAccountId && fromAccountId === toAccountId
 
-  const availableToAccounts = sortedAccounts.filter((a) => a.id !== fromAccountId)
+  const availableToAccounts = accounts.filter((a) => a.id !== fromAccountId)
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
@@ -110,7 +109,7 @@ export function TransferDialog({
                 required
               >
                 <option value="" disabled>{t('transactions.account')}</option>
-                {sortedAccounts.map((acc) => (
+                {accounts.map((acc) => (
                   <option key={acc.id} value={acc.id}>
                     {getAccountLabel(acc)} ({acc.currency})
                   </option>

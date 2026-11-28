@@ -73,7 +73,7 @@ it('uses the workspace date when an existing manual balance changes', () => {
     expect(workspaceDate).not.toBe(localDate)
     const onSave = renderDialog(manual)
 
-    fireEvent.change(screen.getByRole('spinbutton'), { target: { value: '1200' } })
+    fireEvent.change(screen.getByRole('spinbutton', { name: t('accounts.balance') }), { target: { value: '1200' } })
 
     expect(screen.getByLabelText('balance date')).toHaveValue(workspaceDate)
     fireEvent.click(screen.getByRole('button', { name: t('common.save') }))
@@ -87,7 +87,7 @@ it('uses the workspace date when an existing manual balance changes', () => {
 it('allows a different date to be selected after changing the balance', () => {
   const onSave = renderDialog(manual)
 
-  fireEvent.change(screen.getByRole('spinbutton'), { target: { value: '1200' } })
+  fireEvent.change(screen.getByRole('spinbutton', { name: t('accounts.balance') }), { target: { value: '1200' } })
   fireEvent.change(screen.getByLabelText('balance date'), { target: { value: '2026-07-15' } })
   fireEvent.click(screen.getByRole('button', { name: t('common.save') }))
 
@@ -97,8 +97,8 @@ it('allows a different date to be selected after changing the balance', () => {
 it('restores the saved date when the balance returns to its saved value', () => {
   const onSave = renderDialog(manual)
 
-  fireEvent.change(screen.getByRole('spinbutton'), { target: { value: '1200' } })
-  fireEvent.change(screen.getByRole('spinbutton'), { target: { value: '1000' } })
+  fireEvent.change(screen.getByRole('spinbutton', { name: t('accounts.balance') }), { target: { value: '1200' } })
+  fireEvent.change(screen.getByRole('spinbutton', { name: t('accounts.balance') }), { target: { value: '1000' } })
 
   expect(screen.getByLabelText('balance date')).toHaveValue('2026-08-01')
   fireEvent.click(screen.getByRole('button', { name: t('common.save') }))
@@ -110,7 +110,7 @@ it('waits for the workspace timezone before dating a changed balance', () => {
   try {
     const onSave = renderDialog(manual)
 
-    fireEvent.change(screen.getByRole('spinbutton'), { target: { value: '1200' } })
+    fireEvent.change(screen.getByRole('spinbutton', { name: t('accounts.balance') }), { target: { value: '1200' } })
 
     expect(screen.getByLabelText('balance date')).toHaveValue('2026-08-01')
     fireEvent.click(screen.getByRole('button', { name: t('common.save') }))
@@ -124,7 +124,7 @@ it('keeps a selected date when entering a new account balance', () => {
   renderDialog(null)
 
   fireEvent.change(screen.getByLabelText('balance date'), { target: { value: '2026-07-15' } })
-  fireEvent.change(screen.getByRole('spinbutton'), { target: { value: '1200' } })
+  fireEvent.change(screen.getByRole('spinbutton', { name: t('accounts.balance') }), { target: { value: '1200' } })
 
   expect(screen.getByLabelText('balance date')).toHaveValue('2026-07-15')
 })

@@ -26,6 +26,7 @@ from app.models.transaction import Transaction
 from app.schemas.account import (
     AccountCardLabelUpdate,
     AccountCreate,
+    AccountOrdering,
     AccountUpdate,
     LoanBalanceUpdate,
 )
@@ -403,7 +404,7 @@ async def get_accounts(session: AsyncSession, workspace_id: uuid.UUID, include_c
                 open_bill_total=open_bill_total,
                 balance_date=balance_date,
             )
-            for (
+        for (
                 acc,
                 connection,
                 current_balance,
@@ -411,8 +412,52 @@ async def get_accounts(session: AsyncSession, workspace_id: uuid.UUID, include_c
                 future_charges,
                 open_bill_total,
                 balance_date,
-            ) in result.all()
-        ]
+        ) in result.all()
+    ]
+
+
+def sort_accounts(accounts: list[dict]) -> list[dict]:
+    """Apply canonical account ordering after primary-currency conversion."""
+    accounts.sort(
+        key=lambda account: (
+            account["order"],
+            -abs(
+                account["balance_primary"]
+                if account.get("balance_primary") is not None
+                else account["current_balance"]
+            ),
+            (account.get("display_name") or account["name"]).casefold(),
+        )
+    )
+    return accounts
+
+
+async def convert_and_sort_accounts(
+    session: AsyncSession,
+    accounts: list[dict],
+    primary_currency: str,
+) -> list[dict]:
+    for account in accounts:
+        await convert_account_to_primary(session, account, primary_currency)
+    return sort_accounts(accounts)
+
+
+async def convert_account_to_primary(
+    session: AsyncSession,
+    account: dict,
+    primary_currency: str,
+) -> None:
+    if account["currency"] == primary_currency:
+        return
+    rate = await _resolve_rate(session, account["currency"], primary_currency)
+    if rate is None:
+        account["fx_fallback"] = True
+        return
+    converted = Decimal(str(account["current_balance"])) * rate
+    account["balance_primary"] = float(converted.quantize(Decimal("0.01")))
+    if account["open_bill_total"] is not None:
+        bill = Decimal(str(account["open_bill_total"])) * rate
+        account["open_bill_total_primary"] = float(bill.quantize(Decimal("0.01")))
 
 
 async def get_account_with_balances(
@@ -485,6 +530,7 @@ def serialize_account(
         "external_id": acc.external_id,
         "name": acc.name,
         "display_name": acc.display_name,
+        "order": acc.order,
         "masked_number": acc.masked_number,
         "type": acc.type,
         "secured_asset_id": acc.secured_asset_id,
@@ -607,6 +653,14 @@ async def create_account(
 ) -> Account:
     await _validate_secured_asset(session, workspace_id, data.type, data.secured_asset_id)
     is_cc = data.type == "credit_card"
+    account_order = data.order
+    if account_order is None:
+        last_order = await session.scalar(
+            select(func.max(Account.order)).where(
+                Account.workspace_id == workspace_id,
+            )
+        )
+        account_order = (last_order if last_order is not None else -1) + 1
     account = Account(
         user_id=user_id,
         workspace_id=workspace_id,
@@ -614,6 +668,7 @@ async def create_account(
         type=data.type,
         balance=data.balance,
         currency=data.currency,
+        order=account_order,
         secured_asset_id=data.secured_asset_id,
         credit_limit=data.credit_limit if is_cc else None,
         statement_close_day=data.statement_close_day if is_cc else None,
@@ -645,6 +700,43 @@ async def create_account(
     await session.commit()
     await session.refresh(account)
     return account
+
+
+async def bulk_order_accounts(
+    session: AsyncSession,
+    workspace_id: uuid.UUID,
+    ordering: list[AccountOrdering],
+) -> None:
+    account_ids = [item.account_id for item in ordering]
+    if len(account_ids) != len(set(account_ids)):
+        raise ValueError("Duplicate account IDs are not allowed")
+
+    found_ids = set(
+        (
+            await session.execute(
+                select(Account.id).where(Account.id.in_(account_ids))
+            )
+        ).scalars()
+    )
+    if found_ids != set(account_ids):
+        raise LookupError("Account not found")
+
+    visible_ids = set(
+        await _account_ids_in_scope(
+            session,
+            workspace_id,
+        )
+    )
+
+    for item in ordering:
+        if item.account_id not in visible_ids:
+            continue
+        await session.execute(
+            update(Account)
+            .where(Account.id == item.account_id)
+            .values(order=item.order)
+        )
+    await session.commit()
 
 
 async def update_account(
@@ -711,6 +803,7 @@ async def update_account(
         # and the sync has nothing to say about them.
         editable_fields = {
             "display_name",
+            "order",
             "type",
             "secured_asset_id",
             "credit_limit",
@@ -726,7 +819,7 @@ async def update_account(
             raise ValueError("Cannot edit bank-connected accounts")
         old_type = account.type
         new_type = update_data.get("type", account.type)
-        cc_fields = editable_fields - {"display_name", "type", "secured_asset_id", *LOAN_TERM_FIELDS}
+        cc_fields = editable_fields - {"display_name", "order", "type", "secured_asset_id", *LOAN_TERM_FIELDS}
         cc_update = {k: v for k, v in update_data.items() if k in cc_fields}
         if cc_update and new_type != "credit_card":
             raise ValueError("Credit card fields can only be set on credit card accounts")

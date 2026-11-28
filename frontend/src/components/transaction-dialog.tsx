@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useId, useMemo, useRef, useContext } from 'react'
-import { getAccountLabel, getAccountName, sortAccountsByDisplayName } from '@/lib/account-utils'
+import { getAccountLabel, getAccountName } from '@/lib/account-utils'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 import { useDateLocale, useDisplayLocale } from '@/hooks/use-display-locale'
@@ -564,7 +564,6 @@ function TransactionForm({
   const userCurrency = user?.preferences?.currency_display ?? 'USD'
   const dateLocale = useDateLocale()
   const displayLocale = useDisplayLocale()
-  const sortedAccounts = useMemo(() => sortAccountsByDisplayName(accounts), [accounts])
   const { data: supportedCurrencies } = useQuery({
     queryKey: ['currencies'],
     queryFn: currenciesApi.list,
@@ -626,14 +625,16 @@ function TransactionForm({
   const [date, setDate] = useState(seed?.date ?? localDateString())
   const [type, setType] = useState<'debit' | 'credit'>(seed?.type ?? 'debit')
   const [status, setStatus] = useState<'posted' | 'pending'>(seed?.status ?? 'posted')
-  // Opened from an account page, start in that account's currency.
+  const initialAccountId = seed?.account_id ?? defaultAccountId ?? accounts[0]?.id ?? ''
+  const initialAccount = accounts.find((account) => account.id === initialAccountId)
+  // Start in the implicitly or explicitly selected account's currency.
   const [currency, setCurrency] = useState(
     seed?.currency
-      ?? (defaultAccountId ? accounts.find(a => a.id === defaultAccountId)?.currency : undefined)
+      ?? initialAccount?.currency
       ?? userCurrency
   )
   const [categoryId, setCategoryId] = useState(seed?.category_id ?? '')
-  const [accountId, setAccountId] = useState(seed?.account_id ?? defaultAccountId ?? '')
+  const [accountId, setAccountId] = useState(initialAccountId)
   const [notes, setNotes] = useState(seed?.notes ?? '')
   // Manual CC bucketing override (issue #92). Empty = auto. Visible only
   // when the selected account is a credit card.
@@ -1865,7 +1866,7 @@ function TransactionForm({
               required
             >
               {!accountId && <option value="" disabled hidden>{t('transactions.createCounterpartSelectAccount')}</option>}
-              {sortedAccounts.map((acc) => (
+              {accounts.map((acc) => (
                 <option key={acc.id} value={acc.id}>{getAccountLabel(acc)}</option>
               ))}
             </select>
@@ -2320,7 +2321,7 @@ function TransactionForm({
           categories={categories}
           categoryGroups={categoryGroups}
           currentCategories={displayCategories}
-          accounts={sortedAccounts}
+          accounts={accounts}
           payees={payeesList ?? []}
           onSave={(data) => updateRuleMutation.mutate(data)}
           loading={updateRuleMutation.isPending}

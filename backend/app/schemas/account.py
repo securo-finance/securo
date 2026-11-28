@@ -26,9 +26,8 @@ class AccountCreate(BaseModel):
     type: str
     balance: Decimal = Decimal("0.00")
     balance_date: Optional[date] = None
-    # `validate_default` so an instance that does not support USD refuses the
-    # omitted field too instead of storing it unvalidated.
     currency: str = Field(default="USD", validate_default=True)
+    order: Optional[int] = Field(default=None, ge=0, le=2_147_483_647)
     secured_asset_id: Optional[uuid.UUID] = None
     credit_limit: Optional[Decimal] = None
     statement_close_day: Optional[int] = None
@@ -56,6 +55,7 @@ class AccountCreate(BaseModel):
 class AccountUpdate(BaseModel):
     name: Optional[str] = None
     display_name: Optional[str] = None
+    order: int = Field(default=0, ge=0, le=2_147_483_647)
     type: Optional[str] = None
     secured_asset_id: Optional[uuid.UUID] = None
     balance: Optional[Decimal] = None
@@ -74,6 +74,11 @@ class AccountUpdate(BaseModel):
     loan_term_months: Optional[int] = Field(default=None, ge=1, le=600)
     loan_first_payment_date: Optional[date] = None
     loan_amortization: Optional[LoanAmortization] = None
+
+
+class AccountOrdering(BaseModel):
+    account_id: uuid.UUID
+    order: int = Field(ge=0, le=2_147_483_647)
 
 
 class AccountReservedBalanceRead(BaseModel):
@@ -95,6 +100,7 @@ class AccountRead(AccountBase):
     connection_id: Optional[uuid.UUID] = None
     external_id: Optional[str] = None
     display_name: Optional[str] = None
+    order: int = 0
     # Last 4 chars of the bank's identifier, when the provider exposes one.
     # Read-only: absent from AccountUpdate because sync owns it.
     masked_number: Optional[str] = None

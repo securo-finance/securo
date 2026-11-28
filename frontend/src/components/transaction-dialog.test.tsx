@@ -133,16 +133,42 @@ function renderNewTransaction(defaultAccountId?: string) {
   return screen.getByRole('option', { name: 'Zeta Bank' }).closest('select') as HTMLSelectElement
 }
 
-it('starts a new transaction with no account selected, so one must be chosen', () => {
+it('starts a new transaction with the first account returned by the API', () => {
   const accountSelect = renderNewTransaction()
 
-  expect(accountSelect).toHaveValue('')
-  // The placeholder shows in the closed field but is hidden from the open list.
-  const placeholder = accountSelect.selectedOptions[0]
-  expect(placeholder).toHaveTextContent(t('transactions.createCounterpartSelectAccount'))
-  expect(placeholder).toBeDisabled()
-  expect(placeholder).toHaveAttribute('hidden')
-  expect(accountSelect.validity.valueMissing).toBe(true)
+  expect(accountSelect).toHaveValue('acc-z')
+  expect(accountSelect.selectedOptions[0]).toHaveTextContent('Zeta Bank')
+  expect(screen.queryByText(t('transactions.createCounterpartSelectAccount'))).not.toBeInTheDocument()
+})
+
+it('uses the first account currency when selecting that account implicitly', async () => {
+  vi.spyOn(currencies, 'list').mockResolvedValue([
+    { code: 'USD', symbol: '$', name: 'US Dollar', flag: '🇺🇸' },
+    { code: 'EUR', symbol: '€', name: 'Euro', flag: '🇪🇺' },
+  ])
+  vi.spyOn(payees, 'list').mockResolvedValue([])
+  vi.spyOn(groups, 'list').mockResolvedValue([])
+  renderWithProviders(
+    <TransactionDialog
+      open
+      onClose={vi.fn()}
+      transaction={null}
+      categories={[]}
+      categoryGroups={[]}
+      accounts={[
+        { ...accountFixtures[0], currency: 'EUR' },
+        accountFixtures[1],
+      ]}
+      onSave={vi.fn()}
+      loading={false}
+      error={null}
+    />,
+  )
+
+  expect(screen.getByRole('option', { name: 'Zeta Bank' }).closest('select')).toHaveValue('acc-z')
+  await waitFor(() => {
+    expect(screen.getByRole('combobox', { name: t('transactions.currency') })).toHaveValue('EUR')
+  })
 })
 
 it('keeps preselecting the account the form was opened from', () => {
@@ -171,7 +197,7 @@ it('forgets a save variant the browser blocked, so a later plain Save just saves
     />,
   )
 
-  // "Save and new" with no account: the browser blocks the submit.
+  // Required description and amount are empty, so the browser blocks submit.
   await user.click(screen.getByRole('button', { name: t('transactions.moreSaveOptions') }))
   await user.click(await screen.findByRole('menuitem', { name: t('transactions.saveAndNew') }))
   expect(onSave).not.toHaveBeenCalled()
