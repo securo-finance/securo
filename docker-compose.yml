@@ -145,7 +145,7 @@ x-backend-base: &backend-base
   # Alembic and the app find alembic.ini and their modules relative to /app.
   # The image sets WORKDIR /app, but some podman-compose setups start the
   # container in / instead, and migrate then fails with "No 'script_location'
-  # key found in configuration" (#673). Stating it here keeps every runtime on /app.
+  # key found in configuration". Stating it here keeps every runtime on /app.
   working_dir: /app
   environment: *backend-env
   # Lets a connection point at a model server running on the host (LM Studio,
@@ -238,7 +238,7 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile.dev
-    # npm runs from /app; same reason as the backend's working_dir (#673).
+    # npm runs from /app; same reason as the backend's working_dir.
     working_dir: /app
     ports:
       - "${FRONTEND_PORT:-3000}:5173"
