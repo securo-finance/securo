@@ -54,6 +54,13 @@ async def test_reorder_wallets_rejects_invalid_ids(
     )
     assert missing.status_code == 404
 
+    too_many = await client.put(
+        "/api/asset-groups/order",
+        headers=auth_headers,
+        json={"group_ids": [str(uuid.uuid4()) for _ in range(1001)]},
+    )
+    assert too_many.status_code == 422
+
 
 @pytest.mark.asyncio
 async def test_reorder_wallets_needs_write_access(

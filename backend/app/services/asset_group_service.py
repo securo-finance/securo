@@ -15,6 +15,7 @@ from app.models.bank_connection import BankConnection
 from app.models.user import User
 from app.schemas.asset_group import AssetGroupCreate, AssetGroupRead, AssetGroupUpdate
 from app.services.fx_rate_service import convert_or_none
+from app.services.ordering import place_in_order
 
 
 async def ensure_group_in_workspace(
@@ -286,13 +287,9 @@ async def reorder_groups(
         .execution_options(populate_existing=True)
     )
     groups = list(result.scalars().all())
-    groups_by_id = {group.id: group for group in groups}
-    if any(group_id not in groups_by_id for group_id in group_ids):
+    reordered = place_in_order(groups, group_ids)
+    if reordered is None:
         return False
-
-    selected_ids = set(group_ids)
-    selected = iter(groups_by_id[group_id] for group_id in group_ids)
-    reordered = [next(selected) if group.id in selected_ids else group for group in groups]
     for position, group in enumerate(reordered):
         group.position = position
 
