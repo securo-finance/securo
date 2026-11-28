@@ -1052,6 +1052,36 @@ describe('TransactionDialog scroll region gutter (#458)', () => {
   })
 })
 
+describe('TransactionDialog account (card) change while editing', () => {
+  it('shows the account select with the current account when editing a synced transaction', () => {
+    renderSyncedDialog(syncedTransaction())
+
+    const accountSelect = screen.getByRole('option', { name: 'Alpha Card' }).closest('select') as HTMLSelectElement
+    expect(accountSelect).toHaveValue('acc-a')
+    expect(accountSelect).not.toBeDisabled()
+  })
+
+  it('sends account_id when the account is changed on a synced transaction', async () => {
+    const { onSave, user } = renderSyncedDialog(syncedTransaction())
+
+    const accountSelect = screen.getByRole('option', { name: 'Alpha Card' }).closest('select') as HTMLSelectElement
+    await user.selectOptions(accountSelect, 'acc-z')
+    await user.click(screen.getByRole('button', { name: t('common.save') }))
+
+    expect(onSave).toHaveBeenCalledOnce()
+    expect(onSave.mock.calls[0][0]).toMatchObject({ account_id: 'acc-z' })
+  })
+
+  it('omits account_id when the account is unchanged on a synced transaction', async () => {
+    const { onSave, user } = renderSyncedDialog(syncedTransaction())
+
+    await user.click(screen.getByRole('button', { name: t('common.save') }))
+
+    expect(onSave).toHaveBeenCalledOnce()
+    expect(onSave.mock.calls[0][0]).not.toHaveProperty('account_id')
+  })
+})
+
 /** Shows the flag state a mounted list query holds, as a page would. */
 function FlagConsumer({ queryKey, read }: { queryKey: string[]; read: () => Promise<Transaction> }) {
   const { data } = useQuery({ queryKey, queryFn: read })
