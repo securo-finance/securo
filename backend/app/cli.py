@@ -2,11 +2,13 @@
 import asyncio
 import sys
 import uuid
+from datetime import datetime, timezone
 
 from sqlalchemy import select
 
 from app.core.config import get_settings
 from app.core.database import async_session_maker
+from app.core.row_security import workspace_makers
 from app.models.user import User
 
 
@@ -16,16 +18,17 @@ async def generate_recurring() -> None:
     from app.models.user import User as UserModel
     from app.services import recurring_transaction_service
 
-    async with async_session_maker() as session, use_timezone(session, fresh=True):
-        result = await session.execute(select(UserModel))
-        users = result.scalars().all()
-        total = 0
-        for user in users:
-            count = await recurring_transaction_service.generate_pending(session, user.id)
-            if count > 0:
-                print(f"Generated {count} transactions for {user.email}")
-                total += count
-        print(f"Total generated: {total}")
+    total = 0
+    for maker in await workspace_makers(async_session_maker):
+        async with maker() as session, use_timezone(session, fresh=True):
+            result = await session.execute(select(UserModel))
+            users = result.scalars().all()
+            for user in users:
+                count = await recurring_transaction_service.generate_pending(session, user.id)
+                if count > 0:
+                    print(f"Generated {count} transactions for {user.email}")
+                    total += count
+    print(f"Total generated: {total}")
 
 
 async def create_user(email: str, password: str) -> None:
@@ -46,6 +49,7 @@ async def create_user(email: str, password: str) -> None:
             id=uuid.uuid4(),
             email=email,
             hashed_password=hasher.hash(password),
+            password_set_at=datetime.now(timezone.utc),
             is_active=True,
             is_superuser=False,
             is_verified=True,
@@ -67,13 +71,18 @@ async def restamp_primary_amounts(email: str | None = None) -> None:
     Heals rows stamped before a display currency change (#1381). Safe to run
     again: the result depends only on the rows and the stored rates.
     """
+    for maker in await workspace_makers(async_session_maker):
+        await _restamp_in(maker, email)
+
+
+async def _restamp_in(session_maker, email: str | None) -> None:
     from app.core.app_clock import use_timezone
     from app.services.primary_restamp_service import (
         fetch_missing_today_rates,
         restamp_user_primary_amounts,
     )
 
-    async with async_session_maker() as session, use_timezone(session, fresh=True):
+    async with session_maker() as session, use_timezone(session, fresh=True):
         stmt = select(User.id, User.email, User.preferences)
         if email is not None:
             stmt = stmt.where(User.email == email)
@@ -102,6 +111,31 @@ async def restamp_primary_amounts(email: str | None = None) -> None:
             sys.exit(1)
 
 
+async def apply_row_security(role: str) -> None:
+    """Grant an existing role what the app needs and cover the tables with the
+    workspace policies (ADR 0043). Run as the owner of the tables."""
+    from sqlalchemy import text
+
+    import app.agents.models  # noqa: F401
+    import app.models  # noqa: F401
+    from app.core.database import Base, engine
+    from app.core.row_security import covered_tables, setup_statements
+
+    tables = dict(Base.metadata.tables)
+    async with engine.begin() as conn:
+        attributes = (await conn.execute(
+            text("SELECT rolsuper OR rolbypassrls FROM pg_roles WHERE rolname = :r"), {"r": role}
+        )).one_or_none()
+        if attributes is None or attributes[0]:
+            print(f"Error: '{role}' must be an existing role without SUPERUSER or BYPASSRLS.")
+            sys.exit(1)
+        schema = await conn.scalar(text("SELECT current_schema()"))
+        quote = conn.dialect.identifier_preparer.quote
+        for statement in setup_statements(tables, role, schema, quote):
+            await conn.exec_driver_sql(statement)
+    print(f"{len(covered_tables(tables))} tables covered for role '{role}'.")
+
+
 def main() -> None:
     if len(sys.argv) < 2:
         print("Usage:")
@@ -120,9 +154,14 @@ def main() -> None:
         asyncio.run(generate_recurring())
     elif command == "restamp-primary-amounts":
         asyncio.run(restamp_primary_amounts(sys.argv[2] if len(sys.argv) > 2 else None))
+    elif command == "apply-row-security" and len(sys.argv) == 3:
+        asyncio.run(apply_row_security(sys.argv[2]))
     else:
         print(f"Unknown command: {command}")
-        print("Available commands: create-user, generate-recurring, restamp-primary-amounts")
+        print(
+            "Available commands: create-user, generate-recurring, restamp-primary-amounts, "
+            "apply-row-security <role>"
+        )
         sys.exit(1)
 
 

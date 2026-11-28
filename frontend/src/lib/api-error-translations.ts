@@ -118,6 +118,7 @@ export function translateValidationMessage(msg: string): string | null {
 const KNOWN_CODES: Record<string, string> = {
   import_undo_oversell: 'import.undoOversell',
   import_undo_too_large: 'import.undoTooLarge',
+  user_sole_owner: 'admin.users.soleOwner',
 }
 
 export function translateApiMessage(message: string): string {

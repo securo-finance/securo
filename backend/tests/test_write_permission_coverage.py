@@ -97,10 +97,10 @@ ALLOWLIST: dict[tuple[str, str], str] = {
     ("DELETE", "/api/agents/connections/{conn_id}"): "the requester's own LLM credentials",
     ("POST", "/api/agents/connections/{conn_id}/test"): "probes the requester's own credential",
     # Global, not workspace data: FX rates are shared by the whole instance.
-    # Any authenticated user may refresh them, and nothing per-workspace is
-    # touched. Flagged here so a future rate limit or admin floor is a
-    # decision rather than an oversight.
-    ("POST", "/api/fx-rates/refresh"): "refreshes instance-wide FX rates, no workspace data",
+    # The manual refresh is an administrator action since #636 (the provider
+    # app id is the instance's, and a success clears the quota pause), and it
+    # reuses a day already stored, so it writes no workspace data either.
+    ("POST", "/api/fx-rates/refresh"): "instance-wide FX refresh, admin-only, no workspace data",
     # A member's own credentials. Any member may issue one, but its scopes are
     # capped by their role (a viewer only gets read scopes) and every request
     # made with it still runs under that role. Revoking is limited to one's
@@ -115,6 +115,22 @@ ALLOWLIST: dict[tuple[str, str], str] = {
     # untouched, so a viewer may arrange their view too.
     ("PUT", "/api/ui/layouts/{surface}"): "the requester's own view of the workspace, no workspace data",
     ("DELETE", "/api/ui/layouts/{surface}"): "the requester's own view of the workspace, no workspace data",
+    # The operator of a managed instance, by OPERATOR_TOKEN and never by a
+    # user: the customer's administrator must not reach these (ADR 0049).
+    ("PUT", "/api/operator/quotas/{user_id}"): "operator-token-gated per-account limits, no user",
+    ("POST", "/api/operator/quotas/{user_id}/fit-check"): "operator-token-gated read of the account's counts",
+    ("POST", "/api/operator/accounts"): "operator-token-gated opening of a new account, no user (#1965)",
+    ("PUT", "/api/operator/quota-defaults"): "operator-token-gated default limits, no user",
+    ("DELETE", "/api/operator/quota-defaults"): "operator-token-gated default limits, no user",
+}
+
+# Gated by the operator's token instead of a user (ADR 0049).
+OPERATOR_ROUTES = {
+    ("PUT", "/api/operator/quotas/{user_id}"),
+    ("POST", "/api/operator/quotas/{user_id}/fit-check"),
+    ("POST", "/api/operator/accounts"),
+    ("PUT", "/api/operator/quota-defaults"),
+    ("DELETE", "/api/operator/quota-defaults"),
 }
 
 # These routes establish authentication (or end it), so requiring an existing
@@ -193,7 +209,10 @@ def test_a_mutating_route_declares_a_permission_decision(method, path):
     if (method, path) in ALLOWLIST:
         assert ALLOWLIST[(method, path)].strip(), "an exemption needs a reason"
         assert not names & WRITE_GATES, "remove the redundant write-gate exemption"
-        if (method, path) in PUBLIC_ROUTES:
+        if (method, path) in OPERATOR_ROUTES:
+            assert "operator_only" in names, "operator routes require the operator token"
+            assert "current_user_dependency" not in names, "no user, not even a superuser, reaches these"
+        elif (method, path) in PUBLIC_ROUTES:
             assert "current_user_dependency" not in names, "login cannot require an existing user"
         else:
             assert "current_user_dependency" in names, "the exemption still requires authentication"

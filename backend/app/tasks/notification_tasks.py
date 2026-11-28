@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from app.core.app_clock import use_timezone
 from app.core.config import get_settings
+from app.core.row_security import bound_to, workspace_makers
 from app.models.workspace import Workspace
 from app.services import notification_channels, notification_service
 from app.worker import celery_app
@@ -21,19 +22,24 @@ def _make_session_maker():
 async def _evaluate_all() -> int:
     engine, session_maker = _make_session_maker()
     try:
-        async with session_maker() as session:
-            workspace_ids = (
-                await session.execute(select(Workspace.id).where(Workspace.is_archived.is_(False)))
-            ).scalars().all()
-        for workspace_id in workspace_ids:
-            try:
-                async with session_maker() as session, use_timezone(session, workspace_id, fresh=True):
-                    await notification_service.evaluate_workspace(session, workspace_id)
-            except Exception:
-                logger.exception("Notification evaluation failed for workspace %s", workspace_id)
-        async with session_maker() as session:
-            await notification_service.prune(session)
-        return len(workspace_ids)
+        evaluated = 0
+        for maker in await workspace_makers(session_maker):
+            async with maker() as session:
+                query = select(Workspace.id).where(Workspace.is_archived.is_(False))
+                # `workspaces` itself has no policy: a bound run takes only its own (ADR 0043).
+                if (bound := bound_to(session)) is not None:
+                    query = query.where(Workspace.id == bound)
+                workspace_ids = (await session.execute(query)).scalars().all()
+            for workspace_id in workspace_ids:
+                try:
+                    async with maker() as session, use_timezone(session, workspace_id, fresh=True):
+                        await notification_service.evaluate_workspace(session, workspace_id)
+                except Exception:
+                    logger.exception("Notification evaluation failed for workspace %s", workspace_id)
+            async with maker() as session:
+                await notification_service.prune(session)
+            evaluated += len(workspace_ids)
+        return evaluated
     finally:
         await engine.dispose()
 
@@ -47,8 +53,11 @@ def evaluate_notifications() -> dict:
 async def _deliver() -> int:
     engine, session_maker = _make_session_maker()
     try:
-        async with session_maker() as session:
-            return await notification_channels.deliver(session)
+        sent = 0
+        for maker in await workspace_makers(session_maker):
+            async with maker() as session:
+                sent += await notification_channels.deliver(session)
+        return sent
     finally:
         await engine.dispose()
 

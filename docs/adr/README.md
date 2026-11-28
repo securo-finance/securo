@@ -56,7 +56,13 @@ Each file here records one decision about how Securo is built: what we chose, wh
 | [0040](0040-viewer-currency-reads-own-amount.md) | A row already in the viewer's currency reads as its own amount |
 | [0041](0041-in-app-notifications.md) | Notifications live inside the app, one row per person, and the first kinds are read from stored state |
 | [0042](0042-admin-actions-on-accounts-leave-a-record.md) | An administrator manages accounts, never becomes one, and every action leaves a record the affected side can read |
+| [0043](0043-row-security.md) | Postgres can hold the workspace boundary too |
 | [0044](0044-email-password-recovery.md) | Password recovery goes out over the instance's own SMTP server, behind one switch |
 | [0045](0045-managed-instance.md) | A managed instance keeps its own settings read-only for the customer's admin |
 | [0046](0046-email-provider-and-templates.md) | The mail path is SMTP or a hosted API, and an admin may rewrite the recovery message |
+| [0047](0047-deleting-a-user-keeps-workspace-data.md) | Deleting a user keeps what they added to other people's workspaces |
 | [0048](0048-required-secret-key.md) | An operator can require a secret key of their own |
+| [0049](0049-hosted-usage-quotas.md) | A managed instance can limit each account with four neutral counters |
+| [0050](0050-instance-settings-leave-a-record.md) | Instance settings an administrator changes leave a record, with no account as its target |
+| [0051](0051-the-operator-opens-accounts.md) | The operator of a managed instance opens an account in one call, with no password |
+| [0056](0056-operator-quota-defaults.md) | An account with no limits of its own follows the operator's defaults |

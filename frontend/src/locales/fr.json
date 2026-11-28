@@ -914,7 +914,7 @@
   },
   "transactions": {
     "title": "Transactions",
-    "mortgageAllocation": "Répartition du paiement du prêt immobilier",
+    "mortgageAllocation": "Répartition du paiement du prêt",
     "mortgagePrincipal": "Remboursement du capital",
     "mortgageInterest": "Intérêts",
     "mortgageCurrencyHint": "Saisissez toutes les parts en {{currency}}.",
@@ -2380,6 +2380,9 @@
     "newWallet": "Nouveau portefeuille",
     "editWallet": "Modifier le portefeuille",
     "deleteWallet": "Supprimer le portefeuille",
+    "reorder": "Faites glisser pour réorganiser {{name}}",
+    "moveUp": "Déplacer vers le haut",
+    "moveDown": "Déplacer vers le bas",
     "walletName": "Nom",
     "walletNamePlaceholder": "ex. Actions US, Obligations long terme",
     "walletColor": "Couleur",
@@ -3089,7 +3092,8 @@
       "updated": "Utilisateur mis à jour",
       "deleted": "Utilisateur supprimé",
       "confirmDeleteTitle": "Supprimer l'utilisateur ?",
-      "confirmDeleteDesc": "Cela supprimera définitivement l'utilisateur {{email}} et toutes ses données. Cette action est irréversible.",
+      "confirmDeleteDesc": "Cela supprimera définitivement l'utilisateur {{email}} et les espaces de travail auxquels lui seul a accès. Ce qu'il a ajouté aux espaces de travail d'autres personnes est conservé. Cette action est irréversible.",
+      "soleOwner": "« {{workspace}} » a d'autres membres et aucun autre propriétaire. Nommez l'un d'eux propriétaire, ou retirez-les, avant de supprimer cet utilisateur.",
       "reason": "Motif",
       "reasonPlaceholder": "Pourquoi ce changement est-il fait ?",
       "reasonHint": "Consigné dans le journal d'accès et visible par le compte concerné.",
@@ -3772,7 +3776,7 @@
       "notSplittable": "Cette transaction ne peut pas être répartie par catégorie.",
       "noAmount": "Une transaction sans montant ne peut pas être répartie.",
       "hasGroupSplit": "Retirez le partage entre personnes avant de répartir par catégorie.",
-      "hasMortgage": "Retirez la ventilation du prêt immobilier avant de répartir par catégorie.",
+      "hasMortgage": "Retirez la ventilation du prêt avant de répartir par catégorie.",
       "installments": "Une série d'échéances ne peut pas encore être répartie par catégorie.",
       "installmentScope": "Une échéance de cette série est répartie par catégorie ; modifiez-la seule.",
       "categoryAndLines": "Choisissez une catégorie ou une répartition par catégorie, pas les deux.",
@@ -4227,6 +4231,25 @@
   "offline": {
     "title": "Serveur injoignable",
     "description": "Vous êtes hors ligne ou Securo redémarre. Vos données sont en sécurité et rien n'a été modifié. Nous nous reconnecterons automatiquement dès que le serveur répondra."
+  },
+  "goalChart": {
+    "region": "Progression de {{name}}",
+    "title": "Historique et projection",
+    "historyFailed": "Impossible de charger l’historique. La projection utilise le montant actuel de l’objectif.",
+    "retry": "Réessayer",
+    "loading": "Chargement de l’historique…",
+    "hidden": "Graphique masqué en mode confidentialité",
+    "chartLabel": "Historique et projection de {{name}} en {{currency}}",
+    "target": "Objectif",
+    "today": "Aujourd’hui",
+    "deadline": "Échéance",
+    "actual": "Montant historique",
+    "projected": "Projection",
+    "current": "Montant actuel",
+    "notes": {
+      "missing": "Aucune donnée historique exploitable n’a été renvoyée pour cette période.",
+      "currency": "L’historique n’est pas disponible dans la devise de cet objectif. La projection utilise le montant actuel de l’objectif ; aucun taux de change n’est supposé."
+    }
   },
   "documentAi": {
     "reading": "Lecture du document…",

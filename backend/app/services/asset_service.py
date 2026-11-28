@@ -11,6 +11,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.app_clock import app_timezone, app_today
+from app.core.money import MoneyOutOfRange, bounded_asset_value
 from app.models.account import Account
 from app.models.asset import (
     ASSET_PRICE_DECIMALS,
@@ -28,6 +29,7 @@ from app.providers.market_price import (
     get_market_price_provider,
 )
 from app.schemas.asset import (
+    ArchivedAssetCountsRead,
     AssetCreate,
     AssetUpdate,
     AssetValueCreate,
@@ -35,8 +37,15 @@ from app.schemas.asset import (
     AssetValueRead,
     MarketSymbolMatch,
 )
+from app.services.ordering import place_in_order
 from app.services.asset_group_service import ensure_group_in_workspace
-from app.services.fx_rate_service import convert, convert_or_none, has_rate, stamp_primary_amount
+from app.services.fx_rate_service import (
+    DatedRateBook,
+    convert,
+    convert_or_none,
+    has_rate,
+    stamp_primary_amount,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +53,13 @@ ValueRecord = tuple[date, Decimal, Optional[Decimal]]  # (date, amount, price_pe
 TxRecord = tuple[date, str, Decimal, Optional[Decimal]]  # (date, kind, quantity, price_per_share)
 GrossValueRecord = tuple[date, Decimal, Optional[Decimal]]  # (date, net, gross)
 SplitRecord = tuple[date, int, int]  # (date, old_units, new_units)
+
+
+# The order holdings list in. Asset.position counts from 1 within a wallet, and
+# 0 means nobody placed the holding yet: those list after the placed ones, by
+# name, so a new or moved holding lands at the end of an order someone set,
+# whichever path created it.
+_LIST_ORDER = (Asset.position == 0, Asset.position, Asset.name, Asset.id)
 
 
 def _next_due_date(last_date: date, frequency: str) -> date:
@@ -97,7 +113,11 @@ def _generate_growth_values(
     """Generate all AssetValue rows from base_date to today using the growth rule.
     When growth_start_date is set, growth iteration begins from that date — not
     from base_date — so the asset accrues no growth for the gap between
-    purchase and the configured growth start."""
+    purchase and the configured growth start.
+
+    Raises `MoneyOutOfRange` when the rule compounds past what the column
+    holds: the rates are the user's, and a series that cannot be stored is
+    refused (a 422) instead of half-written and failing at flush (issue #642)."""
     today = app_today()
     if growth_start_date and today < growth_start_date:
         return []
@@ -123,7 +143,7 @@ def _generate_growth_values(
             break
         values.append(AssetValue(
             asset_id=asset_id,
-            amount=Decimal(str(round(current_amount, 6))),
+            amount=bounded_asset_value(Decimal(str(round(current_amount, 6)))),
             date=next_due,
             source="rule",
         ))
@@ -226,14 +246,12 @@ def _asset_to_read(
 
 
 async def _get_latest_value(session: AsyncSession, asset_id: uuid.UUID) -> Optional[AssetValue]:
-    """Get the most recent AssetValue for an asset."""
-    result = await session.execute(
-        select(AssetValue)
-        .where(AssetValue.asset_id == asset_id)
-        .order_by(desc(AssetValue.date), desc(AssetValue.id))
-        .limit(1)
-    )
-    return result.scalar_one_or_none()
+    """Get the AssetValue an asset is worth today.
+
+    A valuation dated after today has not happened yet, so it is left out,
+    as the dashboard, net worth and goals leave it out (#646).
+    """
+    return await _get_value_as_of(session, asset_id, app_today())
 
 
 async def _get_value_as_of(
@@ -788,7 +806,7 @@ async def get_assets(
     query = select(Asset).where(Asset.workspace_id == workspace_id)
     if not include_archived:
         query = query.where(Asset.is_archived == False)
-    query = query.order_by(Asset.position, Asset.name)
+    query = query.order_by(*_LIST_ORDER)
 
     result = await session.execute(query)
     assets = list(result.scalars().all())
@@ -801,6 +819,28 @@ async def get_assets(
         reads.append(_asset_to_read(asset, latest, count, tx_counts.get(asset.id, 0)))
     await _fill_closed_positions(session, workspace_id, assets, reads)
     return reads
+
+
+async def get_archived_asset_counts(
+    session: AsyncSession, workspace_id: uuid.UUID
+) -> ArchivedAssetCountsRead:
+    """Count archived holdings in a workspace, broken down by wallet."""
+    result = await session.execute(
+        select(Asset.group_id, func.count(Asset.id))
+        .where(Asset.workspace_id == workspace_id, Asset.is_archived.is_(True))
+        .group_by(Asset.group_id)
+    )
+    by_wallet: dict[str, int] = {}
+    ungrouped = 0
+    total = 0
+    for group_id, row_count in result.all():
+        n = int(row_count)
+        total += n
+        if group_id is None:
+            ungrouped += n
+        else:
+            by_wallet[str(group_id)] = n
+    return ArchivedAssetCountsRead(count=total, by_wallet=by_wallet, ungrouped=ungrouped)
 
 
 async def _fill_closed_positions(
@@ -1037,7 +1077,7 @@ async def create_asset(
         session.add(
             AssetValue(
                 asset_id=asset.id,
-                amount=initial_amount,
+                amount=bounded_asset_value(initial_amount),
                 price=Decimal(str(quote.price)),
                 date=app_today(),
                 source="sync",
@@ -1049,7 +1089,7 @@ async def create_asset(
     if data.current_value is not None:
         value = AssetValue(
             asset_id=asset.id,
-            amount=data.current_value,
+            amount=bounded_asset_value(data.current_value),
             date=app_today(),
             source="manual",
         )
@@ -1059,7 +1099,7 @@ async def create_asset(
         base_date = data.purchase_date or data.growth_start_date or app_today()
         seed = AssetValue(
             asset_id=asset.id,
-            amount=data.purchase_price,
+            amount=bounded_asset_value(data.purchase_price),
             date=base_date,
             source="manual",
         )
@@ -1141,6 +1181,59 @@ _LEDGER_DERIVED_FIELDS = (
 )
 
 
+class MixedWalletsError(Exception):
+    """A reorder named holdings from more than one wallet."""
+
+
+async def reorder_assets(
+    session: AsyncSession, workspace_id: uuid.UUID, asset_ids: list[uuid.UUID]
+) -> bool:
+    """Put the named holdings of one wallet in this order.
+
+    The other holdings of that wallet (sold, archived) keep their places, and
+    every holding of the wallet is numbered from 1, which places the ones that
+    were not placed yet. False when an id is not a holding of this workspace;
+    MixedWalletsError when the ids span wallets.
+
+    Locked the way wallets are (#1944): in id order, which concurrent reorders
+    don't change, so two of them can't deadlock; then read in list order, so
+    names that tie keep the order the database's collation shows.
+    """
+    named = await session.execute(
+        select(Asset.group_id).where(Asset.workspace_id == workspace_id, Asset.id.in_(asset_ids))
+    )
+    group_ids = list(named.scalars().all())
+    if len(group_ids) != len(asset_ids):
+        return False
+    if len(set(group_ids)) > 1:
+        raise MixedWalletsError()
+
+    group_id = group_ids[0]
+    in_wallet = Asset.group_id.is_(None) if group_id is None else Asset.group_id == group_id
+    locked_ids = (
+        await session.execute(
+            select(Asset.id)
+            .where(Asset.workspace_id == workspace_id, in_wallet)
+            .order_by(Asset.id)
+            .with_for_update()
+        )
+    ).scalars().all()
+    result = await session.execute(
+        select(Asset)
+        .where(Asset.id.in_(locked_ids))
+        .order_by(*_LIST_ORDER)
+        .execution_options(populate_existing=True)
+    )
+    holdings = list(result.scalars().all())
+    reordered = place_in_order(holdings, asset_ids)
+    if reordered is None:  # moved to another wallet since the first read
+        return False
+    for position, asset in enumerate(reordered, start=1):
+        asset.position = position
+    await session.commit()
+    return True
+
+
 async def update_asset(
     session: AsyncSession,
     asset_id: uuid.UUID,
@@ -1160,6 +1253,9 @@ async def update_asset(
     update_data = data.model_dump(exclude_unset=True)
     if "group_id" in update_data:
         await ensure_group_in_workspace(session, update_data["group_id"], workspace_id)
+        if update_data["group_id"] != asset.group_id:
+            # Its place belonged to the old wallet: unplaced, it goes to the end.
+            update_data.setdefault("position", 0)
     # Prevent changing valuation_method on existing assets
     update_data.pop("valuation_method", None)
     # Stored uppercase, as on create, so the ledger's ticker filter (which
@@ -1431,7 +1527,7 @@ async def get_portfolio_trend(
         if not selection_filters:
             return {"assets": [], "trend": [], "total": 0.0}
         query = query.where(or_(*selection_filters))
-    result = await session.execute(query.order_by(Asset.position, Asset.name))
+    result = await session.execute(query.order_by(*_LIST_ORDER))
     active_assets = list(result.scalars().all())
 
     if not active_assets:
@@ -1514,6 +1610,8 @@ async def get_portfolio_trend(
     # Each native-currency amount is converted at the display date `d` so that
     # fill-forwarded values reflect current FX rates — consistent with
     # get_asset_values_at(as_of_date=d).
+    # One series read per currency instead of several lookups per point.
+    rates = DatedRateBook(session)
     trend = []
     last_known: dict[str, float] = {}  # native currency amounts
     for aid in [a["id"] for a in asset_meta]:
@@ -1539,8 +1637,8 @@ async def get_portfolio_trend(
             # Convert native amount to primary currency at this display date
             currency = asset_currency[aid]
             if native != 0.0 and currency != primary_currency:
-                converted, _ = await convert(
-                    session, Decimal(str(native)), currency, primary_currency, d,
+                converted, _ = await rates.convert(
+                    Decimal(str(native)), currency, primary_currency, d,
                     decimals=ASSET_PRICE_DECIMALS,
                 )
                 val = converted
@@ -1669,12 +1767,23 @@ async def upsert_today_value(
 
     Leaves `last_price` and `last_price_at` alone, so a change of quantity
     doesn't pass for a new quote.
+
+    A quote and a quantity each fit the column while their product does not,
+    and this runs from the price sweep as well as from the routes: the row
+    keeps the value it had and the move is logged, instead of the whole sync
+    failing at flush with a raw database error (issue #642).
     """
     if not asset.units or asset.units <= 0:
         return
 
     today = value_date or app_today()
-    new_amount = price * Decimal(str(asset.units))
+    try:
+        new_amount = bounded_asset_value(price * Decimal(str(asset.units)))
+    except MoneyOutOfRange as exc:
+        logger.warning(
+            "Not storing today's value for asset %s (units × price): %s", asset.id, exc
+        )
+        return
     existing = await session.execute(
         select(AssetValue)
         .where(AssetValue.asset_id == asset.id, AssetValue.date == today)
@@ -1804,9 +1913,9 @@ async def refresh_all_market_prices(
 ) -> dict[str, int]:
     """Refresh every non-archived market-priced asset in the database.
 
-    Uses the provider's batch ``get_latest_closes`` endpoint when possible —
-    one HTTP request covers the whole portfolio via ``yfinance.download``
-    instead of one call per asset. Falls back silently to per-asset refresh
+    Uses the provider's batch ``get_latest_closes`` when possible, which
+    reads closes other workspaces already fetched from the shared cache and
+    downloads only the rest. Falls back silently to per-asset refresh
     if the batch returns nothing (provider without bulk support, or a hard
     failure on Yahoo's end). A close from before the holding's latest
     recorded split is skipped, not stored.
@@ -1845,7 +1954,7 @@ async def refresh_all_market_prices(
     # older quote in hand (and stamped as if it were fresh).
     fetch_started_at = datetime.now(timezone.utc)
 
-    # Batch path: one request → dict[SYMBOL, close]. On rate-limit we halt
+    # Batch path: dict[SYMBOL, close]. On rate-limit we halt
     # immediately — retrying within the same task would just pile on 429s
     # and risk an IP-level cookie ban.
     try:

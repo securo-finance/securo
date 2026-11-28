@@ -7,6 +7,7 @@ import { renderWithProviders, t } from '@/test/utils'
 const api = vi.hoisted(() => ({
   assets: {
     list: vi.fn(),
+    archivedCount: vi.fn(),
     portfolioTrend: vi.fn(),
     marketSearch: vi.fn(),
     marketQuote: vi.fn(),
@@ -42,6 +43,7 @@ beforeEach(() => {
   vi.clearAllMocks()
   localStorage.clear()
   api.assets.list.mockResolvedValue([])
+  api.assets.archivedCount.mockResolvedValue({ count: 0, by_wallet: {}, ungrouped: 0 })
   api.assets.portfolioTrend.mockResolvedValue({ assets: [], trend: [], total: 0 })
   api.assets.marketSearch.mockResolvedValue([])
   api.assetGroups.list.mockResolvedValue([])

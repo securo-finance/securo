@@ -132,6 +132,19 @@ describe('localized API errors', () => {
   })
 
   it.each([
+    ['en', '"Household" has other members and no other owner. Make one of them an owner, or remove them, before deleting this user.'],
+    ['pt-BR', '"Household" tem outros membros e nenhum outro dono. Torne um deles dono, ou remova-os, antes de excluir este usuário.'],
+  ])('shows why a user deletion was refused, with the workspace, in %s', async (language, expected) => {
+    await i18n.changeLanguage(language)
+
+    expect(extractApiError(apiError({
+      code: 'user_sole_owner',
+      message: 'English text the API built',
+      workspace: 'Household',
+    }))).toBe(expected)
+  })
+
+  it.each([
     ['en', "This import can't be undone: the holding left without it is too large to store."],
     ['pt-BR', 'Não é possível desfazer esta importação: a posição que sobra sem ela é grande demais para armazenar.'],
   ])('shows the too-large undo refusal in %s', async (language, expected) => {

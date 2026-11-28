@@ -9,12 +9,14 @@ from datetime import date, datetime, timezone
 from decimal import Decimal
 
 import pytest
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.asset import Asset
 from app.models.asset_group import AssetGroup
 from app.models.asset_value import AssetValue
 from app.models.bank_connection import BankConnection
+from app.models.user import User
 from app.schemas.asset_group import AssetGroupCreate, AssetGroupUpdate
 from app.services import asset_group_service as svc
 
@@ -193,6 +195,73 @@ async def test_update_group(session: AsyncSession, test_user, test_workspace):
         AssetGroupUpdate(name="X"),
     )
     assert none is None
+
+
+@pytest.mark.asyncio
+async def test_reorder_groups_preserves_unselected_wallet_slots(
+    session: AsyncSession, test_user, test_workspace
+):
+    first = await svc.create_group(
+        session, test_workspace.id, test_user.id,
+        AssetGroupCreate(name="First", position=1),
+    )
+    middle = await svc.create_group(
+        session, test_workspace.id, test_user.id,
+        AssetGroupCreate(name="Middle", position=2),
+    )
+    last = await svc.create_group(
+        session, test_workspace.id, test_user.id,
+        AssetGroupCreate(name="Last", position=3),
+    )
+
+    assert await svc.reorder_groups(
+        session, test_workspace.id, [last.id, first.id]
+    ) is True
+
+    result = await session.execute(
+        select(AssetGroup).order_by(AssetGroup.position)
+    )
+    reordered = list(result.scalars().all())
+    assert [group.id for group in reordered] == [last.id, middle.id, first.id]
+    assert [group.position for group in reordered] == [0, 1, 2]
+
+
+@pytest.mark.asyncio
+async def test_reorder_groups_rejects_wallet_from_another_workspace(
+    session: AsyncSession, test_user, test_workspace
+):
+    group = await svc.create_group(
+        session, test_workspace.id, test_user.id, AssetGroupCreate(name="Local")
+    )
+
+    assert await svc.reorder_groups(
+        session, uuid.uuid4(), [group.id]
+    ) is False
+
+
+@pytest.mark.asyncio
+async def test_new_wallet_goes_after_wallets_created_by_other_members(
+    session: AsyncSession, test_user, test_workspace
+):
+    await svc.create_group(
+        session, test_workspace.id, test_user.id, AssetGroupCreate(name="Mine", position=7)
+    )
+    other = User(
+        id=uuid.uuid4(),
+        email="member@example.com",
+        hashed_password="x",
+        is_active=True,
+        is_superuser=False,
+        is_verified=True,
+    )
+    session.add(other)
+    await session.commit()
+
+    added = await svc.create_group(
+        session, test_workspace.id, other.id, AssetGroupCreate(name="Theirs")
+    )
+
+    assert added.position == 8
 
 
 @pytest.mark.asyncio

@@ -7,7 +7,7 @@ import { renderWithProviders, t } from '@/test/utils'
 import type { Asset } from '@/types'
 
 const api = vi.hoisted(() => ({
-  assets: { list: vi.fn(), portfolioTrend: vi.fn(), delete: vi.fn() },
+  assets: { list: vi.fn(), archivedCount: vi.fn(), portfolioTrend: vi.fn(), delete: vi.fn() },
   assetGroups: { list: vi.fn() },
   currencies: { list: vi.fn() },
   fxRates: { status: vi.fn() },
@@ -53,6 +53,7 @@ function asset(overrides: Partial<Asset>): Asset {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  api.assets.archivedCount.mockResolvedValue({ count: 0, by_wallet: {}, ungrouped: 0 })
   api.assets.portfolioTrend.mockResolvedValue({ assets: [], trend: [], total: 0 })
   api.assets.delete.mockResolvedValue(undefined)
   api.assetGroups.list.mockResolvedValue([])

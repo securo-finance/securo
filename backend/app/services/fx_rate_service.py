@@ -1,13 +1,14 @@
 import logging
 import uuid
+from bisect import bisect_left, bisect_right
 from collections.abc import Generator
 from contextlib import contextmanager
 from contextvars import ContextVar
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from typing import NamedTuple, Optional
 
-from sqlalchemy import select, desc
+from sqlalchemy import select, desc, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
@@ -19,12 +20,138 @@ from app.models.account import Account
 from app.models.fx_rate import FxRate
 from app.models.transaction import Transaction
 from app.models.user import User
-from app.providers.openexchangerates import FxProviderNotConfigured, OpenExchangeRatesProvider
+from app.providers.openexchangerates import (
+    FxProviderNotConfigured,
+    FxProviderQuotaExceeded,
+    OpenExchangeRatesProvider,
+)
 from app.services.provider_settings import resolve_settings
 
 logger = logging.getLogger(__name__)
 
+# On-demand fetch discipline (issue #624). A date the provider failed for is
+# remembered for a while, so conversions that keep hitting the same missing day
+# do not retry it; a 429 pauses every on-demand fetch, since the next call
+# would fail the same way. The memory lives in the process: what it avoids is
+# the repeated outbound request, and each process makes its own.
+_FAILURE_TTL = timedelta(hours=6)
+_QUOTA_COOLDOWN = timedelta(hours=1)
+# Rates for dates older than this are sampled once a month: the first date of
+# a month fetches the whole day's rates and the rest of the month reads the
+# closest stored one. Importing years of rows then costs O(months), not
+# O(days).
+_MONTHLY_SAMPLING_AFTER = timedelta(days=31)
+
+_failed_dates: dict[date, datetime] = {}
+_quota_blocked_until: Optional[datetime] = None
+_quota_warning_at: Optional[datetime] = None
+
 _stored_only: ContextVar[bool] = ContextVar("fx_stored_rates_only", default=False)
+
+
+def _now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def reset_fx_failure_cache() -> None:
+    """Forget remembered provider failures.
+
+    For tests and for an explicit refresh, which is the moment a person asks
+    to try the provider again.
+    """
+    global _quota_blocked_until, _quota_warning_at
+    _failed_dates.clear()
+    _quota_blocked_until = None
+    _quota_warning_at = None
+
+
+def _remember_failure(target: date) -> None:
+    now = _now()
+    _failed_dates[target] = now + _FAILURE_TTL
+    # Drop the ones that already expired, so the dict stays bounded.
+    for failed, until in list(_failed_dates.items()):
+        if until <= now:
+            del _failed_dates[failed]
+
+
+def _fetch_blocked(target: date) -> bool:
+    """Whether the provider must not be called for this date right now."""
+    now = _now()
+    if _quota_blocked_until is not None and now < _quota_blocked_until:
+        return True
+    until = _failed_dates.get(target)
+    if until is None:
+        return False
+    if now < until:
+        return True
+    del _failed_dates[target]
+    return False
+
+
+def remember_quota_exceeded(target: date) -> None:
+    """Back off every on-demand fetch and warn once per cooldown (issue #624).
+
+    A spent quota is not a bug in the request, so it is said in one line
+    without a traceback, not once per date tried. Both the on-demand path and
+    the manual refresh use it: a 429 is the same fact wherever it is seen.
+    """
+    global _quota_blocked_until, _quota_warning_at
+    now = _now()
+    _remember_failure(target)
+    _quota_blocked_until = now + _QUOTA_COOLDOWN
+    if _quota_warning_at is None or now - _quota_warning_at >= _QUOTA_COOLDOWN:
+        _quota_warning_at = now
+        logger.warning(
+            "FX provider quota exceeded (HTTP 429); pausing on-demand rate "
+            "fetches for %d minutes",
+            int(_QUOTA_COOLDOWN.total_seconds() // 60),
+        )
+
+
+def _samples_monthly(target: date) -> bool:
+    """Whether a date is old enough to read the month's stored rate instead."""
+    return target < app_today() - _MONTHLY_SAMPLING_AFTER
+
+
+async def _month_has_stored_rate(
+    session: AsyncSession, currency: str, target: date
+) -> bool:
+    first = target.replace(day=1)
+    next_first = (first + timedelta(days=32)).replace(day=1)
+    found = await session.scalar(
+        select(FxRate.id)
+        .where(
+            FxRate.base_currency == "USD",
+            FxRate.quote_currency == currency,
+            FxRate.date >= first,
+            FxRate.date < next_first,
+        )
+        .limit(1)
+    )
+    return found is not None
+
+
+async def _may_fetch(
+    session: AsyncSession, target: date, currencies: tuple[str, str]
+) -> bool:
+    """Whether an on-demand provider call is worth making for this date."""
+    if _fetch_blocked(target):
+        return False
+    if _samples_monthly(target):
+        # Both legs need the month's sample: one leg's stored rate must not
+        # suppress the fetch the other leg still needs (the month may only
+        # have history for one of them).
+        legs = [currency for currency in currencies if currency != "USD"]
+        sampled = [
+            await _month_has_stored_rate(session, currency, target)
+            for currency in legs
+        ]
+        if legs and all(sampled):
+            logger.debug(
+                "Using the month's stored FX rates for %s instead of fetching", target
+            )
+            return False
+    return True
 
 
 @contextmanager
@@ -88,6 +215,42 @@ async def sync_rates(
     return count
 
 
+async def _lock_day(session: AsyncSession, target: date) -> None:
+    """One provider fetch per day at a time, until the transaction ends.
+
+    Two administrator refreshes of the same day would otherwise both count no
+    stored rate before either commits, and both spend a provider call: the app
+    id is the instance's, so that is twice the shared quota for one day
+    (issue #636). PostgreSQL only, in the same shape as the import lock in
+    `asset_import_service.py`: SQLite, which the tests use, serialises writers
+    itself.
+    """
+    if session.bind is None or session.bind.dialect.name != "postgresql":
+        return
+    await session.execute(
+        select(func.pg_advisory_xact_lock(func.hashtext(f"fx-refresh:{target}")))
+    )
+
+
+async def sync_rates_for_refresh(
+    session: AsyncSession, target: date
+) -> tuple[int, bool]:
+    """Fetch a day's rates unless the instance already stored that day.
+
+    The manual refresh spends one provider call per day at most (issue #636):
+    the app id is the instance's, so asking again for a day that is already
+    stored must not cost the shared quota. Returns the number of stored or
+    synced rates and whether the provider was skipped.
+    """
+    await _lock_day(session, target)
+    stored = await session.scalar(
+        select(func.count()).select_from(FxRate).where(FxRate.date == target)
+    ) or 0
+    if stored:
+        return stored, True
+    return await sync_rates(session, target), False
+
+
 async def _fetch(provider: OpenExchangeRatesProvider, target: date) -> dict[str, Decimal]:
     if target == app_today():
         return await provider.fetch_latest()
@@ -141,9 +304,15 @@ async def _resolve_rate(
     usd_to_target = await _get_exact_date_rate(session, to_currency, target)
 
     # Step 2: If missing, fetch from provider for exact date
-    if allow_fetch and not _stored_only.get() and (usd_to_source is None or usd_to_target is None):
+    if (
+        allow_fetch
+        and not _stored_only.get()
+        and (usd_to_source is None or usd_to_target is None)
+        and await _may_fetch(session, target, (from_currency, to_currency))
+    ):
         try:
             synced = await sync_rates(session, target)
+            _failed_dates.pop(target, None)
             if synced > 0:
                 logger.info("On-demand sync fetched %d rates for %s", synced, target)
                 if usd_to_source is None:
@@ -155,7 +324,10 @@ async def _resolve_rate(
             # (ADR 0004). Stay on the stored rates without a warning or a
             # traceback for every conversion (issue #267).
             logger.debug("FX provider not configured; using stored rates for %s", target)
+        except FxProviderQuotaExceeded:
+            remember_quota_exceeded(target)
         except Exception:
+            _remember_failure(target)
             logger.warning("On-demand FX rate sync failed for %s", target, exc_info=True)
 
     # Step 3: Fall back to closest available date
@@ -379,6 +551,155 @@ class RateBook:
         if from_currency == to_currency:
             return amount, Decimal("1")
         rate = await self.rate(from_currency, to_currency)
+        return (amount * rate).quantize(Decimal(1).scaleb(-decimals)), rate
+
+
+class DatedRateBook:
+    """Rates on many dates for one read, from one query per currency.
+
+    A chart over years of history converted each point with :func:`convert`,
+    which reads ``fx_rates`` two to six times per date: about 9,500 queries
+    for one portfolio trend. The book loads each currency's USD series once
+    and resolves a date in memory with the same chain as
+    :func:`_resolve_rate` (exact date, then closest before, then closest
+    after). A date that would trigger an on-demand provider fetch still goes
+    through :func:`get_rate`, so that path keeps its behavior and its guards.
+    When such a fetch stores nothing for its date (no provider configured, a
+    spent quota, a failed call), the book stops asking: the next dates resolve
+    in memory from the stored series instead of repeating the fetch, the
+    settings read and the closest-rate queries once per date.
+
+    For reads only, like :class:`RateBook`.
+    """
+
+    def __init__(self, session: AsyncSession, *, allow_fetch: bool = True) -> None:
+        self._session = session
+        self._allow_fetch = allow_fetch
+        self._series: dict[str, tuple[list[date], list[Decimal]]] = {}
+        self._rates: dict[tuple[str, str, date], Decimal] = {}
+        self._warned: set[tuple[str, str]] = set()
+        self._fetch_exhausted = False
+
+    async def _load(self, currency: str) -> tuple[list[date], list[Decimal]]:
+        series = self._series.get(currency)
+        if series is None:
+            rows = (
+                await self._session.execute(
+                    select(FxRate.date, FxRate.rate)
+                    .where(FxRate.base_currency == "USD", FxRate.quote_currency == currency)
+                    .order_by(FxRate.date)
+                )
+            ).all()
+            series = ([row[0] for row in rows], [row[1] for row in rows])
+            self._series[currency] = series
+        return series
+
+    @staticmethod
+    def _exact(series: tuple[list[date], list[Decimal]], target: date) -> Optional[Decimal]:
+        dates, rates = series
+        i = bisect_left(dates, target)
+        return rates[i] if i < len(dates) and dates[i] == target else None
+
+    @staticmethod
+    def _closest(series: tuple[list[date], list[Decimal]], target: date) -> Optional[Decimal]:
+        dates, rates = series
+        i = bisect_right(dates, target)
+        if i > 0:
+            return rates[i - 1]
+        return rates[0] if rates else None
+
+    @staticmethod
+    def _month_has(series: tuple[list[date], list[Decimal]], target: date) -> bool:
+        dates, _ = series
+        first = target.replace(day=1)
+        next_first = (first + timedelta(days=32)).replace(day=1)
+        i = bisect_left(dates, first)
+        return i < len(dates) and dates[i] < next_first
+
+    def _may_fetch(self, target: date, legs: dict[str, tuple[list[date], list[Decimal]]]) -> bool:
+        if (
+            not self._allow_fetch
+            or self._fetch_exhausted
+            or _stored_only.get()
+            or _fetch_blocked(target)
+        ):
+            return False
+        if _samples_monthly(target) and legs and all(
+            self._month_has(series, target) for series in legs.values()
+        ):
+            return False
+        return True
+
+    async def _date_has_rates(self, target: date) -> bool:
+        found = await self._session.scalar(
+            select(FxRate.id).where(FxRate.date == target).limit(1)
+        )
+        return found is not None
+
+    async def rate(self, from_currency: str, to_currency: str, target_date: date) -> Decimal:
+        source, quote = _code(from_currency), _code(to_currency)
+        if source == quote:
+            return Decimal("1")
+        target = min(target_date, app_today())
+        key = (source, quote, target)
+        cached = self._rates.get(key)
+        if cached is not None:
+            return cached
+
+        legs = {c: await self._load(c) for c in (source, quote) if c != "USD"}
+        exact = {c: self._exact(series, target) for c, series in legs.items()}
+        if any(value is None for value in exact.values()) and self._may_fetch(target, legs):
+            rate = await get_rate(
+                self._session, source, quote, target, allow_fetch=self._allow_fetch
+            )
+            # The fetch may have stored this date's rows: keep the series current.
+            stored_any = False
+            for currency, series in legs.items():
+                if exact[currency] is None:
+                    stored = await _get_exact_date_rate(self._session, currency, target)
+                    if stored is not None:
+                        stored_any = True
+                        i = bisect_left(series[0], target)
+                        series[0].insert(i, target)
+                        series[1].insert(i, stored)
+            if not stored_any and not await self._date_has_rates(target):
+                # Nothing came back for the day: the provider is off, out of
+                # quota or failing. Asking again for every later date would
+                # give the same answer at the cost of a fetch attempt each.
+                self._fetch_exhausted = True
+            self._rates[key] = rate
+            return rate
+
+        usd = {
+            c: exact[c] if exact[c] is not None else self._closest(series, target)
+            for c, series in legs.items()
+        }
+        usd_to_source = usd.get(source, Decimal("1"))
+        usd_to_target = usd.get(quote, Decimal("1"))
+        if usd_to_source is None or usd_to_target is None or usd_to_source == 0:
+            if (source, quote) not in self._warned:
+                self._warned.add((source, quote))
+                logger.warning(
+                    "No FX rate found for %s -> %s on %s, returning 1", source, quote, target
+                )
+            rate = Decimal("1")
+        else:
+            rate = usd_to_target / usd_to_source
+        self._rates[key] = rate
+        return rate
+
+    async def convert(
+        self,
+        amount: Decimal,
+        from_currency: str,
+        to_currency: str,
+        target_date: date,
+        *,
+        decimals: int = 2,
+    ) -> tuple[Decimal, Decimal]:
+        if from_currency == to_currency:
+            return amount, Decimal("1")
+        rate = await self.rate(from_currency, to_currency, target_date)
         return (amount * rate).quantize(Decimal(1).scaleb(-decimals)), rate
 
 

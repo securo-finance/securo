@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.auth import current_active_user
 from app.core.config import get_settings
 from app.core.database import get_async_session
+from app.core.money import MoneyOutOfRange
 from app.core.workspace_context import (
     WorkspaceContext,
     current_workspace,
@@ -31,10 +32,12 @@ from app.schemas.asset_import import (
     AssetImportResult,
 )
 from app.schemas.asset import (
+    ArchivedAssetCountsRead,
     AssetBuyCreate,
     AssetCreate,
     AssetPriceRefreshResult,
     AssetRead,
+    AssetReorder,
     AssetTransactionCreate,
     AssetTransactionRead,
     AssetTransactionUpdate,
@@ -342,6 +345,23 @@ async def refresh_all_asset_prices(
     return AssetPriceRefreshResult(**summary)
 
 
+@router.put("/order", status_code=status.HTTP_204_NO_CONTENT)
+async def reorder_assets(
+    data: AssetReorder,
+    ctx: WorkspaceContext = Depends(current_writable_workspace),
+    session: AsyncSession = Depends(get_async_session),
+):
+    try:
+        reordered = await asset_service.reorder_assets(session, ctx.workspace.id, data.asset_ids)
+    except asset_service.MixedWalletsError:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Holdings must belong to one wallet",
+        )
+    if not reordered:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="One or more holdings not found")
+
+
 @router.get("", response_model=list[AssetRead])
 async def list_assets(
     include_archived: bool = False,
@@ -361,6 +381,14 @@ async def list_assets(
                 session, asset, primary_currency, rates
             )
     return assets
+
+
+@router.get("/archived-count", response_model=ArchivedAssetCountsRead)
+async def archived_asset_counts(
+    ctx: WorkspaceContext = Depends(current_workspace),
+    session: AsyncSession = Depends(get_async_session),
+) -> ArchivedAssetCountsRead:
+    return await asset_service.get_archived_asset_counts(session, ctx.workspace.id)
 
 
 @router.get("/portfolio-trend")
@@ -595,7 +623,10 @@ async def create_asset(
     ctx: WorkspaceContext = Depends(current_writable_workspace),
     session: AsyncSession = Depends(get_async_session),
 ):
-    return await asset_service.create_asset(session, ctx.workspace.id, ctx.user_id, data)
+    try:
+        return await asset_service.create_asset(session, ctx.workspace.id, ctx.user_id, data)
+    except MoneyOutOfRange as e:
+        raise HTTPException(status_code=422, detail=str(e))
 
 
 @router.patch("/{asset_id}", response_model=AssetRead)
@@ -606,9 +637,12 @@ async def update_asset(
     ctx: WorkspaceContext = Depends(current_writable_workspace),
     session: AsyncSession = Depends(get_async_session),
 ):
-    asset = await asset_service.update_asset(
-        session, asset_id, ctx.workspace.id, ctx.user_id, data, regenerate_growth=regenerate_growth
-    )
+    try:
+        asset = await asset_service.update_asset(
+            session, asset_id, ctx.workspace.id, ctx.user_id, data, regenerate_growth=regenerate_growth
+        )
+    except MoneyOutOfRange as e:
+        raise HTTPException(status_code=422, detail=str(e))
     if not asset:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Asset not found")
     return asset
@@ -657,7 +691,10 @@ async def add_asset_value(
     ctx: WorkspaceContext = Depends(current_writable_workspace),
     session: AsyncSession = Depends(get_async_session),
 ):
-    value = await asset_service.add_asset_value(session, asset_id, ctx.workspace.id, data)
+    try:
+        value = await asset_service.add_asset_value(session, asset_id, ctx.workspace.id, data)
+    except MoneyOutOfRange as e:
+        raise HTTPException(status_code=422, detail=str(e))
     if value is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Asset not found")
     return value

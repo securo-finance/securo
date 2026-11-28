@@ -16,6 +16,7 @@ from sqlalchemy.orm.attributes import flag_modified
 
 from app.core.app_clock import app_today
 from app.core.config import get_settings
+from app.core.money import MoneyOutOfRange, bounded_asset_value
 from app.models.asset import PROVIDER_VALUE_DATE_METADATA_KEY, Asset
 from app.models.asset_group import AssetGroup
 from app.models.asset_transaction import AssetTransaction
@@ -41,7 +42,11 @@ from app.models.user import User
 from app.plugins.contract import SYNCED_TEXT, column_amount
 from app.plugins.provider import is_plugin_provider
 from app.providers import get_provider
-from app.providers.enable_banking import SKIPPED_TRANSACTION_STATUSES, is_account_txn_id
+from app.providers.enable_banking import (
+    SKIPPED_TRANSACTION_STATUSES,
+    is_account_txn_id,
+    strip_sepa_prefix,
+)
 from app.providers.base import (
     AccountData,
     BankProvider,
@@ -56,6 +61,7 @@ from app.providers.base import (
 from app.services.provider_settings import resolve_settings
 from app.services import oauth_state
 from app.services import admin_service
+from app.services import quota_service
 from app.services import category_line_service, notification_service, reconciliation_service, recurring_match_service
 from app.services.text_similarity import normalize_words, token_overlap
 from app.services.account_service import (
@@ -1153,6 +1159,7 @@ async def _sync_holdings(
             and asset.group_id != group.id
         ):
             asset.group_id = group.id
+            asset.position = 0  # its place was in the old wallet
         # Seed a historical value at purchase_date so users get a real
         # evolution curve from day one — not just today's snapshot.
         # Idempotent: skips if any AssetValue already exists at that date.
@@ -1165,14 +1172,7 @@ async def _sync_holdings(
         # reports the position. Historical values stay; current totals
         # already exclude it via the sell_date filter in rollups.
         if asset.sell_date is None:
-            await _upsert_asset_value_for_today(
-                session,
-                asset,
-                holding.current_value,
-                today,
-                gross_amount=holding.gross_value,
-                price=_snapshot_unit_price(holding),
-            )
+            await _store_todays_snapshot(session, asset, holding, today)
 
     for ext_id, asset in archive_candidates.items():
         if ext_id not in seen and not asset.is_archived:
@@ -1434,14 +1434,7 @@ async def _sync_holding_trades(
         if was_sold and asset.sell_date is None and not holding.is_withdrawn:
             # Reopened by this sync: the value step above skipped it while it
             # still read as sold, so record today's value now.
-            await _upsert_asset_value_for_today(
-                session,
-                asset,
-                holding.current_value,
-                app_today(),
-                gross_amount=holding.gross_value,
-                price=_snapshot_unit_price(holding),
-            )
+            await _store_todays_snapshot(session, asset, holding, app_today())
 
 
 async def _import_holding_trades(
@@ -1680,8 +1673,15 @@ async def _ensure_historical_seed(
 
     Called on every sync but a no-op once the seed exists. Skips if ANY
     AssetValue already exists on that date (even a manual one) — we don't
-    want to stomp a value the user may have entered themselves.
+    want to stomp a value the user may have entered themselves. A price the
+    column cannot hold is left out with a warning: one bad holding must not
+    fail the sync of the whole connection (issue #642).
     """
+    try:
+        seed_amount = bounded_asset_value(purchase_price, "purchase_price")
+    except MoneyOutOfRange as exc:
+        logger.warning("Not seeding a value for asset %s: %s", asset.id, exc)
+        return
     existing = await session.execute(
         select(AssetValue).where(
             AssetValue.asset_id == asset.id,
@@ -1693,8 +1693,8 @@ async def _ensure_historical_seed(
     session.add(
         AssetValue(
             asset_id=asset.id,
-            amount=purchase_price,
-            gross_amount=purchase_price,
+            amount=seed_amount,
+            gross_amount=seed_amount,
             date=purchase_date,
             source="sync",
         )
@@ -1709,7 +1709,7 @@ async def _upsert_asset_value_for_today(
     *,
     gross_amount: Optional[Decimal] = None,
     price: Optional[Decimal] = None,
-) -> None:
+) -> bool:
     """One sync-sourced AssetValue per asset per day, with its unit value.
 
     Re-syncing the same day replaces the amount, gross and price in place;
@@ -1717,7 +1717,23 @@ async def _upsert_asset_value_for_today(
     over time.
     `price` records the unit value so performance can tell buying more
     shares apart from the price going up.
+
+    A balance the column cannot hold (a weak-currency holding past 13 digits)
+    keeps the row it already had and logs, so one holding never fails the
+    sync of the whole connection (issue #642). Returns whether it stored the
+    snapshot: the caller has to know, because the metadata written earlier in
+    the same sync carries the payload's value date.
     """
+    try:
+        stored_amount = bounded_asset_value(amount)
+        stored_gross = (
+            bounded_asset_value(gross_amount, "gross_amount")
+            if gross_amount is not None
+            else None
+        )
+    except MoneyOutOfRange as exc:
+        logger.warning("Not storing today's synced value for asset %s: %s", asset.id, exc)
+        return False
     existing = await session.execute(
         select(AssetValue).where(
             AssetValue.asset_id == asset.id,
@@ -1727,22 +1743,59 @@ async def _upsert_asset_value_for_today(
     )
     row = existing.scalar_one_or_none()
     if row is not None:
-        row.amount = amount
+        row.amount = stored_amount
         row.price = price
         # A same-day re-sync replaces the whole snapshot: a gross the
         # provider no longer reports must not sit next to the new net.
-        row.gross_amount = gross_amount
+        row.gross_amount = stored_gross
     else:
         session.add(
             AssetValue(
                 asset_id=asset.id,
-                amount=amount,
-                gross_amount=gross_amount,
+                amount=stored_amount,
+                gross_amount=stored_gross,
                 price=price,
                 date=today,
                 source="sync",
             )
         )
+    return True
+
+
+def _drop_provider_value_date(asset: Asset) -> None:
+    """Take the provider's value date back off an asset whose snapshot was refused.
+
+    `_upsert_asset_from_holding` already replaced the metadata blob, so by the
+    time the value is refused the marker describes a value that never got
+    stored. Left there it would put the new date over the old amount.
+    """
+    metadata = dict(asset.external_metadata or {})
+    if metadata.pop(PROVIDER_VALUE_DATE_METADATA_KEY, None) is None:
+        return
+    asset.external_metadata = metadata or None
+
+
+async def _store_todays_snapshot(
+    session: AsyncSession,
+    asset: Asset,
+    holding: HoldingData,
+    today: date,
+) -> None:
+    """Store today's synced value, or take the provider's date off the asset.
+
+    The date only makes sense next to the amount the payload brought; when
+    that amount is past the column and left out, it has to go with it.
+    """
+    stored = await _upsert_asset_value_for_today(
+        session,
+        asset,
+        holding.current_value,
+        today,
+        gross_amount=holding.gross_value,
+        price=_snapshot_unit_price(holding),
+    )
+    if not stored:
+        _drop_provider_value_date(asset)
 
 
 def _snapshot_unit_price(holding: HoldingData) -> Optional[Decimal]:
@@ -2162,6 +2215,8 @@ async def handle_oauth_callback(
         await session.refresh(existing_reconnect)
         return existing_reconnect
 
+    # A new connection, not a reconnect: it counts toward the account's limit (ADR 0049).
+    await quota_service.check_new_bank_connection(session, workspace_id)
     flow_params = dict(state_payload.get("flow_params") or {})
     flow_sync_assets = flow_params.pop("sync_assets", None)
     initial_settings: dict[str, object] = {"flow_params": flow_params}
@@ -3445,6 +3500,9 @@ async def _find_synced_duplicate(
     # day and amount. A light description-similarity check guards against
     # the residual false positive of two different merchants charging the
     # same amount the same day where one is pending and one is posted.
+    # A pending row stored before #1910 still carries ING's SEPA key prefix,
+    # which the booked entry no longer has; it is dropped for the comparison
+    # only, so the stored text stays as it is.
     result = await session.execute(
         select(Transaction).where(
             Transaction.account_id == account_id,
@@ -3460,7 +3518,7 @@ async def _find_synced_duplicate(
         if candidate.external_id and candidate.external_id.startswith("bill_charge:"):
             continue
         if token_overlap(
-            candidate.original_description or candidate.description,
+            strip_sepa_prefix(candidate.original_description or candidate.description or ""),
             txn_data.description,
         ) >= 0.7:
             return candidate

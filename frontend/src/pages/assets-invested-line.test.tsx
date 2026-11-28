@@ -5,7 +5,7 @@ import AssetsPage from '@/pages/assets'
 import { renderWithProviders, t } from '@/test/utils'
 
 const api = vi.hoisted(() => ({
-  assets: { list: vi.fn(), portfolioTrend: vi.fn(), portfolioInvested: vi.fn() },
+  assets: { list: vi.fn(), archivedCount: vi.fn(), portfolioTrend: vi.fn(), portfolioInvested: vi.fn() },
   assetGroups: { list: vi.fn() },
   currencies: { list: vi.fn() },
   fxRates: { status: vi.fn() },
@@ -53,6 +53,7 @@ beforeEach(() => {
   ui.privacy = false
   ui.wallets = null
   api.assets.list.mockResolvedValue([])
+  api.assets.archivedCount.mockResolvedValue({ count: 0, by_wallet: {}, ungrouped: 0 })
   api.assets.portfolioTrend.mockResolvedValue(TREND)
   api.assets.portfolioInvested.mockResolvedValue([{ date: '2026-01-01', amount: 1000 }])
   api.assetGroups.list.mockResolvedValue([])

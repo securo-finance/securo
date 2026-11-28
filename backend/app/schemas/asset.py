@@ -5,13 +5,22 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from app.core.money import bounded_asset_value
+from app.schemas.ordering import OrderedIds
+
+#: How an asset's current value is kept: recorded by hand, projected by a
+#: growth rule, or read from the market through its ticker. The jobs, the
+#: import and the screens know only these three, so anything else is refused
+#: when it arrives instead of being stored and never priced.
+AssetValuationMethod = Literal["manual", "growth_rule", "market_price"]
+
 
 class AssetCreate(BaseModel):
     name: str
     type: str
     currency: str = "USD"
     units: Optional[Decimal] = None
-    valuation_method: str = "manual"
+    valuation_method: AssetValuationMethod = "manual"
     purchase_date: Optional[_date] = None
     purchase_price: Optional[Decimal] = None
     sell_date: Optional[_date] = None
@@ -53,7 +62,7 @@ class AssetUpdate(BaseModel):
     type: Optional[str] = None
     currency: Optional[str] = None
     units: Optional[Decimal] = None
-    valuation_method: Optional[str] = None
+    valuation_method: Optional[AssetValuationMethod] = None
     purchase_date: Optional[_date] = None
     purchase_price: Optional[Decimal] = None
     sell_date: Optional[_date] = None
@@ -70,6 +79,12 @@ class AssetUpdate(BaseModel):
     group_id: Optional[uuid.UUID] = None
     ticker: Optional[str] = None
     ticker_exchange: Optional[str] = None
+
+
+class AssetReorder(BaseModel):
+    """The holdings of one wallet (or of no wallet) in the order to show them."""
+
+    asset_ids: OrderedIds
 
 
 class AssetRead(BaseModel):
@@ -215,6 +230,14 @@ class AssetPriceRefreshResult(BaseModel):
     rate_limited: int
 
 
+class ArchivedAssetCountsRead(BaseModel):
+    """Archived holding counts for a workspace, broken down by wallet."""
+
+    count: int
+    by_wallet: dict[str, int]
+    ungrouped: int
+
+
 class MarketSymbolMatch(BaseModel):
     """A single search result returned by /assets/market/search."""
 
@@ -296,6 +319,16 @@ class PortfolioPerformanceRead(BaseModel):
 class AssetValueCreate(BaseModel):
     amount: Decimal
     date: _date
+
+    @field_validator("amount")
+    @classmethod
+    def check_amount_bounds(cls, value: Decimal) -> Decimal:
+        # The column's own ceiling, both sides, the same rule the values the
+        # backend works out follow (ADR 0008). Without it a larger value
+        # reached the driver and came back as a raw database error instead of
+        # a 422 (issue #642); the negative side and `-Infinity` had the same
+        # hole.
+        return bounded_asset_value(value)
 
 
 class AssetValueRead(BaseModel):

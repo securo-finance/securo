@@ -22,6 +22,7 @@ export function invalidateFinancialQueries(queryClient: QueryClient) {
   queryClient.invalidateQueries({ queryKey: ['accounts'] })
   queryClient.invalidateQueries({ queryKey: ['budgets'] })
   queryClient.invalidateQueries({ queryKey: ['reports'] })
+  queryClient.invalidateQueries({ queryKey: ['goals'] })
   queryClient.invalidateQueries({ queryKey: ['drill-down'] })
   // Recurring price history is derived from linked transaction rows, so a
   // financial mutation must refresh both consumers. The series list itself is

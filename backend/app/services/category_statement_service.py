@@ -31,6 +31,7 @@ from app.services._query_filters import (
     line_category_id,
     line_primary_or_amount,
     reporting_date_col,
+    resolve_viewer_category_map,
     viewer_shared_spending_by_category,
     with_category_lines,
 )
@@ -285,10 +286,15 @@ async def get_category_statement(
                 primary_currency=primary_currency,
                 exclude_workspace_id=workspace_id,
             )
+            shared_cat_map = (
+                await resolve_viewer_category_map(session, shared.keys(), workspace_id)
+                if shared
+                else {}
+            )
             for cat_id, share in shared.items():
-                # Shares of someone else's transaction carry that person's
-                # category, which this workspace can't show.
-                key = cat_id if cat_id in known_ids else None
+                mapped_cat = shared_cat_map.get(cat_id) if cat_id is not None else None
+                mapped_id = mapped_cat.id if mapped_cat is not None else None
+                key = mapped_id if mapped_id in known_ids else None
                 credits, debits = totals.get(key, (0.0, 0.0))
                 totals[key] = (credits, debits + float(share))
         per_month.append(totals)
@@ -340,9 +346,16 @@ async def get_category_statement(
             primary_currency=primary_currency,
             exclude_workspace_id=workspace_id,
         )
+        lifetime_shared_cat_map = (
+            await resolve_viewer_category_map(session, shared.keys(), workspace_id)
+            if shared
+            else {}
+        )
         for cat_id, share in shared.items():
-            if cat_id in known_ids:
-                lifetime_net[cat_id] = lifetime_net.get(cat_id, 0.0) - float(share)
+            mapped_cat = lifetime_shared_cat_map.get(cat_id) if cat_id is not None else None
+            mapped_id = mapped_cat.id if mapped_cat is not None else None
+            if mapped_id in known_ids:
+                lifetime_net[mapped_id] = lifetime_net.get(mapped_id, 0.0) - float(share)
 
     def category_values(cat_id: uuid.UUID) -> list[float]:
         values = []

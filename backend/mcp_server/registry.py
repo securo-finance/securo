@@ -104,6 +104,7 @@ async def call_tool(
     if spec is None:
         raise KeyError(f"unknown tool: {name}")
     from app.core.app_clock import use_timezone
+    from app.core.row_security import bind_workspace
     from mcp_server.auth import ToolAccessDenied, authorize_call
 
     # Membership and role are re-read on every call: the token alone does
@@ -111,5 +112,6 @@ async def call_tool(
     workspace_id = await authorize_call(session, ctx)
     if ctx.external and (arguments or {}).get("apply") and not ctx.can_write:
         raise ToolAccessDenied("Your role in this workspace is read-only, so changes can't be applied.")
+    await bind_workspace(session, workspace_id, None if ctx.external else ctx.user_id)
     async with use_timezone(session, workspace_id):
         return await spec.handler(session=session, ctx=ctx, **(arguments or {}))

@@ -1,4 +1,5 @@
 import { useId, useState } from 'react'
+import { GoalVisualization } from '@/components/goals/GoalVisualization'
 import { getAccountName, sortAccountsByDisplayName } from '@/lib/account-utils'
 import { useTranslation } from 'react-i18next'
 import { useDisplayLocale } from '@/hooks/use-display-locale'
@@ -406,6 +407,7 @@ export default function GoalsPage() {
                       </div>
                     )}
                   </div>
+                  {goal.tracking_type !== 'manual' && <GoalVisualization goal={goal} />}
                 </div>
               )
             })}

@@ -1822,6 +1822,12 @@ export interface AssetPriceRefreshResult {
   rate_limited: number
 }
 
+export interface ArchivedAssetCounts {
+  count: number
+  by_wallet: Record<string, number>
+  ungrouped: number
+}
+
 // Cumulative net money put into the portfolio's assets, one point per day it changed.
 export interface PortfolioInvestedPoint {
   date: string
