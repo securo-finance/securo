@@ -4186,6 +4186,9 @@ async def _settle_replaced_pending(
         user_currency=user_currency,
     )
     if date_changed and pending_tx.amount == amount_before:
+        user_kept_account_amount = (
+            pending_tx.amount_account_source == ACCOUNT_AMOUNT_FROM_USER
+        )
         if pending_tx.amount_primary_typed is None:
             converted = _bank_converted_amount(txn_data, account_currency, user_currency)
             await _stamp_synced_primary_amount(
@@ -4193,11 +4196,14 @@ async def _settle_replaced_pending(
                 pending_tx.user_id,
                 pending_tx,
                 converted,
-                txn_data.amount_in_account_currency,
+                None if user_kept_account_amount else txn_data.amount_in_account_currency,
                 restamp_account=(pending_tx.amount_account_source is None),
             )
         elif (
-            txn_data.amount_in_account_currency is not None
+            (
+                txn_data.amount_in_account_currency is not None
+                and not user_kept_account_amount
+            )
             or pending_tx.amount_account_source is None
         ):
             await stamp_account_amount(

@@ -396,9 +396,11 @@ def _build_transaction(txn: dict[str, Any]) -> dict[str, Any] | None:
         "type": txn_type,
         "status": status,
     }
-    currency = txn.get("iso_currency_code") or txn.get("unofficial_currency_code")
-    if isinstance(currency, str) and len(currency.strip()) == 3 and currency.strip().isalpha():
-        record["currency"] = currency.strip().upper()
+    currency = _valid_currency(txn.get("iso_currency_code")) or _valid_currency(
+        txn.get("unofficial_currency_code")
+    )
+    if currency:
+        record["currency"] = currency
     if payee:
         record["payee"] = payee
     if notes:
@@ -522,8 +524,8 @@ class PlaidPlugin:
             if sessions:
                 dict_sessions = [s for s in sessions if isinstance(s, dict)]
                 finished_sessions = [
-                    s
-                    for s in dict_sessions
+                    (idx, s)
+                    for idx, s in enumerate(dict_sessions)
                     if s.get("finished_at")
                     or s.get("exit") is not None
                     or s.get("on_exit") is not None
@@ -533,11 +535,13 @@ class PlaidPlugin:
                     )
                     or isinstance(s.get("on_success"), dict)
                 ]
-                latest = (
-                    finished_sessions[-1]
-                    if finished_sessions
-                    else (dict_sessions[-1] if dict_sessions else {})
-                )
+                if finished_sessions:
+                    finished_sessions.sort(
+                        key=lambda item: (str(item[1].get("finished_at") or ""), item[0])
+                    )
+                    latest = finished_sessions[-1][1]
+                else:
+                    latest = dict_sessions[-1] if dict_sessions else {}
                 exit_info = (
                     latest.get("exit")
                     if latest.get("exit") is not None

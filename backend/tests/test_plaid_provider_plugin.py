@@ -1260,3 +1260,158 @@ async def test_nelnet_student_loan_computes_loan_schedule(
     assert nelnet.loan_amortization == "price"
     schedule = await account_service.get_loan_schedule(session, nelnet.id, workspace_id)
     assert schedule is not None and schedule["configured"] is True
+
+
+def test_plaid_nonascii_unofficial_currency_falls_back_without_payload_error():
+    """A non-ASCII 3-char unofficial_currency_code (e.g. 'üsd') must be omitted
+    from the transaction record so it falls back to account currency instead of
+    failing contract ^[A-Z]{3}$ validation, while valid ASCII codes (e.g. 'BTC') stay."""
+    from app.plugins.contract import parse_payload
+
+    mod = _module()
+    ctx = type(
+        "Context",
+        (),
+        {
+            "secrets": MappingProxyType({"secret": "sec-1", "access_token": "acc-1"}),
+            "config": MappingProxyType({"client_id": "cid-1", "environment": "sandbox"}),
+            "securo": MappingProxyType({}),
+        },
+    )()
+
+    def sync_nonascii_currency(url: str, payload: dict[str, Any]) -> dict[str, Any]:
+        if url.endswith("/accounts/get"):
+            return {
+                "item": {},
+                "accounts": [
+                    {
+                        "account_id": "acc-1",
+                        "name": "Checking",
+                        "type": "depository",
+                        "subtype": "checking",
+                        "balances": {"current": 100.0, "iso_currency_code": "USD"},
+                    }
+                ],
+            }
+        if url.endswith("/transactions/sync"):
+            return {
+                "transactions_update_status": "HISTORICAL_UPDATE_COMPLETE",
+                "added": [
+                    {
+                        "transaction_id": "tx-nonascii",
+                        "account_id": "acc-1",
+                        "amount": 15.0,
+                        "iso_currency_code": None,
+                        "unofficial_currency_code": "üsd",
+                        "date": "2026-11-15",
+                        "name": "Weird Currency",
+                        "pending": False,
+                    },
+                    {
+                        "transaction_id": "tx-btc",
+                        "account_id": "acc-1",
+                        "amount": 1.5,
+                        "iso_currency_code": None,
+                        "unofficial_currency_code": "btc",
+                        "date": "2026-11-15",
+                        "name": "Bitcoin Spend",
+                        "pending": False,
+                    },
+                ],
+                "modified": [],
+                "removed": [],
+                "next_cursor": "cur-1",
+                "has_more": False,
+            }
+        if url.endswith("/liabilities/get") or url.endswith("/investments/holdings/get"):
+            raise mod.PlaidAPIError(
+                "PRODUCTS_NOT_SUPPORTED",
+                status_code=400,
+                error_type="ITEM_ERROR",
+                error_code="PRODUCTS_NOT_SUPPORTED",
+            )
+        raise AssertionError(url)
+
+    res = mod.PlaidPlugin(requester=sync_nonascii_currency).sync({"state": {}}, ctx)
+    parsed = parse_payload(res["data"], ["accounts", "transactions"])
+    assert parsed is not None and parsed.accounts is not None
+    txns = {t.external_id: t for t in (parsed.accounts[0].transactions or [])}
+    assert txns["tx-nonascii"].currency is None
+    assert txns["tx-btc"].currency == "BTC"
+
+
+def test_plaid_oauth_exchange_sorts_reverse_chronological_link_sessions():
+    """If Plaid returns link_sessions out of chronological order, oauth_exchange
+    must select the session with the latest finished_at (tie-broken by index)."""
+    mod = _module()
+    ctx = type(
+        "Context",
+        (),
+        {
+            "secrets": MappingProxyType({"secret": "sec-1", "pending_link_token": "link-rev"}),
+            "config": MappingProxyType({"client_id": "cid-1", "environment": "sandbox"}),
+            "securo": MappingProxyType({}),
+        },
+    )()
+
+    # 1. Newer exited session appears BEFORE older succeeded session.
+    def rev_newer_exit(url: str, payload: dict[str, Any]) -> dict[str, Any]:
+        assert url.endswith("/link/token/get")
+        return {
+            "link_token": "link-rev",
+            "link_sessions": [
+                {
+                    "link_session_id": "ls-newer-exit",
+                    "finished_at": "2026-11-27T12:05:00Z",
+                    "exit": {"error": None, "metadata": {"status": "requires_credentials"}},
+                },
+                {
+                    "link_session_id": "ls-older-success",
+                    "finished_at": "2026-11-27T12:00:00Z",
+                    "results": {
+                        "item_add_results": [
+                            {
+                                "public_token": "public-older",
+                                "institution": {"institution_id": "ins_old", "name": "Old Bank"},
+                            }
+                        ]
+                    },
+                },
+            ],
+        }
+
+    with pytest.raises(RuntimeError, match="closed before finishing"):
+        mod.PlaidPlugin(requester=rev_newer_exit).oauth_exchange({"params": {}}, ctx)
+
+    # 2. Newer succeeded session appears BEFORE older exited session.
+    def rev_newer_success(url: str, payload: dict[str, Any]) -> dict[str, Any]:
+        if url.endswith("/link/token/get"):
+            return {
+                "link_token": "link-rev",
+                "link_sessions": [
+                    {
+                        "link_session_id": "ls-newer-success",
+                        "finished_at": "2026-11-27T12:05:00Z",
+                        "results": {
+                            "item_add_results": [
+                                {
+                                    "public_token": "public-newer",
+                                    "institution": {"institution_id": "ins_new", "name": "New Bank"},
+                                }
+                            ]
+                        },
+                    },
+                    {
+                        "link_session_id": "ls-older-exit",
+                        "finished_at": "2026-11-27T12:00:00Z",
+                        "exit": {"error": None, "metadata": {}},
+                    },
+                ],
+            }
+        assert url.endswith("/item/public_token/exchange")
+        assert payload["public_token"] == "public-newer"
+        return {"access_token": "acc-newer", "item_id": "item-newer"}
+
+    exchanged = mod.PlaidPlugin(requester=rev_newer_success).oauth_exchange({"params": {}}, ctx)
+    assert exchanged["secrets"]["access_token"] == "acc-newer"
+    assert exchanged["state"]["institution_name"] == "New Bank"

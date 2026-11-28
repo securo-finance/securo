@@ -1562,3 +1562,81 @@ async def test_replaces_external_id_restamps_fx_to_settled_date(
     assert after["fx-posted-same-amt"].amount_account == Decimal("200.00")
     assert after["fx-posted-tip"].amount_primary == Decimal("100.00")
     assert after["fx-posted-tip"].amount_account == Decimal("100.00")
+
+
+@pytest.mark.asyncio
+async def test_replaces_external_id_preserves_user_account_amount_on_date_shift_with_bank_amount(
+    session: AsyncSession, bank_connection, test_user
+):
+    """When a foreign-currency pending row has a user-typed primary/account
+    conversion (`amount_account_source == 'user'`) and settles on a shifted date
+    with unchanged amount and a provider-supplied `amount_in_account_currency`,
+    settlement must preserve the user's `amount_account` and `amount_account_source`."""
+    from app.models.fx_rate import FxRate
+    from app.schemas.transaction import TransactionUpdate
+    from app.services import transaction_service
+
+    test_user.preferences = {**(test_user.preferences or {}), "currency_display": "USD"}
+    session.add_all(
+        [
+            FxRate(base_currency="USD", quote_currency="EUR", date=date(2026, 11, 14), rate=Decimal("0.8"), source="test"),
+            FxRate(base_currency="USD", quote_currency="EUR", date=date(2026, 11, 16), rate=Decimal("0.5"), source="test"),
+        ]
+    )
+    await session.commit()
+
+    pending = [
+        {
+            "external_id": "fx-user-hold",
+            "description": "Euro Shop",
+            "amount": "100.00",
+            "currency": "EUR",
+            "date": "2026-11-14",
+            "type": "debit",
+            "status": "pending",
+        }
+    ]
+    await _pipeline(session, bank_connection, payload_data(transactions=pending, holdings=None), test_user)
+    (account,) = await _rows(session, Account, connection_id=bank_connection.id)
+    account_id = account.id
+    (stored,) = await _rows(session, Transaction, account_id=account_id)
+    stored_id = stored.id
+
+    await transaction_service.update_transaction(
+        session,
+        stored_id,
+        bank_connection.workspace_id,
+        test_user.id,
+        TransactionUpdate(amount_primary=Decimal("130.00")),
+    )
+    await session.refresh(stored)
+    assert stored.amount_primary_typed == Decimal("130.00")
+    assert stored.amount_account == Decimal("130.00")
+    assert stored.amount_account_source == "user"
+
+    settled = [
+        {
+            "external_id": "fx-user-posted",
+            "replaces_external_id": "fx-user-hold",
+            "description": "Euro Shop",
+            "amount": "100.00",
+            "currency": "EUR",
+            "amount_in_account_currency": "200.00",
+            "date": "2026-11-16",
+            "type": "debit",
+            "status": "posted",
+        }
+    ]
+    delta = payload_data(transactions=settled, holdings=None)
+    delta["accounts"][0]["incremental"] = True
+    delta["accounts"][0]["removed_transaction_ids"] = ["fx-user-hold"]
+    await _pipeline(session, bank_connection, delta, test_user)
+
+    (after,) = await _rows(session, Transaction, account_id=account_id)
+    assert after.id == stored_id
+    assert after.status == "posted"
+    assert after.date == date(2026, 11, 16)
+    assert after.amount_primary == Decimal("130.00")
+    assert after.amount_primary_typed == Decimal("130.00")
+    assert after.amount_account == Decimal("130.00")
+    assert after.amount_account_source == "user"
