@@ -149,7 +149,7 @@ async def list_transactions(
     status: str | None = None,
     uncategorized: bool = False,
     exclude_transfers: bool = False,
-    include_opening_balance: bool = False,
+    include_opening_balance: bool | None = False,
     tags: list[str] | None = None,
     sort_by: str = "transaction_date",
     sort_dir: str = "desc",
@@ -168,7 +168,7 @@ async def list_transactions(
     status = _normalize_status(status)
     tx_type = _normalize_tx_type(tx_type)
     include_opening_balance = parse_bool(
-        include_opening_balance, field="include_opening_balance"
+        include_opening_balance, field="include_opening_balance", default=False
     )
     ws_id = await resolve_workspace_id(session, ctx)
     txs, total, _ = await transaction_service.get_transactions(

@@ -363,7 +363,7 @@ async def test_include_opening_balance_coerces_strings_and_rejects_invalid(
         assert sum(item["value"] for item in agg["items"]) == pytest.approx(53200.0)
         assert sum(item["count"] for item in agg["items"]) == 2
 
-    for invalid_val in ("maybe", "", None, 123):
+    for invalid_val in ("maybe", "", 123):
         with pytest.raises((ValueError, ToolInputError), match="include_opening_balance"):
             await list_handler(
                 session=session, ctx=ctx, include_opening_balance=invalid_val
@@ -500,3 +500,69 @@ def test_mcp_and_openapi_schemas_document_include_opening_balance():
     param = next(p for p in params if p["name"] == "include_opening_balance")
     assert "opening_balance" in param.get("description", "")
     assert "total" in param.get("description", "")
+
+
+def test_parse_bool_explicit_null_falls_back_to_default():
+    from mcp_server.registry import ToolInputError
+    from mcp_server.tools._helpers import parse_bool
+
+    assert parse_bool(None, field="include_opening_balance", default=False) is False
+    assert parse_bool(None, field="include_opening_balance", default=True) is True
+    with pytest.raises(ToolInputError, match="include_opening_balance"):
+        parse_bool(None, field="include_opening_balance")
+
+
+@pytest.mark.asyncio
+async def test_mcp_tools_accept_explicit_null_include_opening_balance(
+    session: AsyncSession,
+    test_user,
+    test_workspace,
+    test_account: Account,
+):
+    opening = Transaction(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        account_id=test_account.id,
+        description="Opening Balance",
+        amount=Decimal("50000.00"),
+        amount_primary=Decimal("50000.00"),
+        currency=test_account.currency,
+        type="credit",
+        date=date(2026, 1, 1),
+        status="posted",
+        source="opening_balance",
+    )
+    salary = Transaction(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        account_id=test_account.id,
+        description="Salary",
+        amount=Decimal("3200.00"),
+        amount_primary=Decimal("3200.00"),
+        currency=test_account.currency,
+        type="credit",
+        date=date(2026, 1, 15),
+        status="posted",
+        source="manual",
+    )
+    session.add_all([opening, salary])
+    await session.commit()
+
+    ctx = CallContext(
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        conversation_id=uuid.uuid4(),
+    )
+    agg = await REGISTRY["aggregate"].handler(
+        session=session, ctx=ctx, tx_type="income", include_opening_balance=None
+    )
+    assert sum(item["value"] for item in agg["items"]) == pytest.approx(3200.0)
+    assert sum(item["count"] for item in agg["items"]) == 1
+
+    listed = await REGISTRY["list_transactions"].handler(
+        session=session, ctx=ctx, include_opening_balance=None
+    )
+    assert listed["total"] == 1
+    assert [item["id"] for item in listed["items"]] == [str(salary.id)]
