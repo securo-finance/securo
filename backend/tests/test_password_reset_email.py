@@ -176,6 +176,24 @@ async def test_recovery_link_sets_a_new_password(client: AsyncClient, test_user:
 
 
 @pytest.mark.asyncio
+async def test_recovery_link_stamps_when_the_password_was_set(
+    client: AsyncClient, session: AsyncSession, test_user: User, sent_emails
+):
+    """An account born without a password (#1965) has one once the link is used."""
+    test_user.password_set_at = None
+    await session.commit()
+    sent, _settings = sent_emails
+    await _ask_for_link(client, "test@example.com")
+    response = await client.post(
+        "/api/auth/reset-password",
+        json={"token": _token_from(sent[0]), "password": "brandnewpass1"},
+    )
+    assert response.status_code == 200, response.text
+    await session.refresh(test_user)
+    assert test_user.password_set_at is not None
+
+
+@pytest.mark.asyncio
 async def test_account_without_a_stored_language_gets_the_english_message(
     client: AsyncClient, test_user: User, sent_emails, session
 ):

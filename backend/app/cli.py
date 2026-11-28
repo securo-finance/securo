@@ -2,6 +2,7 @@
 import asyncio
 import sys
 import uuid
+from datetime import datetime, timezone
 
 from sqlalchemy import select
 
@@ -48,6 +49,7 @@ async def create_user(email: str, password: str) -> None:
             id=uuid.uuid4(),
             email=email,
             hashed_password=hasher.hash(password),
+            password_set_at=datetime.now(timezone.utc),
             is_active=True,
             is_superuser=False,
             is_verified=True,
