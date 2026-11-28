@@ -405,6 +405,18 @@ async def test_a_message_the_instance_model_failed_to_answer_is_not_spent(
 
 
 @pytest.mark.asyncio
+async def test_an_empty_instance_answer_is_not_spent(
+    session, test_user, test_agent: Agent, test_conversation: Conversation
+):
+    empty = _ScriptedProvider([[ChatChunk(type="finish", finish_reason="stop")]])
+    with patch("app.agents.runtime.executor._provider_for", return_value=empty):
+        events = await _run(session, test_user, test_agent, test_conversation, instance_llm=True)
+
+    assert events[-2].error_code == "empty_response"
+    assert await _user_flags(session, test_conversation) == [False]
+
+
+@pytest.mark.asyncio
 async def test_a_broken_own_connection_never_falls_back_to_the_instance_model(
     session, test_user, test_agent: Agent, test_conversation: Conversation
 ):

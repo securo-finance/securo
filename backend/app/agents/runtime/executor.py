@@ -529,9 +529,12 @@ class AgentExecutor:
                 yield ExecutorEvent(type="done", finish_reason="error")
                 return
 
-            if instance_llm and iteration == 0:
+            if instance_llm and iteration == 0 and (
+                text_buf or open_calls or usage_input or usage_output
+            ):
                 # The instance's model answered: the message counts, committed
-                # with the assistant turn below.
+                # with the assistant turn below. An empty answer (the
+                # empty_response case further down) spends nothing.
                 user_msg.instance_llm = True
 
             assistant_text = "".join(text_buf)
