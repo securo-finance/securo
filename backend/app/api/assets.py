@@ -32,10 +32,12 @@ from app.schemas.asset_import import (
     AssetImportResult,
 )
 from app.schemas.asset import (
+    ArchivedAssetCountsRead,
     AssetBuyCreate,
     AssetCreate,
     AssetPriceRefreshResult,
     AssetRead,
+    AssetReorder,
     AssetTransactionCreate,
     AssetTransactionRead,
     AssetTransactionUpdate,
@@ -341,6 +343,23 @@ async def refresh_all_asset_prices(
     return AssetPriceRefreshResult(**summary)
 
 
+@router.put("/order", status_code=status.HTTP_204_NO_CONTENT)
+async def reorder_assets(
+    data: AssetReorder,
+    ctx: WorkspaceContext = Depends(current_writable_workspace),
+    session: AsyncSession = Depends(get_async_session),
+):
+    try:
+        reordered = await asset_service.reorder_assets(session, ctx.workspace.id, data.asset_ids)
+    except asset_service.MixedWalletsError:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Holdings must belong to one wallet",
+        )
+    if not reordered:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="One or more holdings not found")
+
+
 @router.get("", response_model=list[AssetRead])
 async def list_assets(
     include_archived: bool = False,
@@ -360,6 +379,14 @@ async def list_assets(
                 session, asset, primary_currency, rates
             )
     return assets
+
+
+@router.get("/archived-count", response_model=ArchivedAssetCountsRead)
+async def archived_asset_counts(
+    ctx: WorkspaceContext = Depends(current_workspace),
+    session: AsyncSession = Depends(get_async_session),
+) -> ArchivedAssetCountsRead:
+    return await asset_service.get_archived_asset_counts(session, ctx.workspace.id)
 
 
 @router.get("/portfolio-trend")

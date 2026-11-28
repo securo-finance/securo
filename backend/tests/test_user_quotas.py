@@ -264,6 +264,78 @@ async def test_a_refused_invite_keeps_an_account_another_workspace_already_added
 
 
 @pytest.mark.asyncio
+async def test_the_refusal_hands_the_new_account_to_the_service(
+    managed, client: AsyncClient, session, test_user, test_workspace, auth_headers
+):
+    """The route leaves the decision to keep or delete the account to the service."""
+    await _limit(session, test_user.id, max_members_per_workspace=1)
+    real = quota_service.check_new_member
+    calls = 0
+
+    async def seat_taken_after_the_first_check(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        if calls > 1:
+            raise quota_service._refuse("max_members_per_workspace", 1, 1)
+        await real(*args, **kwargs)
+
+    drop = AsyncMock(wraps=workspace_service.drop_unattached_account)
+    with patch.object(quota_service, "check_new_member", seat_taken_after_the_first_check), \
+            patch.object(workspace_service, "drop_unattached_account", drop):
+        resp = await client.post(
+            f"/api/workspaces/{test_workspace.id}/members",
+            json={"email": "handed@example.com", "role": "editor", "password": "a-long-password-1"},
+            headers=auth_headers,
+        )
+    assert resp.status_code == 403, resp.text
+    drop.assert_awaited_once()
+    session.expire_all()
+    assert drop.await_args is not None
+    assert drop.await_args.args[1] is not None
+    assert await session.scalar(select(User).where(User.email == "handed@example.com")) is None
+
+
+@pytest.mark.asyncio
+async def test_an_existing_account_refused_an_invite_is_never_handed_to_the_service(
+    managed, client: AsyncClient, session, test_user, test_workspace, auth_headers
+):
+    await _limit(session, test_user.id, max_members_per_workspace=0)
+    await _user(session, "existing@example.com")
+    await session.commit()
+    drop = AsyncMock()
+    with patch.object(workspace_service, "drop_unattached_account", drop):
+        resp = await client.post(
+            f"/api/workspaces/{test_workspace.id}/members",
+            json={"email": "existing@example.com", "role": "editor"},
+            headers=auth_headers,
+        )
+    assert resp.status_code == 403, resp.text
+    drop.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_the_service_deletes_an_account_with_no_workspace(session: AsyncSession):
+    lonely = await _user(session, "lonely@example.com")
+    lonely_id = lonely.id
+    assert await workspace_service.drop_unattached_account(session, lonely_id) is True
+    session.expire_all()
+    assert await session.get(User, lonely_id) is None
+
+
+@pytest.mark.asyncio
+async def test_the_service_keeps_an_account_that_belongs_to_a_workspace(session: AsyncSession):
+    owner = await _user(session, "keeper-owner@example.com")
+    workspace = await _workspace(session, owner, "business")
+    member = await _user(session, "kept@example.com")
+    member_id = member.id
+    session.add(WorkspaceMember(workspace_id=workspace.id, user_id=member_id, role="editor"))
+    await session.flush()
+    assert await workspace_service.drop_unattached_account(session, member_id) is False
+    session.expire_all()
+    assert await session.get(User, member_id) is not None
+
+
+@pytest.mark.asyncio
 async def test_an_invite_with_room_still_creates_the_account(managed, client: AsyncClient, session, test_user, test_workspace, auth_headers):
     await _limit(session, test_user.id, max_members_per_workspace=1)
     resp = await client.post(
