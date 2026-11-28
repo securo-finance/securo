@@ -43,6 +43,12 @@
       "groupName": "backend (non-major)"
     },
     {
+      "description": "backend/Dockerfile copies uv from ghcr.io/astral-sh/uv, but the tag is tracked from PyPI by the custom manager below: the docker datasource has no release timestamps for ghcr.io, so the 7-day cooldown could not apply to it, and the PyPI release is the same uv as every other pin. The dockerfile manager would bump it a second time, so it leaves this image alone.",
+      "matchDatasources": ["docker"],
+      "matchPackageNames": ["ghcr.io/astral-sh/uv"],
+      "enabled": false
+    },
+    {
       "description": "Postgres majors need a deliberate data migration for self-hosters — never auto-PR them",
       "matchDatasources": ["docker"],
       "matchPackageNames": ["pgvector/pgvector"],
@@ -53,7 +59,7 @@
   "customManagers": [
     {
       "customType": "regex",
-      "description": "uv pinned in the Dockerfile, CI, the release workflow and scripts/lock.sh (marked with a `# renovate:` comment)",
+      "description": "uv pinned in the Dockerfile (the uv image tag), CI, the release workflow and scripts/lock.sh (marked with a `# renovate:` comment)",
       "fileMatch": [
         "^backend/Dockerfile$",
         "^backend/scripts/lock\\.sh$",
@@ -61,7 +67,7 @@
         "^\\.github/workflows/prepare-release\\.yml$"
       ],
       "matchStrings": [
-        "# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)\\n[^\\n]*?(?:==|@)(?<currentValue>\\d+\\.\\d+\\.\\d+)",
+        "# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)\\n[^\\n]*?(?:==|@|:)(?<currentValue>\\d+\\.\\d+\\.\\d+)",
         "# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)\\n[^\\n]*?version:\\s*\"(?<currentValue>\\d+\\.\\d+\\.\\d+)\""
       ]
     }

@@ -277,11 +277,30 @@ def test_openai_headers_carry_conversation_session_when_set():
     assert h["x-opencode-session"] == "conv-42"
 
 
-def test_openai_user_agent_falls_back_without_distribution(monkeypatch):
+def test_openai_user_agent_carries_the_running_version(monkeypatch):
     import app.agents.providers.openai as mod
+
+    monkeypatch.setattr(mod, "securo_version", lambda: "1.2.3")
+    assert mod._app_user_agent() == "securo/1.2.3"
+
+
+def test_openai_user_agent_falls_back_without_a_version(monkeypatch):
+    import app.agents.providers.openai as mod
+
+    monkeypatch.setattr(mod, "securo_version", lambda: None)
+    assert mod._app_user_agent() == "securo"
+
+
+def test_securo_version_reads_pyproject_without_package_metadata(monkeypatch):
+    # The Docker image doesn't install the project as a package.
+    import tomllib
+    from pathlib import Path
+
+    import app.core.app_version as mod
 
     def _missing(*args, **kwargs):
         raise mod.PackageNotFoundError("securo-backend")
 
-    monkeypatch.setattr(mod, "_pkg_version", _missing)
-    assert mod._app_user_agent() == "securo"
+    monkeypatch.setattr(mod, "package_version", _missing)
+    pyproject = Path(mod.__file__).resolve().parents[2] / "pyproject.toml"
+    assert mod.securo_version() == tomllib.loads(pyproject.read_text())["project"]["version"]
