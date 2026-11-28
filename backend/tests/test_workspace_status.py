@@ -19,6 +19,7 @@ from app.models.recurring_transaction import RecurringTransaction
 from app.models.transaction import Transaction
 from app.models.user import User
 from app.models.workspace import Workspace
+from app.providers.base import AccountData, TransactionData
 from app.providers.market_price import LatestClose
 from app.schemas.group import GroupCreate, GroupMemberCreate
 from app.schemas.group_settlement import GroupSettlementCreate, GroupSettlementUpdate
@@ -522,11 +523,21 @@ async def test_a_queued_sync_refuses_when_the_lock_comes_after_a_suspension(
     sync stops there: the provider is never asked and nothing is written."""
     conn = _bank(test_user, test_workspace.id)
     session.add(conn)
-    test_workspace.status = "suspended"
     await session.commit()
     provider = AsyncMock()
+    locked_lookup = connection_service.get_connection
 
-    with pytest.raises(connection_service.WorkspaceSuspendedError):
+    async def lock_then_suspend(*args, **kwargs):
+        # The workspace is active while the run waits; the suspension lands
+        # once the real locked lookup has returned the connection.
+        found = await locked_lookup(*args, **kwargs)
+        await _suspend(session, test_workspace.id)
+        return found
+
+    with (
+        patch.object(connection_service, "get_connection", side_effect=lock_then_suspend),
+        pytest.raises(connection_service.WorkspaceSuspendedError),
+    ):
         await connection_service.sync_connection(
             session, conn.id, test_workspace.id, test_user.id, provider=provider
         )
@@ -536,6 +547,107 @@ async def test_a_queued_sync_refuses_when_the_lock_comes_after_a_suspension(
         select(func.count()).select_from(Account).where(Account.workspace_id == test_workspace.id)
     )
     assert accounts == 0
+
+
+async def _suspend(session, workspace_id):
+    """The administrator's change, as the next statement of the run reads it."""
+    await session.execute(
+        update(Workspace).where(Workspace.id == workspace_id).values(status="suspended")
+    )
+
+
+def _bank_provider():
+    provider = AsyncMock()
+    provider.refresh_credentials.return_value = {"token": "fake"}
+    provider.get_institution_logo.return_value = None
+    provider.get_holdings.return_value = []
+    provider.rereads_by_date = False
+    provider.rate_limited_account_ids = set()
+    provider.rate_limit_retry_after = None
+    provider.presence_required_account_ids = set()
+    provider.action_required_warnings = []
+    provider.get_accounts.return_value = [
+        AccountData(
+            external_id="acc-1", name="Checking", type="checking",
+            balance=Decimal("100.00"), currency="BRL",
+        )
+    ]
+    provider.get_transactions.return_value = [
+        TransactionData(
+            external_id="tx-1", description="Coffee", amount=Decimal("5.00"),
+            date=date.today(), type="debit", currency="BRL",
+        )
+    ]
+    return provider
+
+
+async def _synced_rows(session, workspace_id):
+    accounts = await session.scalar(
+        select(func.count()).select_from(Account).where(Account.workspace_id == workspace_id)
+    )
+    transactions = await session.scalar(
+        select(func.count()).select_from(Transaction).where(Transaction.workspace_id == workspace_id)
+    )
+    return accounts, transactions
+
+
+@pytest.mark.parametrize("during", ["get_accounts", "get_transactions"])
+async def test_a_sync_suspended_while_the_provider_answers_writes_nothing(
+    session, test_user, test_workspace, during
+):
+    """The workspace is suspended after the run took the connection lock, while
+    the bank answers: before the account loop, or inside it. The run stops,
+    writes nothing and leaves the connection as it was, not failed."""
+    workspace_id, user_id = test_workspace.id, test_user.id
+    conn = _bank(test_user, workspace_id)
+    session.add(conn)
+    await session.commit()
+    conn_id = conn.id
+    provider = _bank_provider()
+    answer = getattr(provider, during).return_value
+
+    async def suspend_then_answer(*_args, **_kwargs):
+        await _suspend(session, workspace_id)
+        return answer
+
+    getattr(provider, during).side_effect = suspend_then_answer
+
+    with (
+        patch("app.services.connection_service.detect_transfer_pairs", new_callable=AsyncMock),
+        pytest.raises(connection_service.WorkspaceSuspendedError),
+    ):
+        await connection_service.sync_connection(
+            session, conn_id, workspace_id, user_id, provider=provider
+        )
+
+    assert await _synced_rows(session, workspace_id) == (0, 0)
+    status, last_sync_at = (
+        await session.execute(
+            select(BankConnection.status, BankConnection.last_sync_at).where(
+                BankConnection.id == conn_id
+            )
+        )
+    ).one()
+    assert (status, last_sync_at) == ("active", None)
+    if during == "get_accounts":
+        # Stopped before the bank was asked for each account's rows.
+        provider.get_transactions.assert_not_awaited()
+
+
+async def test_the_same_sync_writes_while_the_workspace_stays_active(
+    session, test_user, test_workspace
+):
+    """The run the test above stops, left alone: it does write, so the zeros
+    there come from the suspension."""
+    conn = _bank(test_user, test_workspace.id)
+    session.add(conn)
+    await session.commit()
+    with patch("app.services.connection_service.detect_transfer_pairs", new_callable=AsyncMock):
+        await connection_service.sync_connection(
+            session, conn.id, test_workspace.id, test_user.id, provider=_bank_provider()
+        )
+    accounts, transactions = await _synced_rows(session, test_workspace.id)
+    assert accounts == 1 and transactions > 0
 
 
 @pytest.mark.parametrize("status,calls", [("suspended", 0), ("active", 1)])
@@ -640,6 +752,62 @@ async def test_the_recurring_job(session, test_user, test_workspace, test_accoun
         select(func.count()).select_from(Transaction).where(Transaction.description == "Rent")
     )
     assert count == calls
+
+
+async def test_the_recurring_job_rechecks_each_workspace_before_its_bills(
+    session, test_user, test_workspace
+):
+    """The job picked bills of two workspaces while both were active; one is
+    suspended while the other's bill is being written. The suspended one's
+    bill is left as it was: no transaction, pointer not moved."""
+    other = await workspace_service.create_workspace(
+        session, name="Other", creator=test_user, seed_defaults=False
+    )
+    due = date.today() - timedelta(days=1)
+    bills = {}
+    for workspace in (test_workspace, other):
+        account = Account(
+            id=uuid.uuid4(), user_id=test_user.id, workspace_id=workspace.id,
+            name=f"Account {workspace.name}", type="checking", balance=Decimal("0"),
+            currency="BRL",
+        )
+        bill = RecurringTransaction(
+            id=uuid.uuid4(), user_id=test_user.id, workspace_id=workspace.id,
+            account_id=account.id, description=f"Rent {workspace.name}",
+            amount=Decimal("10.00"), currency="BRL", type="debit", frequency="yearly",
+            start_date=due, next_occurrence=due, auto_generate=True, is_active=True,
+        )
+        session.add_all([account, bill])
+        bills[workspace.id] = bill.id
+    await session.commit()
+
+    match = recurring_transaction_service.recurring_match_service.find_real_tx_for_occurrence
+    suspended_ids = []
+
+    async def suspend_the_other(_session, recurring, occurrence):
+        # The first bill to be written: the administrator suspends the
+        # workspace of the other one meanwhile.
+        if not suspended_ids:
+            target = other.id if recurring.workspace_id == test_workspace.id else test_workspace.id
+            await _suspend(session, target)
+            suspended_ids.append(target)
+        return await match(_session, recurring, occurrence)
+
+    with patch.object(
+        recurring_transaction_service.recurring_match_service,
+        "find_real_tx_for_occurrence",
+        side_effect=suspend_the_other,
+    ):
+        assert await recurring_transaction_service.generate_pending(session, test_user.id) == 1
+
+    [suspended_id] = suspended_ids
+    written = await session.scalar(
+        select(func.count()).select_from(Transaction).where(Transaction.workspace_id == suspended_id)
+    )
+    assert written == 0
+    left = await session.get(RecurringTransaction, bills[suspended_id])
+    await session.refresh(left)
+    assert left.next_occurrence == due
 
 
 @pytest.mark.parametrize("status,calls", [("suspended", 0), ("active", 1)])

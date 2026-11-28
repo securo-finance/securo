@@ -94,7 +94,11 @@ from app.services.fx_rate_service import (
 )
 from app.services.payee_service import find_payee_by_name, get_or_create_payee
 from app.services.transaction_match_service import find_unique_transaction_match
-from app.services.workspace_status_service import SUSPENDED_DETAIL, is_suspended
+from app.services.workspace_status_service import (
+    SUSPENDED_DETAIL,
+    hold_active,
+    is_suspended,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -4986,6 +4990,11 @@ async def sync_connection(
         holdings: Optional[list[HoldingData]] = None
         if _sync_assets_enabled(conn_settings):
             holdings = await _fetch_holdings(session, connection, credentials, provider)
+        # The provider answered slowly enough for an administrator to suspend
+        # the workspace meanwhile: stop before the bank is asked for each
+        # account's rows. The check that holds is the one before the commit.
+        if await is_suspended(session, workspace_id):
+            raise WorkspaceSuspendedError(SUSPENDED_DETAIL)
         auto_invested_deducted = await _resolve_auto_invested_deductions(
             session, connection, holdings, accounts_data
         )
@@ -5862,6 +5871,13 @@ async def sync_connection(
         else:
             connection.status = "active"
         connection.settings = _with_sync_failure(connection.settings, failure)
+        # Everything above is still uncommitted. The account loop asks the
+        # provider again for each account, so the workspace is held only from
+        # here to the commit: a suspension that landed during the run is read
+        # now and nothing is written, and one that comes later waits for this
+        # commit (ADR 0052).
+        if workspace_id not in await hold_active(session, [workspace_id]):
+            raise WorkspaceSuspendedError(SUSPENDED_DETAIL)
         await notification_service.connection_changed(session, connection)
         if rate_limited_accounts:
             logger.warning(
@@ -5920,6 +5936,11 @@ async def sync_connection(
         # Report "rate_limited" so the caller (manual sync endpoint, UI) knows
         # no fresh data was pulled and can say so instead of a success toast.
         return refreshed or connection, 0, "rate_limited"
+    except WorkspaceSuspendedError:
+        # Suspended during the run: nothing it read is kept, and the
+        # connection is not marked failed, since nothing is wrong with it.
+        await session.rollback()
+        raise
     except Exception as exc:
         # Mark connection as errored so UI shows reconnect banner. If some
         # account was also throttled in this run, its Retry-After is kept as
@@ -6009,7 +6030,7 @@ class ConnectionDisconnectedError(Exception):
 
 
 class WorkspaceSuspendedError(Exception):
-    """A sync got the connection lock only after the workspace was suspended."""
+    """The workspace was suspended before the sync could write."""
 
 
 async def unlink_connection(

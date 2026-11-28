@@ -29,7 +29,7 @@ from app.services.fx_rate_service import (
     stamp_primary_amount,
 )
 from app.services.rule_service import apply_rules_to_transaction
-from app.services.workspace_status_service import in_active_workspace
+from app.services.workspace_status_service import hold_active, in_active_workspace
 
 
 class RecurringConflictError(Exception):
@@ -759,11 +759,22 @@ async def generate_pending(
         own_categories = {(row.id, row.workspace_id) for row in rows}
 
     count = 0
+    # Whether each workspace was still active when its first bill came up.
+    # The selection above may be older than a suspension of a workspace whose
+    # bills come later in the loop, so each one is read again, and held until
+    # the commit, before anything is written into it (ADR 0052).
+    held: dict[uuid.UUID, bool] = {}
     for recurring in recurring_list:
         # Legacy rows may exist with a null account_id from before account_id
         # was required. Skip them rather than crashing on Transaction's NOT NULL
         # constraint — the user should edit the recurring to fix it.
         if recurring.account_id is None:
+            continue
+        if recurring.workspace_id not in held:
+            held[recurring.workspace_id] = recurring.workspace_id in await hold_active(
+                session, [recurring.workspace_id]
+            )
+        if not held[recurring.workspace_id]:
             continue
         account = await session.get(Account, recurring.account_id)
         # Sync can move the account to another workspace. Nothing this bill

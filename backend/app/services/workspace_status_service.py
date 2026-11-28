@@ -2,11 +2,12 @@
 
 A suspended workspace can be read and exported, and nothing writes into it.
 Requests are refused by `WorkspaceContext.require_write`; the scheduled jobs
-leave it out of their queries with `in_active_workspace`.
+leave it out of their queries with `in_active_workspace`, and hold it active
+with `hold_active` where they write.
 """
 import uuid
 from datetime import datetime, timezone
-from typing import Any, Optional
+from typing import Any, Iterable, Optional
 
 from fastapi import HTTPException
 from sqlalchemy import ColumnElement, func, select
@@ -40,6 +41,31 @@ async def is_suspended(session: AsyncSession, workspace_id: Optional[uuid.UUID])
     # workspace before the administrator suspended it.
     status = await session.scalar(select(Workspace.status).where(Workspace.id == workspace_id))
     return status is not None and status != WORKSPACE_ACTIVE
+
+
+async def hold_active(
+    session: AsyncSession, workspace_ids: Iterable[Optional[uuid.UUID]]
+) -> set[uuid.UUID]:
+    """The workspaces among these that are active, held so until this transaction ends.
+
+    A job calls it right before it writes. The shared row lock makes
+    `set_status`, which locks the row for update, wait for the job's commit,
+    and a suspension that committed first is read here. Checking without the
+    lock leaves a window: a suspension that commits after the check and
+    before the job's commit would not stop the write (ADR 0052). Jobs do not
+    block each other, the lock is shared. SQLite has no row locks and ignores
+    it.
+    """
+    ids = sorted({i for i in workspace_ids if i is not None}, key=str)
+    if not ids:
+        return set()
+    rows = await session.execute(
+        select(Workspace.id, Workspace.status)
+        .where(Workspace.id.in_(ids))
+        .order_by(Workspace.id)
+        .with_for_update(read=True)
+    )
+    return {row.id for row in rows if row.status == WORKSPACE_ACTIVE}
 
 
 async def require_not_suspended(session: AsyncSession, workspace_id: uuid.UUID) -> None:
