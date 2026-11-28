@@ -20,26 +20,32 @@ import { admin } from '@/lib/api'
 import { extractApiError } from '@/lib/api-errors'
 import type { AdminWorkspace, WorkspaceStatus } from '@/types'
 
+//: Workspaces per page; the API's own default.
+const PAGE_SIZE = 50
+
 export function WorkspaceStatusSettings() {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
   const { refresh } = useWorkspace()
   const [search, setSearch] = useState('')
+  const [page, setPage] = useState(1)
   const [confirming, setConfirming] = useState<AdminWorkspace | null>(null)
   const [reason, setReason] = useState('')
   const { data, isError, refetch } = useQuery({
-    queryKey: ['admin', 'workspaces', search],
-    queryFn: () => admin.listWorkspaces({ search: search || undefined }),
+    queryKey: ['admin', 'workspaces', search, page],
+    queryFn: () => admin.listWorkspaces({ search: search || undefined, page, limit: PAGE_SIZE }),
     placeholderData: keepPreviousData,
   })
+  const pages = data ? Math.max(1, Math.ceil(data.total / PAGE_SIZE)) : 1
   const update = useMutation({
     mutationFn: ({ id, status, reason }: { id: string; status: WorkspaceStatus; reason: string }) =>
       admin.updateWorkspaceStatus(id, status, reason),
     onSuccess: () => {
       closeConfirm()
       void queryClient.invalidateQueries({ queryKey: ['admin', 'workspaces'] })
-      // The administrator may belong to the workspace that just changed.
-      void refresh()
+      // The administrator may belong to the workspace that just changed. In
+      // the background, so the shell does not flash its loading state.
+      void refresh({ background: true })
       toast.success(t('workspaceStatus.updated'))
     },
     onError: (error) => toast.error(extractApiError(error)),
@@ -73,7 +79,12 @@ export function WorkspaceStatusSettings() {
         <Input
           type="search"
           value={search}
-          onChange={(e) => setSearch(e.target.value)}
+          onChange={(e) => {
+            // A new search starts from its first page: the page the old one
+            // was on may not exist in the new results.
+            setSearch(e.target.value)
+            setPage(1)
+          }}
           aria-label={t('workspaceStatus.search')}
           placeholder={t('workspaceStatus.search')}
           className="h-10 max-w-md"
@@ -122,10 +133,34 @@ export function WorkspaceStatusSettings() {
             })}
           </ul>
         )}
-        {data && data.items.length < data.total && (
-          <p className="text-xs text-muted-foreground">
-            {t('workspaceStatus.showing', { shown: data.items.length, total: data.total })}
-          </p>
+        {data && pages > 1 && (
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-xs text-muted-foreground">
+              {t('workspaceStatus.range', {
+                from: (page - 1) * PAGE_SIZE + 1,
+                to: (page - 1) * PAGE_SIZE + data.items.length,
+                total: data.total,
+              })}
+            </p>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={page <= 1}
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+              >
+                {t('common.previous')}
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={page >= pages}
+                onClick={() => setPage((p) => Math.min(pages, p + 1))}
+              >
+                {t('common.next')}
+              </Button>
+            </div>
+          </div>
         )}
       </div>
       <Dialog open={confirming !== null} onOpenChange={(open) => !open && closeConfirm()}>

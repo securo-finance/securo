@@ -4643,7 +4643,7 @@
     "reasonPlaceholder": "Dlaczego ta przestrzeń robocza jest zmieniana",
     "reactivateTitle": "Przywrócić {{name}}?",
     "reactivateDescription": "Członkowie znów mogą zmieniać rzeczy, a zaplanowane zadania wznawiają się tam, gdzie się zatrzymały.",
-    "showing": "Wyświetlono {{shown}} z {{total}}. Użyj wyszukiwania, aby znaleźć pozostałe.",
+    "range": "{{from}}–{{to}} z {{total}}",
     "updated": "Przestrzeń robocza zaktualizowana"
   }
 }

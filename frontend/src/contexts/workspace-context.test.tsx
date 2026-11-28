@@ -236,6 +236,49 @@ describe('loading', () => {
     expect(result.current.workspaces[0].name).toBe('Personal')
   })
 
+  it('stops loading when a refresh overtakes a first load that never answers', async () => {
+    // The first response is dropped once the refresh is the latest request, so
+    // the refresh is what has to end the initial wait. Waiting on the first
+    // load's own completion leaves the shell loading for good.
+    let resolveRefresh: (list: Workspace[]) => void = () => {}
+    workspacesApi.list
+      .mockReturnValueOnce(new Promise<Workspace[]>(() => {}))
+      .mockReturnValueOnce(new Promise<Workspace[]>((resolve) => { resolveRefresh = resolve }))
+
+    const { result } = renderHook(() => useWorkspace(), { wrapper })
+    await act(async () => { window.dispatchEvent(new Event('focus')) })
+    await act(async () => { resolveRefresh([makeWorkspace()]) })
+
+    expect(result.current.isLoading).toBe(false)
+    expect(result.current.hasModule('transactions')).toBe(true)
+  })
+
+  it('keeps the list when a background refresh fails', async () => {
+    // A refresh nobody asked for must not turn the shell into "unreachable".
+    workspacesApi.list
+      .mockResolvedValueOnce([makeWorkspace({ id: 'ws-a' })])
+      .mockRejectedValueOnce(new Error('network'))
+    const { result } = await renderWorkspace()
+
+    await act(async () => { await result.current.refresh({ background: true }) })
+
+    expect(workspacesApi.list).toHaveBeenCalledTimes(2)
+    expect(result.current.loadFailed).toBe(false)
+    expect(result.current.current?.id).toBe('ws-a')
+    expect(result.current.canWrite).toBe(true)
+  })
+
+  it('still reports a failed refresh someone asked for', async () => {
+    workspacesApi.list
+      .mockResolvedValueOnce([makeWorkspace({ id: 'ws-a' })])
+      .mockRejectedValueOnce(new Error('network'))
+    const { result } = await renderWorkspace()
+
+    await act(async () => { await result.current.refresh() })
+
+    expect(result.current.loadFailed).toBe(true)
+  })
+
   it('does not refresh on focus when the list was just loaded', async () => {
     workspacesApi.list.mockResolvedValue([makeWorkspace()])
 
@@ -387,6 +430,37 @@ describe('switchWorkspace', () => {
     })
 
     expect(queryClient.getQueryData(['transactions'])).toBeUndefined()
+  })
+
+  it('drops the cache when a refresh moves the selection off a workspace that is gone', async () => {
+    // The person was removed from ws-b while looking at it. The refresh falls
+    // back to ws-a; ws-b's cached figures must not show under ws-a's name.
+    localStorage.setItem('workspace_id', 'ws-b')
+    workspacesApi.list
+      .mockResolvedValueOnce([makeWorkspace({ id: 'ws-a' }), makeWorkspace({ id: 'ws-b' })])
+      .mockResolvedValueOnce([makeWorkspace({ id: 'ws-a' })])
+
+    const { result, queryClient } = await renderWithClient()
+    expect(result.current.current?.id).toBe('ws-b')
+    queryClient.setQueryData(['transactions'], [{ id: 't1', amount: 100 }])
+
+    await act(async () => { await result.current.refresh({ background: true }) })
+
+    expect(result.current.current?.id).toBe('ws-a')
+    expect(localStorage.getItem('workspace_id')).toBe('ws-a')
+    expect(queryClient.getQueryData(['transactions'])).toBeUndefined()
+  })
+
+  it('keeps the cache when a refresh finds the selection still there', async () => {
+    localStorage.setItem('workspace_id', 'ws-a')
+    workspacesApi.list.mockResolvedValue([makeWorkspace({ id: 'ws-a' })])
+
+    const { result, queryClient } = await renderWithClient()
+    queryClient.setQueryData(['transactions'], [{ id: 't1', amount: 100 }])
+
+    await act(async () => { await result.current.refresh({ background: true }) })
+
+    expect(queryClient.getQueryData(['transactions'])).toBeDefined()
   })
 
   it('leaves the cache alone when switching to the workspace already active', async () => {

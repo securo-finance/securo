@@ -4693,7 +4693,7 @@
     "reasonPlaceholder": "Proč se tento pracovní prostor mění",
     "reactivateTitle": "Obnovit {{name}}?",
     "reactivateDescription": "Členové mohou znovu měnit věci a naplánované úlohy pokračují tam, kde se zastavily.",
-    "showing": "Zobrazeno {{shown}} z {{total}}. Ostatní najdete vyhledáváním.",
+    "range": "{{from}}–{{to}} z {{total}}",
     "updated": "Pracovní prostor aktualizován"
   }
 }

@@ -4482,7 +4482,7 @@
     "reasonPlaceholder": "Warum dieser Arbeitsbereich geändert wird",
     "reactivateTitle": "{{name}} reaktivieren?",
     "reactivateDescription": "Seine Mitglieder können wieder etwas ändern, und geplante Aufgaben laufen dort weiter, wo sie angehalten wurden.",
-    "showing": "{{shown}} von {{total}} werden angezeigt. Suche, um die übrigen zu finden.",
+    "range": "{{from}}–{{to}} von {{total}}",
     "updated": "Arbeitsbereich aktualisiert"
   }
 }

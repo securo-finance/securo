@@ -4481,7 +4481,7 @@
     "reasonPlaceholder": "Why this workspace is being changed",
     "reactivateTitle": "Reactivate {{name}}?",
     "reactivateDescription": "Its members can change things again, and scheduled work resumes where it stopped.",
-    "showing": "Showing {{shown}} of {{total}}. Search to find the others.",
+    "range": "{{from}}–{{to}} of {{total}}",
     "updated": "Workspace updated"
   }
 }

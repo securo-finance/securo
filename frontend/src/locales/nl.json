@@ -4483,7 +4483,7 @@
     "reasonPlaceholder": "Waarom deze werkruimte wordt gewijzigd",
     "reactivateTitle": "{{name}} heractiveren?",
     "reactivateDescription": "De leden kunnen weer dingen wijzigen, en geplande taken gaan verder waar ze stopten.",
-    "showing": "{{shown}} van {{total}} getoond. Zoek om de andere te vinden.",
+    "range": "{{from}}–{{to}} van {{total}}",
     "updated": "Werkruimte bijgewerkt"
   }
 }

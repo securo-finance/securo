@@ -4481,7 +4481,7 @@
     "reasonPlaceholder": "このワークスペースを変更する理由",
     "reactivateTitle": "{{name}}を再開しますか?",
     "reactivateDescription": "メンバーは再び変更できるようになり、予定された処理は止まったところから再開します。",
-    "showing": "{{total}}件中{{shown}}件を表示しています。残りは検索してください。",
+    "range": "{{total}}件中 {{from}}–{{to}}件",
     "updated": "ワークスペースを更新しました"
   }
 }

@@ -35,16 +35,26 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   // When the list last came back, so a background refresh on focus cannot
   // hammer the server while the person alt-tabs.
   const lastLoadedAt = useRef(0)
+  // Whether this session has a list from the server: a background refresh
+  // that fails then keeps it instead of blanking the shell.
+  const hasList = useRef(false)
+  // The token each load is for, read when it lands: whichever load is the
+  // latest one ends the initial wait, a refresh that overtook it included.
+  const tokenRef = useRef(token)
+  // Declared before the effects that load, so they read this render's token.
+  useEffect(() => { tokenRef.current = token }, [token])
   const queryClient = useQueryClient()
 
   const loadWorkspaces = useCallback(async (options?: { background?: boolean }) => {
     const background = options?.background ?? false
     const load = ++loadGeneration.current
+    const loadingFor = tokenRef.current
     if (!background) setLoadingList(true)
     try {
       const fetched = await workspacesApi.list()
       if (load !== loadGeneration.current) return
       lastLoadedAt.current = Date.now()
+      hasList.current = true
       setLoadFailed(false)
       setFailedLoads(0)
       setList(fetched)
@@ -53,18 +63,22 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       // fall back to the first one.
       const storedId = localStorage.getItem(WORKSPACE_STORAGE_KEY)
       const found = fetched.find((w) => w.id === storedId)
-      if (found) {
-        setCurrentId(found.id)
-      } else if (fetched.length > 0) {
-        const fallbackId = fetched[0].id
-        localStorage.setItem(WORKSPACE_STORAGE_KEY, fallbackId)
-        setCurrentId(fallbackId)
-      } else {
-        localStorage.removeItem(WORKSPACE_STORAGE_KEY)
-        setCurrentId(null)
-      }
+      const nextId = found ? found.id : fetched.length > 0 ? fetched[0].id : null
+      if (nextId) localStorage.setItem(WORKSPACE_STORAGE_KEY, nextId)
+      else localStorage.removeItem(WORKSPACE_STORAGE_KEY)
+      setCurrentId(nextId)
+      // Leaving a workspace that is gone is a switch too: the cache holds its
+      // data, so drop it the way `switchWorkspace` does, after the new id is
+      // stored for the refetches.
+      if (storedId && storedId !== nextId) void queryClient.resetQueries()
     } catch (error) {
       if (load !== loadGeneration.current) return
+      if (background && hasList.current) {
+        // A refresh nobody asked for failed: the list in hand is still the
+        // best answer, and the shell must not turn into "unreachable" over it.
+        // The next focus or poll asks again.
+        return
+      }
       // 401s are handled by the global interceptor. Anything else means the
       // server could not be asked, not that the user has no workspaces: mark
       // it so the shell says so instead of treating every module as off and
@@ -78,9 +92,12 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       // Whoever is the latest load clears the flag, background ones included:
       // a refresh that overtook the first load leaves the shell waiting on a
       // response nobody applies unless its own completion ends the wait.
-      if (load === loadGeneration.current) setLoadingList(false)
+      if (load === loadGeneration.current) {
+        setLoadingList(false)
+        setFetchedFor(loadingFor)
+      }
     }
-  }, [])
+  }, [queryClient])
 
   useEffect(() => {
     // Stay in the loading state until auth has settled. Reporting "done,
@@ -90,6 +107,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     if (authLoading) return
     if (!user || !token) {
       loadGeneration.current += 1
+      hasList.current = false
       setFailedLoads(0)
       setList([])
       setCurrentId(null)
@@ -98,11 +116,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       setFetchedFor(null)
       return
     }
-    let cancelled = false
-    void loadWorkspaces().finally(() => {
-      if (!cancelled) setFetchedFor(token)
-    })
-    return () => { cancelled = true }
+    // The load records `fetchedFor` itself when it is the latest one.
+    void loadWorkspaces()
   }, [authLoading, user, token, loadWorkspaces])
 
   // A failed list must heal by itself once the connection is back: the URL the

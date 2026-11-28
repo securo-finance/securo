@@ -4677,7 +4677,7 @@
     "reasonPlaceholder": "Prečo sa tento pracovný priestor mení",
     "reactivateTitle": "Obnoviť {{name}}?",
     "reactivateDescription": "Členovia môžu znova meniť veci a naplánované úlohy pokračujú tam, kde sa zastavili.",
-    "showing": "Zobrazené {{shown}} z {{total}}. Ostatné nájdete vyhľadávaním.",
+    "range": "{{from}}–{{to}} z {{total}}",
     "updated": "Pracovný priestor aktualizovaný"
   }
 }

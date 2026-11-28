@@ -49,7 +49,9 @@ it('asks before suspending, then shows what the server says', async () => {
   await waitFor(() =>
     expect(admin.updateWorkspaceStatus).toHaveBeenCalledWith('w1', 'suspended', 'Audit in progress'),
   )
-  await waitFor(() => expect(refresh).toHaveBeenCalled())
+  // In the background: a foreground load would put the shell back in its
+  // loading state for a change the administrator just made.
+  await waitFor(() => expect(refresh).toHaveBeenCalledWith({ background: true }))
   expect(admin.listWorkspaces).toHaveBeenCalledTimes(2)
   expect(await screen.findByRole('button', { name: 'Reactivate Home' })).toBeVisible()
   expect(screen.queryByRole('button', { name: 'Suspend Home' })).not.toBeInTheDocument()
@@ -89,13 +91,50 @@ it('searches on the server and shows what the search returned', async () => {
   )
 
   const { user } = renderWithProviders(<WorkspaceStatusSettings />)
-  expect(await screen.findByText(/Showing 1 of 60/)).toBeVisible()
+  expect(await screen.findByText('1–1 of 60')).toBeVisible()
   expect(screen.getByText('Home')).toBeVisible()
 
   await user.type(screen.getByRole('searchbox'), 'x')
   expect(await screen.findByText('Warehouse')).toBeVisible()
   expect(screen.queryByText('Home')).not.toBeInTheDocument()
-  // The whole result fits on screen now, so the "showing" hint is gone too.
-  expect(screen.queryByText(/Showing 1 of/)).not.toBeInTheDocument()
-  expect(admin.listWorkspaces).toHaveBeenLastCalledWith({ search: 'x' })
+  // The whole result fits on one page now, so the pager is gone too.
+  expect(screen.queryByText(/of 60/)).not.toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: 'Next' })).not.toBeInTheDocument()
+  expect(admin.listWorkspaces).toHaveBeenLastCalledWith({ search: 'x', page: 1, limit: 50 })
+})
+
+it('pages through the workspaces past the first fifty, and a search starts over', async () => {
+  const many = (page: number) =>
+    Array.from({ length: page === 3 ? 20 : 50 }, (_, i) => ({
+      ...home,
+      id: `w${page}-${i}`,
+      name: `Workspace ${page}-${i}`,
+    }))
+  vi.mocked(admin.listWorkspaces).mockImplementation(async (params) =>
+    params?.search
+      ? { items: [home], total: 1 }
+      : { items: many(params?.page ?? 1), total: 120 },
+  )
+
+  const { user } = renderWithProviders(<WorkspaceStatusSettings />)
+  expect(await screen.findByText('1–50 of 120')).toBeVisible()
+  expect(screen.getByRole('button', { name: 'Previous' })).toBeDisabled()
+
+  await user.click(screen.getByRole('button', { name: 'Next' }))
+  expect(await screen.findByText('Workspace 2-0')).toBeVisible()
+  expect(screen.getByText('51–100 of 120')).toBeVisible()
+  expect(admin.listWorkspaces).toHaveBeenLastCalledWith({ search: undefined, page: 2, limit: 50 })
+
+  await user.click(screen.getByRole('button', { name: 'Next' }))
+  expect(await screen.findByText('Workspace 3-19')).toBeVisible()
+  expect(screen.getByText('101–120 of 120')).toBeVisible()
+  expect(screen.getByRole('button', { name: 'Next' })).toBeDisabled()
+
+  await user.click(screen.getByRole('button', { name: 'Previous' }))
+  expect(await screen.findByText('Workspace 2-0')).toBeVisible()
+
+  // Page 2 of the old list means nothing for the search.
+  await user.type(screen.getByRole('searchbox'), 'h')
+  expect(await screen.findByText('Home')).toBeVisible()
+  expect(admin.listWorkspaces).toHaveBeenLastCalledWith({ search: 'h', page: 1, limit: 50 })
 })

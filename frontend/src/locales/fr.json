@@ -4496,7 +4496,7 @@
     "reasonPlaceholder": "Pourquoi cet espace de travail est modifié",
     "reactivateTitle": "Réactiver {{name}} ?",
     "reactivateDescription": "Ses membres peuvent de nouveau modifier les choses, et les tâches planifiées reprennent là où elles s'étaient arrêtées.",
-    "showing": "{{shown}} sur {{total}} affichés. Recherchez pour trouver les autres.",
+    "range": "{{from}}–{{to}} sur {{total}}",
     "updated": "Espace de travail mis à jour"
   }
 }

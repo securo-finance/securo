@@ -16,10 +16,12 @@ export function WorkspaceSuspendedNotice() {
   // session read "suspended" when it loaded the workspace list, so its
   // `canWrite` would stay false until a reload. Asking again while the
   // notice is up is what makes the workspace writable on its own (ADR 0052).
+  // In the background: a foreground load would put the whole shell in its
+  // loading state every 30 seconds, and a failed check would blank it.
   useEffect(() => {
     if (!suspended) return
     const timer = window.setInterval(() => {
-      void refresh()
+      void refresh({ background: true })
     }, STATUS_RECHECK_MS)
     return () => window.clearInterval(timer)
   }, [suspended, refresh])

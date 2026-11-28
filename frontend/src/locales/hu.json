@@ -4481,7 +4481,7 @@
     "reasonPlaceholder": "Miért módosul ez a munkaterület",
     "reactivateTitle": "Újraaktiválja ezt: {{name}}?",
     "reactivateDescription": "A tagok ismét módosíthatnak dolgokat, és az ütemezett feladatok onnan folytatódnak, ahol megálltak.",
-    "showing": "{{shown}} / {{total}} megjelenítve. A többit kereséssel találja meg.",
+    "range": "{{from}}–{{to}} / {{total}}",
     "updated": "Munkaterület frissítve"
   }
 }
