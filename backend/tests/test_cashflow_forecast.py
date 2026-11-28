@@ -604,6 +604,47 @@ async def test_cashflow_forecast_counts_manual_bill_once_when_bank_rows_use_anot
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("history", "projected_income"),
+    [
+        (
+            (date(2026, 7, 15), date(2026, 7, 31), date(2026, 8, 15),
+             date(2026, 8, 31), date(2026, 9, 15), date(2026, 9, 30)),
+            "6000.00",
+        ),
+        (
+            (date(2026, 7, 22), date(2026, 8, 5), date(2026, 8, 19),
+             date(2026, 9, 2), date(2026, 9, 16), date(2026, 9, 30)),
+            "12000.00",
+        ),
+    ],
+    ids=["twice-monthly-payroll", "separate-biweekly-payroll"],
+)
+async def test_cashflow_forecast_matches_monthly_payroll_by_date(session, history, projected_income):
+    user_id, ws, checking = await _forecast_workspace(session, "Forecast Twice Monthly Payroll")
+    for next_date in (date(2026, 10, 15), date(2026, 10, 31)):
+        payroll = _manual_recurring(
+            user_id, ws.id, checking.id, "Payroll", "monthly", next_date,
+            amount=Decimal("1000.00"),
+        )
+        payroll.type = "credit"
+        session.add(payroll)
+    for tx_date in history:
+        session.add(_posted_debit(
+            user_id, ws.id, checking.id, "Payroll", "1000.00", tx_date,
+            source="sync", type="credit",
+        ))
+    await session.commit()
+
+    forecast = await generate_cashflow_forecast(
+        session, ws.id, horizon_days=91, include_discretionary_burn=False,
+        reference_date=date(2026, 10, 1),
+    )
+
+    assert forecast.summary.total_projected_inflow == Decimal(projected_income)
+
+
+@pytest.mark.asyncio
 async def test_cashflow_forecast_keeps_unrelated_bill_on_same_cadence(session):
     user_id, ws, checking = await _forecast_workspace(session, "Forecast Other Bill WS")
     session.add(_manual_recurring(
