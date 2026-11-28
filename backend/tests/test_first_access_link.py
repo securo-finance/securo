@@ -11,7 +11,7 @@ import re
 import pytest
 from httpx import AsyncClient
 from pydantic import SecretStr
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
@@ -235,3 +235,65 @@ async def test_resend_is_operator_only(operator, client: AsyncClient, test_user,
     assert (await client.post(resend, headers=admin_auth_headers)).status_code == 403
     wrong = {"Authorization": "Bearer wrong"}
     assert (await client.post(resend, json={"delivery": "response"}, headers=wrong)).status_code == 403
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("delivery", ["email", "response"])
+async def test_with_local_sign_in_off_no_link_is_issued_and_nothing_written(
+    monkeypatch, operator, sent, client: AsyncClient, session: AsyncSession, delivery
+):
+    # A password nobody can sign in with is no way in (LOCAL_AUTH_ENABLED=false).
+    monkeypatch.setattr(get_settings(), "local_auth_enabled", False)
+    resp = await client.post(URL, json=_body(first_access=delivery), headers=operator)
+    assert resp.status_code == 422
+    assert resp.json()["detail"]["code"] == "local_auth_disabled"
+    assert await session.scalar(select(User).where(User.email == "ana@example.com")) is None
+    assert sent == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("delivery", ["email", "response"])
+async def test_with_local_sign_in_off_the_resend_is_refused(
+    monkeypatch, operator, sent, client: AsyncClient, delivery
+):
+    user_id = (await client.post(URL, json=_body(), headers=operator)).json()["user_id"]
+    monkeypatch.setattr(get_settings(), "local_auth_enabled", False)
+    resp = await client.post(
+        f"{URL}/{user_id}/first-access-link", json={"delivery": delivery}, headers=operator
+    )
+    assert resp.status_code == 422
+    assert resp.json()["detail"]["code"] == "local_auth_disabled"
+    assert len(sent) == 1
+
+
+@pytest.mark.asyncio
+async def test_a_link_for_an_address_changed_meanwhile_sets_no_password(
+    monkeypatch, operator, client: AsyncClient, session: AsyncSession
+):
+    """The address is read again under the row lock, not taken from the first read."""
+    from app.core.auth import UserManager
+
+    opened = (await client.post(URL, json=_body(first_access="response"), headers=operator)).json()
+    token = _token(opened["first_access_link"])
+    real_get = UserManager.get
+
+    async def get_then_change_address(self, user_id):
+        user = await real_get(self, user_id)
+        # Another request changes the address after this one read the row; the
+        # object in hand still carries the old one.
+        await self.user_db.session.execute(
+            update(User)
+            .where(User.id == user_id)
+            .values(email="new@example.com")
+            .execution_options(synchronize_session=False)
+        )
+        return user
+
+    monkeypatch.setattr(UserManager, "get", get_then_change_address)
+    resp = await _set_password(client, token)
+    assert resp.status_code == 400
+    assert resp.json()["detail"] == "RESET_PASSWORD_BAD_TOKEN"
+    user = await session.scalar(
+        select(User).where(User.id == opened["user_id"]).execution_options(populate_existing=True)
+    )
+    assert user.password_set_at is None

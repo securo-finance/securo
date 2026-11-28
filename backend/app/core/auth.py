@@ -327,6 +327,16 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
             user = await self.get(uuid.UUID(str(claims.get("sub"))))
         except (exceptions.UserNotExists, ValueError):
             raise exceptions.InvalidResetPasswordToken() from None
+        # Checked under the row lock until the password commits: an address or
+        # password changed meanwhile must spend the link, not be overwritten.
+        user = (
+            await self.db_session.execute(
+                select(User)
+                .where(User.id == user.id)
+                .with_for_update()
+                .execution_options(populate_existing=True)
+            )
+        ).scalar_one()
         fingerprint = claims.get("password_fgpt")
         if (
             user.email != claims.get("email")

@@ -14,6 +14,7 @@ from pydantic import BaseModel, EmailStr, Field, model_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import UserManager, get_user_manager
+from app.core.auth_policy import local_auth_enabled
 from app.core.config import get_settings
 from app.core.database import get_async_session
 from app.core.rate_limit import RateLimiter, client_ip
@@ -35,6 +36,18 @@ def _require_email() -> None:
             detail={
                 "code": "email_disabled",
                 "message": "Email is off on this instance: ask for the first-access link in the response.",
+            },
+        )
+
+
+def _require_local_auth() -> None:
+    """A first password is no way in where sign-in is OIDC only."""
+    if not local_auth_enabled():
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail={
+                "code": "local_auth_disabled",
+                "message": "Local sign-in is off on this instance: there is no first password to set.",
             },
         )
 
@@ -204,9 +217,10 @@ async def open_account(
     (#1967). An email that already has an account is refused (`email_taken`),
     never merged.
     """
+    # Refused before anything is written: an account nobody can enter helps
+    # no one.
+    _require_local_auth()
     if body.first_access == "email":
-        # Refused before anything is written: an account nobody can enter
-        # helps no one.
         _require_email()
     try:
         opened = await operator_account_service.open_account(
@@ -292,6 +306,7 @@ async def resend_first_access_link(
     `password_already_set`: there is no link to hand out.
     """
     user = await _user(session, user_id)
+    _require_local_auth()
     if body.delivery == "email":
         _require_email()
     access = operator_account_service.first_access(user_manager, user, body.delivery)
