@@ -13,7 +13,7 @@ import json
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Literal, Mapping, Optional
+from typing import Literal, Mapping, Optional, Sequence
 
 from fastapi import HTTPException, status
 from sqlalchemy import func, select, text
@@ -153,9 +153,15 @@ def _seats():
 
 
 async def count_members(session: AsyncSession, workspace_id: uuid.UUID) -> int:
-    query = _seats().where(WorkspaceMember.workspace_id == workspace_id)
-    row = (await session.execute(query)).first()
-    return int(row.seats) if row else 0
+    return (await count_members_of(session, [workspace_id])).get(workspace_id, 0)
+
+
+async def count_members_of(session: AsyncSession, workspace_ids: Sequence[uuid.UUID]) -> dict[uuid.UUID, int]:
+    """Seats taken in each of these workspaces, in one grouped query; a workspace with none is left out."""
+    if not workspace_ids:
+        return {}
+    rows = await session.execute(_seats().where(WorkspaceMember.workspace_id.in_(workspace_ids)))
+    return {r.workspace_id: int(r.seats) for r in rows}
 
 
 async def _members_by_workspace(session: AsyncSession, user_id: uuid.UUID) -> list[int]:

@@ -1,10 +1,15 @@
-"""The operator opens an account on a managed instance (#1965).
+"""The operator opens an account on a managed instance (#1965) and looks it up (#1966).
 
 One call writes the person, their workspaces and their limits in one
 transaction, so no account ever exists without its limits. The account is born
 with no password anyone knows: it cannot be signed in to until the person sets
 one (#1967). The operator's reference is unique, and a retry with the same
 reference and address answers the account it already opened.
+
+The lookup carries who the account is, the workspaces it created and its
+limits next to the current counts, and nothing from inside a workspace. The
+counts come from `quota_service.check_fit`, the same functions the limits are
+enforced with, so the lookup and a refusal can never disagree.
 """
 from __future__ import annotations
 
@@ -23,7 +28,13 @@ from app.models.account import Account
 from app.models.admin_access_log import AdminAccessLog, AdminAccessLogViewer
 from app.models.user import User
 from app.models.workspace import Workspace
-from app.services import account_lookup_service, invoice_service, quota_service, workspace_service
+from app.services import (
+    account_lookup_service,
+    invoice_service,
+    quota_service,
+    user_removal_service,
+    workspace_service,
+)
 
 #: Who acted, in the record (ADR 0042): the operator is no account.
 OPERATOR_ACTOR = "operator"
@@ -226,3 +237,63 @@ async def open_account(
         raise
     return OpenedAccount(user=user, workspaces=opened, created=True)
 
+
+# --- Looking an account up (#1966) ---------------------------------------------
+
+
+@dataclass(frozen=True)
+class OwnedWorkspace:
+    id: uuid.UUID
+    name: str
+    kind: str
+    is_archived: bool
+    members: int
+
+
+@dataclass(frozen=True)
+class CounterUsage:
+    counter: str
+    current: int
+    maximum: Optional[int]
+
+
+@dataclass(frozen=True)
+class AccountView:
+    user: User
+    workspaces: list[OwnedWorkspace]
+    usage: list[CounterUsage]
+
+
+async def find_account(
+    session: AsyncSession,
+    *,
+    user_id: Optional[uuid.UUID] = None,
+    email: Optional[str] = None,
+    external_reference: Optional[str] = None,
+) -> Optional[User]:
+    """The account, or None; a deleted person's closed shell (ADR 0047) is no account."""
+    user = None
+    if user_id is not None:
+        user = await session.get(User, user_id)
+    elif email is not None:
+        user = await account_lookup_service.find_account_by_email(session, email)
+    elif external_reference is not None:
+        user = await _by_reference(session, external_reference)
+    if user is None or user_removal_service.is_removed(user):
+        return None
+    return user
+
+
+def password_is_set(user: User) -> bool:
+    """Whether the person picked a password; an account the operator opened has none until then."""
+    return user.password_set_at is not None
+
+
+async def describe(session: AsyncSession, user: User) -> AccountView:
+    owned = await _owned_workspaces(session, user.id)
+    seats = await quota_service.count_members_of(session, [w.id for w in owned])
+    workspaces = [OwnedWorkspace(w.id, w.name, w.kind, w.is_archived, seats.get(w.id, 0)) for w in owned]
+    limits, _ = await quota_service.effective_limits(session, user.id)
+    fit = await quota_service.check_fit(session, user.id, limits)
+    usage = [CounterUsage(f.counter, f.current, f.target) for f in fit.counters]
+    return AccountView(user=user, workspaces=workspaces, usage=usage)
