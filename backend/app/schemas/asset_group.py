@@ -1,9 +1,10 @@
 import uuid
 from typing import Optional
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.schemas.category import ICON_MAX_LENGTH
+from app.schemas.ordering import OrderedIds
 
 
 class AssetGroupBase(BaseModel):
@@ -25,14 +26,7 @@ class AssetGroupUpdate(BaseModel):
 
 
 class AssetGroupReorder(BaseModel):
-    group_ids: list[uuid.UUID] = Field(min_length=1)
-
-    @field_validator("group_ids")
-    @classmethod
-    def group_ids_must_be_unique(cls, group_ids: list[uuid.UUID]) -> list[uuid.UUID]:
-        if len(group_ids) != len(set(group_ids)):
-            raise ValueError("group_ids must be unique")
-        return group_ids
+    group_ids: OrderedIds
 
 
 class AssetGroupRead(AssetGroupBase):

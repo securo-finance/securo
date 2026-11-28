@@ -9,7 +9,7 @@ import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi_users import schemas as fu_schemas
-from sqlalchemy import delete, func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.app_clock import is_valid_timezone
@@ -199,29 +199,6 @@ async def list_workspace_members(
     ]
 
 
-async def _drop_unattached_account(session: AsyncSession, user_id: uuid.UUID) -> bool:
-    """Delete an account made for a refused invite, unless it belongs anywhere.
-
-    Once created, the account is visible to other invites: a parallel one in
-    another workspace can add it and commit before this refusal. Deleting it
-    then would cascade away that membership, so the account is removed only
-    while it has no workspace at all. The row lock waits for an insert that
-    references it still in flight, so the count below sees that member.
-    """
-    await session.execute(
-        select(User.id).where(User.id == user_id).with_for_update()
-    )
-    memberships = await session.scalar(
-        select(func.count()).select_from(WorkspaceMember).where(
-            WorkspaceMember.user_id == user_id
-        )
-    )
-    if memberships:
-        return False
-    await session.execute(delete(User).where(User.id == user_id))
-    return True
-
-
 @router.post(
     "/{workspace_id}/members",
     response_model=MemberRead,
@@ -313,7 +290,7 @@ async def invite_member(
         # this one; the account made for this invite goes with the refusal.
         if created_user_id is not None:
             await session.rollback()
-            await _drop_unattached_account(session, created_user_id)
+            await workspace_service.drop_unattached_account(session, created_user_id)
             await session.commit()
         raise
     await session.commit()

@@ -11,10 +11,13 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import Mapping, Optional
 
 from fastapi import HTTPException, status
 from sqlalchemy import func, select, text
+from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import row_security
@@ -234,11 +237,18 @@ async def check_fit(
 
 
 async def set_quota(session: AsyncSession, user_id: uuid.UUID, values: Mapping[str, Optional[int]]) -> UserQuota:
-    quota = await get_quota(session, user_id)
-    if quota is None:
-        quota = UserQuota(user_id=user_id)
-        session.add(quota)
-    for counter in COUNTERS:
-        setattr(quota, counter, values.get(counter))
-    await session.flush()
+    """Write the account's four numbers in one upsert.
+
+    Reading the row and creating it when missing let two first writes at once
+    both read nothing and both insert, and the second failed on the primary
+    key (issue #1983). The upsert makes the second wait for the first and then
+    update the row.
+    """
+    row: dict[str, object] = {counter: values.get(counter) for counter in COUNTERS}
+    row["updated_at"] = datetime.now(timezone.utc)
+    insert = pg_insert if session.get_bind().dialect.name == "postgresql" else sqlite_insert
+    statement = insert(UserQuota).values(user_id=user_id, **row)
+    await session.execute(statement.on_conflict_do_update(index_elements=[UserQuota.user_id], set_=row))
+    quota = await session.get(UserQuota, user_id, populate_existing=True)
+    assert quota is not None
     return quota

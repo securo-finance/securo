@@ -3,7 +3,7 @@ import react from '@vitejs/plugin-react'
 import path from 'node:path'
 
 // These library suites need the DOM (browser styles, i18n, overlay lookups).
-const nodeTests = ['src/lib/!(theme-utils|workspace-kinds|overlay-layers).test.ts']
+const nodeTests = ['src/lib/!(theme-utils|workspace-kinds|overlay-layers|drag-surface).test.ts']
 
 export default defineConfig({
   plugins: [react()],

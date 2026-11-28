@@ -50,6 +50,25 @@ if (missing.length > 0) {
   )
 }
 
+const localesDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'src', 'locales')
+const bundledLocales = new Set(['en', 'pt-BR'])
+const lazyLocaleCodes = readdirSync(localesDir)
+  .filter((name) => name.endsWith('.json'))
+  .map((name) => name.replace(/\.json$/, ''))
+  .filter((code) => !bundledLocales.has(code))
+const lazyLocaleChunkRe = new RegExp(
+  `^static/(?:${lazyLocaleCodes.map((c) => c.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})-[^/]+\\.js$`,
+)
+const eagerlyPrecachedLocales = precachedUrls.filter((url) => lazyLocaleChunkRe.test(url))
+if (eagerlyPrecachedLocales.length > 0) {
+  fail(
+    `optional locale chunks should be runtime-cached on demand rather than eagerly precached: ${eagerlyPrecachedLocales.join(', ')}`,
+  )
+}
+if (!swSource.includes('securo-locales')) {
+  fail('expected runtimeCaching route "securo-locales" in sw.js for on-demand offline locale caching')
+}
+
 console.log(
-  `check-pwa-precache: ${precachedUrls.length} entries, including static/${workerFile} and manifest.json`,
+  `check-pwa-precache: ${precachedUrls.length} entries, including static/${workerFile} and manifest.json (${lazyLocaleCodes.length} optional locales excluded from eager precache)`,
 )
