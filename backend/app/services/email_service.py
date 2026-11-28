@@ -349,22 +349,37 @@ FIRST_ACCESS_TEMPLATES: dict[str, dict[str, str]] = {
         "body": (
             "Hi,\n\n"
             "An account on {app_name} was opened for this address.\n"
-            "Open the link below to choose your password. It is valid for {hours} hours:\n\n"
+            "Open the link below to choose your password. It is valid for {lifetime}:\n\n"
             "{link}\n\n"
             "If you were not expecting this, ignore this message.\n"
         ),
+        "hour": "1 hour",
+        "hours": "{n} hours",
+        "minute": "1 minute",
+        "minutes": "{n} minutes",
     },
     "pt": {
         "subject": "Sua conta no {app_name} está pronta",
         "body": (
             "Olá,\n\n"
             "Uma conta no {app_name} foi aberta para este endereço.\n"
-            "Abra o link abaixo para escolher sua senha. Ele vale por {hours} horas:\n\n"
+            "Abra o link abaixo para escolher sua senha. Ele vale por {lifetime}:\n\n"
             "{link}\n\n"
             "Se você não esperava por isso, ignore esta mensagem.\n"
         ),
+        "hour": "1 hora",
+        "hours": "{n} horas",
+        "minute": "1 minuto",
+        "minutes": "{n} minutos",
     },
 }
+
+
+def _lifetime(template: dict[str, str], minutes: int) -> str:
+    """The link's lifetime as the message says it: in hours when it is a whole
+    number of them, in minutes otherwise, so the promise matches the expiry."""
+    n, unit = (minutes // 60, "hour") if minutes % 60 == 0 else (minutes, "minute")
+    return template[unit] if n == 1 else template[f"{unit}s"].format(n=n)
 
 
 def first_access_email(
@@ -372,7 +387,7 @@ def first_access_email(
 ) -> Email:
     """The first-access message in the account's language."""
     template = FIRST_ACCESS_TEMPLATES[template_language(language)]
-    values = {"app_name": app_name, "link": link, "hours": max(1, token_minutes // 60)}
+    values = {"app_name": app_name, "link": link, "lifetime": _lifetime(template, token_minutes)}
     return Email(
         to=to, subject=template["subject"].format(**values), text=template["body"].format(**values)
     )

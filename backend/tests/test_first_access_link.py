@@ -106,6 +106,24 @@ async def test_the_message_carries_a_link_that_sets_the_first_password(
     assert user.is_verified is True
 
 
+@pytest.mark.parametrize(
+    ("minutes", "language", "says"),
+    [
+        (4320, "en", "valid for 72 hours:"),
+        (60, "en", "valid for 1 hour:"),
+        (30, "en", "valid for 30 minutes:"),
+        (90, "en", "valid for 90 minutes:"),
+        (1, "en", "valid for 1 minute:"),
+        (120, "pt-BR", "vale por 2 horas:"),
+        (45, "pt-BR", "vale por 45 minutos:"),
+    ],
+)
+def test_the_message_states_the_lifetime_the_link_has(minutes, language, says):
+    # A lifetime that is not whole hours is said in minutes, never rounded.
+    message = email_service.first_access_email("ana@example.com", "https://x", language, minutes)
+    assert says in message.text
+
+
 @pytest.mark.asyncio
 async def test_the_link_works_once(operator, sent, client: AsyncClient):
     await client.post(URL, json=_body(), headers=operator)
