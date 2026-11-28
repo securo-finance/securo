@@ -7,7 +7,7 @@ if they did not exist.
 """
 import hmac
 import uuid
-from typing import Literal, Optional
+from typing import Optional
 
 from fastapi import APIRouter, BackgroundTasks, Body, Depends, HTTPException, Request, Response, status
 from pydantic import BaseModel, EmailStr, Field, model_validator
@@ -24,7 +24,7 @@ from app.services import email_service, operator_account_service, quota_service
 
 router = APIRouter(prefix="/api/operator", tags=["operator"])
 
-FirstAccessDelivery = Literal["email", "response"]
+FirstAccessDelivery = operator_account_service.FirstAccessDelivery
 
 
 def _require_email() -> None:
@@ -235,14 +235,13 @@ async def open_account(
         ) from exc
     if not opened.created:
         response.status_code = status.HTTP_200_OK
-    link = None
-    if opened.user.password_set_at is None:
-        if body.first_access == "response":
-            link = _first_access_link(user_manager, opened.user)
-        elif opened.created:
-            # A retry answers the account it already opened and sends nothing
-            # again; the resend route is there for that.
-            background_tasks.add_task(email_service.deliver, _first_access_message(user_manager, opened.user))
+    # A retry answers the account it already opened and sends nothing again;
+    # the resend route is there for that.
+    access = operator_account_service.first_access(
+        user_manager, opened.user, body.first_access, send=opened.created
+    )
+    if access.message:
+        background_tasks.add_task(email_service.deliver, access.message)
     # The limits that hold for the account: its own row, or none (unbounded).
     quota = await quota_service.get_quota(session, opened.user.id)
     return OpenedAccountRead(
@@ -252,31 +251,11 @@ async def open_account(
         created=opened.created,
         workspaces=[OpenedWorkspaceRead.model_validate(w, from_attributes=True) for w in opened.workspaces],
         quotas=QuotaValues(**{c: getattr(quota, c) if quota else None for c in quota_service.COUNTERS}),
-        first_access_link=link,
+        first_access_link=access.link,
     )
 
 
 # --- The first access (#1967) ---------------------------------------------------
-
-
-def _first_access_link(user_manager: UserManager, user: User) -> str:
-    """The link that sets the account's first password, on the recovery screen.
-
-    Never logged: whoever holds it can take the account until it is used.
-    """
-    return email_service.password_reset_link(user_manager.first_access_token(user))
-
-
-def _first_access_message(user_manager: UserManager, user: User) -> email_service.Email:
-    settings = get_settings()
-    preferences = user.preferences if isinstance(user.preferences, dict) else {}
-    return email_service.first_access_email(
-        to=user.email,
-        link=_first_access_link(user_manager, user),
-        language=preferences.get("language"),
-        token_minutes=settings.first_access_token_minutes,
-        app_name=settings.app_name,
-    )
 
 
 class FirstAccessLinkRequest(BaseModel):
@@ -313,14 +292,14 @@ async def resend_first_access_link(
     `password_already_set`: there is no link to hand out.
     """
     user = await _user(session, user_id)
-    if body.delivery == "response":
-        if user.password_set_at is not None:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail={"code": "password_already_set", "message": "This account already has a password."},
-            )
-        return FirstAccessLinkRead(link=_first_access_link(user_manager, user))
-    _require_email()
-    if user.password_set_at is None and user.is_active:
-        background_tasks.add_task(email_service.deliver, _first_access_message(user_manager, user))
-    return FirstAccessLinkRead()
+    if body.delivery == "email":
+        _require_email()
+    access = operator_account_service.first_access(user_manager, user, body.delivery)
+    if body.delivery == "response" and access.password_set:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"code": "password_already_set", "message": "This account already has a password."},
+        )
+    if access.message:
+        background_tasks.add_task(email_service.deliver, access.message)
+    return FirstAccessLinkRead(link=access.link)
