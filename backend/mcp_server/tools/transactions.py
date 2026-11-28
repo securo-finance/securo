@@ -10,7 +10,7 @@ from app.services import transaction_service
 from app.services._query_filters import reporting_date_value
 from mcp_server.auth import CallContext
 from mcp_server.registry import ToolInputError, tool
-from mcp_server.tools._helpers import num, parse_date, parse_uuid, parse_uuid_list, resolve_workspace_id
+from mcp_server.tools._helpers import num, parse_bool, parse_date, parse_uuid, parse_uuid_list, resolve_workspace_id
 
 
 _STATUS_ALIASES = {"all": None, "any": None, "both": None, "": None, "posted": "posted", "pending": "pending"}
@@ -62,7 +62,9 @@ def _normalize_tx_type(tx_type: str | None) -> str | None:
         "uncategorized, and each part is {category_id, category_name, "
         "amount, share_pct}. Reports count each part in its own category. "
         "Filtering by a category returns a split row when any part matches, "
-        "and `matched_amount` is the part inside that filter."
+        "and `matched_amount` is the part inside that filter. "
+        "Synthetic opening_balance rows are excluded from items and `total` "
+        "by default; set include_opening_balance=true to include them."
     ),
     parameters={
         "type": "object",
@@ -101,6 +103,7 @@ def _normalize_tx_type(tx_type: str | None) -> str | None:
             "status": {"type": "string", "enum": ["posted", "pending", "all"], "description": "Filter by posting status: posted = settled, pending = not yet settled, all (or omitted) = both."},
             "uncategorized": {"type": "boolean", "default": False, "description": "Only transactions without a category"},
             "exclude_transfers": {"type": "boolean", "default": False, "description": "Exclude transfers between user's own accounts"},
+            "include_opening_balance": {"type": "boolean", "default": False, "description": "Include synthetic opening_balance rows in items and `total`. Excluded by default."},
             "tags": {"type": "array", "items": {"type": "string"}, "description": "Match any of these tags"},
             "sort_by": {
                 "type": "string",
@@ -146,6 +149,7 @@ async def list_transactions(
     status: str | None = None,
     uncategorized: bool = False,
     exclude_transfers: bool = False,
+    include_opening_balance: bool = False,
     tags: list[str] | None = None,
     sort_by: str = "transaction_date",
     sort_dir: str = "desc",
@@ -163,6 +167,9 @@ async def list_transactions(
     # with the values that work, so the model can correct itself.
     status = _normalize_status(status)
     tx_type = _normalize_tx_type(tx_type)
+    include_opening_balance = parse_bool(
+        include_opening_balance, field="include_opening_balance"
+    )
     ws_id = await resolve_workspace_id(session, ctx)
     txs, total, _ = await transaction_service.get_transactions(
         session,
@@ -183,6 +190,7 @@ async def list_transactions(
         status=status,
         uncategorized=uncategorized,
         exclude_transfers=exclude_transfers,
+        include_opening_balance=include_opening_balance,
         tags=tags or None,
         sort_by=sort_by,
         sort_dir=sort_dir,
