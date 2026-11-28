@@ -7,11 +7,11 @@ import type { NumberFormat, DateFormat } from '@/lib/format'
 import type {
   AppNotificationKind,
   AppNotificationList,
-  QuotaStanding,
   NotificationPreference,
   User,
   AdminUser,
   AdminAccessLogList,
+  MyQuotas,
   AdminUserList,
   AdminWorkspace,
   AdminWorkspaceList,
@@ -419,6 +419,14 @@ export const auth = {
 export const accessLog = {
   mine: async (params?: { page?: number; limit?: number }): Promise<AdminAccessLogList> => {
     const { data } = await api.get('/access-log/mine', { params })
+    return data
+  },
+}
+
+// The account's own usage limits on a managed instance (ADR 0049, ADR 0055)
+export const quotas = {
+  mine: async (): Promise<MyQuotas> => {
+    const { data } = await api.get('/quotas/mine')
     return data
   },
 }
@@ -2416,19 +2424,6 @@ export const notifications = {
   },
   markAllRead: async (): Promise<void> => {
     await api.post('/notifications/read-all', undefined, readOnly)
-  },
-}
-
-// Where the account stands against its own limits; only a managed instance answers.
-export const quotas = {
-  mine: async (): Promise<QuotaStanding | null> => {
-    try {
-      const { data } = await api.get('/quotas/mine')
-      return data
-    } catch (error) {
-      if (axios.isAxiosError(error) && error.response?.status === 404) return null
-      throw error
-    }
   },
 }
 

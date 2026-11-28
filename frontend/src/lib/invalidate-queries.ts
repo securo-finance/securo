@@ -36,11 +36,13 @@ export function invalidateFinancialQueries(queryClient: QueryClient) {
 // A bank sync (native, plugin or a new connection) can change its connections,
 // the money views and the investment side: holdings, their values and, once
 // trades are mirrored, each holding's trade ledger and the Performance tab
-// built from it. Refresh all of them so nothing waits for staleTime or a reload.
+// built from it. A new connection also takes a place in the account's usage
+// limits (ADR 0049). Refresh all of them so nothing waits for staleTime or a reload.
 export function invalidateSyncedRecords(queryClient: QueryClient) {
   invalidateFinancialQueries(queryClient)
   for (const key of [
     'connections',
+    'quotas',
     'assets',
     'asset-groups',
     'asset-values',

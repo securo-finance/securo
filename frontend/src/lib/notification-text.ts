@@ -17,7 +17,10 @@ export const NOTIFICATION_ICONS: Record<AppNotificationKind, LucideIcon> = {
 }
 
 /** One line per limit the account is above: where it stands and how many to remove to fit. */
-export function quotaExcessLines(t: TFunction, counters: QuotaCounterExcess[]): string[] {
+export function quotaExcessLines(
+  t: TFunction,
+  counters: Array<Pick<QuotaCounterExcess, 'current' | 'maximum' | 'excess'> & { counter: string }>,
+): string[] {
   return counters
     .filter((c) => c.excess > 0)
     .map((c) => t(`quota.counter.${c.counter}`, { current: c.current, maximum: c.maximum ?? 0, excess: c.excess }))
@@ -117,8 +120,8 @@ export function describeNotification(
       const lines = quotaExcessLines(t, data.counters).join(' · ')
       return {
         title: data.in_effect
-          ? t('quota.title')
-          : t('quota.titleFrom', { date: date(data.effective_at) }),
+          ? t('quota.aboveTitle')
+          : t('quota.aboveTitleFrom', { date: date(data.effective_at) }),
         detail: data.sync_paused ? `${t('quota.syncPaused')} ${lines}` : lines,
       }
     }

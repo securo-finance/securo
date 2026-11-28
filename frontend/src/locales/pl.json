@@ -4628,8 +4628,8 @@
     "withdrawn": "Prośba została wycofana. Twoje konto zachowuje obecny adres"
   },
   "quota": {
-    "title": "Twoje konto przekracza limity",
-    "titleFrom": "Twoje konto przekracza limity od {{date}}",
+    "aboveTitle": "Twoje konto przekracza limity",
+    "aboveTitleFrom": "Twoje konto przekracza limity od {{date}}",
     "syncPaused": "Synchronizacja bankowa jest wstrzymana, dopóki nie zmieścisz się w limicie.",
     "hint": "Nic nie jest usuwane za Ciebie. Gdy zmieścisz się w limitach, wszystko działa jak wcześniej.",
     "counter": {
@@ -4637,9 +4637,34 @@
       "max_personal_workspaces": "Przestrzenie osobiste: {{current}} z {{maximum}}, usuń {{excess}}",
       "max_business_workspaces": "Przestrzenie firmowe: {{current}} z {{maximum}}, usuń {{excess}}",
       "max_members_per_workspace": "Członkowie w przestrzeni: {{current}} z {{maximum}}, usuń {{excess}}"
-    }
-  }
-,
+    },
+    "title": "Limity użycia",
+    "menu": "Limity użycia",
+    "description": "Co to konto może utworzyć w tej instancji. Liczniki bez limitu nie są wyświetlane.",
+    "loadError": "Nie udało się wczytać limitów użycia",
+    "usage": "{{current}} z {{maximum}}",
+    "membersHint": "W Twojej najpełniejszej przestrzeni roboczej, bez Ciebie",
+    "learnMore": "Dowiedz się więcej",
+    "counters": {
+      "max_personal_workspaces": "Osobiste przestrzenie robocze",
+      "max_business_workspaces": "Firmowe przestrzenie robocze",
+      "max_bank_connections": "Połączenia bankowe",
+      "max_members_per_workspace": "Członkowie na przestrzeń roboczą"
+    },
+    "reached": {
+      "max_personal_workspaces": "To konto osiągnęło limit osobistych przestrzeni roboczych ({{maximum}}). Archiwizuj przestrzenie robocze, aż zostanie ich mniej niż {{maximum}}, a potem utwórz kolejną.",
+      "max_business_workspaces": "To konto osiągnęło limit firmowych przestrzeni roboczych ({{maximum}}). Archiwizuj przestrzenie robocze, aż zostanie ich mniej niż {{maximum}}, a potem utwórz kolejną.",
+      "max_bank_connections": "To konto osiągnęło limit połączeń bankowych ({{maximum}}) w utworzonych przez siebie przestrzeniach roboczych. Usuwaj połączenia, aż zostanie ich mniej niż {{maximum}}, a potem dodaj kolejne.",
+      "max_members_per_workspace": "Ta przestrzeń robocza osiągnęła limit członków ({{maximum}}). Usuwaj członków, aż zostanie ich mniej niż {{maximum}}, a potem dodaj kolejnego."
+    },
+    "ownerReached": {
+      "max_bank_connections": "Właściciel tej przestrzeni roboczej osiągnął limit połączeń bankowych ({{maximum}}). Każdy, kto może edytować tę przestrzeń roboczą, może usuwać jej połączenia; nowe zmieści się, gdy właściciel będzie miał ich mniej niż {{maximum}}.",
+      "max_members_per_workspace": "Ta przestrzeń robocza osiągnęła limit członków jej właściciela ({{maximum}}). Aby dodać kolejnego, trzeba usuwać członków, aż zostanie ich mniej niż {{maximum}}."
+    },
+    "none": "{{label}}: limit tego konta w tej instancji wynosi 0, więc nie można nic dodać.",
+    "ownerNone": "{{label}}: właściciel tej przestrzeni roboczej ma w tej instancji limit 0, więc nie można nic dodać.",
+    "reachedGeneric": "To konto osiągnęło jeden ze swoich limitów użycia."
+  },
   "workspaceStatus": {
     "notice": "Ta przestrzeń robocza jest zawieszona. Możesz wszystko czytać i eksportować, ale niczego nie można zmienić.",
     "error": "Ta przestrzeń robocza jest zawieszona: można ją czytać i eksportować, ale nie zmieniać.",

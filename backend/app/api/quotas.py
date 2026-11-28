@@ -1,16 +1,19 @@
-"""Where the signed-in account stands against its own numbers (ADR 0049, ADR 0055).
+"""An account's own usage limits on a managed instance (ADR 0049, ADR 0055, #1972).
 
-Only on a managed instance; elsewhere it answers 404 as if it did not exist.
-Read only: the numbers and the date are the operator's.
+Read-only and about the caller alone: the operator writes the numbers and the
+date through /api/operator, and this answers them back to the account with the
+count behind each, how far above it is, and from when that matters, so the app
+can show them and explain a `quota_exceeded`.
 """
 from datetime import datetime
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import current_active_user
+from app.core.config import get_settings
 from app.core.database import get_async_session
 from app.models.user import User
 from app.services import quota_service
@@ -18,14 +21,19 @@ from app.services import quota_service
 router = APIRouter(prefix="/api/quotas", tags=["quotas"])
 
 
-class CounterStanding(BaseModel):
+class CounterUsageRead(BaseModel):
     counter: str
     current: int
-    maximum: Optional[int]
+    maximum: int
+    #: How many to remove to fit; for members, the seats over it summed across workspaces.
     excess: int
 
 
-class QuotaStanding(BaseModel):
+class MyQuotasRead(BaseModel):
+    """`enforced` false: the instance holds no account to limits."""
+
+    enforced: bool
+    info_url: Optional[str]
     #: False when the account has no numbers, or fits every one.
     above: bool
     #: When an excess starts to have an effect; null, never.
@@ -33,26 +41,32 @@ class QuotaStanding(BaseModel):
     in_effect: bool
     #: Bank sync stops while the account holds more connections than its number.
     sync_paused: bool
-    counters: list[CounterStanding]
+    counters: list[CounterUsageRead]
 
 
-@router.get("/mine", response_model=QuotaStanding)
-async def my_standing(
+@router.get("/mine", response_model=MyQuotasRead)
+async def my_quotas(
     user: User = Depends(current_active_user),
     session: AsyncSession = Depends(get_async_session),
 ):
     if not quota_service.enforced():
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not Found")
+        return MyQuotasRead(
+            enforced=False, info_url=None, above=False, effective_at=None,
+            in_effect=False, sync_paused=False, counters=[],
+        )
+    limits, _ = await quota_service.effective_limits(session, user.id)
+    fit = await quota_service.check_fit(session, user.id, limits)
     standing = await quota_service.standing(session, user.id)
-    if standing is None:
-        return QuotaStanding(above=False, effective_at=None, in_effect=False, sync_paused=False, counters=[])
-    return QuotaStanding(
-        above=not standing.fit.allowed,
-        effective_at=standing.effective_at,
-        in_effect=standing.in_effect,
-        sync_paused=standing.sync_paused,
+    return MyQuotasRead(
+        enforced=True,
+        info_url=get_settings().quota_info_url.strip() or None,
+        above=not fit.allowed,
+        effective_at=standing.effective_at if standing else None,
+        in_effect=standing.in_effect if standing else False,
+        sync_paused=standing.sync_paused if standing else False,
         counters=[
-            CounterStanding(counter=f.counter, current=f.current, maximum=f.target, excess=f.excess)
-            for f in standing.fit.counters
+            CounterUsageRead(counter=f.counter, current=f.current, maximum=f.target, excess=f.excess)
+            for f in fit.counters
+            if f.target is not None
         ],
     )

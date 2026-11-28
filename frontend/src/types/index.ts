@@ -80,6 +80,34 @@ export interface AdminAccessLogList {
   total: number
 }
 
+/** One limited counter of the account and what it holds now (ADR 0049). */
+export interface QuotaUsage {
+  counter: string
+  current: number
+  maximum: number
+}
+
+/** The account's own limits. `enforced` false: the instance sets none. */
+export interface MyQuotas {
+  enforced: boolean
+  /** The operator's page about the limits, when it set one. */
+  info_url: string | null
+  /** False when the account fits every limit, or has none. */
+  above: boolean
+  /** When an excess starts to have an effect (ADR 0055); null, never. */
+  effective_at: string | null
+  in_effect: boolean
+  /** Bank sync stops while the account holds more connections than its limit. */
+  sync_paused: boolean
+  /** Only the bounded counters; an unbounded one is never listed. */
+  counters: QuotaUsageExcess[]
+}
+
+/** A bounded counter with how many to remove to fit it. */
+export interface QuotaUsageExcess extends QuotaUsage {
+  excess: number
+}
+
 export interface Passkey {
   id: string
   name: string
@@ -2833,15 +2861,6 @@ export interface QuotaCounterExcess {
   current: number
   maximum: number | null
   excess: number
-}
-
-/** The signed-in account against its own limits (managed instance only). */
-export interface QuotaStanding {
-  above: boolean
-  effective_at: string | null
-  in_effect: boolean
-  sync_paused: boolean
-  counters: QuotaCounterExcess[]
 }
 
 export interface NotificationPreference {

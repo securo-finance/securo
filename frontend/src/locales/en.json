@@ -4466,8 +4466,8 @@
     "withdrawn": "The request was withdrawn. Your account keeps its current address"
   },
   "quota": {
-    "title": "Your account is above its limits",
-    "titleFrom": "Your account is above its limits from {{date}}",
+    "aboveTitle": "Your account is above its limits",
+    "aboveTitleFrom": "Your account is above its limits from {{date}}",
     "syncPaused": "Bank sync is paused until you are within your limit.",
     "hint": "Nothing is removed on your behalf. Once you are within your limits, everything works as before.",
     "counter": {
@@ -4475,9 +4475,34 @@
       "max_personal_workspaces": "Personal workspaces: {{current}} of {{maximum}}, remove {{excess}}",
       "max_business_workspaces": "Business workspaces: {{current}} of {{maximum}}, remove {{excess}}",
       "max_members_per_workspace": "Members in a workspace: {{current}} of {{maximum}}, remove {{excess}}"
-    }
-  }
-,
+    },
+    "title": "Usage limits",
+    "menu": "Usage limits",
+    "description": "What this account can create on this instance. Counters without a limit are not listed.",
+    "loadError": "Could not load the usage limits",
+    "usage": "{{current}} of {{maximum}}",
+    "membersHint": "In your fullest workspace, not counting you",
+    "learnMore": "Learn more",
+    "counters": {
+      "max_personal_workspaces": "Personal workspaces",
+      "max_business_workspaces": "Business workspaces",
+      "max_bank_connections": "Bank connections",
+      "max_members_per_workspace": "Members per workspace"
+    },
+    "reached": {
+      "max_personal_workspaces": "This account has reached its limit of {{maximum}} personal workspaces. Archive workspaces until fewer than {{maximum}} are left, then create another.",
+      "max_business_workspaces": "This account has reached its limit of {{maximum}} business workspaces. Archive workspaces until fewer than {{maximum}} are left, then create another.",
+      "max_bank_connections": "This account has reached its limit of {{maximum}} bank connections across the workspaces it created. Remove connections until fewer than {{maximum}} are left, then add another.",
+      "max_members_per_workspace": "This workspace has reached its limit of {{maximum}} members. Remove members until fewer than {{maximum}} are left, then add another."
+    },
+    "ownerReached": {
+      "max_bank_connections": "This workspace's owner has reached their limit of {{maximum}} bank connections. Anyone who can edit this workspace can remove its connections; a new one fits once the owner has fewer than {{maximum}}.",
+      "max_members_per_workspace": "This workspace has reached its owner's limit of {{maximum}} members. Members have to be removed until fewer than {{maximum}} are left to add another."
+    },
+    "none": "{{label}}: this account's limit is 0 on this instance, so none can be added.",
+    "ownerNone": "{{label}}: this workspace's owner has a limit of 0 on this instance, so none can be added.",
+    "reachedGeneric": "This account has reached one of its usage limits."
+  },
   "workspaceStatus": {
     "notice": "This workspace is suspended. You can read and export everything in it, but nothing can be changed.",
     "error": "This workspace is suspended, so it can be read and exported but not changed.",

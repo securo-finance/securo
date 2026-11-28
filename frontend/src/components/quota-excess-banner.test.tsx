@@ -4,7 +4,7 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { QuotaExcessBanner } from '@/components/quota-excess-banner'
 import { describeNotification, notificationTarget, quotaExcessLines } from '@/lib/notification-text'
 import { createTestQueryClient, i18n, renderWithProviders } from '@/test/utils'
-import type { AppNotification, QuotaCounterExcess, QuotaStanding } from '@/types'
+import type { AppNotification, MyQuotas, QuotaCounterExcess } from '@/types'
 
 vi.mock('@/hooks/use-display-locale', () => ({ useDisplayLocale: () => 'en-US', useDateLocale: () => 'en-US' }))
 
@@ -51,12 +51,17 @@ it('tells the date before it comes, and the pause once it has', () => {
   expect(notificationTarget({ ...paused, data: { ...paused.data, counters: [members] } })).toBe('/notifications')
 })
 
-const standing: QuotaStanding = {
+const standing: MyQuotas = {
+  enforced: true,
+  info_url: null,
   above: true,
   effective_at: '2026-11-20T00:00:00Z',
   in_effect: true,
   sync_paused: true,
-  counters: [connections, fits],
+  counters: [
+    { counter: 'max_bank_connections', current: 3, maximum: 1, excess: 2 },
+    { counter: 'max_personal_workspaces', current: 1, maximum: 2, excess: 0 },
+  ],
 }
 
 it('shows what is above the limit and that sync is paused', async () => {
@@ -69,7 +74,8 @@ it('shows what is above the limit and that sync is paused', async () => {
 })
 
 it('shows nothing without a date, or off a managed instance', async () => {
-  for (const answer of [{ ...standing, effective_at: null, in_effect: false, sync_paused: false }, null]) {
+  const off: MyQuotas = { ...standing, enforced: false, above: false, counters: [] }
+  for (const answer of [{ ...standing, effective_at: null, in_effect: false, sync_paused: false }, off]) {
     api.mine.mockResolvedValue(answer)
     const queryClient = createTestQueryClient()
     const { container, unmount } = renderWithProviders(<QuotaExcessBanner />, { queryClient })

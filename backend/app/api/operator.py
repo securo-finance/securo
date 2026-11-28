@@ -18,7 +18,6 @@ from app.core.config import get_settings
 from app.core.database import get_async_session
 from app.core.rate_limit import client_ip
 from app.models.user import User
-from app.models.user_quota import UserQuota
 from app.models.workspace import WorkspaceKind
 from app.schemas.invoice import IssuerTaxIdInput
 from app.services import (
@@ -62,10 +61,22 @@ class QuotaValues(BaseModel):
     max_members_per_workspace: Limit = Field(default=None, ge=0, le=_INT32_MAX)
 
 
+LimitsSource = quota_service.Source
+
+
 class QuotaRead(QuotaValues):
+    """The limits that hold for the account, and where they come from."""
+
     user_id: uuid.UUID
+    source: LimitsSource
     #: After this moment an excess has an effect (ADR 0055); null, never.
     excess_effective_at: Optional[datetime] = None
+
+
+class QuotaDefaultsRead(QuotaValues):
+    """Null on all four with `is_set` false: no default, accounts without a row are unbounded."""
+
+    is_set: bool
 
 
 class ExcessDate(BaseModel):
@@ -74,12 +85,14 @@ class ExcessDate(BaseModel):
     effective_at: Optional[datetime] = None
 
 
-def _read(user_id: uuid.UUID, quota: Optional[UserQuota]) -> QuotaRead:
-    values = {c: getattr(quota, c) if quota else None for c in quota_service.COUNTERS}
+async def _read(session: AsyncSession, user_id: uuid.UUID) -> QuotaRead:
+    """The limits that hold for the account, with their source and the excess date of its own row."""
+    limits, source = await quota_service.effective_limits(session, user_id)
+    quota = await quota_service.get_quota(session, user_id)
     moment = quota.excess_effective_at if quota else None
     if moment is not None and moment.tzinfo is None:
         moment = moment.replace(tzinfo=timezone.utc)
-    return QuotaRead(user_id=user_id, excess_effective_at=moment, **values)
+    return QuotaRead(user_id=user_id, source=source, excess_effective_at=moment, **limits)
 
 
 class CounterFitRead(BaseModel):
@@ -92,6 +105,7 @@ class CounterFitRead(BaseModel):
 class FitCheckRead(BaseModel):
     allowed: bool
     counters: list[CounterFitRead]
+    source: LimitsSource
 
 
 async def _user(session: AsyncSession, user_id: uuid.UUID) -> User:
@@ -104,7 +118,7 @@ async def _user(session: AsyncSession, user_id: uuid.UUID) -> User:
 @router.get("/quotas/{user_id}", response_model=QuotaRead, dependencies=[Depends(operator_only)])
 async def read_quota(user_id: uuid.UUID, session: AsyncSession = Depends(get_async_session)):
     await _user(session, user_id)
-    return _read(user_id, await quota_service.get_quota(session, user_id))
+    return await _read(session, user_id)
 
 
 @router.put("/quotas/{user_id}", response_model=QuotaRead, dependencies=[Depends(operator_only)])
@@ -112,10 +126,10 @@ async def write_quota(
     user_id: uuid.UUID, body: QuotaValues, session: AsyncSession = Depends(get_async_session)
 ):
     await _user(session, user_id)
-    quota = await quota_service.set_quota(session, user_id, body.model_dump())
+    await quota_service.set_quota(session, user_id, body.model_dump())
     await notification_service.quota_changed(session, user_id)
     await session.commit()
-    return _read(user_id, quota)
+    return await _read(session, user_id)
 
 
 @router.put(
@@ -126,10 +140,36 @@ async def write_excess_date(
 ):
     """Set when an excess starts to have an effect, and tell the account now (ADR 0055)."""
     await _user(session, user_id)
-    quota = await quota_service.set_excess_date(session, user_id, body.effective_at)
+    await quota_service.set_excess_date(session, user_id, body.effective_at)
     await notification_service.quota_changed(session, user_id)
     await session.commit()
-    return _read(user_id, quota)
+    return await _read(session, user_id)
+
+
+def _defaults_read(defaults: Optional[dict]) -> QuotaDefaultsRead:
+    return QuotaDefaultsRead(is_set=defaults is not None, **(defaults or {}))
+
+
+@router.get("/quota-defaults", response_model=QuotaDefaultsRead, dependencies=[Depends(operator_only)])
+async def read_quota_defaults(session: AsyncSession = Depends(get_async_session)):
+    return _defaults_read(await quota_service.get_defaults(session))
+
+
+@router.put("/quota-defaults", response_model=QuotaDefaultsRead, dependencies=[Depends(operator_only)])
+async def write_quota_defaults(body: QuotaValues, session: AsyncSession = Depends(get_async_session)):
+    """The limits every account without a row of its own is held to. Rewrites no account."""
+    defaults = await quota_service.set_defaults(session, body.model_dump())
+    await session.commit()
+    return _defaults_read(defaults)
+
+
+@router.delete(
+    "/quota-defaults", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(operator_only)]
+)
+async def clear_quota_defaults(session: AsyncSession = Depends(get_async_session)):
+    """No default: accounts without a row are unbounded again."""
+    await quota_service.set_defaults(session, None)
+    await session.commit()
 
 
 @router.post(
@@ -146,6 +186,7 @@ async def fit_check(
     return FitCheckRead(
         allowed=result.allowed,
         counters=[CounterFitRead(**vars(f)) for f in result.counters],
+        source=result.source,
     )
 
 
@@ -275,13 +316,13 @@ async def open_account(
         ) from exc
     if not opened.created:
         response.status_code = status.HTTP_200_OK
-    # The limits that hold for the account: its own row, or none (unbounded).
-    quota = await quota_service.get_quota(session, opened.user.id)
+    # The limits that hold for the account: its own row, else the defaults, else unbounded.
+    limits, _source = await quota_service.effective_limits(session, opened.user.id)
     return OpenedAccountRead(
         user_id=opened.user.id,
         email=opened.user.email,
         external_reference=opened.user.external_reference or body.external_reference,
         created=opened.created,
         workspaces=[OpenedWorkspaceRead.model_validate(w, from_attributes=True) for w in opened.workspaces],
-        quotas=QuotaValues(**{c: getattr(quota, c) if quota else None for c in quota_service.COUNTERS}),
+        quotas=QuotaValues(**limits),
     )

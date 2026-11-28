@@ -2,18 +2,20 @@ import { useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { Gauge } from 'lucide-react'
 import { useNotificationText } from '@/hooks/use-notifications'
+import { MY_QUOTAS_KEY } from '@/hooks/use-quota'
 import { quotas } from '@/lib/api'
 import { quotaExcessLines } from '@/lib/notification-text'
 
 /**
  * Where the account is above its limits, once the operator set a date (ADR 0055):
- * what is above, and how many to remove to fit. Nothing on an instance that is not managed.
+ * what is above, and how many to remove to fit. It reads the same answer as the usage limits
+ * dialog (`GET /api/quotas/mine`), so nothing shows on an instance that is not managed.
  */
 export function QuotaExcessBanner() {
   const { t } = useTranslation()
   const { date } = useNotificationText()
   const { data } = useQuery({
-    queryKey: ['quotas', 'mine'],
+    queryKey: MY_QUOTAS_KEY,
     queryFn: () => quotas.mine(),
     retry: false,
     staleTime: 5 * 60 * 1000,
@@ -22,7 +24,7 @@ export function QuotaExcessBanner() {
     refetchInterval: 5 * 60 * 1000,
   })
 
-  if (!data || !data.above || !data.effective_at) return null
+  if (!data?.enforced || !data.above || !data.effective_at) return null
   const lines = quotaExcessLines(t, data.counters)
 
   return (
@@ -34,7 +36,7 @@ export function QuotaExcessBanner() {
         <Gauge size={14} className="mt-0.5 shrink-0 text-amber-600" aria-hidden="true" />
         <div className="min-w-0 space-y-0.5">
           <p className="font-medium">
-            {data.in_effect ? t('quota.title') : t('quota.titleFrom', { date: date(data.effective_at) })}
+            {data.in_effect ? t('quota.aboveTitle') : t('quota.aboveTitleFrom', { date: date(data.effective_at) })}
           </p>
           {data.sync_paused && <p>{t('quota.syncPaused')}</p>}
           {lines.map((line) => (

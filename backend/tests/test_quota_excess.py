@@ -264,7 +264,10 @@ async def test_the_kind_exists_only_on_a_managed_instance(session, test_workspac
 
 
 async def test_my_standing_only_on_a_managed_instance(client: AsyncClient, auth_headers):
-    assert (await client.get("/api/quotas/mine", headers=auth_headers)).status_code == 404
+    resp = await client.get("/api/quotas/mine", headers=auth_headers)
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["enforced"] is False and body["above"] is False and body["effective_at"] is None
 
 
 async def test_my_standing_shows_the_excess(managed, client: AsyncClient, session, test_user, test_workspace, auth_headers):

@@ -85,6 +85,8 @@ describe('invalidateSyncedRecords', () => {
       ['asset-performance', 'workspace-1'],
       ['holding-trade-import', 'workspace-1'],
       ['import-logs'],
+      // A new connection takes a place in the account's usage limits.
+      ['quotas', 'mine'],
     ] as const
 
     for (const queryKey of keys) queryClient.setQueryData(queryKey, [])

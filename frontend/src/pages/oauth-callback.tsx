@@ -1,10 +1,12 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useEffectEvent, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import axios from 'axios'
 import { connections } from '@/lib/api'
+import { extractApiError } from '@/lib/api-errors'
+import { useQuotaNotice } from '@/hooks/use-quota'
 import { invalidateSyncedRecords } from '@/lib/invalidate-queries'
 import { Button } from '@/components/ui/button'
 import { Building2, ExternalLink } from 'lucide-react'
@@ -26,6 +28,10 @@ export default function OAuthCallbackPage() {
   const errorDescription = params.get('error_description')
   const [restricted, setRestricted] = useState<RestrictedDetail | null>(null)
   const [retrying, setRetrying] = useState(false)
+  const quotaNotice = useQuotaNotice()
+  // Read at the moment of the refusal, so a late quota answer never re-runs
+  // the single-use callback below.
+  const onRefused = useEffectEvent((err: unknown) => quotaNotice.handle(err))
 
   useEffect(() => {
     // Provider reported an error during the consent step.
@@ -75,12 +81,10 @@ export default function OAuthCallbackPage() {
             return
           }
         }
-        const message =
-          axios.isAxiosError(err) && err.response?.data?.detail
-            ? String(err.response.data.detail)
-            : t('accounts.connectError')
         sessionStorage.removeItem(submitKey)
-        toast.error(message)
+        // A coded detail used to show as "[object Object]"; the helper reads
+        // its message, and a usage limit gets its own sentence.
+        if (!onRefused(err)) toast.error(extractApiError(err, t('accounts.connectError')))
         navigate('/accounts', { replace: true })
       }
     })()
