@@ -215,6 +215,8 @@ async def test_only_the_operator_writes_the_default(
         f"/api/admin/settings/{quota_service.DEFAULTS_KEY}", json={"value": "{}"}, headers=admin_auth_headers,
     )
     assert resp.status_code == 400
+    resp = await client.delete(f"/api/admin/settings/{quota_service.DEFAULTS_KEY}", headers=admin_auth_headers)
+    assert resp.status_code == 400
     resp = await client.put(DEFAULTS_URL, json={"max_bank_connections": -1}, headers={"Authorization": f"Bearer {TOKEN}"})
     assert resp.status_code == 422
 
