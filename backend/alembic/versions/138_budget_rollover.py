@@ -4,15 +4,15 @@ Adds opt-in ``rollover`` and one-month boundary ``reset_rollover`` booleans
 to ``budgets``, defaulting to ``false`` so existing budgets keep single-month
 behavior.
 
-Revision ID: 136
-Revises: 135
+Revision ID: 138
+Revises: 137
 """
 
 import sqlalchemy as sa
 from alembic import op
 
-revision = "136"
-down_revision = "135"
+revision = "138"
+down_revision = "137"
 branch_labels = None
 depends_on = None
 
