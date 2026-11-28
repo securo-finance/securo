@@ -286,6 +286,19 @@ async def test_the_operator_tells_an_account_above_its_numbers_in_each_workspace
         )
         assert sorted(told.all()) == sorted([A, B])
 
+    async with _unchecked(stack) as session:
+        await session.execute(TABLES["user_quotas"].update().values(excess_effective_at=None))
+    async with stack.app() as session:
+        await notification_service.quota_changed(session, user)
+        await session.commit()
+    async with stack.owner() as session:
+        open_notices = await session.scalar(
+            select(func.count()).select_from(Notification).where(
+                Notification.kind == notification_service.QUOTA_EXCESS, Notification.resolved_at.is_(None)
+            )
+        )
+        assert open_notices == 0
+
 
 async def test_jobs_run_one_workspace_at_a_time(stack):
     await _seed(stack)

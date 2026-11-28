@@ -85,12 +85,18 @@ it('shows nothing without a date, or off a managed instance', async () => {
 it('refreshes the standing while it is shown', async () => {
   vi.useFakeTimers()
   try {
-    api.mine.mockResolvedValue(standing)
+    api.mine
+      .mockResolvedValueOnce({ ...standing, effective_at: '2099-01-01T00:00:00Z', in_effect: false, sync_paused: false })
+      .mockResolvedValue(standing)
     renderWithProviders(<QuotaExcessBanner />)
     await vi.advanceTimersByTimeAsync(0)
-    expect(api.mine).toHaveBeenCalledTimes(1)
+    expect(screen.queryByText('Bank sync is paused until you are within your limit.')).not.toBeInTheDocument()
+    expect(screen.getByText(/Your account is above its limits from/)).toBeInTheDocument()
     await vi.advanceTimersByTimeAsync(5 * 60 * 1000)
     expect(api.mine).toHaveBeenCalledTimes(2)
+    await vi.advanceTimersByTimeAsync(1000)
+    expect(screen.getByText('Bank sync is paused until you are within your limit.')).toBeInTheDocument()
+    expect(screen.getByText('Your account is above its limits')).toBeInTheDocument()
   } finally {
     vi.useRealTimers()
   }

@@ -933,6 +933,9 @@ async def quota_changed(session: AsyncSession, user_id: uuid.UUID) -> None:
     for workspace_id in rows.scalars().all():
         async with row_security.bound(session, workspace_id):
             await _reconcile(session, workspace_id, QUOTA_EXCESS, wanted)
+            # Changes to existing notices are still pending here; flush them
+            # while this workspace is bound, or row security matches no row.
+            await session.flush()
 
 
 # --- Scheduled --------------------------------------------------------------
