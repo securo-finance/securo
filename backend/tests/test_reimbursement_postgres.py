@@ -1,7 +1,7 @@
 """Reimbursement allocations on real PostgreSQL (#1126).
 
 SQLite test databases do not enforce foreign keys or run `to_char`, so the
-cascade on raw deletes, the table's constraints, migration 137 and the
+cascade on raw deletes, the table's constraints, migration 138 and the
 report's period labels are checked here.
 """
 
