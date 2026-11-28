@@ -1,4 +1,4 @@
-"""The operator's side of a managed instance (ADR 0049).
+"""The operator's side of a managed instance (ADR 0049, ADR 0054).
 
 Outside the customer's admin on purpose: on a hosted instance the customer's
 administrator is a superuser (ADR 0045), and the per-account limits are the
@@ -19,7 +19,8 @@ from app.core.rate_limit import client_ip
 from app.models.user import User
 from app.models.workspace import WorkspaceKind
 from app.schemas.invoice import IssuerTaxIdInput
-from app.services import operator_account_service, quota_service
+from app.services import module_limit_service, operator_account_service, quota_service
+from app.services.module_service import ModuleId
 
 router = APIRouter(prefix="/api/operator", tags=["operator"])
 
@@ -110,6 +111,38 @@ async def fit_check(
         allowed=result.allowed,
         counters=[CounterFitRead(**vars(f)) for f in result.counters],
     )
+
+
+class ModuleLimitValues(BaseModel):
+    """Null is every module; a list is the only modules the account's workspaces get."""
+
+    modules: Optional[list[ModuleId]] = None
+
+
+class ModuleLimitRead(ModuleLimitValues):
+    user_id: uuid.UUID
+
+
+@router.get(
+    "/modules/{user_id}", response_model=ModuleLimitRead, dependencies=[Depends(operator_only)]
+)
+async def read_module_limit(user_id: uuid.UUID, session: AsyncSession = Depends(get_async_session)):
+    await _user(session, user_id)
+    modules = await module_limit_service.get_limit(session, user_id)
+    return ModuleLimitRead(user_id=user_id, modules=modules)
+
+
+@router.put(
+    "/modules/{user_id}", response_model=ModuleLimitRead, dependencies=[Depends(operator_only)]
+)
+async def write_module_limit(
+    user_id: uuid.UUID, body: ModuleLimitValues, session: AsyncSession = Depends(get_async_session)
+):
+    """Set the account's list, copied onto every workspace it created. Rows are never touched."""
+    await _user(session, user_id)
+    modules = await module_limit_service.set_limit(session, user_id, body.modules)
+    await session.commit()
+    return ModuleLimitRead(user_id=user_id, modules=modules)
 
 
 # --- Opening an account (#1965) -------------------------------------------------

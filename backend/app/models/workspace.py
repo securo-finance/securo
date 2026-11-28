@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Literal, Optional, get_args
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, String, UniqueConstraint
+from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, String, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -106,6 +106,10 @@ class Workspace(Base):
     tax_jurisdiction: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)
     icon: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     color: Mapped[Optional[str]] = mapped_column(String(7), nullable=True)
+    # The modules this workspace may use on a managed instance, copied from
+    # its creator's `user_module_limits` row (ADR 0054). Null means every
+    # module, and with MANAGED_INSTANCE off it is never read.
+    module_allowlist: Mapped[Optional[list[str]]] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
