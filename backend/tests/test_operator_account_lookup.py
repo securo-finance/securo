@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 import pytest
 from httpx import AsyncClient
 from pydantic import SecretStr
+from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
@@ -19,6 +20,7 @@ from app.models.bank_connection import BankConnection
 from app.models.user import User
 from app.models.workspace import Workspace, WorkspaceMember
 from app.services import access_token_service, quota_service
+from tests.conftest import engine
 
 TOKEN = "operator-secret-token"
 URL = "/api/operator/accounts"
@@ -140,6 +142,33 @@ async def test_the_counts_are_the_ones_the_fit_check_reports(
     assert [(u["counter"], u["current"], u["maximum"]) for u in body["usage"]] == [
         (f.counter, f.current, f.target) for f in fit.counters
     ]
+
+
+@pytest.mark.asyncio
+async def test_the_members_of_every_workspace_come_from_one_query(
+    operator, client: AsyncClient, session: AsyncSession, test_user, test_workspace,
+):
+    business, archived = await _held(session, test_user, test_workspace)
+    for email in ("one@example.com", "two@example.com"):
+        session.add(WorkspaceMember(workspace_id=business.id, user_id=(await _user(session, email)).id, role="editor"))
+    await session.commit()
+
+    member_counts: list[str] = []
+
+    def record(conn, cursor, statement, *args):
+        if "workspace_members" in statement and "count(" in statement.lower():
+            member_counts.append(statement)
+
+    event.listen(engine.sync_engine, "before_cursor_execute", record)
+    try:
+        body = (await client.get(URL, params={"user_id": str(test_user.id)}, headers=operator)).json()
+    finally:
+        event.remove(engine.sync_engine, "before_cursor_execute", record)
+
+    members = {w["id"]: w["members"] for w in body["workspaces"]}
+    assert members == {str(test_workspace.id): 1, str(business.id): 2, str(archived.id): 0}
+    # One grouped query for the workspaces' seats, plus the fit check's own: not one per workspace.
+    assert len(member_counts) == 2, member_counts
 
 
 @pytest.mark.asyncio

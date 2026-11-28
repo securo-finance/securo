@@ -280,10 +280,9 @@ def password_is_set(user: User) -> bool:
 
 
 async def describe(session: AsyncSession, user: User) -> AccountView:
-    workspaces = [
-        OwnedWorkspace(w.id, w.name, w.kind, w.is_archived, await quota_service.count_members(session, w.id))
-        for w in await _owned_workspaces(session, user.id)
-    ]
+    owned = await _owned_workspaces(session, user.id)
+    seats = await quota_service.count_members_of(session, [w.id for w in owned])
+    workspaces = [OwnedWorkspace(w.id, w.name, w.kind, w.is_archived, seats.get(w.id, 0)) for w in owned]
     quota = await quota_service.get_quota(session, user.id)
     limits = {c: getattr(quota, c) if quota else None for c in quota_service.COUNTERS}
     fit = await quota_service.check_fit(session, user.id, limits)
