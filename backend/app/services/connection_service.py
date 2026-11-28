@@ -32,6 +32,7 @@ from app.models.invoice_schedule import InvoiceSchedule
 from app.models.goal import Goal
 from app.models.collection import collection_asset_groups
 from app.models.credit_card_bill import CreditCardBill
+from app.models.mortgage_payment_allocation import MortgagePaymentAllocation
 from app.models.payee import Payee, PayeeMapping
 from app.models.rule import Rule
 from app.models.transaction import USER_EDITED_KEY, Transaction
@@ -2262,6 +2263,7 @@ async def handle_oauth_callback(
     provider_name = connection.provider
     for acc_data in connection_data.accounts:
         is_cc = acc_data.type == "credit_card"
+        is_loan = acc_data.type == "loan"
         institution = await _resolve_institution(
             session, connection.id, institution_cache, acc_data
         )
@@ -2270,6 +2272,7 @@ async def handle_oauth_callback(
             workspace_id=workspace_id,
             connection_id=connection.id,
             external_id=acc_data.external_id,
+            stable_external_id=acc_data.stable_external_id,
             name=acc_data.name,
             display_name=institution.name if institution else None,
             masked_number=acc_data.masked_number,
@@ -2283,10 +2286,17 @@ async def handle_oauth_callback(
             currency=acc_data.currency,
             credit_limit=acc_data.credit_limit if is_cc else None,
             statement_close_day=acc_data.statement_close_day if is_cc else None,
-            payment_due_day=acc_data.payment_due_day if is_cc else None,
-            minimum_payment=acc_data.minimum_payment if is_cc else None,
+            payment_due_day=acc_data.payment_due_day if (is_cc or is_loan) else None,
+            minimum_payment=acc_data.minimum_payment if (is_cc or is_loan) else None,
             card_brand=acc_data.card_brand if is_cc else None,
             card_level=acc_data.card_level if is_cc else None,
+            loan_kind=acc_data.loan_kind if is_loan else None,
+            loan_original_amount=acc_data.loan_original_amount if is_loan else None,
+            loan_interest_rate=acc_data.loan_interest_rate if is_loan else None,
+            loan_rate_period=acc_data.loan_rate_period if is_loan else None,
+            loan_term_months=acc_data.loan_term_months if is_loan else None,
+            loan_first_payment_date=acc_data.loan_first_payment_date if is_loan else None,
+            loan_amortization=acc_data.loan_amortization if is_loan else None,
             shared_balance_group=(
                 f"{connection.id}:{acc_data.shared_balance_group}"
                 if acc_data.shared_balance_group else None
@@ -2439,6 +2449,11 @@ async def _run_first_import(
             credentials, acc_data.external_id, None
         )
         incoming_external_ids = {txn.external_id for txn in transactions_data}
+        superseded_pending_ids = {
+            txn.replaces_external_id
+            for txn in transactions_data
+            if txn.replaces_external_id and txn.status == "posted"
+        }
         seen_external_ids: set[str] = set()
         for txn_data in transactions_data:
             # Providers should return each external transaction once, but an
@@ -2447,11 +2462,28 @@ async def _run_first_import(
             # and an unnecessary SELECT for every imported transaction.
             if txn_data.external_id in seen_external_ids:
                 continue
+            if txn_data.status == "pending" and txn_data.external_id in superseded_pending_ids:
+                continue
             seen_external_ids.add(txn_data.external_id)
 
             await _remember_linked_card(
                 session, account, txn_data.card_masked_number, known_linked_card_numbers
             )
+            replaced = await _settle_replaced_pending(
+                session,
+                provider,
+                account,
+                txn_data,
+                user_id=user_id,
+                workspace_id=workspace_id,
+                payee_source="auto",
+                account_currency=acc_data.currency or user_currency,
+                user_currency=user_currency,
+                bills_by_external_id=bills_by_external_id,
+                known_linked_card_numbers=known_linked_card_numbers,
+            )
+            if replaced is not None:
+                continue
             # Pending↔posted twin (and the credit-card installment variant).
             # When the same logical operation comes back under a new external
             # id with a different status, fingerprint match prevents the
@@ -4021,6 +4053,7 @@ def _holds_user_work(tx: Transaction) -> bool:
         tx.reporting_date_override is not None
         or tx.effective_bill_date is not None
         or tx.recurring_transaction_id is not None
+        or tx.amount_primary_typed is not None
     ):
         return True
     if tx.has_category_lines:
@@ -4091,6 +4124,243 @@ async def _expire_cancelled_holds(
             await session.delete(tx)
 
 
+async def _settle_replaced_pending(
+    session: AsyncSession,
+    provider,
+    account: Account,
+    txn_data: TransactionData,
+    *,
+    user_id: uuid.UUID,
+    workspace_id: uuid.UUID,
+    payee_source: str,
+    account_currency: str,
+    user_currency: str,
+    bills_by_external_id: dict,
+    known_linked_card_numbers: dict[uuid.UUID, set[str]],
+) -> Optional[Transaction]:
+    """Upgrade the exact pending transaction named by ``txn_data.replaces_external_id``.
+
+    Used when a provider explicitly links a posted entry to the pending entry
+    it settled (e.g. Plaid ``pending_transaction_id``, ADR 0058), even when the
+    settled amount (tips, holds) or posting date shifted.
+    """
+    if not txn_data.replaces_external_id or txn_data.status != "posted":
+        return None
+    result = await session.execute(
+        select(Transaction)
+        .where(
+            Transaction.account_id == account.id,
+            Transaction.external_id == txn_data.replaces_external_id,
+            Transaction.source == "sync",
+            Transaction.status == "pending",
+        )
+        .order_by(Transaction.created_at)
+    )
+    pending_tx = result.scalars().first()
+    if pending_tx is None:
+        return None
+    if pending_tx.is_ignored:
+        return pending_tx
+
+    manual_description = await read_description_is_manual(session, pending_tx)
+    payee_was_empty = pending_tx.payee_id is None
+    amount_before = pending_tx.amount
+    incoming_currency = (txn_data.currency or "").strip().upper() or None
+    currency_changed = bool(
+        incoming_currency and incoming_currency != (pending_tx.currency or "").upper()
+    )
+    if currency_changed and incoming_currency is not None:
+        pending_tx.currency = incoming_currency
+        # Conversions or stored account charges for the old currency no longer
+        # describe the posted currency. Clearing them avoids keeping stale
+        # old-currency stamps when no FX rate exists for the new currency.
+        pending_tx.amount_primary = None
+        pending_tx.fx_rate_used = None
+        pending_tx.amount_primary_typed = None
+        pending_tx.amount_primary_typed_currency = None
+        pending_tx.amount_account = None
+        pending_tx.amount_account_source = None
+    date_changed = pending_tx.date != txn_data.date
+    if date_changed:
+        pending_tx.date = txn_data.date
+        if pending_tx.effective_bill_date is None:
+            bill = (
+                bills_by_external_id.get(txn_data.bill_external_id)
+                if txn_data.bill_external_id
+                else None
+            )
+            apply_effective_date(
+                pending_tx, account, bill_due_date=bill.due_date if bill else None
+            )
+    await _refresh_provider_values(
+        session,
+        provider,
+        pending_tx,
+        txn_data,
+        payee_source=payee_source,
+        account_currency=account_currency,
+        user_currency=user_currency,
+    )
+    if (date_changed or currency_changed) and pending_tx.amount == amount_before:
+        user_kept_account_amount = (
+            pending_tx.amount_account_source == ACCOUNT_AMOUNT_FROM_USER
+        )
+        if pending_tx.amount_primary_typed is None:
+            converted = _bank_converted_amount(txn_data, account_currency, user_currency)
+            await _stamp_synced_primary_amount(
+                session,
+                pending_tx.user_id,
+                pending_tx,
+                converted,
+                None if user_kept_account_amount else txn_data.amount_in_account_currency,
+                restamp_account=(currency_changed or pending_tx.amount_account_source is None),
+            )
+        elif (
+            (
+                txn_data.amount_in_account_currency is not None
+                and not user_kept_account_amount
+            )
+            or pending_tx.amount_account_source is None
+        ):
+            await stamp_account_amount(
+                session,
+                pending_tx,
+                bank_amount=txn_data.amount_in_account_currency,
+                recompute=(pending_tx.amount_account_source is None),
+            )
+    _merge_sync_metadata(pending_tx, txn_data, replace_external_id=True)
+    pending_tx.status = "posted"
+    if pending_tx.payee and pending_tx.payee_id is None:
+        pending_tx.payee_id = (
+            await get_or_create_payee(
+                session, user_id, pending_tx.payee, workspace_id=workspace_id
+            )
+        ).id
+    await apply_rules_to_settled_transaction(
+        session,
+        user_id,
+        pending_tx,
+        manual_description=manual_description,
+        synced_payee_id=pending_tx.payee_id if payee_was_empty else None,
+    )
+    _relink_bill(pending_tx, txn_data, account, bills_by_external_id)
+    await _remember_linked_card(
+        session, account, txn_data.card_masked_number, known_linked_card_numbers
+    )
+    return pending_tx
+
+
+def _holds_user_work_for_removed(
+    tx: Transaction,
+    *,
+    expected_payee_id: Optional[uuid.UUID] = None,
+    check_payee_id: bool = False,
+) -> bool:
+    """Whether a row named in ``removed_transaction_ids`` carries user work.
+
+    Pending rows carry ``SYNC_CATEGORY_KEY`` from insert, so ``_holds_user_work``
+    is exact for them. Posted plugin rows do not stamp ``SYNC_CATEGORY_KEY``,
+    so we check ``SYNCED_TEXT`` for payee/notes/payee_id edits and keep any
+    categorized or FX-typed posted row (preserving manual or bulk edits).
+    """
+    raw = tx.raw_data if isinstance(tx.raw_data, dict) else {}
+    if tx.status == "pending" or SYNC_CATEGORY_KEY in raw:
+        return _holds_user_work(tx)
+    if raw.get(ADOPTED_MANUAL_KEY) or raw.get(USER_EDITED_KEY):
+        return True
+    if (
+        tx.reporting_date_override is not None
+        or tx.effective_bill_date is not None
+        or tx.recurring_transaction_id is not None
+        or tx.has_category_lines
+        or tx.category_id is not None
+        or tx.amount_primary_typed is not None
+        or tx.original_description is None
+    ):
+        return True
+    if tx.description != tx.original_description and not tx.description_is_rule_managed:
+        return True
+    sent = raw.get(SYNCED_TEXT)
+    if isinstance(sent, dict):
+        sent_payee = (sent.get("payee") or "").strip()
+        if (tx.payee or "").strip() != sent_payee:
+            return True
+        if (tx.notes or "").strip() != (sent.get("notes") or "").strip():
+            return True
+        if not sent_payee:
+            if tx.payee_id is not None:
+                return True
+        elif check_payee_id:
+            if tx.payee_id != expected_payee_id:
+                return True
+        elif tx.payee_id is None:
+            return True
+        return False
+    return bool(tx.payee_id is not None or (tx.notes or "").strip())
+
+
+async def _delete_removed_transactions(
+    session: AsyncSession,
+    account_id: uuid.UUID,
+    removed_external_ids: Sequence[str],
+    *,
+    protected_external_ids: set[str],
+) -> None:
+    """Delete synced rows the provider explicitly removed (ADR 0058).
+
+    Runs after the transaction upsert pass so a pending row upgraded via
+    ``replaces_external_id`` already carries its posted ``external_id`` and is
+    left untouched. Rows the user edited, flagged, ignored, paired as a
+    transfer, attached a file to, split in a group or allocated to an invoice
+    are preserved.
+    """
+    candidate_ids = [
+        ext_id
+        for ext_id in dict.fromkeys(removed_external_ids)
+        if ext_id and ext_id not in protected_external_ids
+    ]
+    if not candidate_ids:
+        return
+    result = await session.execute(
+        select(Transaction)
+        .where(
+            Transaction.account_id == account_id,
+            Transaction.source == "sync",
+            Transaction.external_id.in_(candidate_ids),
+            Transaction.is_ignored.is_(False),
+            Transaction.transfer_pair_id.is_(None),
+            Transaction.is_flagged.is_(False),
+        )
+        .with_for_update()
+    )
+    candidates = list(result.scalars().all())
+    payee_cache: dict[tuple[uuid.UUID, str], Optional[uuid.UUID]] = {}
+    gone: list[Transaction] = []
+    for tx in candidates:
+        raw = tx.raw_data if isinstance(tx.raw_data, dict) else {}
+        sent = raw.get(SYNCED_TEXT)
+        sent_payee = (sent.get("payee") or "").strip() if isinstance(sent, dict) else ""
+        expected_payee_id: Optional[uuid.UUID] = None
+        if sent_payee:
+            cache_key = (tx.workspace_id, sent_payee.casefold())
+            if cache_key not in payee_cache:
+                payee_row = await find_payee_by_name(session, tx.workspace_id, sent_payee)
+                payee_cache[cache_key] = payee_row.id if payee_row else None
+            expected_payee_id = payee_cache[cache_key]
+        if not _holds_user_work_for_removed(
+            tx,
+            expected_payee_id=expected_payee_id,
+            check_payee_id=bool(sent_payee),
+        ):
+            gone.append(tx)
+    if not gone:
+        return
+    kept = await _rows_with_links(session, [tx.id for tx in gone])
+    for tx in gone:
+        if tx.id not in kept:
+            await session.delete(tx)
+
+
 async def _rows_with_links(
     session: AsyncSession, transaction_ids: list[uuid.UUID],
 ) -> set[uuid.UUID]:
@@ -4107,6 +4377,7 @@ async def _rows_with_links(
         TransactionAttachment.transaction_id,
         TransactionSplit.transaction_id,
         InvoiceAllocation.transaction_id,
+        MortgagePaymentAllocation.payment_transaction_id,
     ):
         kept.update(
             tx_id for tx_id in (await session.execute(
@@ -4926,6 +5197,7 @@ async def sync_connection(
         merged_count = 0
         live_txn_external_ids: dict[uuid.UUID, set[str]] = {}
         incomplete_fetch_account_ids: set[uuid.UUID] = set()
+        incremental_account_ids: set[uuid.UUID] = set()
         promoted_txn_external_ids: dict[uuid.UUID, set[str]] = {}
         # `is True`: a provider without the property, or a test double, never
         # re-reads by date.
@@ -5110,8 +5382,30 @@ async def sync_connection(
                         f"{connection.id}:{acc_data.shared_balance_group}"
                         if acc_data.shared_balance_group else None
                     )
+                if account.type == "loan":
+                    # Same rule as credit cards: preserve existing or user-entered
+                    # loan contract terms whenever the provider omits them.
+                    if acc_data.payment_due_day is not None:
+                        account.payment_due_day = acc_data.payment_due_day
+                    if acc_data.minimum_payment is not None:
+                        account.minimum_payment = acc_data.minimum_payment
+                    if acc_data.loan_kind is not None:
+                        account.loan_kind = acc_data.loan_kind
+                    if acc_data.loan_original_amount is not None:
+                        account.loan_original_amount = acc_data.loan_original_amount
+                    if acc_data.loan_interest_rate is not None:
+                        account.loan_interest_rate = acc_data.loan_interest_rate
+                    if acc_data.loan_rate_period is not None:
+                        account.loan_rate_period = acc_data.loan_rate_period
+                    if acc_data.loan_term_months is not None:
+                        account.loan_term_months = acc_data.loan_term_months
+                    if acc_data.loan_first_payment_date is not None:
+                        account.loan_first_payment_date = acc_data.loan_first_payment_date
+                    if acc_data.loan_amortization is not None:
+                        account.loan_amortization = acc_data.loan_amortization
             else:
                 is_cc = acc_data.type == "credit_card"
+                is_loan = acc_data.type == "loan"
                 account = Account(
                     user_id=user_id,
                     workspace_id=workspace_id,
@@ -5132,10 +5426,17 @@ async def sync_connection(
                     currency=acc_data.currency,
                     credit_limit=acc_data.credit_limit if is_cc else None,
                     statement_close_day=acc_data.statement_close_day if is_cc else None,
-                    payment_due_day=acc_data.payment_due_day if is_cc else None,
-                    minimum_payment=acc_data.minimum_payment if is_cc else None,
+                    payment_due_day=acc_data.payment_due_day if (is_cc or is_loan) else None,
+                    minimum_payment=acc_data.minimum_payment if (is_cc or is_loan) else None,
                     card_brand=acc_data.card_brand if is_cc else None,
                     card_level=acc_data.card_level if is_cc else None,
+                    loan_kind=acc_data.loan_kind if is_loan else None,
+                    loan_original_amount=acc_data.loan_original_amount if is_loan else None,
+                    loan_interest_rate=acc_data.loan_interest_rate if is_loan else None,
+                    loan_rate_period=acc_data.loan_rate_period if is_loan else None,
+                    loan_term_months=acc_data.loan_term_months if is_loan else None,
+                    loan_first_payment_date=acc_data.loan_first_payment_date if is_loan else None,
+                    loan_amortization=acc_data.loan_amortization if is_loan else None,
                     shared_balance_group=(
                         f"{connection.id}:{acc_data.shared_balance_group}"
                         if acc_data.shared_balance_group else None
@@ -5207,12 +5508,21 @@ async def sync_connection(
             incomplete = getattr(provider, "incomplete_account_ids", None)
             if isinstance(incomplete, set) and acc_data.external_id in incomplete:
                 incomplete_fetch_account_ids.add(account.id)
-            if _feed_came_whole(provider, acc_data.external_id):
+            incremental = getattr(provider, "incremental_account_ids", None)
+            is_incremental = isinstance(incremental, set) and acc_data.external_id in incremental
+            if is_incremental:
+                incremental_account_ids.add(account.id)
+            if _feed_came_whole(provider, acc_data.external_id) and not is_incremental:
                 complete_feed_account_ids.add(account.id)
             if not import_pending:
                 transactions_data = [t for t in transactions_data if t.status != "pending"]
 
             incoming_txn_external_ids = {txn.external_id for txn in transactions_data}
+            superseded_pending_ids = {
+                txn.replaces_external_id
+                for txn in transactions_data
+                if txn.replaces_external_id and txn.status == "posted"
+            }
             # A booked entry can claim the pending hold it settles only on an
             # Enable Banking connection (Path 6 of `_find_synced_duplicate`).
             # A fetch cut short, or one whose pages stopped before the last,
@@ -5225,12 +5535,18 @@ async def sync_connection(
             claims_holds = connection.provider == "enable_banking" and not partial_feed
             # A pending row that left a complete feed was cancelled. Enable
             # Banking's feed always is; a provider plugin says so with
-            # `complete_feed` in its manifest. Claiming holds (above) stays
-            # Enable Banking's: it compares that provider's merchant fields.
+            # `complete_feed` in its manifest. Incremental (cursor-based) feeds
+            # report removals explicitly via `removed_transaction_ids` instead.
             vouches_feed = getattr(provider, "complete_feed", False) is True
-            expires_holds = (connection.provider == "enable_banking" or vouches_feed) and not partial_feed
+            expires_holds = (
+                (connection.provider == "enable_banking" or vouches_feed)
+                and not partial_feed
+                and not is_incremental
+            )
             hold_live_ids = live_txn_external_ids[account.id] if claims_holds else None
             for txn_data in transactions_data:
+                if txn_data.status == "pending" and txn_data.external_id in superseded_pending_ids:
+                    continue
                 await _remember_linked_card(
                     session, account, txn_data.card_masked_number, known_linked_card_numbers
                 )
@@ -5288,6 +5604,30 @@ async def sync_connection(
                     # branch covers re-bucketing if the bank moved a tx to
                     # a different bill (e.g. a chargeback).
                     _relink_bill(existing_tx, txn_data, account, bills_by_external_id)
+                    continue
+
+                # Pass 1.5: Explicit pending→posted replacement (ADR 0058).
+                # When a provider names the pending external_id this posted row
+                # settles (e.g. Plaid `pending_transaction_id`), upgrade that
+                # row in place before fuzzy matching or twin heuristics.
+                replaced_tx = await _settle_replaced_pending(
+                    session,
+                    provider,
+                    account,
+                    txn_data,
+                    user_id=user_id,
+                    workspace_id=workspace_id,
+                    payee_source=payee_source,
+                    account_currency=acc_data.currency or user_currency,
+                    user_currency=user_currency,
+                    bills_by_external_id=bills_by_external_id,
+                    known_linked_card_numbers=known_linked_card_numbers,
+                )
+                if replaced_tx is not None:
+                    if not replaced_tx.is_ignored and replaced_tx.external_id:
+                        promoted_txn_external_ids.setdefault(account.id, set()).add(
+                            replaced_tx.external_id
+                        )
                     continue
 
                 # Pass 2: Fuzzy match against manual transactions
@@ -5667,6 +6007,23 @@ async def sync_connection(
                     claimable=connection.provider == "enable_banking",
                 )
 
+            # Explicit removals from cursor-based incremental feeds (ADR 0058).
+            # Runs after the upsert loop so pending rows upgraded via
+            # `replaces_external_id` already carry their posted id.
+            get_removed = getattr(provider, "get_removed_transaction_ids", None)
+            removed_ids = (
+                await get_removed(credentials, acc_data.external_id)
+                if callable(get_removed)
+                else []
+            )
+            if removed_ids:
+                await _delete_removed_transactions(
+                    session,
+                    account.id,
+                    removed_ids,
+                    protected_external_ids=live_txn_external_ids[account.id],
+                )
+
             # A row an earlier version stored as posted from a cancelled entry
             # never moved money; its own payload still says so (#1232).
             if connection.provider == "enable_banking":
@@ -5717,25 +6074,24 @@ async def sync_connection(
         # row, whose external_id can still be the uid of an earlier session
         # (a reauthorisation re-keys it only when the account comes through),
         # so every stored row the provider did not return this run counts.
-        throttled_account_ids: set[uuid.UUID] = set()
+        # Skip phantom cleanup for any account omitted from this reply (it has
+        # no live id set this run) as well as any rate-limited account.
+        omitted_filters = []
         if rate_limited_accounts:
-            throttled_account_ids = set(
-                (
-                    await session.execute(
-                        select(Account.id).where(
-                            Account.connection_id == connection.id,
-                            or_(
-                                Account.external_id.in_(rate_limited_accounts),
-                                Account.external_id.not_in(incoming_external_ids),
-                            ),
-                        )
-                    )
-                ).scalars()
-            )
+            omitted_filters.append(Account.external_id.in_(rate_limited_accounts))
+        if incoming_external_ids:
+            omitted_filters.append(Account.external_id.is_(None))
+            omitted_filters.append(Account.external_id.not_in(incoming_external_ids))
+        omitted_query = select(Account.id).where(Account.connection_id == connection.id)
+        if omitted_filters:
+            omitted_query = omitted_query.where(or_(*omitted_filters))
+        throttled_account_ids = set((await session.execute(omitted_query)).scalars())
         touched_account_ids = await _cleanup_phantom_duplicates(
             session, connection.id, live_txn_external_ids,
             promoted_external_ids=promoted_txn_external_ids,
-            skip_account_ids=incomplete_fetch_account_ids | throttled_account_ids,
+            skip_account_ids=(
+                incomplete_fetch_account_ids | incremental_account_ids | throttled_account_ids
+            ),
         )
 
         # The opening balances above were reconciled with the phantoms still

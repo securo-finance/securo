@@ -424,4 +424,47 @@ describe('PluginConnections: files and routines', () => {
     expect(await screen.findByText('Send')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: t('plugins.connections.runRoutineAria', { name: 'Send' }) })).not.toBeInTheDocument()
   })
+
+  it('stores oauth_state in sessionStorage before redirecting to a hosted sign-in URL', async () => {
+    const oauthPlugin: InstalledPlugin = {
+      ...PLUGIN,
+      integrations: [
+        {
+          key: 'plaid',
+          name: { en: 'Plaid' },
+          auth: 'oauth',
+          fields: [{ key: 'client_id', label: { en: 'Client ID' }, secret: false, required: true }],
+          sync_minutes: 360,
+          provides: ['accounts', 'transactions'],
+        },
+      ],
+    }
+    const assign = vi.fn()
+    const originalLocation = window.location
+    Object.defineProperty(window, 'location', {
+      configurable: true,
+      value: { ...originalLocation, assign },
+    })
+    try {
+      api.plugins.connections.mockResolvedValue([])
+      api.plugins.connect.mockResolvedValue({
+        connection: { ...CONNECTION, id: 'c-plaid', integration: 'plaid', status: 'needs_auth' },
+        authorize_url: 'https://hosted.plaid.com/link/tok-1',
+        oauth_state: 'state-from-connect',
+      })
+      const { user } = renderWithProviders(
+        <WorkspaceContext.Provider value={workspace(true)}>
+          <PluginConnections plugin={oauthPlugin} />
+        </WorkspaceContext.Provider>,
+      )
+      await user.click(await screen.findByRole('button', { name: t('plugins.connections.add') }))
+      await user.type(screen.getByLabelText('Client ID'), 'cid-1')
+      await user.click(screen.getByRole('button', { name: t('plugins.connections.continueSignIn') }))
+      await waitFor(() => expect(assign).toHaveBeenCalledWith('https://hosted.plaid.com/link/tok-1'))
+      expect(sessionStorage.getItem('securo:pluginOAuthState')).toBe('state-from-connect')
+    } finally {
+      sessionStorage.removeItem('securo:pluginOAuthState')
+      Object.defineProperty(window, 'location', { configurable: true, value: originalLocation })
+    }
+  })
 })

@@ -855,3 +855,200 @@ async def test_the_preview_says_an_update_without_code_drops_connections(
     catalog.publish(V2, data_only)
     plan = await service.plan(session, workspace_id, PLUGIN, "update", lang="en")
     assert plan.code is not None and plan.code.drops_code and plan.code.connections == 1
+
+
+@pytest.mark.asyncio
+async def test_stateful_hosted_sign_in_persists_handshake_secrets_and_accepts_params_without_code(
+    session: AsyncSession, ids, catalog, plugin_runner, states
+):
+    """Plugins like Plaid Hosted Link or OAuth+PKCE save an ephemeral secret in
+    `oauth_url`, receive callback `params` with no `code`, and delete the
+    ephemeral secret by setting it to None in `oauth_exchange` (ADR 0058)."""
+    hosted_source = '''
+class Plugin:
+    def oauth_url(self, params, context):
+        return {
+            "url": "https://hosted.example.com/link/session-1",
+            "secrets": {"pending_link_token": "link-tok-" + context.config["client"]},
+            "state": {"handshake": "started"},
+        }
+
+    def oauth_exchange(self, params, context):
+        assert params["code"] == ""
+        assert params["params"]["status"] == "success"
+        assert params["connection_state"]["handshake"] == "started"
+        token = context.secrets["pending_link_token"]
+        return {
+            "secrets": {"access_token": "access-from-" + token, "pending_link_token": None},
+            "state": {"handshake": "done", "session": params["params"]["link_session_id"]},
+        }
+
+    def sync(self, params, context):
+        return {"state": {**params["state"], "synced_with": context.secrets["access_token"]}}
+
+plugin = Plugin()
+'''
+    catalog.archives[V1] = _tarball(hosted_source)
+    workspace_id, user_id = ids
+    await _apply(session, workspace_id, user_id)
+    connection, link, state = await connections.create_with_oauth(
+        session,
+        workspace_id=workspace_id,
+        user_id=user_id,
+        can_write=True,
+        plugin_id=PLUGIN,
+        integration_key="signin",
+        name="Hosted",
+        values={"client": "plaid-app"},
+        lang="en",
+    )
+    assert link == "https://hosted.example.com/link/session-1"
+    assert state is not None
+    assert vault.unseal(connection.secrets)["pending_link_token"] == "link-tok-plaid-app"
+    assert connection.state == {"handshake": "started"}
+
+    await connections.finish_oauth(
+        session,
+        workspace_id=workspace_id,
+        user_id=user_id,
+        code=None,
+        state=state,
+        params={"status": "success", "link_session_id": "ls-42"},
+    )
+    unsealed = vault.unseal(connection.secrets)
+    assert unsealed["access_token"] == "access-from-link-tok-plaid-app"
+    assert "pending_link_token" not in unsealed
+    assert connection.state == {"handshake": "done", "session": "ls-42"}
+    assert connection.status == "pending"
+
+    await connections.sync(session, connection)
+    assert connection.status == "active"
+    assert connection.state["synced_with"] == "access-from-link-tok-plaid-app"
+
+
+@pytest.mark.asyncio
+async def test_oauth_api_returns_oauth_state_and_accepts_codeless_callback(
+    client: AsyncClient, auth_headers: dict, session: AsyncSession, ids, catalog, plugin_runner, states, monkeypatch
+):
+    hosted_source = '''
+class Plugin:
+    def oauth_url(self, params, context):
+        return {"url": "https://hosted.example.com/start", "secrets": {"verifier": "pkce-1"}}
+
+    def oauth_exchange(self, params, context):
+        return {"secrets": {"access_token": context.secrets["verifier"] + ":" + params["params"].get("status", ""), "verifier": None}}
+
+    def sync(self, params, context):
+        return {"state": {"ok": True}}
+
+plugin = Plugin()
+'''
+    catalog.archives[V1] = _tarball(hosted_source)
+    monkeypatch.setenv("PLUGINS_ENABLED", "true")
+    monkeypatch.setattr("app.api.plugins._queue_sync", lambda _cid: None)
+    workspace_id, user_id = ids
+    await _apply(session, workspace_id, user_id)
+
+    created = await client.post(
+        "/api/plugins/connections",
+        headers=auth_headers,
+        json={"plugin_id": PLUGIN, "integration": "signin", "name": "Hosted", "values": {"client": "c1"}},
+    )
+    assert created.status_code == 201
+    body = created.json()
+    assert body["authorize_url"] == "https://hosted.example.com/start"
+    assert body["oauth_state"]
+
+    # Over-sized params are rejected before reaching the runner.
+    too_many = await client.post(
+        "/api/plugins/oauth/callback",
+        headers=auth_headers,
+        json={"state": body["oauth_state"], "params": {f"k{i}": "v" for i in range(33)}},
+    )
+    assert too_many.status_code == 422
+
+    finished = await client.post(
+        "/api/plugins/oauth/callback",
+        headers=auth_headers,
+        json={"state": body["oauth_state"], "params": {"status": "success"}},
+    )
+    assert finished.status_code == 200
+    assert finished.json()["status"] == "pending"
+
+    reauth = await client.post(
+        f"/api/plugins/connections/{body['connection']['id']}/authorize",
+        headers=auth_headers,
+    )
+    assert reauth.status_code == 200
+    assert reauth.json()["oauth_state"]
+
+
+@pytest.mark.asyncio
+async def test_authorize_url_holds_sync_lock_and_refreshes_rotated_secrets(
+    session: AsyncSession, ids, catalog, plugin_runner, states, sync_locks
+):
+    """authorize_url / start_oauth must hold the per-connection lock and refresh
+    the connection so saving handshake secrets cannot clobber a token rotated by
+    a concurrent sync."""
+    from sqlalchemy import update
+
+    hosted_source = '''
+class Plugin:
+    def oauth_url(self, params, context):
+        return {
+            "url": "https://hosted.example.com/reauth",
+            "secrets": {"pending_link_token": "link-tok-2"},
+        }
+
+    def oauth_exchange(self, params, context):
+        return {"secrets": {"refresh_token": "rot-1", "pending_link_token": None}}
+
+    def sync(self, params, context):
+        return {"state": {}}
+
+plugin = Plugin()
+'''
+    catalog.archives[V1] = _tarball(hosted_source)
+    workspace_id, user_id = ids
+    await _apply(session, workspace_id, user_id)
+    connection, _, state = await connections.create_with_oauth(
+        session,
+        workspace_id=workspace_id,
+        user_id=user_id,
+        can_write=True,
+        plugin_id=PLUGIN,
+        integration_key="signin",
+        name="Locked",
+        values={"client": "c1"},
+        lang="en",
+    )
+    assert state is not None
+    await connections.finish_oauth(
+        session, workspace_id=workspace_id, user_id=user_id, code=None, state=state, params={}
+    )
+
+    # 1. While the per-connection lock is held, authorize_url / start_oauth refuse with busy error.
+    lock_key = f"plugin-sync:{connection.id}"
+    sync_locks.add(lock_key)
+    with pytest.raises(connections.PluginConnectionError, match="syncing right now"):
+        await connections.authorize_url(session, connection, user_id=user_id)
+    with pytest.raises(connections.PluginConnectionError, match="syncing right now"):
+        await connections.start_oauth(session, connection, user_id=user_id)
+    sync_locks.discard(lock_key)
+
+    # 2. Simulate a concurrent sync rotating refresh_token behind the stale ORM copy.
+    current_secrets = vault.unseal(connection.secrets)
+    rotated = vault.seal({**current_secrets, "refresh_token": "rot-2"})
+    await session.execute(
+        update(PluginConnection)
+        .where(PluginConnection.id == connection.id)
+        .values(secrets=rotated)
+        .execution_options(synchronize_session=False)
+    )
+    await session.commit()
+
+    url, _ = await connections.start_oauth(session, connection, user_id=user_id)
+    assert url == "https://hosted.example.com/reauth"
+    unsealed = vault.unseal(connection.secrets)
+    assert unsealed["refresh_token"] == "rot-2"
+    assert unsealed["pending_link_token"] == "link-tok-2"

@@ -65,6 +65,11 @@ class PluginPayloadProvider(BankProvider):
         self.incomplete_account_ids: set[str] = {
             account.external_id for account in self._accounts if account.transactions is None
         }
+        # Cursor-based incremental feeds: valid deltas whose `last_sync_at`
+        # advances, but whose absence of older IDs is not evidence of removal.
+        self.incremental_account_ids: set[str] = {
+            account.external_id for account in self._accounts if account.incremental
+        }
 
     @property
     def name(self) -> str:
@@ -122,6 +127,12 @@ class PluginPayloadProvider(BankProvider):
     async def get_bills(self, credentials: dict, account_external_id: str) -> list[BillData]:
         account = self._by_id.get(account_external_id)
         return [b.to_data() for b in account.bills or []] if account else []
+
+    async def get_removed_transaction_ids(
+        self, credentials: dict, account_external_id: str
+    ) -> list[str]:
+        account = self._by_id.get(account_external_id)
+        return list(account.removed_transaction_ids or []) if account else []
 
     async def get_holdings(self, credentials: dict) -> list[HoldingData]:
         holdings = [holding.to_data() for holding in self._holdings or []]

@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class PluginFieldRead(BaseModel):
@@ -292,16 +292,35 @@ class PluginConnectionUpdate(BaseModel):
 class PluginConnectionCreated(BaseModel):
     connection: PluginConnectionRead
     authorize_url: str | None = Field(description="For sign-in integrations: send the browser here.")
+    oauth_state: str | None = Field(
+        default=None,
+        description="Single-use state token for the browser to keep across hosted sign-in redirects that omit state.",
+    )
 
 
 class PluginAuthorizeRead(BaseModel):
     authorize_url: str
     redirect_uri: str
+    oauth_state: str | None = Field(
+        default=None,
+        description="Single-use state token for the browser to keep across hosted sign-in redirects that omit state.",
+    )
 
 
 class PluginOAuthCallback(BaseModel):
-    code: str = Field(min_length=1, max_length=4096)
+    code: str | None = Field(default=None, max_length=4096)
     state: str = Field(min_length=1, max_length=256)
+    params: dict[str, str] = Field(default_factory=dict)
+
+    @field_validator("params")
+    @classmethod
+    def _bounded_params(cls, value: dict[str, str]) -> dict[str, str]:
+        if len(value) > 32:
+            raise ValueError("too many callback parameters")
+        for key, item in value.items():
+            if len(key) > 128 or len(item) > 4096:
+                raise ValueError("callback parameter too long")
+        return value
 
 
 class PluginApplyRequest(BaseModel):

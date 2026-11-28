@@ -22,6 +22,7 @@ import { useWorkspace } from '@/contexts/workspace-context'
 import { plugins as pluginsApi } from '@/lib/api'
 import { localized } from '@/lib/localized-text'
 import { intervalLabel, relativeDate } from '@/lib/plugin-format'
+import { rememberPluginOAuthState } from '@/lib/plugin-oauth'
 import { cn } from '@/lib/utils'
 import type { InstalledPlugin, PluginConnection, PluginField, PluginFileValue, PluginIntegration } from '@/types'
 
@@ -98,7 +99,10 @@ export function PluginConnections({ plugin }: { plugin: InstalledPlugin }) {
 
   const authorizeMutation = useMutation({
     mutationFn: pluginsApi.authorize,
-    onSuccess: ({ authorize_url }) => window.location.assign(authorize_url),
+    onSuccess: ({ authorize_url, oauth_state }) => {
+      rememberPluginOAuthState(oauth_state)
+      window.location.assign(authorize_url)
+    },
     onError: (err) => toast.error(errorMessage(err, t('common.error'))),
   })
 
@@ -302,18 +306,19 @@ export function PluginConnectionDialog({
     !!connection && (field in (connection.config ?? {}) || connection.secret_fields.includes(field))
 
   const mutation = useMutation({
-    mutationFn: async (): Promise<{ connection: PluginConnection; authorize_url: string | null }> => {
+    mutationFn: async (): Promise<{ connection: PluginConnection; authorize_url: string | null; oauth_state?: string | null }> => {
       if (!connection) {
         return pluginsApi.connect({ plugin_id: plugin.plugin_id, integration: key, name, values })
       }
       const updated = await pluginsApi.updateValues(connection.id, { name, values })
       if (integration?.auth !== 'oauth') return { connection: updated, authorize_url: null }
-      const { authorize_url } = await pluginsApi.authorize(connection.id)
-      return { connection: updated, authorize_url }
+      const { authorize_url, oauth_state } = await pluginsApi.authorize(connection.id)
+      return { connection: updated, authorize_url, oauth_state }
     },
-    onSuccess: ({ connection: saved, authorize_url }) => {
+    onSuccess: ({ connection: saved, authorize_url, oauth_state }) => {
       onDone(saved)
       if (authorize_url) {
+        rememberPluginOAuthState(oauth_state)
         window.location.assign(authorize_url)
         return
       }

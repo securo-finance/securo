@@ -39,6 +39,7 @@ from app.providers.base import (
 CONTRACT_VERSION = 1
 MAX_ACCOUNTS = 500
 MAX_TRANSACTIONS = 20_000
+MAX_REMOVED_TRANSACTIONS = 20_000
 MAX_BILLS = 2_000
 MAX_RESERVED_BALANCES = 2_000
 MAX_HOLDINGS = 5_000
@@ -58,6 +59,9 @@ _OVER_CAP_NOTES = {
 }
 
 AccountType = Literal["checking", "savings", "credit_card", "loan", "investment", "wallet"]
+LoanKind = Literal["mortgage", "auto", "personal", "student", "other"]
+LoanRatePeriod = Literal["monthly", "yearly_effective", "yearly_nominal"]
+LoanAmortization = Literal["price", "sac"]
 #: The asset types a holding may name; they pick its icon on the Assets page.
 HoldingType = Literal["stock", "etf", "fund", "crypto", "investment"]
 Currency = Annotated[str, Field(pattern=r"^[A-Z]{3}$")]
@@ -96,6 +100,14 @@ Money = Annotated[
     _fits(13, 2),
 ]
 PositiveMoney = Annotated[Money, Field(ge=0)]
+PositiveStrictMoney = Annotated[Money, Field(gt=0)]
+#: Loan interest rate percentage: Numeric(9, 6), 0..100.
+LoanRate = Annotated[
+    Decimal,
+    BeforeValidator(_no_float),
+    Field(allow_inf_nan=False, ge=0, le=100, max_digits=9, decimal_places=6),
+    _fits(3, 6),
+]
 #: Units and holding values: Numeric(15, 6) columns (`assets.units`, `asset_values.amount`).
 Units = Annotated[
     Decimal,
@@ -167,6 +179,19 @@ class Transaction(_Model):
     installment_total_amount: PositiveMoney | None = None
     installment_purchase_date: _date | None = None
     bill_external_id: ExternalId | None = None
+    card_masked_number: str | None = Field(default=None, max_length=4)
+    """The last four characters of the card used for this charge, never the PAN."""
+    replaces_external_id: ExternalId | None = None
+    """The `external_id` of an earlier pending transaction that this posted transaction settles (ADR 0058)."""
+
+    @model_validator(mode="after")
+    def _valid_replacement(self) -> Transaction:
+        if self.replaces_external_id is not None:
+            if self.status != "posted":
+                raise ValueError("replaces_external_id is only allowed on posted transactions")
+            if self.replaces_external_id == self.external_id:
+                raise ValueError("replaces_external_id cannot equal external_id")
+        return self
 
     def to_data(self) -> TransactionData:
         fields = self.model_dump(exclude={"provider_category"})
@@ -240,7 +265,20 @@ class Account(_Model):
     auto_invested_balance: PositiveMoney = Decimal(0)
     reserved_balances: list[ReservedBalance] | None = None
     """Unreported reserves are `None`, which keeps what Securo stored; `[]` says there are none (ADR 0022)."""
+    available_credit: PositiveMoney | None = None
+    """Free credit on a card when the provider reports it instead of debt (ADR 0006)."""
+    loan_kind: LoanKind | None = None
+    loan_original_amount: PositiveStrictMoney | None = None
+    loan_interest_rate: LoanRate | None = None
+    loan_rate_period: LoanRatePeriod | None = None
+    loan_term_months: int | None = Field(default=None, ge=1, le=600)
+    loan_first_payment_date: _date | None = None
+    loan_amortization: LoanAmortization | None = None
+    incremental: bool = False
+    """Whether `transactions` is an incremental delta (cursor-based feed) rather than a date-window snapshot."""
     transactions: list[Transaction] | None = None
+    removed_transaction_ids: list[ExternalId] | None = None
+    """External IDs of transactions explicitly removed by the provider since the last cursor (ADR 0058)."""
     bills: list[Bill] | None = None
 
     @model_validator(mode="after")
@@ -248,13 +286,28 @@ class Account(_Model):
         _check_unique("transactions", self.transactions)
         _check_unique("bills", self.bills)
         _check_unique("reserved_balances", self.reserved_balances, ("external_id", "currency"))
+        if self.removed_transaction_ids is not None:
+            if self.transactions is None:
+                raise ValueError("removed_transaction_ids requires transactions to be a list")
+            if len(self.removed_transaction_ids) != len(set(self.removed_transaction_ids)):
+                raise ValueError("removed_transaction_ids: values must be unique")
+            tx_ids = {t.external_id for t in self.transactions}
+            if tx_ids & set(self.removed_transaction_ids):
+                raise ValueError("removed_transaction_ids cannot overlap with transactions external_id")
         return self
 
     def to_data(self, logos: dict[str, str] | None = None) -> AccountData:
         """The provider dataclass; `logos` maps the manifest's logo keys to where Securo serves them."""
         data = AccountData(
             **self.model_dump(
-                exclude={"transactions", "bills", "reserved_balances", "institution_logo"}
+                exclude={
+                    "transactions",
+                    "bills",
+                    "reserved_balances",
+                    "institution_logo",
+                    "incremental",
+                    "removed_transaction_ids",
+                }
             )
         )
         if self.institution_logo:
@@ -324,6 +377,10 @@ class Payload(_Model):
         counts = {
             "accounts": (len(accounts), MAX_ACCOUNTS),
             "transactions": (sum(len(a.transactions or []) for a in accounts), MAX_TRANSACTIONS),
+            "removed_transactions": (
+                sum(len(a.removed_transaction_ids or []) for a in accounts),
+                MAX_REMOVED_TRANSACTIONS,
+            ),
             "bills": (sum(len(a.bills or []) for a in accounts), MAX_BILLS),
             "reserved_balances": (
                 sum(len(a.reserved_balances or []) for a in accounts),
@@ -346,7 +403,7 @@ class Payload(_Model):
         if self.accounts is not None:
             found.add("accounts")
             for account in self.accounts:
-                if account.transactions is not None:
+                if account.transactions is not None or account.removed_transaction_ids is not None:
                     found.add("transactions")
                 if account.bills is not None:
                     found.add("bills")

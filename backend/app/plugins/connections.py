@@ -127,6 +127,33 @@ async def create(
     lang: str,
 ) -> tuple[PluginConnection, str | None]:
     """A new connection, and the sign-in link when the integration uses OAuth."""
+    connection, link, _ = await create_with_oauth(
+        session,
+        workspace_id=workspace_id,
+        user_id=user_id,
+        can_write=can_write,
+        plugin_id=plugin_id,
+        integration_key=integration_key,
+        name=name,
+        values=values,
+        lang=lang,
+    )
+    return connection, link
+
+
+async def create_with_oauth(
+    session: AsyncSession,
+    *,
+    workspace_id: uuid.UUID,
+    user_id: uuid.UUID,
+    can_write: bool,
+    plugin_id: str,
+    integration_key: str,
+    name: str,
+    values: dict[str, Any],
+    lang: str,
+) -> tuple[PluginConnection, str | None, str | None]:
+    """A new connection, its sign-in link, and its single-use OAuth state when the integration uses OAuth."""
     record, manifest = await _installed(session, workspace_id, plugin_id)
     integration = _integration(manifest, integration_key)
     if integration.is_provider:
@@ -177,15 +204,16 @@ async def create(
     await _follow_routines(session, connection, integration)
     await session.commit()
     await session.refresh(connection)
-    link = None
+    link: str | None = None
+    state: str | None = None
     if integration.auth == "oauth":
         try:
-            link = await authorize_url(session, connection, user_id=user_id, record=record)
+            link, state = await start_oauth(session, connection, user_id=user_id, record=record)
         except Exception:
             # Without a sign-in link the connection can't be finished: don't leave it (or its token) behind.
             await delete(session, connection)
             raise
-    return connection, link
+    return connection, link, state
 
 
 async def _add_bank(session: AsyncSession, connection: PluginConnection, institution: str, user_id: uuid.UUID) -> None:
@@ -466,11 +494,8 @@ async def _reinstall(record: WorkspacePlugin) -> bool:
         return False
 
 
-async def authorize_url(
-    session: AsyncSession, connection: PluginConnection, *, user_id: uuid.UUID, record: WorkspacePlugin | None = None
-) -> str:
-    """The service's sign-in link for this connection, built by the plugin."""
-    state = await oauth_state.store_state(
+async def _new_oauth_state(connection: PluginConnection, user_id: uuid.UUID) -> str:
+    return await oauth_state.store_state(
         {
             "kind": "plugin",
             "connection_id": str(connection.id),
@@ -478,15 +503,76 @@ async def authorize_url(
             "workspace_id": str(connection.workspace_id),
         }
     )
-    result, _ = await _call(session, connection, "oauth_url", {"redirect_uri": redirect_uri(), "state": state}, record)
-    url = result.get("url") if isinstance(result, dict) else result
-    if not isinstance(url, str) or urlsplit(url).scheme != "https":
-        raise PluginConnectionError("the plugin didn't return an https sign-in link")
-    return url
+
+
+async def authorize_url(
+    session: AsyncSession,
+    connection: PluginConnection,
+    *,
+    user_id: uuid.UUID,
+    record: WorkspacePlugin | None = None,
+    state: str | None = None,
+) -> str:
+    """The service's sign-in link for this connection, built by the plugin.
+
+    A plugin may return ``secrets`` and/or ``state`` alongside ``url`` (for
+    example a PKCE verifier or a Hosted Link token, ADR 0058); those are kept
+    on the connection so ``oauth_exchange`` can read them when the browser
+    returns. Holds ``plugin-sync:{connection.id}`` and refreshes the connection
+    first so saving handshake state cannot overwrite a token rotated by a
+    concurrent sync.
+    """
+    lock = f"plugin-sync:{connection.id}"
+    if not await _acquire(lock):
+        raise PluginConnectionError("this connection is syncing right now; try again in a moment")
+    try:
+        await session.refresh(connection)
+        token = state or await _new_oauth_state(connection, user_id)
+        result, secrets = await _call(
+            session,
+            connection,
+            "oauth_url",
+            {
+                "redirect_uri": redirect_uri(),
+                "state": token,
+                "connection_state": dict(connection.state or {}),
+            },
+            record,
+        )
+        url = result.get("url") if isinstance(result, dict) else result
+        if not isinstance(url, str) or urlsplit(url).scheme != "https":
+            raise PluginConnectionError("the plugin didn't return an https sign-in link")
+        if isinstance(result, dict) and (
+            isinstance(result.get("secrets"), dict) or isinstance(result.get("state"), dict)
+        ):
+            _keep(connection, result, secrets)
+            await session.commit()
+        return url
+    finally:
+        await _release(lock)
+
+
+async def start_oauth(
+    session: AsyncSession,
+    connection: PluginConnection,
+    *,
+    user_id: uuid.UUID,
+    record: WorkspacePlugin | None = None,
+) -> tuple[str, str]:
+    """Start a sign-in flow and return ``(authorize_url, state)``."""
+    token = await _new_oauth_state(connection, user_id)
+    url = await authorize_url(session, connection, user_id=user_id, record=record, state=token)
+    return url, token
 
 
 async def finish_oauth(
-    session: AsyncSession, *, workspace_id: uuid.UUID, user_id: uuid.UUID, code: str, state: str
+    session: AsyncSession,
+    *,
+    workspace_id: uuid.UUID,
+    user_id: uuid.UUID,
+    code: str | None = None,
+    state: str,
+    params: dict[str, str] | None = None,
 ) -> PluginConnection:
     payload = await oauth_state.consume_state(state)
     if (
@@ -497,7 +583,17 @@ async def finish_oauth(
     ):
         raise PluginConnectionError("this sign-in link expired or wasn't started here; try again")
     connection = await get_connection(session, workspace_id, uuid.UUID(payload["connection_id"]))
-    result, secrets = await _call(session, connection, "oauth_exchange", {"code": code, "redirect_uri": redirect_uri()})
+    result, secrets = await _call(
+        session,
+        connection,
+        "oauth_exchange",
+        {
+            "code": code or "",
+            "redirect_uri": redirect_uri(),
+            "params": dict(params or {}),
+            "connection_state": dict(connection.state or {}),
+        },
+    )
     signed_in = _keep(connection, result, secrets)
     connection.status = "pending"
     connection.last_error = None
@@ -521,7 +617,11 @@ async def _forget_bank_failure(session: AsyncSession, connection: PluginConnecti
 def _keep(connection: PluginConnection, result: Any, secrets: dict[str, Any]) -> bool:
     """Store what a call handed back: new secrets (merged) and a new cursor.
 
-    True when the call handed back secrets of its own to store."""
+    A key set to ``None`` in ``secrets`` is removed from the sealed store,
+    letting a plugin clean up ephemeral handshake values (e.g. a link token).
+    Returns True when the call handed back at least one non-null secret of its
+    own to store.
+    """
     if not isinstance(result, dict):
         return False
     stored = False
@@ -529,8 +629,14 @@ def _keep(connection: PluginConnection, result: Any, secrets: dict[str, Any]) ->
     if isinstance(new_secrets, dict):
         own = {k: v for k, v in new_secrets.items() if not str(k).startswith("__securo_")}
         if own:
-            connection.secrets = vault.seal({**secrets, **own})
-            stored = True
+            merged = dict(secrets)
+            for key, value in own.items():
+                if value is None:
+                    merged.pop(key, None)
+                else:
+                    merged[key] = value
+                    stored = True
+            connection.secrets = vault.seal(merged)
     new_state = result.get("state")
     if isinstance(new_state, dict):
         connection.state = new_state

@@ -6,6 +6,7 @@ plugin's `sync` returns `data` and Securo writes it as a connected bank.
 from __future__ import annotations
 
 import copy
+from datetime import date
 from typing import Any
 
 import pytest
@@ -1200,3 +1201,1149 @@ async def test_a_stale_pending_entry_does_not_duplicate_its_posted_row(session: 
     (account,) = await _rows(session, Account, connection_id=bank_connection.id)
     rows = await _rows(session, Transaction, account_id=account.id)
     assert [(row.external_id, row.status) for row in rows] == [("p2", "posted")]
+
+
+@pytest.mark.asyncio
+async def test_replaces_external_id_settles_pending_even_when_amount_and_date_change(
+    session: AsyncSession, bank_connection, test_user
+):
+    """A posted entry naming `replaces_external_id` upgrades that exact pending
+    row in place even when tip/hold amount and posting date shifted, preserving
+    user-assigned category and notes (ADR 0058)."""
+    from app.models.category import Category
+
+    cat = Category(
+        user_id=test_user.id,
+        workspace_id=bank_connection.workspace_id,
+        name="Dining",
+        icon="utensils",
+        color="#FF5500",
+    )
+    session.add(cat)
+    await session.flush()
+    cat_id = cat.id
+
+    pending = {
+        "external_id": "p-hold-1",
+        "description": "Corner Bistro",
+        "payee": "Corner Bistro",
+        "amount": "20.00",
+        "date": "2026-11-14",
+        "type": "debit",
+        "status": "pending",
+    }
+    await _pipeline(session, bank_connection, payload_data(transactions=[pending], holdings=None), test_user)
+    (account,) = await _rows(session, Account, connection_id=bank_connection.id)
+    account_id = account.id
+    (stored,) = await _rows(session, Transaction, account_id=account_id)
+    stored_id = stored.id
+    stored.category_id = cat_id
+    stored.notes = "Dinner with team"
+    await session.commit()
+
+    settled = {
+        "external_id": "p-posted-1",
+        "replaces_external_id": "p-hold-1",
+        "description": "Corner Bistro",
+        "payee": "Corner Bistro",
+        "amount": "24.00",
+        "date": "2026-11-16",
+        "type": "debit",
+        "status": "posted",
+    }
+    # Plaid also includes the old pending ID in `removed_transaction_ids` on the same delta.
+    delta = payload_data(transactions=[settled], holdings=None)
+    delta["accounts"][0]["incremental"] = True
+    delta["accounts"][0]["removed_transaction_ids"] = ["p-hold-1"]
+    await _pipeline(session, bank_connection, delta, test_user)
+
+    rows = await _rows(session, Transaction, account_id=account_id)
+    assert len(rows) == 1
+    row = rows[0]
+    assert row.id == stored_id
+    assert row.external_id == "p-posted-1"
+    assert row.status == "posted"
+    assert row.amount == Decimal("24.00")
+    assert row.date == date(2026, 11, 16)
+    assert row.category_id == cat_id
+    assert row.notes == "Dinner with team"
+
+
+@pytest.mark.asyncio
+async def test_removed_transaction_ids_deletes_untouched_and_preserves_user_work(
+    session: AsyncSession, bank_connection, test_user
+):
+    """Explicit removals delete untouched synced entries (cancelled holds and
+    reversed entries) while preserving rows the user edited, flagged, or linked."""
+    txns = [
+        {"external_id": "hold-cancel", "description": "Gas Hold", "amount": "50.00", "date": "2026-11-14", "type": "debit", "status": "pending"},
+        {"external_id": "hold-edited", "description": "Hotel Hold", "amount": "200.00", "date": "2026-11-14", "type": "debit", "status": "pending"},
+        {"external_id": "posted-reversed", "description": "Duplicate Fee", "payee": "Bank", "amount": "5.00", "date": "2026-11-14", "type": "debit", "status": "posted"},
+        {"external_id": "posted-flagged", "description": "Flagged Fee", "amount": "9.00", "date": "2026-11-14", "type": "debit", "status": "posted"},
+    ]
+    await _pipeline(session, bank_connection, payload_data(transactions=txns, holdings=None), test_user)
+    (account,) = await _rows(session, Account, connection_id=bank_connection.id)
+    account_id = account.id
+    by_ext = {row.external_id: row for row in await _rows(session, Transaction, account_id=account_id)}
+    by_ext["hold-edited"].notes = "User kept this note"
+    by_ext["posted-flagged"].is_flagged = True
+    await session.commit()
+
+    delta = payload_data(transactions=[], holdings=None)
+    delta["accounts"][0]["incremental"] = True
+    delta["accounts"][0]["removed_transaction_ids"] = [
+        "hold-cancel",
+        "hold-edited",
+        "posted-reversed",
+        "posted-flagged",
+    ]
+    await _pipeline(session, bank_connection, delta, test_user)
+
+    remaining = {row.external_id for row in await _rows(session, Transaction, account_id=account_id)}
+    assert remaining == {"hold-edited", "posted-flagged"}
+
+
+@pytest.mark.asyncio
+async def test_incremental_delta_advances_last_sync_and_preserves_same_day_repeat_next_to_transfer(
+    session: AsyncSession, bank_connection, test_user
+):
+    """An incremental cursor-based delta advances `last_sync_at` without letting
+    phantom duplicate cleanup delete a legitimate repeat transaction whose paired
+    sibling simply wasn't part of today's delta (ADR 0058)."""
+    first = payload_data(
+        transactions=[
+            {"external_id": "xfer-1", "description": "Transfer Out", "amount": "100.00", "date": "2026-11-15", "type": "debit", "status": "posted"},
+        ],
+        holdings=None,
+    )
+    first["accounts"][0]["incremental"] = True
+    await _pipeline(session, bank_connection, first, test_user)
+    await session.refresh(bank_connection)
+    assert bank_connection.last_sync_at is not None
+
+    (account,) = await _rows(session, Account, connection_id=bank_connection.id)
+    account_id = account.id
+    (first_tx,) = await _rows(session, Transaction, account_id=account_id)
+    first_tx.transfer_pair_id = uuid.uuid4()
+    await session.commit()
+
+    second = payload_data(
+        transactions=[
+            {"external_id": "xfer-2", "description": "Transfer Out", "amount": "100.00", "date": "2026-11-15", "type": "debit", "status": "posted"},
+        ],
+        holdings=None,
+    )
+    second["accounts"][0]["incremental"] = True
+    await _pipeline(session, bank_connection, second, test_user)
+
+    ext_ids = {row.external_id for row in await _rows(session, Transaction, account_id=account_id)}
+    assert ext_ids == {"xfer-1", "xfer-2"}
+
+
+@pytest.mark.asyncio
+async def test_synced_loan_account_persists_terms_and_preserves_them_when_omitted(
+    session: AsyncSession, bank_connection, test_user
+):
+    """Loan contract terms flow from the provider contract onto `Account` and
+    survive a later sync that omits them (ADR 0058)."""
+    first = {
+        "contract": 1,
+        "accounts": [
+            {
+                "external_id": "nelnet-1",
+                "name": "Nelnet Group AA",
+                "type": "loan",
+                "balance": "14200.50",
+                "currency": "USD",
+                "payment_due_day": 21,
+                "minimum_payment": "185.00",
+                "loan_kind": "student",
+                "loan_original_amount": "20000.00",
+                "loan_interest_rate": "4.99",
+                "loan_rate_period": "yearly_nominal",
+                "loan_term_months": 120,
+                "loan_first_payment_date": "2021-06-01",
+                "loan_amortization": "price",
+                "incremental": True,
+                "transactions": [],
+            }
+        ],
+    }
+    await _pipeline(session, bank_connection, first, test_user)
+    (loan,) = await _rows(session, Account, connection_id=bank_connection.id)
+    assert loan.type == "loan"
+    assert loan.balance == Decimal("14200.50")
+    assert loan.loan_kind == "student"
+    assert loan.loan_original_amount == Decimal("20000.00")
+    assert loan.loan_interest_rate == Decimal("4.99")
+    assert loan.loan_rate_period == "yearly_nominal"
+    assert loan.loan_term_months == 120
+    assert loan.loan_first_payment_date == date(2021, 6, 1)
+    assert loan.loan_amortization == "price"
+    assert loan.payment_due_day == 21
+    assert loan.minimum_payment == Decimal("185.00")
+
+    # Follow-up sync omits optional terms: stored values are preserved.
+    followup = {
+        "contract": 1,
+        "accounts": [
+            {
+                "external_id": "nelnet-1",
+                "name": "Nelnet Group AA",
+                "type": "loan",
+                "balance": "14015.50",
+                "currency": "USD",
+                "incremental": True,
+                "transactions": [],
+            }
+        ],
+    }
+    await _pipeline(session, bank_connection, followup, test_user)
+    await session.refresh(loan)
+    assert loan.balance == Decimal("14015.50")
+    assert loan.loan_kind == "student"
+    assert loan.loan_original_amount == Decimal("20000.00")
+    assert loan.loan_interest_rate == Decimal("4.99")
+    assert loan.payment_due_day == 21
+    assert loan.minimum_payment == Decimal("185.00")
+
+
+@pytest.mark.asyncio
+async def test_removed_transaction_ids_protects_payee_id_and_typed_fx_edits_on_posted_rows(
+    session: AsyncSession, bank_connection, test_user
+):
+    """Reassigning or clearing `payee_id`, setting `payee_id` on a payeeless row,
+    or setting `amount_primary_typed` on a posted synced row must protect it from
+    `removed_transaction_ids`, while untouched auto-matched payee rows still delete."""
+    from app.models.payee import Payee
+    from app.schemas.transaction import TransactionUpdate
+    from app.services import transaction_service
+
+    custom_payee = Payee(
+        user_id=test_user.id,
+        workspace_id=bank_connection.workspace_id,
+        name="User Reassigned Payee",
+        source="manual",
+    )
+    session.add(custom_payee)
+    await session.flush()
+    custom_payee_id = custom_payee.id
+
+    txns = [
+        {"external_id": "untouched-with-payee", "description": "Fee", "payee": "Bank", "amount": "5.00", "date": "2026-11-14", "type": "debit", "status": "posted"},
+        {"external_id": "reassigned-payee", "description": "Coffee", "payee": "Bank", "amount": "6.00", "date": "2026-11-14", "type": "debit", "status": "posted"},
+        {"external_id": "cleared-payee", "description": "Snack", "payee": "Bank", "amount": "7.00", "date": "2026-11-14", "type": "debit", "status": "posted"},
+        {"external_id": "added-payee", "description": "Transfer", "amount": "8.00", "date": "2026-11-14", "type": "debit", "status": "posted"},
+        {"external_id": "typed-fx", "description": "Euro Shop", "amount": "10.00", "currency": "EUR", "date": "2026-11-14", "type": "debit", "status": "posted"},
+        {"external_id": "reverted-payee-patch", "description": "Patched", "payee": "Bank", "amount": "9.00", "date": "2026-11-14", "type": "debit", "status": "posted"},
+    ]
+    await _pipeline(session, bank_connection, payload_data(transactions=txns, holdings=None), test_user)
+    (account,) = await _rows(session, Account, connection_id=bank_connection.id)
+    account_id = account.id
+    by_ext = {row.external_id: row for row in await _rows(session, Transaction, account_id=account_id)}
+
+    original_bank_payee_id = by_ext["reverted-payee-patch"].payee_id
+    assert original_bank_payee_id is not None
+
+    by_ext["reassigned-payee"].payee_id = custom_payee_id
+    by_ext["cleared-payee"].payee_id = None
+    by_ext["added-payee"].payee_id = custom_payee_id
+    by_ext["typed-fx"].amount_primary_typed = Decimal("11.25")
+    by_ext["typed-fx"].amount_primary_typed_currency = "USD"
+    await session.commit()
+
+    # Edit via update_transaction and revert back to verify USER_EDITED_KEY holds on posted rows too.
+    await transaction_service.update_transaction(
+        session,
+        by_ext["reverted-payee-patch"].id,
+        bank_connection.workspace_id,
+        test_user.id,
+        TransactionUpdate(payee_id=custom_payee_id),
+    )
+    await transaction_service.update_transaction(
+        session,
+        by_ext["reverted-payee-patch"].id,
+        bank_connection.workspace_id,
+        test_user.id,
+        TransactionUpdate(payee_id=original_bank_payee_id),
+    )
+
+    delta = payload_data(transactions=[], holdings=None)
+    delta["accounts"][0]["incremental"] = True
+    delta["accounts"][0]["removed_transaction_ids"] = list(txns_id["external_id"] for txns_id in txns)
+    await _pipeline(session, bank_connection, delta, test_user)
+
+    remaining = {row.external_id for row in await _rows(session, Transaction, account_id=account_id)}
+    assert remaining == {
+        "reassigned-payee",
+        "cleared-payee",
+        "added-payee",
+        "typed-fx",
+        "reverted-payee-patch",
+    }
+
+
+@pytest.mark.asyncio
+async def test_replaces_external_id_restamps_fx_to_settled_date(
+    session: AsyncSession, bank_connection, test_user
+):
+    """When a foreign-currency pending transaction settles on a new date via
+    `replaces_external_id` (both with and without an amount change), FX stamps
+    use the settled date's rate rather than the old pending date's rate."""
+    from app.models.fx_rate import FxRate
+
+    test_user.preferences = {**(test_user.preferences or {}), "currency_display": "USD"}
+    session.add_all(
+        [
+            FxRate(base_currency="USD", quote_currency="EUR", date=date(2026, 11, 14), rate=Decimal("0.8"), source="test"),
+            FxRate(base_currency="USD", quote_currency="EUR", date=date(2026, 11, 16), rate=Decimal("0.5"), source="test"),
+        ]
+    )
+    await session.commit()
+
+    pending = [
+        {
+            "external_id": "fx-hold-same-amt",
+            "description": "Hotel Auth",
+            "amount": "100.00",
+            "currency": "EUR",
+            "date": "2026-11-14",
+            "type": "debit",
+            "status": "pending",
+        },
+        {
+            "external_id": "fx-hold-tip",
+            "description": "Dinner Auth",
+            "amount": "40.00",
+            "currency": "EUR",
+            "date": "2026-11-14",
+            "type": "debit",
+            "status": "pending",
+        },
+    ]
+    await _pipeline(session, bank_connection, payload_data(transactions=pending, holdings=None), test_user)
+    (account,) = await _rows(session, Account, connection_id=bank_connection.id)
+    account_id = account.id
+    before = {r.external_id: r for r in await _rows(session, Transaction, account_id=account_id)}
+    same_amt_id = before["fx-hold-same-amt"].id
+    tip_id = before["fx-hold-tip"].id
+    # On 2026-11-14 (1 USD = 0.8 EUR -> 1 EUR = 1.25 USD): 100 EUR -> 125.00 USD, 40 EUR -> 50.00 USD.
+    assert before["fx-hold-same-amt"].amount_primary == Decimal("125.00")
+    assert before["fx-hold-tip"].amount_primary == Decimal("50.00")
+
+    settled = [
+        {
+            "external_id": "fx-posted-same-amt",
+            "replaces_external_id": "fx-hold-same-amt",
+            "description": "Hotel Settled",
+            "amount": "100.00",
+            "currency": "EUR",
+            "date": "2026-11-16",
+            "type": "debit",
+            "status": "posted",
+        },
+        {
+            "external_id": "fx-posted-tip",
+            "replaces_external_id": "fx-hold-tip",
+            "description": "Dinner Settled",
+            "amount": "50.00",
+            "currency": "EUR",
+            "date": "2026-11-16",
+            "type": "debit",
+            "status": "posted",
+        },
+    ]
+    delta = payload_data(transactions=settled, holdings=None)
+    delta["accounts"][0]["incremental"] = True
+    delta["accounts"][0]["removed_transaction_ids"] = ["fx-hold-same-amt", "fx-hold-tip"]
+    await _pipeline(session, bank_connection, delta, test_user)
+
+    after = {r.external_id: r for r in await _rows(session, Transaction, account_id=account_id)}
+    assert set(after) == {"fx-posted-same-amt", "fx-posted-tip"}
+    assert after["fx-posted-same-amt"].id == same_amt_id
+    assert after["fx-posted-tip"].id == tip_id
+    # On 2026-11-16 (1 USD = 0.5 EUR -> 1 EUR = 2.00 USD): 100 EUR -> 200.00 USD, 50 EUR -> 100.00 USD.
+    assert after["fx-posted-same-amt"].amount_primary == Decimal("200.00")
+    assert after["fx-posted-same-amt"].amount_account == Decimal("200.00")
+    assert after["fx-posted-tip"].amount_primary == Decimal("100.00")
+    assert after["fx-posted-tip"].amount_account == Decimal("100.00")
+
+
+@pytest.mark.asyncio
+async def test_replaces_external_id_preserves_user_account_amount_on_date_shift_with_bank_amount(
+    session: AsyncSession, bank_connection, test_user
+):
+    """When a foreign-currency pending row has a user-typed primary/account
+    conversion (`amount_account_source == 'user'`) and settles on a shifted date
+    with unchanged amount and a provider-supplied `amount_in_account_currency`,
+    settlement must preserve the user's `amount_account` and `amount_account_source`."""
+    from app.models.fx_rate import FxRate
+    from app.schemas.transaction import TransactionUpdate
+    from app.services import transaction_service
+
+    test_user.preferences = {**(test_user.preferences or {}), "currency_display": "USD"}
+    session.add_all(
+        [
+            FxRate(base_currency="USD", quote_currency="EUR", date=date(2026, 11, 14), rate=Decimal("0.8"), source="test"),
+            FxRate(base_currency="USD", quote_currency="EUR", date=date(2026, 11, 16), rate=Decimal("0.5"), source="test"),
+        ]
+    )
+    await session.commit()
+
+    pending = [
+        {
+            "external_id": "fx-user-hold",
+            "description": "Euro Shop",
+            "amount": "100.00",
+            "currency": "EUR",
+            "date": "2026-11-14",
+            "type": "debit",
+            "status": "pending",
+        }
+    ]
+    await _pipeline(session, bank_connection, payload_data(transactions=pending, holdings=None), test_user)
+    (account,) = await _rows(session, Account, connection_id=bank_connection.id)
+    account_id = account.id
+    (stored,) = await _rows(session, Transaction, account_id=account_id)
+    stored_id = stored.id
+
+    await transaction_service.update_transaction(
+        session,
+        stored_id,
+        bank_connection.workspace_id,
+        test_user.id,
+        TransactionUpdate(amount_primary=Decimal("130.00")),
+    )
+    await session.refresh(stored)
+    assert stored.amount_primary_typed == Decimal("130.00")
+    assert stored.amount_account == Decimal("130.00")
+    assert stored.amount_account_source == "user"
+
+    settled = [
+        {
+            "external_id": "fx-user-posted",
+            "replaces_external_id": "fx-user-hold",
+            "description": "Euro Shop",
+            "amount": "100.00",
+            "currency": "EUR",
+            "amount_in_account_currency": "200.00",
+            "date": "2026-11-16",
+            "type": "debit",
+            "status": "posted",
+        }
+    ]
+    delta = payload_data(transactions=settled, holdings=None)
+    delta["accounts"][0]["incremental"] = True
+    delta["accounts"][0]["removed_transaction_ids"] = ["fx-user-hold"]
+    await _pipeline(session, bank_connection, delta, test_user)
+
+    (after,) = await _rows(session, Transaction, account_id=account_id)
+    assert after.id == stored_id
+    assert after.status == "posted"
+    assert after.date == date(2026, 11, 16)
+    assert after.amount_primary == Decimal("130.00")
+    assert after.amount_primary_typed == Decimal("130.00")
+    assert after.amount_account == Decimal("130.00")
+    assert after.amount_account_source == "user"
+
+
+@pytest.mark.asyncio
+async def test_replaces_external_id_updates_currency_and_restamps_fx_on_same_date_and_amount(
+    session: AsyncSession, bank_connection, test_user
+):
+    """When a pending hold settles under a different currency with the same date
+    and numeric amount, settlement must adopt the posted currency, drop any stale
+    conversion typed for the old currency, and restamp primary/account FX."""
+    from app.models.fx_rate import FxRate
+    from app.schemas.transaction import TransactionUpdate
+    from app.services import transaction_service
+
+    test_user.preferences = {**(test_user.preferences or {}), "currency_display": "USD"}
+    session.add_all(
+        [
+            FxRate(base_currency="USD", quote_currency="EUR", date=date(2026, 11, 14), rate=Decimal("0.8"), source="test"),
+            FxRate(base_currency="USD", quote_currency="GBP", date=date(2026, 11, 14), rate=Decimal("0.5"), source="test"),
+        ]
+    )
+    await session.commit()
+
+    pending = [
+        {
+            "external_id": "fx-ccy-hold",
+            "description": "Cross-Border",
+            "amount": "100.00",
+            "currency": "EUR",
+            "date": "2026-11-14",
+            "type": "debit",
+            "status": "pending",
+        }
+    ]
+    await _pipeline(session, bank_connection, payload_data(transactions=pending, holdings=None), test_user)
+    (account,) = await _rows(session, Account, connection_id=bank_connection.id)
+    account_id = account.id
+    (stored,) = await _rows(session, Transaction, account_id=account_id)
+    stored_id = stored.id
+
+    await transaction_service.update_transaction(
+        session,
+        stored_id,
+        bank_connection.workspace_id,
+        test_user.id,
+        TransactionUpdate(amount_primary=Decimal("130.00")),
+    )
+
+    settled = [
+        {
+            "external_id": "fx-ccy-posted",
+            "replaces_external_id": "fx-ccy-hold",
+            "description": "Cross-Border",
+            "amount": "100.00",
+            "currency": "GBP",
+            "date": "2026-11-14",
+            "type": "debit",
+            "status": "posted",
+        }
+    ]
+    delta = payload_data(transactions=settled, holdings=None)
+    delta["accounts"][0]["incremental"] = True
+    delta["accounts"][0]["removed_transaction_ids"] = ["fx-ccy-hold"]
+    await _pipeline(session, bank_connection, delta, test_user)
+
+    (after,) = await _rows(session, Transaction, account_id=account_id)
+    assert after.id == stored_id
+    assert after.external_id == "fx-ccy-posted"
+    assert after.status == "posted"
+    assert after.currency == "GBP"
+    assert after.amount_primary_typed is None
+    assert after.amount_primary == Decimal("200.00")
+    assert after.fx_rate_used == Decimal("2")
+    assert after.amount_account == Decimal("200.00")
+
+
+@pytest.mark.asyncio
+async def test_replaces_external_id_currency_change_clears_stale_fx_when_rate_missing(
+    session: AsyncSession, bank_connection, test_user
+):
+    """When a pending EUR hold settles as GBP and no GBP FX rate exists,
+    settlement must clear stale EUR primary/rate/account stamps (both when the
+    numeric amount stays the same and when it changes)."""
+    from app.models.fx_rate import FxRate
+    from app.schemas.transaction import TransactionUpdate
+    from app.services import transaction_service
+
+    test_user.preferences = {**(test_user.preferences or {}), "currency_display": "USD"}
+    session.add(
+        FxRate(
+            base_currency="USD",
+            quote_currency="EUR",
+            date=date(2026, 11, 14),
+            rate=Decimal("0.8"),
+            source="test",
+        )
+    )
+    await session.commit()
+
+    pending = [
+        {
+            "external_id": "fx-norate-same-hold",
+            "description": "London Hotel",
+            "amount": "100.00",
+            "currency": "EUR",
+            "date": "2026-11-14",
+            "type": "debit",
+            "status": "pending",
+        },
+        {
+            "external_id": "fx-norate-diff-hold",
+            "description": "London Dinner",
+            "amount": "40.00",
+            "currency": "EUR",
+            "date": "2026-11-14",
+            "type": "debit",
+            "status": "pending",
+        },
+    ]
+    await _pipeline(session, bank_connection, payload_data(transactions=pending, holdings=None), test_user)
+    (account,) = await _rows(session, Account, connection_id=bank_connection.id)
+    account_id = account.id
+    before = {r.external_id: r for r in await _rows(session, Transaction, account_id=account_id)}
+    same_id = before["fx-norate-same-hold"].id
+    diff_id = before["fx-norate-diff-hold"].id
+
+    # Give the same-amount hold a user-typed EUR->USD override; leave the
+    # tip-changed hold with its derived EUR->USD rate stamp.
+    await transaction_service.update_transaction(
+        session,
+        same_id,
+        bank_connection.workspace_id,
+        test_user.id,
+        TransactionUpdate(amount_primary=Decimal("130.00")),
+    )
+    assert before["fx-norate-diff-hold"].amount_primary == Decimal("50.00")
+    assert before["fx-norate-diff-hold"].fx_rate_used == Decimal("1.25")
+    assert before["fx-norate-diff-hold"].amount_account == Decimal("50.00")
+
+    settled = [
+        {
+            "external_id": "fx-norate-same-posted",
+            "replaces_external_id": "fx-norate-same-hold",
+            "description": "London Hotel",
+            "amount": "100.00",
+            "currency": "GBP",
+            "date": "2026-11-14",
+            "type": "debit",
+            "status": "posted",
+        },
+        {
+            "external_id": "fx-norate-diff-posted",
+            "replaces_external_id": "fx-norate-diff-hold",
+            "description": "London Dinner",
+            "amount": "55.00",
+            "currency": "GBP",
+            "date": "2026-11-15",
+            "type": "debit",
+            "status": "posted",
+        },
+    ]
+    delta = payload_data(transactions=settled, holdings=None)
+    delta["accounts"][0]["incremental"] = True
+    delta["accounts"][0]["removed_transaction_ids"] = [
+        "fx-norate-same-hold",
+        "fx-norate-diff-hold",
+    ]
+    await _pipeline(session, bank_connection, delta, test_user)
+
+    after = {r.external_id: r for r in await _rows(session, Transaction, account_id=account_id)}
+    assert set(after) == {"fx-norate-same-posted", "fx-norate-diff-posted"}
+    same_row = after["fx-norate-same-posted"]
+    diff_row = after["fx-norate-diff-posted"]
+    assert same_row.id == same_id
+    assert diff_row.id == diff_id
+
+    for row, expected_amount in (
+        (same_row, Decimal("100.00")),
+        (diff_row, Decimal("55.00")),
+    ):
+        assert row.status == "posted"
+        assert row.currency == "GBP"
+        assert row.amount == expected_amount
+        assert row.amount_primary is None
+        assert row.fx_rate_used is None
+        assert row.amount_primary_typed is None
+        assert row.amount_primary_typed_currency is None
+        assert row.amount_account is None
+        assert row.amount_account_source is None
+
+
+@pytest.mark.asyncio
+async def test_replaces_external_id_currency_and_amount_change_restamps_when_rate_present(
+    session: AsyncSession, bank_connection, test_user
+):
+    """When a pending EUR hold settles in GBP with a changed amount and a GBP
+    rate is present, settlement clears the old EUR stamp and restamps cleanly in GBP."""
+    from app.models.fx_rate import FxRate
+
+    test_user.preferences = {**(test_user.preferences or {}), "currency_display": "USD"}
+    session.add_all(
+        [
+            FxRate(base_currency="USD", quote_currency="EUR", date=date(2026, 11, 14), rate=Decimal("0.8"), source="test"),
+            FxRate(base_currency="USD", quote_currency="GBP", date=date(2026, 11, 15), rate=Decimal("0.5"), source="test"),
+        ]
+    )
+    await session.commit()
+
+    pending = [
+        {
+            "external_id": "fx-ccy-amt-hold",
+            "description": "Cross-Border Tip",
+            "amount": "40.00",
+            "currency": "EUR",
+            "date": "2026-11-14",
+            "type": "debit",
+            "status": "pending",
+        }
+    ]
+    await _pipeline(session, bank_connection, payload_data(transactions=pending, holdings=None), test_user)
+    (account,) = await _rows(session, Account, connection_id=bank_connection.id)
+    account_id = account.id
+    (before,) = await _rows(session, Transaction, account_id=account_id)
+    before_id = before.id
+    assert before.amount_primary == Decimal("50.00")
+    assert before.fx_rate_used == Decimal("1.25")
+
+    settled = [
+        {
+            "external_id": "fx-ccy-amt-posted",
+            "replaces_external_id": "fx-ccy-amt-hold",
+            "description": "Cross-Border Tip",
+            "amount": "60.00",
+            "currency": "GBP",
+            "date": "2026-11-15",
+            "type": "debit",
+            "status": "posted",
+        }
+    ]
+    delta = payload_data(transactions=settled, holdings=None)
+    delta["accounts"][0]["incremental"] = True
+    delta["accounts"][0]["removed_transaction_ids"] = ["fx-ccy-amt-hold"]
+    await _pipeline(session, bank_connection, delta, test_user)
+
+    (after,) = await _rows(session, Transaction, account_id=account_id)
+    assert after.id == before_id
+    assert after.external_id == "fx-ccy-amt-posted"
+    assert after.status == "posted"
+    assert after.currency == "GBP"
+    assert after.amount == Decimal("60.00")
+    assert after.amount_primary == Decimal("120.00")
+    assert after.fx_rate_used == Decimal("2")
+    assert after.amount_account == Decimal("120.00")
+    assert after.amount_primary_typed is None
+    assert after.amount_account_source is None
+
+
+@pytest.mark.asyncio
+async def test_removed_transaction_ids_preserves_mortgage_breakdown_and_bulk_cleared_posted_category(
+    session: AsyncSession, bank_connection, test_user
+):
+    """Explicit removals must preserve posted synced payments linked to a
+    MortgagePaymentAllocation and posted synced rows whose category was cleared
+    through bulk_update_category."""
+    from app.models.category import Category
+    from app.models.mortgage_payment_allocation import MORTGAGE_PRINCIPAL_SOURCE, MortgagePaymentAllocation
+    from app.services import transaction_service
+
+    cat = Category(
+        user_id=test_user.id,
+        workspace_id=bank_connection.workspace_id,
+        name="Bills",
+        icon="home",
+        color="#3366FF",
+    )
+    loan = Account(
+        user_id=test_user.id,
+        workspace_id=bank_connection.workspace_id,
+        name="Home Mortgage",
+        type="loan",
+        balance=Decimal("-200000.00"),
+        currency="USD",
+    )
+    session.add_all([cat, loan])
+    await session.flush()
+    cat_id = cat.id
+    loan_id = loan.id
+
+    txns = [
+        {
+            "external_id": "mort-pmt",
+            "description": "Mortgage Payment",
+            "amount": "1500.00",
+            "date": "2026-11-14",
+            "type": "debit",
+            "status": "posted",
+        },
+        {
+            "external_id": "bulk-cleared",
+            "description": "Utility Charge",
+            "amount": "75.00",
+            "date": "2026-11-14",
+            "type": "debit",
+            "status": "posted",
+        },
+        {
+            "external_id": "untouched-posted",
+            "description": "Reversed Fee",
+            "amount": "10.00",
+            "date": "2026-11-14",
+            "type": "debit",
+            "status": "posted",
+        },
+    ]
+    await _pipeline(session, bank_connection, payload_data(transactions=txns, holdings=None), test_user)
+    (account,) = await _rows(session, Account, connection_id=bank_connection.id)
+    account_id = account.id
+    by_ext = {r.external_id: r for r in await _rows(session, Transaction, account_id=account_id)}
+    mort_pmt_id = by_ext["mort-pmt"].id
+    bulk_cleared_id = by_ext["bulk-cleared"].id
+
+    # Attach a MortgagePaymentAllocation to mort-pmt.
+    principal_tx = Transaction(
+        user_id=test_user.id,
+        workspace_id=bank_connection.workspace_id,
+        account_id=loan_id,
+        date=date(2026, 11, 14),
+        description="Mortgage principal",
+        amount=Decimal("600.00"),
+        type="credit",
+        currency="USD",
+        source=MORTGAGE_PRINCIPAL_SOURCE,
+    )
+    session.add(principal_tx)
+    await session.flush()
+    principal_tx_id = principal_tx.id
+    alloc = MortgagePaymentAllocation(
+        workspace_id=bank_connection.workspace_id,
+        payment_transaction_id=mort_pmt_id,
+        loan_account_id=loan_id,
+        loan_transaction_id=principal_tx_id,
+        principal_amount=Decimal("600.00"),
+        interest_amount=Decimal("900.00"),
+    )
+    session.add(alloc)
+    # Give bulk-cleared an initial category, then clear it via bulk_update_category.
+    by_ext["bulk-cleared"].category_id = cat_id
+    await session.commit()
+
+    updated = await transaction_service.bulk_update_category(
+        session, bank_connection.workspace_id, [bulk_cleared_id], category_id=None
+    )
+    assert updated == 1
+
+    delta = payload_data(transactions=[], holdings=None)
+    delta["accounts"][0]["incremental"] = True
+    delta["accounts"][0]["removed_transaction_ids"] = ["mort-pmt", "bulk-cleared", "untouched-posted"]
+    await _pipeline(session, bank_connection, delta, test_user)
+
+    remaining = {r.external_id for r in await _rows(session, Transaction, account_id=account_id)}
+    assert remaining == {"mort-pmt", "bulk-cleared"}
+    assert len(await _rows(session, MortgagePaymentAllocation, payment_transaction_id=mort_pmt_id)) == 1
+    assert await session.get(Transaction, principal_tx_id) is not None
+
+
+@pytest.mark.asyncio
+async def test_phantom_cleanup_skips_accounts_omitted_from_reply_without_rate_limiting(
+    session: AsyncSession, bank_connection, test_user
+):
+    """When a provider omits a previously synced account from its reply (even
+    with no rate-limited accounts), phantom cleanup must skip that omitted
+    account rather than deleting a legitimate same-day repeat transfer."""
+    first = {
+        "contract": 1,
+        "accounts": [
+            {
+                "external_id": "acc-a",
+                "name": "Checking A",
+                "type": "checking",
+                "balance": "100.00",
+                "currency": "USD",
+                "transactions": [],
+            },
+            {
+                "external_id": "acc-b",
+                "name": "Checking B",
+                "type": "checking",
+                "balance": "200.00",
+                "currency": "USD",
+                "transactions": [
+                    {
+                        "external_id": "b-xfer-1",
+                        "description": "Transfer Out",
+                        "amount": "50.00",
+                        "date": "2026-11-15",
+                        "type": "debit",
+                        "status": "posted",
+                    },
+                    {
+                        "external_id": "b-xfer-2",
+                        "description": "Transfer Out",
+                        "amount": "50.00",
+                        "date": "2026-11-15",
+                        "type": "debit",
+                        "status": "posted",
+                    },
+                ],
+            },
+        ],
+    }
+    await _pipeline(session, bank_connection, first, test_user)
+    accounts = {a.external_id: a for a in await _rows(session, Account, connection_id=bank_connection.id)}
+    acc_b_id = accounts["acc-b"].id
+    b_txns = {t.external_id: t for t in await _rows(session, Transaction, account_id=acc_b_id)}
+    b_txns["b-xfer-1"].transfer_pair_id = uuid.uuid4()
+    await session.commit()
+
+    # Second sync returns only acc-a (acc-b is omitted, with zero rate-limited accounts).
+    second = {
+        "contract": 1,
+        "accounts": [
+            {
+                "external_id": "acc-a",
+                "name": "Checking A",
+                "type": "checking",
+                "balance": "100.00",
+                "currency": "USD",
+                "transactions": [],
+            }
+        ],
+    }
+    await _pipeline(session, bank_connection, second, test_user)
+
+    remaining_b = {t.external_id for t in await _rows(session, Transaction, account_id=acc_b_id)}
+    assert remaining_b == {"b-xfer-1", "b-xfer-2"}
+
+
+@pytest.mark.asyncio
+async def test_omitted_holdings_deducts_retained_investment_holdings_and_handles_edge_cases(
+    session: AsyncSession, bank_connection, test_user
+):
+    """When a follow-up sync omits `holdings` (`holdings=None`), an investment
+    account that reports its gross balance as `auto_invested_balance` (e.g. Plaid)
+    deducts the latest stored values of its live same-currency attributed holdings
+    (capped at the gross balance), while a cash-only investment account (e.g. IBKR,
+    no `auto_invested_balance`) keeps its full cash balance untouched. Positions
+    with no stored value, negative/archived/sold/foreign-currency positions, and
+    authoritative empty `holdings=[]` snapshots are handled cleanly."""
+    from sqlalchemy import delete
+
+    from app.models.asset_group import AssetGroup
+    from app.models.asset_value import AssetValue
+
+    # 1. Initial complete sync:
+    #    - inv-1 reports 2750 gross balance with 2500 same-currency holdings -> 250 cash
+    #    - inv-cash reports 500 cash-only balance (no auto_invested_balance) with a 1000 holding -> 500 cash
+    #    - chk-1 is a non-investment account with an attributed holding -> stays 1000
+    first = {
+        "contract": 1,
+        "accounts": [
+            {
+                "external_id": "inv-1",
+                "name": "Brokerage",
+                "type": "investment",
+                "balance": "2750.00",
+                "currency": "USD",
+                "auto_invested_balance": "2500.00",
+                "incremental": True,
+                "transactions": [],
+            },
+            {
+                "external_id": "inv-cash",
+                "name": "Broker Cash (USD)",
+                "type": "investment",
+                "balance": "500.00",
+                "currency": "USD",
+                "incremental": True,
+                "transactions": [],
+            },
+            {
+                "external_id": "chk-1",
+                "name": "Checking",
+                "type": "checking",
+                "balance": "1000.00",
+                "currency": "USD",
+                "incremental": True,
+                "transactions": [],
+            },
+        ],
+        "holdings": [
+            {
+                "external_id": "h-vti",
+                "name": "VTI",
+                "type": "etf",
+                "currency": "USD",
+                "current_value": "2000.00",
+                "account_external_id": "inv-1",
+            },
+            {
+                "external_id": "h-vxus",
+                "name": "VXUS",
+                "type": "etf",
+                "currency": "USD",
+                "current_value": "500.00",
+                "account_external_id": "inv-1",
+            },
+            {
+                "external_id": "h-eur",
+                "name": "Euro ETF",
+                "type": "etf",
+                "currency": "EUR",
+                "current_value": "300.00",
+                "account_external_id": "inv-1",
+            },
+            {
+                "external_id": "h-ibkr-etf",
+                "name": "IBKR ETF",
+                "type": "etf",
+                "currency": "USD",
+                "current_value": "1000.00",
+                "account_external_id": "inv-cash",
+            },
+            {
+                "external_id": "h-chk-fund",
+                "name": "Checking Fund",
+                "type": "fund",
+                "currency": "USD",
+                "current_value": "400.00",
+                "account_external_id": "chk-1",
+            },
+        ],
+    }
+    await _pipeline(session, bank_connection, first, test_user)
+    accounts = {a.external_id: a for a in await _rows(session, Account, connection_id=bank_connection.id)}
+    assert accounts["inv-1"].balance == Decimal("250.00")
+    assert accounts["inv-cash"].balance == Decimal("500.00")
+    assert accounts["chk-1"].balance == Decimal("1000.00")
+
+    assets = {a.external_id: a for a in await _rows(session, Asset, connection_id=bank_connection.id)}
+    inv_wallet = await session.get(AssetGroup, assets["h-vti"].group_id)
+    assert inv_wallet is not None
+
+    # Update h-vti to have an older snapshot (1800) and newer snapshot (2500),
+    # strip all AssetValue rows from h-vxus (simulating missing valuation), and
+    # add negative, archived, and sold synced positions in inv-1's wallet.
+    await session.execute(delete(AssetValue).where(AssetValue.asset_id.in_([assets["h-vti"].id, assets["h-vxus"].id])))
+    session.add_all(
+        [
+            AssetValue(
+                asset_id=assets["h-vti"].id,
+                workspace_id=bank_connection.workspace_id,
+                amount=Decimal("1800.00"),
+                date=date(2026, 11, 1),
+                source="sync",
+            ),
+            AssetValue(
+                asset_id=assets["h-vti"].id,
+                workspace_id=bank_connection.workspace_id,
+                amount=Decimal("2500.00"),
+                date=date(2026, 11, 15),
+                source="sync",
+            ),
+        ]
+    )
+    short_asset = Asset(
+        user_id=test_user.id,
+        workspace_id=bank_connection.workspace_id,
+        connection_id=bank_connection.id,
+        source=bank_connection.provider,
+        external_id="h-short",
+        name="Short Put",
+        type="investment",
+        currency="USD",
+        valuation_method="manual",
+        group_id=inv_wallet.id,
+    )
+    archived_asset = Asset(
+        user_id=test_user.id,
+        workspace_id=bank_connection.workspace_id,
+        connection_id=bank_connection.id,
+        source=bank_connection.provider,
+        external_id="h-archived",
+        name="Old Stock",
+        type="investment",
+        currency="USD",
+        valuation_method="manual",
+        group_id=inv_wallet.id,
+        is_archived=True,
+    )
+    sold_asset = Asset(
+        user_id=test_user.id,
+        workspace_id=bank_connection.workspace_id,
+        connection_id=bank_connection.id,
+        source=bank_connection.provider,
+        external_id="h-sold",
+        name="Sold Stock",
+        type="investment",
+        currency="USD",
+        valuation_method="manual",
+        group_id=inv_wallet.id,
+        sell_date=date(2026, 11, 10),
+    )
+    session.add_all([short_asset, archived_asset, sold_asset])
+    await session.flush()
+    session.add_all(
+        [
+            AssetValue(
+                asset_id=short_asset.id,
+                workspace_id=bank_connection.workspace_id,
+                amount=Decimal("-150.00"),
+                date=date(2026, 11, 15),
+                source="sync",
+            ),
+            AssetValue(
+                asset_id=archived_asset.id,
+                workspace_id=bank_connection.workspace_id,
+                amount=Decimal("900.00"),
+                date=date(2026, 11, 15),
+                source="sync",
+            ),
+            AssetValue(
+                asset_id=sold_asset.id,
+                workspace_id=bank_connection.workspace_id,
+                amount=Decimal("700.00"),
+                date=date(2026, 11, 15),
+                source="sync",
+            ),
+        ]
+    )
+    await session.commit()
+
+    # 2. Second sync omits holdings (holdings=None):
+    #    - inv-1 reports gross balance as auto_invested_balance cap -> deducts stored 2500 -> 250 cash
+    #    - inv-cash omits auto_invested_balance (cash-only brokerage) -> keeps 500 cash (not -500!)
+    omitted = {
+        "contract": 1,
+        "accounts": [
+            {
+                "external_id": "inv-1",
+                "name": "Brokerage",
+                "type": "investment",
+                "balance": "2750.00",
+                "currency": "USD",
+                "auto_invested_balance": "2750.00",
+                "incremental": True,
+                "transactions": [],
+            },
+            {
+                "external_id": "inv-cash",
+                "name": "Broker Cash (USD)",
+                "type": "investment",
+                "balance": "500.00",
+                "currency": "USD",
+                "incremental": True,
+                "transactions": [],
+            },
+            {
+                "external_id": "chk-1",
+                "name": "Checking",
+                "type": "checking",
+                "balance": "1000.00",
+                "currency": "USD",
+                "incremental": True,
+                "transactions": [],
+            },
+        ],
+    }
+    await _pipeline(session, bank_connection, omitted, test_user)
+    accounts_after_omitted = {
+        a.external_id: a for a in await _rows(session, Account, connection_id=bank_connection.id)
+    }
+    # Only h-vti's latest positive USD value (2500) is deducted -> 2750 - 2500 = 250.
+    assert accounts_after_omitted["inv-1"].balance == Decimal("250.00")
+    assert accounts_after_omitted["inv-cash"].balance == Decimal("500.00")
+    assert accounts_after_omitted["chk-1"].balance == Decimal("1000.00")
+    assets_after_omitted = {
+        a.external_id: a for a in await _rows(session, Asset, connection_id=bank_connection.id)
+    }
+    assert assets_after_omitted["h-vti"].is_archived is False
+    assert assets_after_omitted["h-vxus"].is_archived is False
+    assert assets_after_omitted["h-ibkr-etf"].is_archived is False
+
+    # 3. Third sync reports an authoritative empty portfolio (`holdings: []`, no auto_invested_balance):
+    #    live holdings archive and the investment account takes the full 2750 cash balance.
+    empty = {
+        "contract": 1,
+        "accounts": [
+            {k: v for k, v in acc.items() if k != "auto_invested_balance"}
+            for acc in omitted["accounts"]
+        ],
+        "holdings": [],
+    }
+    await _pipeline(session, bank_connection, empty, test_user)
+    accounts_after_empty = {
+        a.external_id: a for a in await _rows(session, Account, connection_id=bank_connection.id)
+    }
+    assert accounts_after_empty["inv-1"].balance == Decimal("2750.00")
+    assert accounts_after_empty["inv-cash"].balance == Decimal("500.00")
+    assets_after_empty = {
+        a.external_id: a for a in await _rows(session, Asset, connection_id=bank_connection.id)
+    }
+    assert assets_after_empty["h-vti"].is_archived is True
+    assert assets_after_empty["h-vxus"].is_archived is True

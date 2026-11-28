@@ -218,3 +218,171 @@ def test_the_reserved_balance_cap_counts_the_reply_and_says_it_cannot_be_split()
 def test_data_must_be_an_object():
     with pytest.raises(PayloadError, match="object"):
         parse_payload(["accounts"], ALL)
+
+
+def test_incremental_sync_replacement_removals_and_loan_terms_parse_cleanly():
+    data = {
+        "contract": 1,
+        "accounts": [
+            {
+                "external_id": "chk-1",
+                "name": "Checking",
+                "type": "checking",
+                "balance": "500.00",
+                "currency": "USD",
+                "incremental": True,
+                "transactions": [
+                    {
+                        "external_id": "tx-posted",
+                        "replaces_external_id": "tx-pending",
+                        "description": "Restaurant",
+                        "amount": "24.00",
+                        "date": "2026-11-18",
+                        "type": "debit",
+                        "status": "posted",
+                        "card_masked_number": "4242",
+                    }
+                ],
+                "removed_transaction_ids": ["tx-cancelled-hold"],
+            },
+            {
+                "external_id": "loan-1",
+                "name": "Nelnet Student Loan",
+                "type": "loan",
+                "balance": "18500.00",
+                "currency": "USD",
+                "payment_due_day": 15,
+                "minimum_payment": "210.50",
+                "loan_kind": "student",
+                "loan_original_amount": "25000.00",
+                "loan_interest_rate": "5.25",
+                "loan_rate_period": "yearly_nominal",
+                "loan_term_months": 120,
+                "loan_first_payment_date": "2022-09-01",
+                "loan_amortization": "price",
+                "incremental": True,
+                "transactions": [],
+            },
+            {
+                "external_id": "cc-1",
+                "name": "Card",
+                "type": "credit_card",
+                "balance": "100.00",
+                "credit_limit": "1000.00",
+                "available_credit": "900.00",
+                "currency": "USD",
+                "transactions": [],
+            },
+        ],
+    }
+    payload = parse_payload(data, ["accounts", "transactions"])
+    assert payload is not None and payload.accounts is not None
+    chk, loan, cc = payload.accounts
+    assert chk.incremental is True
+    assert chk.removed_transaction_ids == ["tx-cancelled-hold"]
+    assert chk.transactions is not None
+    tx_data = chk.transactions[0].to_data()
+    assert tx_data.replaces_external_id == "tx-pending"
+    assert tx_data.card_masked_number == "4242"
+
+    loan_data = loan.to_data()
+    assert loan_data.loan_kind == "student"
+    assert loan_data.loan_original_amount == Decimal("25000.00")
+    assert loan_data.loan_interest_rate == Decimal("5.25")
+    assert loan_data.loan_rate_period == "yearly_nominal"
+    assert loan_data.loan_term_months == 120
+    assert loan_data.loan_first_payment_date == date(2022, 9, 1)
+    assert loan_data.loan_amortization == "price"
+    assert loan_data.payment_due_day == 15
+    assert loan_data.minimum_payment == Decimal("210.50")
+
+    assert cc.to_data().available_credit == Decimal("900.00")
+
+
+@pytest.mark.parametrize(
+    ("change", "message"),
+    [
+        (
+            lambda d: d["accounts"][0]["transactions"][1].update(replaces_external_id="tx-old"),
+            "posted transactions",
+        ),
+        (
+            lambda d: d["accounts"][0]["transactions"][0].update(replaces_external_id="t1"),
+            "cannot equal external_id",
+        ),
+        (
+            lambda d: d["accounts"][0].update(transactions=None, removed_transaction_ids=["old-1"]),
+            "requires transactions to be a list",
+        ),
+        (
+            lambda d: d["accounts"][0].update(removed_transaction_ids=["old-1", "old-1"]),
+            "unique",
+        ),
+        (
+            lambda d: d["accounts"][0].update(removed_transaction_ids=["t1"]),
+            "overlap",
+        ),
+        (
+            lambda d: d["accounts"][0].update(loan_kind="payday"),
+            "loan_kind",
+        ),
+        (
+            lambda d: d["accounts"][0].update(loan_original_amount="0"),
+            "loan_original_amount",
+        ),
+        (
+            lambda d: d["accounts"][0].update(loan_interest_rate=5.25),
+            "floats",
+        ),
+        (
+            lambda d: d["accounts"][0].update(loan_interest_rate="101"),
+            "loan_interest_rate",
+        ),
+        (
+            lambda d: d["accounts"][0].update(loan_term_months=601),
+            "loan_term_months",
+        ),
+    ],
+    ids=[
+        "replace-on-pending",
+        "self-replace",
+        "removed-without-transactions-list",
+        "duplicate-removed",
+        "removed-overlaps-transactions",
+        "bad-loan-kind",
+        "zero-loan-original-amount",
+        "float-loan-rate",
+        "loan-rate-over-100",
+        "loan-term-over-600",
+    ],
+)
+def test_invalid_incremental_and_loan_fields_are_refused(change, message):
+    with pytest.raises(PayloadError, match=message):
+        parse_payload(_payload(change), ALL)
+
+
+def test_removed_transaction_ids_require_transactions_in_provides_and_respect_cap(monkeypatch):
+    with pytest.raises(PayloadError, match="transactions"):
+        parse_payload(
+            {
+                "contract": 1,
+                "accounts": [
+                    {
+                        "external_id": "a1",
+                        "name": "Checking",
+                        "type": "checking",
+                        "balance": "10.00",
+                        "currency": "USD",
+                        "transactions": [],
+                        "removed_transaction_ids": ["old-1"],
+                    }
+                ],
+            },
+            ["accounts"],
+        )
+    monkeypatch.setattr(contract, "MAX_REMOVED_TRANSACTIONS", 1)
+    with pytest.raises(PayloadError, match="2 removed_transactions in one reply"):
+        parse_payload(
+            _payload(lambda d: d["accounts"][0].update(removed_transaction_ids=["r1", "r2"])),
+            ALL,
+        )

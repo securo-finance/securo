@@ -130,6 +130,15 @@ class AccountData:
     # `credit_limit - available_credit`. None = the provider said no such
     # thing, and `balance` is the debt as usual.
     available_credit: Optional[Decimal] = None
+    # Loan accounts only: contract terms when the provider exposes them
+    # (e.g. Plaid liabilities for student loans and mortgages, ADR 0058).
+    loan_kind: Optional[str] = None
+    loan_original_amount: Optional[Decimal] = None
+    loan_interest_rate: Optional[Decimal] = None
+    loan_rate_period: Optional[str] = None
+    loan_term_months: Optional[int] = None
+    loan_first_payment_date: Optional[date] = None
+    loan_amortization: Optional[str] = None
 
 
 @dataclass
@@ -159,6 +168,9 @@ class TransactionData:
     # This belongs to the transaction rather than the account because a single
     # credit-card account can have additional or virtual cards. Never the PAN.
     card_masked_number: Optional[str] = None
+    # Provider-side external_id of an earlier pending transaction that this
+    # posted transaction explicitly settles (e.g. Plaid `pending_transaction_id`).
+    replaces_external_id: Optional[str] = None
 
 
 @dataclass
@@ -547,4 +559,12 @@ class BankProvider(ABC):
         The sync layer falls back to locally-computed cycle math in that case
         (see app.services.credit_card_service).
         """
+        return []
+
+    async def get_removed_transaction_ids(
+        self, credentials: dict, account_external_id: str
+    ) -> list[str]:
+        """External IDs of transactions the provider explicitly removed since
+        the previous cursor (for cursor-based incremental syncs, ADR 0058).
+        Default is none."""
         return []
