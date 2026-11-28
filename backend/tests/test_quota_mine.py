@@ -41,7 +41,7 @@ async def test_off_without_the_switch(client: AsyncClient, session: AsyncSession
     resp = await client.get(URL, headers=auth_headers)
 
     assert resp.status_code == 200, resp.text
-    assert resp.json() == {"enforced": False, "info_url": None, "counters": []}
+    assert resp.json() == {"enforced": False, "info_url": None, "above": False, "effective_at": None, "in_effect": False, "sync_paused": False, "counters": []}
 
 
 @pytest.mark.asyncio
@@ -49,7 +49,7 @@ async def test_no_limits_lists_nothing(managed, client: AsyncClient, auth_header
     resp = await client.get(URL, headers=auth_headers)
 
     assert resp.status_code == 200, resp.text
-    assert resp.json() == {"enforced": True, "info_url": None, "counters": []}
+    assert resp.json() == {"enforced": True, "info_url": None, "above": False, "effective_at": None, "in_effect": False, "sync_paused": False, "counters": []}
 
 
 @pytest.mark.asyncio
@@ -66,8 +66,8 @@ async def test_lists_bounded_counters_with_their_count(
 
     assert resp.status_code == 200, resp.text
     assert resp.json()["counters"] == [
-        {"counter": "max_personal_workspaces", "current": 1, "maximum": 2},
-        {"counter": "max_bank_connections", "current": 1, "maximum": 1},
+        {"counter": "max_personal_workspaces", "current": 1, "maximum": 2, "excess": 0},
+        {"counter": "max_bank_connections", "current": 1, "maximum": 1, "excess": 0},
     ]
 
 
@@ -81,7 +81,7 @@ async def test_operator_defaults_hold_for_an_account_without_a_row(
     resp = await client.get(URL, headers=auth_headers)
 
     assert resp.json()["counters"] == [
-        {"counter": "max_business_workspaces", "current": 0, "maximum": 0},
+        {"counter": "max_business_workspaces", "current": 0, "maximum": 0, "excess": 0},
     ]
 
 
@@ -109,7 +109,7 @@ async def test_members_counter_reads_the_fullest_workspace(
     resp = await client.get(URL, headers=auth_headers)
 
     assert resp.json()["counters"] == [
-        {"counter": "max_members_per_workspace", "current": 1, "maximum": 3},
+        {"counter": "max_members_per_workspace", "current": 1, "maximum": 3, "excess": 0},
     ]
 
 
@@ -127,3 +127,20 @@ async def test_needs_a_signed_in_account(client: AsyncClient):
     resp = await client.get(URL)
 
     assert resp.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_an_excess_over_the_defaults_shows_without_a_date(
+    managed, client: AsyncClient, session: AsyncSession, test_user, test_workspace, auth_headers,
+):
+    """The defaults count for `above` too; the date lives on the account's own row, so there is none."""
+    session.add(_connection(test_workspace, test_user.id))
+    session.add(_connection(test_workspace, test_user.id))
+    await quota_service.set_defaults(session, {"max_bank_connections": 1})
+    await session.commit()
+
+    body = (await client.get(URL, headers=auth_headers)).json()
+
+    assert body["above"] is True
+    assert body["effective_at"] is None and body["in_effect"] is False and body["sync_paused"] is False
+    assert body["counters"] == [{"counter": "max_bank_connections", "current": 2, "maximum": 1, "excess": 1}]

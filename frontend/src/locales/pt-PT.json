@@ -4434,6 +4434,10 @@
       "backup_failed": {
         "label": "Cópias de segurança",
         "hint": "Uma cópia de segurança agendada falhou."
+      },
+      "quota_excess": {
+        "label": "Limites da conta",
+        "hint": "A sua conta está acima de um dos limites."
       }
     },
     "group": {
@@ -4450,6 +4454,9 @@
     "empty": "Nenhuma ação administrativa registada.",
     "actionUpdate": "Conta alterada",
     "actionDelete": "Conta eliminada",
+    "actionWorkspaceStatus": "Estado do espaço de trabalho alterado",
+    "targetWorkspace": "Espaço de trabalho {{name}}",
+    "statusChange": "Estado {{from}} → {{to}}",
     "actionOther": "Conta alterada",
     "by": "Por {{email}}",
     "target": "Conta {{email}}",
@@ -4473,6 +4480,16 @@
     "withdrawn": "O pedido foi retirado. A sua conta mantém o endereço atual"
   },
   "quota": {
+    "aboveTitle": "A sua conta está acima dos limites",
+    "aboveTitleFrom": "A sua conta está acima dos limites a partir de {{date}}",
+    "syncPaused": "A sincronização bancária está em pausa até ficar dentro do limite.",
+    "hint": "Nada é removido em seu lugar. Assim que estiver dentro dos limites, tudo volta a funcionar como antes.",
+    "counter": {
+      "max_bank_connections": "Ligações bancárias: {{current}} de {{maximum}}, remova {{excess}}",
+      "max_personal_workspaces": "Espaços pessoais: {{current}} de {{maximum}}, remova {{excess}}",
+      "max_business_workspaces": "Espaços empresariais: {{current}} de {{maximum}}, remova {{excess}}",
+      "max_members_per_workspace": "Membros num espaço: {{current}} de {{maximum}}, remova {{excess}}"
+    },
     "title": "Limites de utilização",
     "menu": "Limites de utilização",
     "description": "O que esta conta pode criar nesta instância. Contadores sem limite não são apresentados.",
@@ -4501,5 +4518,27 @@
     "none": "{{label}}: o limite desta conta nesta instância é 0, por isso não é possível adicionar nenhum.",
     "ownerNone": "{{label}}: o proprietário deste espaço de trabalho tem limite 0 nesta instância, por isso não é possível adicionar nenhum.",
     "reachedGeneric": "Esta conta atingiu um dos seus limites de utilização."
+  },
+  "workspaceStatus": {
+    "notice": "Este espaço de trabalho está suspenso. Pode ler e exportar tudo, mas nada pode ser alterado.",
+    "error": "Este espaço de trabalho está suspenso: pode ser lido e exportado, mas não alterado.",
+    "title": "Espaços de trabalho",
+    "description": "Um espaço suspenso pode ser lido e exportado, mas não alterado, e as suas ligações bancárias deixam de sincronizar.",
+    "search": "Pesquisar por nome ou e-mail do proprietário...",
+    "empty": "Nenhum espaço de trabalho encontrado",
+    "active": "Ativo",
+    "suspended": "Suspenso",
+    "suspend": "Suspender",
+    "reactivate": "Reativar",
+    "suspendNamed": "Suspender {{name}}",
+    "reactivateNamed": "Reativar {{name}}",
+    "confirmTitle": "Suspender {{name}}?",
+    "confirmDescription": "Os membros continuam a ler e a exportar, mas não podem alterar nada até à reativação. As tarefas agendadas também param.",
+    "reasonLabel": "Motivo desta alteração",
+    "reasonPlaceholder": "Porque é que este espaço de trabalho está a ser alterado",
+    "reactivateTitle": "Reativar {{name}}?",
+    "reactivateDescription": "Os membros voltam a poder alterar e as tarefas agendadas retomam de onde pararam.",
+    "range": "{{from}}–{{to}} de {{total}}",
+    "updated": "Espaço de trabalho atualizado"
   }
 }

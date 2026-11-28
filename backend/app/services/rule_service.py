@@ -271,12 +271,15 @@ async def create_default_rules(
     user_id: uuid.UUID,
     lang: str = "pt-BR",
     workspace_id: Optional[uuid.UUID] = None,
+    *,
+    commit: bool = True,
 ) -> list[Rule]:
     """Create universal default categorization rules for a new user.
 
     `lang` is accepted for backwards compatibility but no longer affects
     category resolution — categories are matched by internal key across all
-    language variants.
+    language variants. ``commit=False`` leaves the rules in the caller's
+    transaction, flushed.
     """
     # Scope category resolution to the target workspace so rules in a
     # newly-created workspace point at THAT workspace's categories
@@ -307,7 +310,10 @@ async def create_default_rules(
         session.add(rule)
         rules.append(rule)
 
-    await session.commit()
+    if commit:
+        await session.commit()
+    else:
+        await session.flush()
     return rules
 
 

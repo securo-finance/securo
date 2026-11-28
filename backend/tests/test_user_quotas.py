@@ -519,7 +519,7 @@ async def test_the_operator_writes_reads_and_checks_a_fit(operator, client: Asyn
     }
     resp = await client.put(url, json=body, headers=operator)
     assert resp.status_code == 200, resp.text
-    assert resp.json() == {"user_id": str(test_user.id), "source": "own", **body}
+    assert resp.json() == {"user_id": str(test_user.id), "source": "own", "excess_effective_at": None, **body}
     assert (await client.get(url, headers=operator)).json() == resp.json()
 
     resp = await client.put(url, json={"max_bank_connections": -1}, headers=operator)

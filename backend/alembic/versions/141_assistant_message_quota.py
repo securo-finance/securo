@@ -4,8 +4,8 @@ A fifth nullable counter on `user_quotas`, and on each agent message whether
 the instance's own LLM connection answered it, which is the fact the monthly
 count reads (#1968, ADR 0053).
 
-Revision ID: 138
-Revises: 136
+Revision ID: 141
+Revises: 140
 """
 
 from typing import Sequence, Union
@@ -13,8 +13,8 @@ from typing import Sequence, Union
 import sqlalchemy as sa
 from alembic import op
 
-revision: str = "138"
-down_revision: Union[str, None] = "136"
+revision: str = "141"
+down_revision: Union[str, None] = "140"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

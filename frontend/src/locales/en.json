@@ -4420,6 +4420,10 @@
       "backup_failed": {
         "label": "Backups",
         "hint": "A scheduled backup failed."
+      },
+      "quota_excess": {
+        "label": "Account limits",
+        "hint": "Your account is above one of its limits."
       }
     },
     "group": {
@@ -4436,6 +4440,9 @@
     "empty": "No administrative actions recorded.",
     "actionUpdate": "Account updated",
     "actionDelete": "Account deleted",
+    "actionWorkspaceStatus": "Workspace status changed",
+    "targetWorkspace": "Workspace {{name}}",
+    "statusChange": "Status {{from}} → {{to}}",
     "actionOther": "Account changed",
     "by": "By {{email}}",
     "target": "Account {{email}}",
@@ -4459,6 +4466,16 @@
     "withdrawn": "The request was withdrawn. Your account keeps its current address"
   },
   "quota": {
+    "aboveTitle": "Your account is above its limits",
+    "aboveTitleFrom": "Your account is above its limits from {{date}}",
+    "syncPaused": "Bank sync is paused until you are within your limit.",
+    "hint": "Nothing is removed on your behalf. Once you are within your limits, everything works as before.",
+    "counter": {
+      "max_bank_connections": "Bank connections: {{current}} of {{maximum}}, remove {{excess}}",
+      "max_personal_workspaces": "Personal workspaces: {{current}} of {{maximum}}, remove {{excess}}",
+      "max_business_workspaces": "Business workspaces: {{current}} of {{maximum}}, remove {{excess}}",
+      "max_members_per_workspace": "Members in a workspace: {{current}} of {{maximum}}, remove {{excess}}"
+    },
     "title": "Usage limits",
     "menu": "Usage limits",
     "description": "What this account can create on this instance. Counters without a limit are not listed.",
@@ -4487,5 +4504,27 @@
     "none": "{{label}}: this account's limit is 0 on this instance, so none can be added.",
     "ownerNone": "{{label}}: this workspace's owner has a limit of 0 on this instance, so none can be added.",
     "reachedGeneric": "This account has reached one of its usage limits."
+  },
+  "workspaceStatus": {
+    "notice": "This workspace is suspended. You can read and export everything in it, but nothing can be changed.",
+    "error": "This workspace is suspended, so it can be read and exported but not changed.",
+    "title": "Workspaces",
+    "description": "A suspended workspace can be read and exported, but not changed, and its bank connections stop syncing.",
+    "search": "Search by name or owner's email...",
+    "empty": "No workspaces found",
+    "active": "Active",
+    "suspended": "Suspended",
+    "suspend": "Suspend",
+    "reactivate": "Reactivate",
+    "suspendNamed": "Suspend {{name}}",
+    "reactivateNamed": "Reactivate {{name}}",
+    "confirmTitle": "Suspend {{name}}?",
+    "confirmDescription": "Its members keep reading and exporting, but can't change anything until it is reactivated. Scheduled work stops too.",
+    "reasonLabel": "Reason for this change",
+    "reasonPlaceholder": "Why this workspace is being changed",
+    "reactivateTitle": "Reactivate {{name}}?",
+    "reactivateDescription": "Its members can change things again, and scheduled work resumes where it stopped.",
+    "range": "{{from}}–{{to}} of {{total}}",
+    "updated": "Workspace updated"
   }
 }

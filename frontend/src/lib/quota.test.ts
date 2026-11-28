@@ -82,9 +82,13 @@ describe('fullCounter', () => {
   const quotas: MyQuotas = {
     enforced: true,
     info_url: null,
+    above: false,
+    effective_at: null,
+    in_effect: false,
+    sync_paused: false,
     counters: [
-      { counter: 'max_personal_workspaces', current: 1, maximum: 1 },
-      { counter: 'max_bank_connections', current: 1, maximum: 3 },
+      { counter: 'max_personal_workspaces', current: 1, maximum: 1, excess: 0 },
+      { counter: 'max_bank_connections', current: 1, maximum: 3, excess: 0 },
     ],
   }
 

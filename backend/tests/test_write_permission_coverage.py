@@ -66,6 +66,7 @@ ALLOWLIST: dict[tuple[str, str], str] = {
     ("DELETE", "/api/admin/settings/{key}"): "superuser-gated instance administration",
     ("PATCH", "/api/admin/provider-settings/{provider}"): "superuser-gated instance administration",
     ("PUT", "/api/admin/email"): "superuser-gated instance administration",
+    ("PATCH", "/api/admin/workspaces/{workspace_id}/status"): "superuser-gated instance administration",
     # Workspace administration: uses its own, stricter owner floor via
     # `require_membership(min_role="owner")` inside the handler. Converting
     # these to the write gate would *widen* access, since editors can write.
@@ -119,6 +120,9 @@ ALLOWLIST: dict[tuple[str, str], str] = {
     # user: the customer's administrator must not reach these (ADR 0049).
     ("PUT", "/api/operator/quotas/{user_id}"): "operator-token-gated per-account limits, no user",
     ("POST", "/api/operator/quotas/{user_id}/fit-check"): "operator-token-gated read of the account's counts",
+    ("PUT", "/api/operator/quotas/{user_id}/excess-date"): "operator-token-gated date an excess takes effect (ADR 0055)",
+    ("PUT", "/api/operator/modules/{user_id}"): "operator-token-gated per-account module list, no user",
+    ("POST", "/api/operator/accounts"): "operator-token-gated opening of a new account, no user (#1965)",
     ("PUT", "/api/operator/quota-defaults"): "operator-token-gated default limits, no user",
     ("DELETE", "/api/operator/quota-defaults"): "operator-token-gated default limits, no user",
 }
@@ -127,6 +131,9 @@ ALLOWLIST: dict[tuple[str, str], str] = {
 OPERATOR_ROUTES = {
     ("PUT", "/api/operator/quotas/{user_id}"),
     ("POST", "/api/operator/quotas/{user_id}/fit-check"),
+    ("PUT", "/api/operator/quotas/{user_id}/excess-date"),
+    ("PUT", "/api/operator/modules/{user_id}"),
+    ("POST", "/api/operator/accounts"),
     ("PUT", "/api/operator/quota-defaults"),
     ("DELETE", "/api/operator/quota-defaults"),
 }

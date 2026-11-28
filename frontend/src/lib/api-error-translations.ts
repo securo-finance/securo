@@ -50,6 +50,7 @@ const KNOWN_MESSAGES: Record<string, string> = {
     'categoryLines.errors.destinationInvalid',
   'These budgets are in different currencies and there is no exchange rate for their month to combine them.':
     'categoryLines.errors.mergeNeedsRate',
+  'This workspace is suspended, so it can be read and exported but not changed': 'workspaceStatus.error',
   // Budget amount bounds, raised by the schema as a 422 for every create,
   // update and batch call.
   'The budget limit must be at least 0.01': 'budgets.amountTooSmall',

@@ -40,6 +40,7 @@ import { cn } from '@/lib/utils'
 import { APP_VERSION } from '@/lib/build-info'
 import { ShellLogo } from '@/components/shell-logo'
 import { UpdateAvailableBanner } from '@/components/update-available-banner'
+import { QuotaExcessBanner } from '@/components/quota-excess-banner'
 import { UpdateAvailableDialog } from '@/components/update-available-dialog'
 import { WorkspaceSwitcher } from '@/components/workspace-switcher'
 import { navItems, visibleNavItems, type NavItem } from '@/lib/nav-items'
@@ -66,6 +67,7 @@ import { usePrivacyMode } from '@/hooks/use-privacy-mode'
 import { ChangePasswordDialog } from '@/components/change-password-dialog'
 import { BackupDialog } from '@/components/backup-dialog'
 import { AccessLogDialog } from '@/components/access-log-dialog'
+import { WorkspaceSuspendedNotice } from '@/components/workspace-suspended-notice'
 import { UsageLimitsDialog } from '@/components/usage-limits-dialog'
 import { useMyQuotas } from '@/hooks/use-quota'
 import { TwoFactorSetup } from '@/components/two-factor-setup'
@@ -618,6 +620,7 @@ export function AppLayout() {
           </div>
 
           <div className={cn(desktopSidebarCollapsed && 'lg:hidden')}>
+            <QuotaExcessBanner />
             <UpdateAvailableBanner onOpen={() => setUpdateDialogOpen(true)} />
           </div>
 
@@ -685,6 +688,7 @@ export function AppLayout() {
             </div>
           </div>
           <div className="p-6 max-w-7xl mx-auto">
+            <WorkspaceSuspendedNotice />
             <Outlet />
           </div>
         </main>

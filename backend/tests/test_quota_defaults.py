@@ -188,7 +188,7 @@ async def test_the_operator_reads_say_where_the_limits_come_from(
     assert (await client.get(DEFAULTS_URL, headers=operator)).json() == {"is_set": True, **body}
 
     read = (await client.get(url, headers=operator)).json()
-    assert read == {"user_id": str(test_user.id), "source": "default", **body}
+    assert read == {"user_id": str(test_user.id), "source": "default", "excess_effective_at": None, **body}
     fit = await client.post(f"{url}/fit-check", json=body, headers=operator)
     assert fit.json()["source"] == "default" and fit.json()["allowed"] is True
 

@@ -32,6 +32,21 @@ export interface AdminUserList {
   total: number
 }
 
+export interface AdminWorkspace {
+  id: string
+  name: string
+  kind: string
+  status: WorkspaceStatus
+  status_changed_at: string | null
+  /** Emails of the members with the owner role. */
+  owners: string[]
+}
+
+export interface AdminWorkspaceList {
+  items: AdminWorkspace[]
+  total: number
+}
+
 /** One field an administrative action touched, with its old and new value. */
 export interface AccessLogFieldChange {
   from?: string | boolean | null
@@ -46,8 +61,12 @@ export interface AccessLogFieldChange {
 export interface AdminAccessLogEntry {
   id: string
   actor_email: string
-  target_email: string
+  /** The account's address; null for an entry about a workspace. */
+  target_email: string | null
   target_user_id: string | null
+  /** The workspace acted on, with the name it had at the time. */
+  target_workspace_id?: string | null
+  target_workspace_name?: string | null
   action: string
   /** Every field the action changed, keyed by field name (#556). */
   changes?: Record<string, AccessLogFieldChange> | null
@@ -73,8 +92,20 @@ export interface MyQuotas {
   enforced: boolean
   /** The operator's page about the limits, when it set one. */
   info_url: string | null
+  /** False when the account fits every limit, or has none. */
+  above: boolean
+  /** When an excess starts to have an effect (ADR 0055); null, never. */
+  effective_at: string | null
+  in_effect: boolean
+  /** Bank sync stops while the account holds more connections than its limit. */
+  sync_paused: boolean
   /** Only the bounded counters; an unbounded one is never listed. */
-  counters: QuotaUsage[]
+  counters: QuotaUsageExcess[]
+}
+
+/** A bounded counter with how many to remove to fit it. */
+export interface QuotaUsageExcess extends QuotaUsage {
+  excess: number
 }
 
 export interface Passkey {
@@ -102,6 +133,9 @@ export type WorkspaceRole = 'owner' | 'editor' | 'viewer' | 'manager'
 
 export type WorkspaceKind = 'personal' | 'business'
 
+/** A suspended workspace is read and exported, never changed (ADR 0052). */
+export type WorkspaceStatus = 'active' | 'suspended'
+
 export interface Workspace {
   id: string
   name: string
@@ -109,6 +143,7 @@ export interface Workspace {
   // still has to render. Writes are narrowed to WorkspaceKind.
   kind: string
   is_archived: boolean
+  status: WorkspaceStatus
   default_currency: string
   locale: string | null
   /** The calendar this workspace keeps its books in, or null to follow the
@@ -2813,6 +2848,20 @@ export type AppNotificationKind =
   | 'group_expense'
   | 'group_settlement'
   | 'backup_failed'
+  | 'quota_excess'
+
+export type QuotaCounter =
+  | 'max_personal_workspaces'
+  | 'max_business_workspaces'
+  | 'max_bank_connections'
+  | 'max_members_per_workspace'
+
+export interface QuotaCounterExcess {
+  counter: QuotaCounter
+  current: number
+  maximum: number | null
+  excess: number
+}
 
 export interface NotificationPreference {
   kind: AppNotificationKind
@@ -2876,6 +2925,10 @@ export type AppNotification = {
       }
     }
   | { kind: 'backup_failed'; data: { failed_at: string } }
+  | {
+      kind: 'quota_excess'
+      data: { effective_at: string; in_effect: boolean; sync_paused: boolean; counters: QuotaCounterExcess[] }
+    }
 )
 
 export interface AppNotificationList {

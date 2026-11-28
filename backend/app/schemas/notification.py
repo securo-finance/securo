@@ -14,6 +14,7 @@ NotificationKind = Literal[
     "group_expense",
     "group_settlement",
     "backup_failed",
+    "quota_excess",
 ]
 
 #: `open` holds now, `unread` is open and not read yet, `all` adds what was resolved.

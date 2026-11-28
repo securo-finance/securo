@@ -4,6 +4,7 @@
 - Date: 2026-11-27
 - Origin: #1959 (a ceiling per account on a managed instance with open sign-up)
 - Extends: [0045](0045-managed-instance.md)
+- Extended by [0055](0055-quota-excess-pauses-sync.md): an excess that stays pauses sync, only after a date the operator sets.
 - Extended by [0056](0056-operator-quota-defaults.md): an account with no row follows the operator's defaults when they are set, and the Personal workspace created with the account is never checked.
 - Extended by [0057](0057-account-reads-its-usage-limits.md): the signed-in account reads its own limits and counts, so the screens can warn before a refusal.
 

@@ -10,11 +10,12 @@ from app.core.database import Base
 
 
 class AdminAccessLog(Base):
-    """One administrative action on a person's account, with its reason (ADR 0042).
+    """One administrative action on an account or a workspace, with its reason (ADR 0042).
 
-    The record outlives the people it names: the emails are snapshots, and the
-    foreign keys clear (``ON DELETE SET NULL``) when an account goes away, so
-    deleting the target never deletes the evidence of the deletion.
+    The record outlives the people and the workspaces it names: the emails and
+    the workspace name are snapshots, and the foreign keys clear
+    (``ON DELETE SET NULL``) when the target goes away, so deleting it never
+    deletes the evidence of the action.
     """
 
     __tablename__ = "admin_access_log"
@@ -25,12 +26,23 @@ class AdminAccessLog(Base):
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
     )
     actor_email: Mapped[str] = mapped_column(String(255))
-    #: The account acted on.
+    #: The account acted on, when the target is an account.
     target_user_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
     )
-    target_email: Mapped[str] = mapped_column(String(255))
-    #: What was done: ``user.update`` or ``user.delete``.
+    #: The account's address when the action was taken; empty for a workspace.
+    target_email: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    #: The workspace acted on, when the target is a workspace (ADR 0052).
+    target_workspace_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("workspaces.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    #: Its name when the action was taken, so a rename or a later deletion
+    #: never rewrites what the record says.
+    target_workspace_name: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    #: What was done: ``user.update``, ``user.delete`` or ``workspace.status``.
     action: Mapped[str] = mapped_column(String(40), index=True)
     #: Every field the action changed, as ``{field: {"from": ..., "to": ...}}``
     #: (#556). The email is the reason the record exists: a change of login

@@ -32,7 +32,7 @@ from app.schemas.bank_connection import (
     ReauthUrlResponse,
     ReconnectTokenResponse,
 )
-from app.services import connection_service
+from app.services import connection_service, quota_service
 from app.services.transfer_detection_service import detect_transfer_pairs, unlink_transfer_pair
 
 router = APIRouter(prefix="/api/connections", tags=["connections"])
@@ -235,8 +235,12 @@ async def sync_connection(
         }
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+    except quota_service.SyncPausedError as e:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=e.detail())
     except connection_service.ConnectionDisconnectedError as e:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
+    except connection_service.WorkspaceSuspendedError as e:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
     except ProviderUserActionRequired as e:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -378,7 +382,10 @@ async def _sync_through_plugin(session: AsyncSession, plugin_connection, connect
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Plugins are turned off on this server."
         )
-    plugin_connection = await plugin_connections.sync(session, plugin_connection)
+    try:
+        plugin_connection = await plugin_connections.sync(session, plugin_connection)
+    except quota_service.SyncPausedError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=exc.detail())
     if plugin_connection.status == "needs_auth":
         raise HTTPException(status_code=status.HTTP_410_GONE, detail=plugin_connection.last_error or "Sign in again.")
     if plugin_connection.status == "error":

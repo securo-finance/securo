@@ -1,0 +1,167 @@
+import { screen, waitFor, within } from '@testing-library/react'
+import { beforeEach, expect, it, vi } from 'vitest'
+
+import { admin } from '@/lib/api'
+import { renderWithProviders } from '@/test/utils'
+import type { AdminWorkspace } from '@/types'
+
+import { WorkspaceStatusSettings } from './workspace-status-settings'
+
+const refresh = vi.hoisted(() => vi.fn())
+vi.mock('@/lib/api', () => ({
+  admin: { listWorkspaces: vi.fn(), updateWorkspaceStatus: vi.fn() },
+}))
+vi.mock('@/contexts/workspace-context', () => ({ useWorkspace: () => ({ refresh }) }))
+
+const home: AdminWorkspace = {
+  id: 'w1',
+  name: 'Home',
+  kind: 'personal',
+  status: 'active',
+  status_changed_at: null,
+  owners: ['owner@example.com'],
+}
+const suspendedHome: AdminWorkspace = { ...home, status: 'suspended' }
+
+beforeEach(() => {
+  vi.clearAllMocks()
+  vi.mocked(admin.listWorkspaces).mockResolvedValue({ items: [home], total: 1 })
+  vi.mocked(admin.updateWorkspaceStatus).mockResolvedValue(suspendedHome)
+})
+
+it('asks before suspending, then shows what the server says', async () => {
+  // The screen reads the list again after the change; that second answer is
+  // the suspended workspace, and the row must follow it.
+  vi.mocked(admin.listWorkspaces)
+    .mockResolvedValueOnce({ items: [home], total: 1 })
+    .mockResolvedValue({ items: [suspendedHome], total: 1 })
+
+  const { user } = renderWithProviders(<WorkspaceStatusSettings />)
+  await user.click(await screen.findByRole('button', { name: 'Suspend Home' }))
+  expect(admin.updateWorkspaceStatus).not.toHaveBeenCalled()
+
+  const dialog = await screen.findByRole('dialog', { name: 'Suspend Home?' })
+  // The API refuses a change with no reason, so the screen does not offer one.
+  const confirm = within(dialog).getByRole('button', { name: 'Suspend' })
+  expect(confirm).toBeDisabled()
+  await user.type(within(dialog).getByLabelText('Reason for this change'), 'Audit in progress')
+  await user.click(confirm)
+  await waitFor(() =>
+    expect(admin.updateWorkspaceStatus).toHaveBeenCalledWith('w1', 'suspended', 'Audit in progress'),
+  )
+  // In the background: a foreground load would put the shell back in its
+  // loading state for a change the administrator just made.
+  await waitFor(() => expect(refresh).toHaveBeenCalledWith({ background: true }))
+  expect(admin.listWorkspaces).toHaveBeenCalledTimes(2)
+  expect(await screen.findByRole('button', { name: 'Reactivate Home' })).toBeVisible()
+  expect(screen.queryByRole('button', { name: 'Suspend Home' })).not.toBeInTheDocument()
+})
+
+it('reactivates a suspended workspace and drops the badge', async () => {
+  vi.mocked(admin.listWorkspaces)
+    .mockResolvedValueOnce({ items: [suspendedHome], total: 1 })
+    .mockResolvedValue({ items: [home], total: 1 })
+  vi.mocked(admin.updateWorkspaceStatus).mockResolvedValue(home)
+
+  const { user } = renderWithProviders(<WorkspaceStatusSettings />)
+  expect(await screen.findByText('Suspended')).toBeVisible()
+  await user.click(screen.getByRole('button', { name: 'Reactivate Home' }))
+
+  const dialog = await screen.findByRole('dialog', { name: 'Reactivate Home?' })
+  await user.type(within(dialog).getByLabelText('Reason for this change'), 'Books are settled')
+  await user.click(within(dialog).getByRole('button', { name: 'Reactivate' }))
+  await waitFor(() =>
+    expect(admin.updateWorkspaceStatus).toHaveBeenCalledWith('w1', 'active', 'Books are settled'),
+  )
+  expect(await screen.findByRole('button', { name: 'Suspend Home' })).toBeVisible()
+  expect(screen.queryByText('Suspended')).not.toBeInTheDocument()
+})
+
+it('searches on the server and shows what the search returned', async () => {
+  const warehouse: AdminWorkspace = {
+    ...home,
+    id: 'w2',
+    name: 'Warehouse',
+    owners: ['ops@example.com'],
+  }
+  // The answer to the search is a different list, so the row on screen has to
+  // follow it: a request sent but not read would leave Home in place.
+  vi.mocked(admin.listWorkspaces).mockImplementation(async (params) =>
+    params?.search === 'x' ? { items: [warehouse], total: 1 } : { items: [home], total: 60 },
+  )
+
+  const { user } = renderWithProviders(<WorkspaceStatusSettings />)
+  expect(await screen.findByText('1–1 of 60')).toBeVisible()
+  expect(screen.getByText('Home')).toBeVisible()
+
+  await user.type(screen.getByRole('searchbox'), 'x')
+  expect(await screen.findByText('Warehouse')).toBeVisible()
+  expect(screen.queryByText('Home')).not.toBeInTheDocument()
+  // The whole result fits on one page now, so the pager is gone too.
+  expect(screen.queryByText(/of 60/)).not.toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: 'Next' })).not.toBeInTheDocument()
+  expect(admin.listWorkspaces).toHaveBeenLastCalledWith({ search: 'x', page: 1, limit: 50 })
+})
+
+it('keeps Next off while a search is still loading', async () => {
+  // The old list counts three pages; the search has one. Until its answer
+  // comes, the total on screen is the old one and Next would lead past it.
+  let answer: (value: { items: AdminWorkspace[]; total: number }) => void = () => {}
+  vi.mocked(admin.listWorkspaces).mockImplementation((params) =>
+    params?.search
+      ? new Promise((resolve) => {
+          answer = resolve
+        })
+      : Promise.resolve({ items: [home], total: 120 }),
+  )
+
+  const { user } = renderWithProviders(<WorkspaceStatusSettings />)
+  expect(await screen.findByText('1–1 of 120')).toBeVisible()
+  expect(screen.getByRole('button', { name: 'Next' })).toBeEnabled()
+
+  await user.type(screen.getByRole('searchbox'), 'h')
+  await waitFor(() =>
+    expect(admin.listWorkspaces).toHaveBeenLastCalledWith({ search: 'h', page: 1, limit: 50 }),
+  )
+  expect(screen.getByText('1–1 of 120')).toBeVisible()
+  expect(screen.getByRole('button', { name: 'Next' })).toBeDisabled()
+
+  answer({ items: [home], total: 1 })
+  await waitFor(() => expect(screen.queryByText(/of 120/)).not.toBeInTheDocument())
+})
+
+it('pages through the workspaces past the first fifty, and a search starts over', async () => {
+  const many = (page: number) =>
+    Array.from({ length: page === 3 ? 20 : 50 }, (_, i) => ({
+      ...home,
+      id: `w${page}-${i}`,
+      name: `Workspace ${page}-${i}`,
+    }))
+  vi.mocked(admin.listWorkspaces).mockImplementation(async (params) =>
+    params?.search
+      ? { items: [home], total: 1 }
+      : { items: many(params?.page ?? 1), total: 120 },
+  )
+
+  const { user } = renderWithProviders(<WorkspaceStatusSettings />)
+  expect(await screen.findByText('1–50 of 120')).toBeVisible()
+  expect(screen.getByRole('button', { name: 'Previous' })).toBeDisabled()
+
+  await user.click(screen.getByRole('button', { name: 'Next' }))
+  expect(await screen.findByText('Workspace 2-0')).toBeVisible()
+  expect(screen.getByText('51–100 of 120')).toBeVisible()
+  expect(admin.listWorkspaces).toHaveBeenLastCalledWith({ search: undefined, page: 2, limit: 50 })
+
+  await user.click(screen.getByRole('button', { name: 'Next' }))
+  expect(await screen.findByText('Workspace 3-19')).toBeVisible()
+  expect(screen.getByText('101–120 of 120')).toBeVisible()
+  expect(screen.getByRole('button', { name: 'Next' })).toBeDisabled()
+
+  await user.click(screen.getByRole('button', { name: 'Previous' }))
+  expect(await screen.findByText('Workspace 2-0')).toBeVisible()
+
+  // Page 2 of the old list means nothing for the search.
+  await user.type(screen.getByRole('searchbox'), 'h')
+  expect(await screen.findByText('Home')).toBeVisible()
+  expect(admin.listWorkspaces).toHaveBeenLastCalledWith({ search: 'h', page: 1, limit: 50 })
+})

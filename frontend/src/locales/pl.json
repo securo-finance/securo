@@ -4582,6 +4582,10 @@
       "backup_failed": {
         "label": "Kopie zapasowe",
         "hint": "Zaplanowana kopia zapasowa nie powiodła się."
+      },
+      "quota_excess": {
+        "label": "Limity konta",
+        "hint": "Twoje konto przekracza jeden z limitów."
       }
     },
     "group": {
@@ -4598,6 +4602,9 @@
     "empty": "Brak zapisanych działań administracyjnych.",
     "actionUpdate": "Konto zmienione",
     "actionDelete": "Konto usunięte",
+    "actionWorkspaceStatus": "Zmieniono status przestrzeni roboczej",
+    "targetWorkspace": "Przestrzeń robocza {{name}}",
+    "statusChange": "Status {{from}} → {{to}}",
     "actionOther": "Konto zmienione",
     "by": "Przez {{email}}",
     "target": "Konto {{email}}",
@@ -4621,6 +4628,16 @@
     "withdrawn": "Prośba została wycofana. Twoje konto zachowuje obecny adres"
   },
   "quota": {
+    "aboveTitle": "Twoje konto przekracza limity",
+    "aboveTitleFrom": "Twoje konto przekracza limity od {{date}}",
+    "syncPaused": "Synchronizacja bankowa jest wstrzymana, dopóki nie zmieścisz się w limicie.",
+    "hint": "Nic nie jest usuwane za Ciebie. Gdy zmieścisz się w limitach, wszystko działa jak wcześniej.",
+    "counter": {
+      "max_bank_connections": "Połączenia bankowe: {{current}} z {{maximum}}, usuń {{excess}}",
+      "max_personal_workspaces": "Przestrzenie osobiste: {{current}} z {{maximum}}, usuń {{excess}}",
+      "max_business_workspaces": "Przestrzenie firmowe: {{current}} z {{maximum}}, usuń {{excess}}",
+      "max_members_per_workspace": "Członkowie w przestrzeni: {{current}} z {{maximum}}, usuń {{excess}}"
+    },
     "title": "Limity użycia",
     "menu": "Limity użycia",
     "description": "Co to konto może utworzyć w tej instancji. Liczniki bez limitu nie są wyświetlane.",
@@ -4649,5 +4666,27 @@
     "none": "{{label}}: limit tego konta w tej instancji wynosi 0, więc nie można nic dodać.",
     "ownerNone": "{{label}}: właściciel tej przestrzeni roboczej ma w tej instancji limit 0, więc nie można nic dodać.",
     "reachedGeneric": "To konto osiągnęło jeden ze swoich limitów użycia."
+  },
+  "workspaceStatus": {
+    "notice": "Ta przestrzeń robocza jest zawieszona. Możesz wszystko czytać i eksportować, ale niczego nie można zmienić.",
+    "error": "Ta przestrzeń robocza jest zawieszona: można ją czytać i eksportować, ale nie zmieniać.",
+    "title": "Przestrzenie robocze",
+    "description": "Zawieszoną przestrzeń można czytać i eksportować, ale nie zmieniać, a jej połączenia bankowe przestają się synchronizować.",
+    "search": "Szukaj po nazwie lub e-mailu właściciela...",
+    "empty": "Nie znaleziono przestrzeni roboczych",
+    "active": "Aktywna",
+    "suspended": "Zawieszona",
+    "suspend": "Zawieś",
+    "reactivate": "Przywróć",
+    "suspendNamed": "Zawieś {{name}}",
+    "reactivateNamed": "Przywróć {{name}}",
+    "confirmTitle": "Zawiesić {{name}}?",
+    "confirmDescription": "Członkowie nadal mogą czytać i eksportować, ale nie mogą nic zmienić do czasu przywrócenia. Zaplanowane zadania też się zatrzymują.",
+    "reasonLabel": "Powód tej zmiany",
+    "reasonPlaceholder": "Dlaczego ta przestrzeń robocza jest zmieniana",
+    "reactivateTitle": "Przywrócić {{name}}?",
+    "reactivateDescription": "Członkowie znów mogą zmieniać rzeczy, a zaplanowane zadania wznawiają się tam, gdzie się zatrzymały.",
+    "range": "{{from}}–{{to}} z {{total}}",
+    "updated": "Przestrzeń robocza zaktualizowana"
   }
 }
