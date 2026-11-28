@@ -271,7 +271,10 @@ async def sync_connection(
         }
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
-    except connection_service.ConnectionDisconnectedError as e:
+    except (
+        connection_service.ConnectionDisconnectedError,
+        connection_service.ConnectionReconnectedError,
+    ) as e:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
     except ProviderUserActionRequired as e:
         raise HTTPException(

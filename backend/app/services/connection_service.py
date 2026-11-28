@@ -1,4 +1,5 @@
 import hashlib
+import json
 import logging
 import re
 import uuid
@@ -107,6 +108,7 @@ settings = get_settings()
 
 _PROVIDER_SELL_DATE_METADATA_KEY = "_securo_provider_sell_date"
 FAILOVER_DEDUP_ACCOUNTS_KEY = "failover_dedup_account_ids"
+RECONNECT_GENERATION_KEY = "reconnect_generation"
 
 
 def _failover_dedup_account_ids(settings: Optional[dict]) -> set[str]:
@@ -2171,6 +2173,14 @@ def _reactivate_connection(
         }
     # The failure the old credentials left no longer says anything.
     connection.settings = _with_sync_failure(connection.settings, None)
+    # Tag each reconnect with a unique generation so an in-flight sync that
+    # committed account registration before this reconnect cannot import stale
+    # data or stamp checkpoints over the reset even when external_id/credentials
+    # stay identical (e.g. Pluggy update mode).
+    connection.settings = {
+        **(connection.settings or {}),
+        RECONNECT_GENERATION_KEY: uuid.uuid4().hex,
+    }
 
 
 async def _connection_holding_these_accounts(
@@ -2235,20 +2245,22 @@ async def _connection_holding_these_accounts(
 def _disambiguate_account_candidates(
     candidates: Sequence[Account], acc_data: AccountData
 ) -> Optional[Account]:
-    """Narrow multiple account rows sharing a bank-level identifier.
+    """Narrow account rows sharing a bank-level identifier.
 
-    Some banks (and Enable Banking `identification_hash`) give several
-    sub-accounts the same stable id. Narrow by (currency, type), then masked
-    number, then normalized account name; fail closed if still ambiguous.
+    Always requires compatible currency and type (including when only a single
+    candidate matches a fingerprint) so a checking ledger can never rebind to a
+    savings account sharing the same bank number/fingerprint. When multiple
+    compatible rows remain, narrow by masked number, then normalized account
+    name; fail closed if still ambiguous.
     """
-    if len(candidates) <= 1:
-        return candidates[0] if candidates else None
     narrowed = [
         row
         for row in candidates
         if row.currency == acc_data.currency and row.type == acc_data.type
     ]
-    if len(narrowed) > 1 and acc_data.masked_number:
+    if len(narrowed) <= 1:
+        return narrowed[0] if narrowed else None
+    if acc_data.masked_number:
         by_mask = [
             row for row in narrowed if row.masked_number == acc_data.masked_number
         ]
@@ -2265,6 +2277,26 @@ def _disambiguate_account_candidates(
             if by_name:
                 narrowed = by_name
     return narrowed[0] if len(narrowed) == 1 else None
+
+
+def _same_provider_fingerprints(
+    acc: Account,
+    cand_conn: BankConnection,
+    provider: str,
+) -> list[str]:
+    """Collect fingerprints on ``acc`` and its active links belonging to ``provider``."""
+    fps: list[str] = []
+    if cand_conn.provider == provider and acc.account_fingerprint:
+        fps.append(acc.account_fingerprint)
+    for link in acc.connection_links:
+        if (
+            link.status == "active"
+            and link.account_fingerprint
+            and link.connection is not None
+            and link.connection.provider == provider
+        ):
+            fps.append(link.account_fingerprint)
+    return fps
 
 
 async def _find_cross_connection_match(
@@ -2287,7 +2319,11 @@ async def _find_cross_connection_match(
                 Account.connection_id != connection.id,
                 Account.is_closed.is_(False),
             )
-            .options(selectinload(Account.connection_links))
+            .options(
+                selectinload(Account.connection_links).selectinload(
+                    AccountConnectionLink.connection
+                )
+            )
         )
     ).all()
     candidates = [
@@ -2303,30 +2339,37 @@ async def _find_cross_connection_match(
         return None
 
     # Tier 1: High-confidence keyed HMAC account_fingerprint + same provider + same currency + same type.
+    # Each active link's fingerprint is checked against its own connection's provider
+    # (so a surviving Pluggy link still matches after Enable Banking takes over as primary),
+    # and any conflicting comparable same-provider fingerprint on the account or its active
+    # links (e.g. a known COMPE code on primary vs an unspecified-COMPE secondary) rejects
+    # the match.
     if acc_data.account_fingerprint or acc_data.fallback_account_fingerprints:
-        fp_matches = [
-            acc
-            for acc, cand_conn in candidates
-            if cand_conn.provider == connection.provider
-            and acc.currency == acc_data.currency
-            and acc.type == acc_data.type
-            and (
+        fp_matches: list[Account] = []
+        for acc, cand_conn in candidates:
+            if acc.currency != acc_data.currency or acc.type != acc_data.type:
+                continue
+            same_provider_fps = _same_provider_fingerprints(
+                acc, cand_conn, connection.provider
+            )
+            if not same_provider_fps:
+                continue
+            if any(
                 fingerprints_match(
-                    acc.account_fingerprint,
+                    fp,
                     acc_data.account_fingerprint,
                     fallback_fps=acc_data.fallback_account_fingerprints,
                 )
-                or any(
-                    link.status == "active"
-                    and fingerprints_match(
-                        link.account_fingerprint,
-                        acc_data.account_fingerprint,
-                        fallback_fps=acc_data.fallback_account_fingerprints,
-                    )
-                    for link in acc.connection_links
+                for fp in same_provider_fps
+            ) and not any(
+                fingerprints_conflict(
+                    fp,
+                    acc_data.account_fingerprint,
+                    fallback_fps=acc_data.fallback_account_fingerprints,
                 )
-            )
-        ]
+                for fp in same_provider_fps
+            ):
+                fp_matches.append(acc)
         picked = _disambiguate_account_candidates(fp_matches, acc_data)
         if picked is not None:
             return picked, "active"
@@ -2339,14 +2382,18 @@ async def _find_cross_connection_match(
         stable_matches = [
             acc
             for acc, cand_conn in candidates
-            if cand_conn.provider == connection.provider
-            and acc.masked_number == acc_data.masked_number
+            if acc.masked_number == acc_data.masked_number
             and acc.currency == acc_data.currency
             and acc.type == acc_data.type
             and (
-                acc.stable_external_id == acc_data.stable_external_id
+                (
+                    cand_conn.provider == connection.provider
+                    and acc.stable_external_id == acc_data.stable_external_id
+                )
                 or any(
                     link.status == "active"
+                    and link.connection is not None
+                    and link.connection.provider == connection.provider
                     and link.stable_external_id == acc_data.stable_external_id
                     for link in acc.connection_links
                 )
@@ -2368,10 +2415,15 @@ async def _find_cross_connection_match(
                 or acc.type != acc_data.type
             ):
                 continue
-            if fingerprints_conflict(
-                acc.account_fingerprint,
-                acc_data.account_fingerprint,
-                fallback_fps=acc_data.fallback_account_fingerprints,
+            if any(
+                fingerprints_conflict(
+                    fp,
+                    acc_data.account_fingerprint,
+                    fallback_fps=acc_data.fallback_account_fingerprints,
+                )
+                for fp in _same_provider_fingerprints(
+                    acc, cand_conn, connection.provider
+                )
             ):
                 continue
             cand_inst = _normalized_account_name(cand_conn.institution_name)
@@ -2410,7 +2462,9 @@ async def _ensure_account_link(
             existing.stable_external_id = acc_data.stable_external_id
         if acc_data.account_fingerprint is not None:
             existing.account_fingerprint = prefer_fingerprint(
-                existing.account_fingerprint, acc_data.account_fingerprint
+                existing.account_fingerprint,
+                acc_data.account_fingerprint,
+                fallback_fps=acc_data.fallback_account_fingerprints,
             )
         existing.is_primary_feed = is_primary_feed
         existing.status = status
@@ -2530,6 +2584,15 @@ async def handle_oauth_callback(
         )
 
     if existing_reconnect:
+        locked_reconnect = await session.scalar(
+            select(BankConnection)
+            .where(BankConnection.id == existing_reconnect.id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+        if locked_reconnect is None:
+            raise ValueError("Reconnect target connection not found")
+        existing_reconnect = locked_reconnect
         _reactivate_connection(existing_reconnect, connection_data)
         await session.execute(
             update(AccountConnectionLink)
@@ -2633,6 +2696,7 @@ async def handle_oauth_callback(
                     matched_account.account_fingerprint = prefer_fingerprint(
                         matched_account.account_fingerprint,
                         acc_data.account_fingerprint,
+                        fallback_fps=acc_data.fallback_account_fingerprints,
                     )
                 await _ensure_account_link(
                     session,
@@ -2668,6 +2732,7 @@ async def handle_oauth_callback(
                 matched_account.account_fingerprint = prefer_fingerprint(
                     matched_account.account_fingerprint,
                     acc_data.account_fingerprint,
+                    fallback_fps=acc_data.fallback_account_fingerprints,
                 )
             await _ensure_account_link(
                 session,
@@ -3235,17 +3300,26 @@ async def _find_existing_connected_account(
     if account is not None:
         return account
 
-    if acc_data.account_fingerprint:
+    if acc_data.account_fingerprint or acc_data.fallback_account_fingerprints:
         fp_rows = (
             await session.execute(
                 select(Account).where(
                     Account.connection_id == connection.id,
-                    Account.account_fingerprint == acc_data.account_fingerprint,
+                    Account.currency == acc_data.currency,
+                    Account.type == acc_data.type,
+                    Account.account_fingerprint.is_not(None),
                 )
             )
         ).scalars().all()
         fp_rows = [
-            row for row in fp_rows if row.external_id not in incoming_external_ids
+            row
+            for row in fp_rows
+            if row.external_id not in incoming_external_ids
+            and fingerprints_match(
+                row.account_fingerprint,
+                acc_data.account_fingerprint,
+                fallback_fps=acc_data.fallback_account_fingerprints,
+            )
         ]
         picked_fp = _disambiguate_account_candidates(fp_rows, acc_data)
         if picked_fp is not None:
@@ -3416,7 +3490,10 @@ async def _resolve_sync_account(
         fp_links = [
             link
             for link in unclaimed_links
-            if fingerprints_match(
+            if link.account is not None
+            and link.account.currency == acc_data.currency
+            and link.account.type == acc_data.type
+            and fingerprints_match(
                 link.account_fingerprint,
                 acc_data.account_fingerprint,
                 fallback_fps=acc_data.fallback_account_fingerprints,
@@ -3430,13 +3507,17 @@ async def _resolve_sync_account(
             matched_link.external_id = acc_data.external_id
             if acc_data.account_fingerprint is not None:
                 matched_link.account_fingerprint = prefer_fingerprint(
-                    matched_link.account_fingerprint, acc_data.account_fingerprint
+                    matched_link.account_fingerprint,
+                    acc_data.account_fingerprint,
+                    fallback_fps=acc_data.fallback_account_fingerprints,
                 )
             if matched_link.is_primary_feed:
                 picked_acc.external_id = acc_data.external_id
                 if acc_data.account_fingerprint is not None:
                     picked_acc.account_fingerprint = prefer_fingerprint(
-                        picked_acc.account_fingerprint, acc_data.account_fingerprint
+                        picked_acc.account_fingerprint,
+                        acc_data.account_fingerprint,
+                        fallback_fps=acc_data.fallback_account_fingerprints,
                     )
             elif acc_data.account_fingerprint is not None and (
                 picked_acc.account_fingerprint is None
@@ -3447,7 +3528,9 @@ async def _resolve_sync_account(
                 )
             ):
                 picked_acc.account_fingerprint = prefer_fingerprint(
-                    picked_acc.account_fingerprint, acc_data.account_fingerprint
+                    picked_acc.account_fingerprint,
+                    acc_data.account_fingerprint,
+                    fallback_fps=acc_data.fallback_account_fingerprints,
                 )
             if matched_link.status == "pending":
                 return picked_acc, matched_link, "pending"
@@ -3519,7 +3602,9 @@ async def _resolve_sync_account(
             )
         ):
             matched_account.account_fingerprint = prefer_fingerprint(
-                matched_account.account_fingerprint, acc_data.account_fingerprint
+                matched_account.account_fingerprint,
+                acc_data.account_fingerprint,
+                fallback_fps=acc_data.fallback_account_fingerprints,
             )
         link = await _ensure_account_link(
             session,
@@ -3537,7 +3622,7 @@ async def _resolve_sync_account(
         )
 
     # Disambiguated fallback over remaining unclaimed links that lack both
-    # account_fingerprint and stable_external_id (e.g. migration-134 backfill or
+    # account_fingerprint and stable_external_id (e.g. migration-148 backfill or
     # SimpleFIN secondary links) so a rotated external_id re-binds instead of
     # creating a duplicate account.
     fallback_candidates = [
@@ -3705,7 +3790,11 @@ async def _maybe_promote_secondary_link(
     if link.stable_external_id is not None:
         locked_account.stable_external_id = link.stable_external_id
     if link.account_fingerprint is not None:
-        locked_account.account_fingerprint = link.account_fingerprint
+        locked_account.account_fingerprint = prefer_fingerprint(
+            locked_account.account_fingerprint,
+            link.account_fingerprint,
+            fallback_fps=acc_data.fallback_account_fingerprints,
+        )
     await session.flush()
     return True
 
@@ -6140,14 +6229,39 @@ async def sync_connection(
                 reg_claimed_ids.add(new_account.id)
             connection.credentials = credentials
             flag_modified(connection, "credentials")
+            expected_external_id = connection.external_id
+            expected_credentials_json = json.dumps(
+                credentials or {}, sort_keys=True, default=str
+            )
+            expected_reconnect_generation = (connection.settings or {}).get(
+                RECONNECT_GENERATION_KEY
+            )
+            expected_last_sync_at = connection.last_sync_at
             await session.commit()
             reloaded = await get_connection(
                 session, connection_id, workspace_id, for_update=True
             )
             if not reloaded or reloaded.status == DISCONNECTED_STATUS:
                 raise ConnectionDisconnectedError("Connection was removed during sync")
+            reloaded_settings = reloaded.settings or {}
+            reloaded_credentials_json = json.dumps(
+                reloaded.credentials or {}, sort_keys=True, default=str
+            )
+            if (
+                reloaded.external_id != expected_external_id
+                or reloaded_credentials_json != expected_credentials_json
+                or reloaded_settings.get(RECONNECT_GENERATION_KEY)
+                != expected_reconnect_generation
+                or (
+                    expected_last_sync_at is not None
+                    and reloaded.last_sync_at is None
+                )
+            ):
+                raise ConnectionReconnectedError(
+                    "Connection was reconnected during sync"
+                )
             connection = reloaded
-            conn_settings = connection.settings or {}
+            conn_settings = reloaded_settings
             failover_dedup_ids = _failover_dedup_account_ids(conn_settings)
             connection_had_links = True
         for acc_data in accounts_data:
@@ -6175,7 +6289,9 @@ async def sync_connection(
                     active_link.stable_external_id = acc_data.stable_external_id
                 if acc_data.account_fingerprint is not None:
                     active_link.account_fingerprint = prefer_fingerprint(
-                        active_link.account_fingerprint, acc_data.account_fingerprint
+                        active_link.account_fingerprint,
+                        acc_data.account_fingerprint,
+                        fallback_fps=acc_data.fallback_account_fingerprints,
                     )
                 if account.is_closed:
                     continue
@@ -6212,6 +6328,7 @@ async def sync_connection(
                             account.account_fingerprint = prefer_fingerprint(
                                 account.account_fingerprint,
                                 acc_data.account_fingerprint,
+                                fallback_fps=acc_data.fallback_account_fingerprints,
                             )
                     continue
 
@@ -6343,14 +6460,18 @@ async def sync_connection(
                     account.stable_external_id = acc_data.stable_external_id
                 if acc_data.account_fingerprint is not None:
                     account.account_fingerprint = prefer_fingerprint(
-                        account.account_fingerprint, acc_data.account_fingerprint
+                        account.account_fingerprint,
+                        acc_data.account_fingerprint,
+                        fallback_fps=acc_data.fallback_account_fingerprints,
                     )
                 if active_link is not None:
                     if acc_data.stable_external_id is not None:
                         active_link.stable_external_id = acc_data.stable_external_id
                     if acc_data.account_fingerprint is not None:
                         active_link.account_fingerprint = prefer_fingerprint(
-                            active_link.account_fingerprint, acc_data.account_fingerprint
+                            active_link.account_fingerprint,
+                            acc_data.account_fingerprint,
+                            fallback_fps=acc_data.fallback_account_fingerprints,
                         )
                 # Backfills existing accounts on next sync (issue #345).
                 if institution is not None:
@@ -7246,6 +7367,9 @@ async def sync_connection(
         # Report "rate_limited" so the caller (manual sync endpoint, UI) knows
         # no fresh data was pulled and can say so instead of a success toast.
         return refreshed, 0, "rate_limited"
+    except (ConnectionDisconnectedError, ConnectionReconnectedError):
+        await session.rollback()
+        raise
     except Exception as exc:
         # Mark connection as errored so UI shows reconnect banner. If some
         # account was also throttled in this run, its Retry-After is kept as
@@ -7332,6 +7456,10 @@ async def _mark_initial_import_failed(
 
 class ConnectionDisconnectedError(Exception):
     """A sync was asked of a connection the user disconnected."""
+
+
+class ConnectionReconnectedError(Exception):
+    """A sync was superseded by a concurrent reconnection of the connection."""
 
 
 async def _detach_or_promote_joint_accounts(

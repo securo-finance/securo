@@ -678,6 +678,14 @@ def _auto_invested_portion(account: dict) -> Decimal:
     return min(_auto_invested_balance(account), balance)
 
 
+def _usable_connector_id(value: object) -> Optional[str]:
+    """Return a stripped non-empty Pluggy connector id string, or None when unusable."""
+    if value is None or isinstance(value, bool):
+        return None
+    cid = str(value).strip()
+    return cid or None
+
+
 def _pluggy_institution_scope(
     connector_id: object = None,
     connector_name: object = None,
@@ -701,10 +709,9 @@ def _pluggy_institution_scope(
         else None
     )
     sub_inst = f"compe:{compe}" if compe else None
-    if connector_id is not None and not isinstance(connector_id, bool):
-        cid = str(connector_id).strip()
-        if cid:
-            return f"connector:{cid}", sub_inst
+    cid = _usable_connector_id(connector_id)
+    if cid is not None:
+        return f"connector:{cid}", sub_inst
     if isinstance(connector_name, str) and connector_name.strip():
         cname = " ".join(connector_name.strip().lower().split())
         if cname and cname != "unknown bank":
@@ -712,6 +719,22 @@ def _pluggy_institution_scope(
     if sub_inst:
         return sub_inst, None
     return None, None
+
+
+def _pluggy_name_fallback_scope(
+    connector_id: object = None,
+    connector_name: object = None,
+) -> Optional[str]:
+    """Legacy connector-name scope emitted as a fallback digest when a usable
+    ``connector_id`` is also known, allowing accounts initially stored without
+    ``connector_id`` to match and upgrade without equating different known IDs."""
+    if _usable_connector_id(connector_id) is None:
+        return None
+    if isinstance(connector_name, str) and connector_name.strip():
+        cname = " ".join(connector_name.strip().lower().split())
+        if cname and cname != "unknown bank":
+            return f"connector_name:{cname}"
+    return None
 
 
 def _build_account_data(
@@ -750,6 +773,7 @@ def _build_account_data(
 
     account_currency = acc.get("currencyCode", "USD")
     raw_number = acc.get("number")
+    raw_number_str = raw_number if isinstance(raw_number, str) else None
     institution_key, sub_institution_key = _pluggy_institution_scope(
         connector_id=connector_id,
         connector_name=connector_name,
@@ -757,10 +781,28 @@ def _build_account_data(
     )
     account_fingerprint, fallback_fingerprints = hash_account_identifier_with_fallbacks(
         "pluggy",
-        raw_number if isinstance(raw_number, str) else None,
+        raw_number_str,
         institution=institution_key,
         sub_institution=sub_institution_key,
     )
+    name_fallback_scope = _pluggy_name_fallback_scope(
+        connector_id=connector_id,
+        connector_name=connector_name,
+    )
+    if name_fallback_scope:
+        name_fp, name_fallbacks = hash_account_identifier_with_fallbacks(
+            "pluggy",
+            raw_number_str,
+            institution=name_fallback_scope,
+            sub_institution=sub_institution_key,
+        )
+        extra_fallbacks = tuple(
+            fp
+            for fp in (name_fp, *name_fallbacks)
+            if fp and fp != account_fingerprint and fp not in fallback_fingerprints
+        )
+        if extra_fallbacks:
+            fallback_fingerprints = (*fallback_fingerprints, *extra_fallbacks)
 
     return AccountData(
         external_id=acc["id"],
@@ -917,8 +959,9 @@ class PluggyProvider(BankProvider):
         await _annotate_institutions(raw_accounts, account_list)
 
         creds: dict = {"item_id": item_id}
-        if connector_id is not None and not isinstance(connector_id, bool):
-            creds["connector_id"] = str(connector_id)
+        usable_connector_id = _usable_connector_id(connector_id)
+        if usable_connector_id is not None:
+            creds["connector_id"] = usable_connector_id
         if isinstance(connector_name, str) and connector_name.strip():
             creds["connector_name"] = connector_name.strip()
 
@@ -952,13 +995,19 @@ class PluggyProvider(BankProvider):
     async def get_accounts(self, credentials: dict) -> list[AccountData]:
         item_id = credentials["item_id"]
         headers = await self._headers()
-        connector_id = credentials.get("connector_id")
-        connector_name = credentials.get("connector_name")
+        connector_id = _usable_connector_id(credentials.get("connector_id"))
+        raw_connector_name = credentials.get("connector_name")
+        connector_name = (
+            raw_connector_name.strip()
+            if isinstance(raw_connector_name, str) and raw_connector_name.strip()
+            else None
+        )
 
         async with httpx.AsyncClient(timeout=30.0) as client:
-            if connector_id is None and not connector_name:
-                # Legacy connections stored only `item_id`; backfill connector
-                # metadata once so account fingerprints stay institution-scoped.
+            if connector_id is None:
+                # Legacy connections or callbacks that returned only a
+                # connector name lack a usable connector_id; retry lookup so
+                # fingerprints upgrade to the stable connector-id scope.
                 try:
                     item_resp = await client.get(
                         f"{PLUGGY_API_BASE}/items/{item_id}",
@@ -966,9 +1015,10 @@ class PluggyProvider(BankProvider):
                     )
                     item_resp.raise_for_status()
                     connector = (item_resp.json() or {}).get("connector") or {}
-                    if connector.get("id") is not None and not isinstance(connector.get("id"), bool):
-                        connector_id = str(connector["id"])
-                        credentials["connector_id"] = connector_id
+                    resolved_cid = _usable_connector_id(connector.get("id"))
+                    if resolved_cid is not None:
+                        connector_id = resolved_cid
+                        credentials["connector_id"] = resolved_cid
                     if isinstance(connector.get("name"), str) and connector["name"].strip():
                         connector_name = connector["name"].strip()
                         credentials["connector_name"] = connector_name

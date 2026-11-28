@@ -511,6 +511,9 @@ def _stable_account_id(raw: dict) -> Optional[str]:
     return None
 
 
+_DISPLAY_FALLBACK_ASPSP_NAMES = frozenset({"bank"})
+
+
 def _aspsp_institution_key(aspsp: Optional[dict]) -> Optional[str]:
     """Institution scope for Enable Banking fingerprints (ASPSP name + country)."""
     if not isinstance(aspsp, dict):
@@ -519,7 +522,7 @@ def _aspsp_institution_key(aspsp: Optional[dict]) -> Optional[str]:
     country = aspsp.get("country")
     clean_name = " ".join(name.strip().lower().split()) if isinstance(name, str) else ""
     clean_country = country.strip().upper() if isinstance(country, str) else ""
-    if not clean_name or (clean_name == "bank" and not clean_country):
+    if not clean_name or clean_name in _DISPLAY_FALLBACK_ASPSP_NAMES:
         return None
     return f"{clean_country}:{clean_name}" if clean_country else clean_name
 
@@ -1029,16 +1032,22 @@ class EnableBankingProvider(BankProvider):
             )
 
         aspsp = data.get("aspsp") or {}
+        raw_aspsp_name = aspsp.get("name")
+        clean_aspsp_name = (
+            raw_aspsp_name.strip()
+            if isinstance(raw_aspsp_name, str) and raw_aspsp_name.strip()
+            else None
+        )
         institution_key = _aspsp_institution_key(aspsp)
-        institution_name = aspsp.get("name") or "Bank"
+        institution_name = clean_aspsp_name or "Bank"
         access = data.get("access") or {}
         valid_until = access.get("valid_until")
         stored_aspsp: dict[str, Any] = {
-            "name": institution_name,
+            "name": clean_aspsp_name,
             "country": aspsp.get("country"),
         }
         required_psu_headers = await self._lookup_required_psu_headers(
-            aspsp.get("name"), aspsp.get("country")
+            clean_aspsp_name, aspsp.get("country")
         )
         if required_psu_headers is not None:
             stored_aspsp["required_psu_headers"] = required_psu_headers
@@ -1288,10 +1297,22 @@ class EnableBankingProvider(BankProvider):
         cred_aspsp: dict[str, Any] = (
             creds_aspsp_val if isinstance(creds_aspsp_val, dict) else {}
         )
+        raw_name = raw_aspsp.get("name")
+        cred_name = cred_aspsp.get("name")
+        raw_country = raw_aspsp.get("country")
+        cred_country = cred_aspsp.get("country")
         institution_key = _aspsp_institution_key(
             {
-                "name": raw_aspsp.get("name") or cred_aspsp.get("name"),
-                "country": raw_aspsp.get("country") or cred_aspsp.get("country"),
+                "name": (
+                    raw_name.strip()
+                    if isinstance(raw_name, str) and raw_name.strip()
+                    else cred_name
+                ),
+                "country": (
+                    raw_country.strip()
+                    if isinstance(raw_country, str) and raw_country.strip()
+                    else cred_country
+                ),
             }
         )
         # Present means the requests carry the user's headers: a user-present

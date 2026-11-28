@@ -164,6 +164,8 @@ def fingerprints_match(
 def prefer_fingerprint(
     stored_fp: Optional[str],
     incoming_fp: Optional[str],
+    *,
+    fallback_fps: Sequence[str] = (),
 ) -> Optional[str]:
     """Choose the fingerprint to persist, upgrading rotated keys without dropping a
     known sub-institution tag when an incoming feed omits optional metadata."""
@@ -174,10 +176,18 @@ def prefer_fingerprint(
     if (
         len(stored_fp) == 64
         and len(incoming_fp) == 64
-        and fingerprint_uses_current_key(stored_fp)
-        and hmac.compare_digest(stored_fp[:48], incoming_fp[:48])
         and stored_fp[48:] != _UNSPECIFIED_SUB_TAG
         and incoming_fp[48:] == _UNSPECIFIED_SUB_TAG
+        and (
+            fingerprint_uses_current_key(stored_fp)
+            or fingerprint_uses_fallback_key(stored_fp)
+        )
+        and any(
+            len(cand) == 64
+            and hmac.compare_digest(stored_fp[:48], cand[:48])
+            and cand[48:] == _UNSPECIFIED_SUB_TAG
+            for cand in (incoming_fp, *fallback_fps)
+        )
     ):
         return stored_fp
     return incoming_fp

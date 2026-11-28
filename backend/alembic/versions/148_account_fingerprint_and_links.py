@@ -4,8 +4,8 @@ Adds ``accounts.account_fingerprint`` and creates ``account_connection_links``
 for cross-connection joint account feeds (backfilling existing connected
 accounts).
 
-Revision ID: 137
-Revises: 136
+Revision ID: 148
+Revises: 147
 """
 
 import uuid
@@ -15,8 +15,8 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
-revision = "137"
-down_revision = "136"
+revision = "148"
+down_revision = "147"
 branch_labels = None
 depends_on = None
 
