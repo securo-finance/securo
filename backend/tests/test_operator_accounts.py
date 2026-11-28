@@ -338,6 +338,19 @@ async def test_without_limits_the_account_gets_no_row_of_its_own(managed, operat
 
 
 @pytest.mark.asyncio
+async def test_without_limits_the_answer_shows_the_defaults_that_hold(managed, operator, client: AsyncClient, session):
+    defaults = {"max_personal_workspaces": 2, "max_business_workspaces": 1, "max_bank_connections": 5}
+    put = await client.put("/api/operator/quota-defaults", json=defaults, headers=operator)
+    assert put.status_code == 200, put.text
+    body = _body()
+    del body["quotas"]
+    resp = await client.post(URL, json=body, headers=operator)
+    assert resp.status_code == 201, resp.text
+    assert await session.get(UserQuota, uuid.UUID(resp.json()["user_id"])) is None
+    assert resp.json()["quotas"] == defaults | {"max_members_per_workspace": None}
+
+
+@pytest.mark.asyncio
 async def test_limits_sent_as_null_are_written_as_the_accounts_own(managed, operator, client: AsyncClient, session):
     # Sending the four as null is a choice: the account's own row, unbounded.
     resp = await client.post(URL, json=_body(quotas={}), headers=operator)

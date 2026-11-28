@@ -66,3 +66,38 @@ async def test_two_first_writes_at_once_both_succeed(postgres_sessions):
         assert quota is not None
         assert quota.max_bank_connections == 2
         assert quota.max_personal_workspaces is None
+
+
+async def test_two_first_default_writes_at_once_both_succeed(postgres_sessions):
+    """The same race on the operator defaults: one `app_settings` key, two first writes."""
+    maker = postgres_sessions
+    async with maker() as setup:
+        await quota_service.set_defaults(setup, None)
+        await setup.commit()
+
+    second_pid: asyncio.Future[int] = asyncio.get_running_loop().create_future()
+
+    async def second_write():
+        async with maker() as session:
+            second_pid.set_result(await session.scalar(text("SELECT pg_backend_pid()")))
+            limits = await quota_service.set_defaults(session, {"max_bank_connections": 2})
+            await session.commit()
+            return limits
+
+    try:
+        async with maker() as first, maker() as watcher:
+            await quota_service.set_defaults(first, {"max_bank_connections": 1})
+            second = asyncio.create_task(second_write())
+            await _wait_until_blocked(watcher, await asyncio.wait_for(second_pid, 15))
+            await first.commit()
+            assert (await asyncio.wait_for(second, 15))["max_bank_connections"] == 2
+
+        async with maker() as check:
+            defaults = await quota_service.get_defaults(check)
+            assert defaults is not None
+            assert defaults["max_bank_connections"] == 2
+            assert defaults["max_personal_workspaces"] is None
+    finally:
+        async with maker() as cleanup:
+            await quota_service.set_defaults(cleanup, None)
+            await cleanup.commit()

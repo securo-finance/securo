@@ -4,6 +4,7 @@
 - Date: 2026-11-27
 - Origin: #1959 (a ceiling per account on a managed instance with open sign-up)
 - Extends: [0045](0045-managed-instance.md)
+- Extended by [0056](0056-operator-quota-defaults.md): an account with no row follows the operator's defaults when they are set, and the Personal workspace created with the account is never checked.
 
 ## Context
 
