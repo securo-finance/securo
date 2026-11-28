@@ -71,9 +71,15 @@ def _value(column):
 
 
 def _row(table, **fixed):
+    # A column the table gives a default is left out, so the default applies.
+    # Filling it with a placeholder instead changes what the row means: a
+    # workspace's status would stop being `active` (ADR 0052) and every job
+    # that skips suspended workspaces would skip this one too.
     values = {
         c.name: _value(c) for c in table.columns
-        if c.name not in fixed and (not c.nullable or c.primary_key)
+        if c.name not in fixed
+        and (not c.nullable or c.primary_key)
+        and (c.primary_key or (c.default is None and c.server_default is None))
     }
     return values | fixed
 

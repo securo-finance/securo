@@ -2380,9 +2380,9 @@
     "newWallet": "Nouveau portefeuille",
     "editWallet": "Modifier le portefeuille",
     "deleteWallet": "Supprimer le portefeuille",
-    "reorderWallet": "Faites glisser pour réorganiser {{name}}",
-    "moveWalletUp": "Déplacer vers le haut",
-    "moveWalletDown": "Déplacer vers le bas",
+    "reorder": "Faites glisser pour réorganiser {{name}}",
+    "moveUp": "Déplacer vers le haut",
+    "moveDown": "Déplacer vers le bas",
     "walletName": "Nom",
     "walletNamePlaceholder": "ex. Actions US, Obligations long terme",
     "walletColor": "Couleur",
@@ -4455,6 +4455,9 @@
     "empty": "Aucune action administrative enregistrée.",
     "actionUpdate": "Compte modifié",
     "actionDelete": "Compte supprimé",
+    "actionWorkspaceStatus": "Statut de l'espace de travail modifié",
+    "targetWorkspace": "Espace de travail {{name}}",
+    "statusChange": "Statut {{from}} → {{to}}",
     "actionOther": "Compte modifié",
     "by": "Par {{email}}",
     "target": "Compte {{email}}",
@@ -4488,5 +4491,28 @@
       "max_business_workspaces": "Espaces professionnels : {{current}} sur {{maximum}}, retirez-en {{excess}}",
       "max_members_per_workspace": "Membres dans un espace : {{current}} sur {{maximum}}, retirez-en {{excess}}"
     }
+  }
+,
+  "workspaceStatus": {
+    "notice": "Cet espace de travail est suspendu. Vous pouvez tout lire et exporter, mais rien ne peut être modifié.",
+    "error": "Cet espace de travail est suspendu : il peut être lu et exporté, mais pas modifié.",
+    "title": "Espaces de travail",
+    "description": "Un espace suspendu peut être lu et exporté, mais pas modifié, et ses connexions bancaires ne se synchronisent plus.",
+    "search": "Rechercher par nom ou e-mail du propriétaire...",
+    "empty": "Aucun espace de travail trouvé",
+    "active": "Actif",
+    "suspended": "Suspendu",
+    "suspend": "Suspendre",
+    "reactivate": "Réactiver",
+    "suspendNamed": "Suspendre {{name}}",
+    "reactivateNamed": "Réactiver {{name}}",
+    "confirmTitle": "Suspendre {{name}} ?",
+    "confirmDescription": "Ses membres peuvent toujours lire et exporter, mais ne peuvent rien modifier avant sa réactivation. Les tâches planifiées s'arrêtent aussi.",
+    "reasonLabel": "Motif de ce changement",
+    "reasonPlaceholder": "Pourquoi cet espace de travail est modifié",
+    "reactivateTitle": "Réactiver {{name}} ?",
+    "reactivateDescription": "Ses membres peuvent de nouveau modifier les choses, et les tâches planifiées reprennent là où elles s'étaient arrêtées.",
+    "range": "{{from}}–{{to}} sur {{total}}",
+    "updated": "Espace de travail mis à jour"
   }
 }

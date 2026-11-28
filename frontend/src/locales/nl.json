@@ -2373,9 +2373,9 @@
     "newWallet": "Nieuwe portemonnee",
     "editWallet": "Portemonnee bewerken",
     "deleteWallet": "Portemonnee verwijderen",
-    "reorderWallet": "Sleep om {{name}} te verplaatsen",
-    "moveWalletUp": "Omhoog verplaatsen",
-    "moveWalletDown": "Omlaag verplaatsen",
+    "reorder": "Sleep om {{name}} te verplaatsen",
+    "moveUp": "Omhoog verplaatsen",
+    "moveDown": "Omlaag verplaatsen",
     "walletName": "Naam",
     "walletNamePlaceholder": "bijv. Amerikaanse aandelen, vastrentende waarden op lange termijn",
     "walletColor": "Kleur",
@@ -4442,6 +4442,9 @@
     "empty": "Geen administratieve acties vastgelegd.",
     "actionUpdate": "Account gewijzigd",
     "actionDelete": "Account verwijderd",
+    "actionWorkspaceStatus": "Status van de werkruimte gewijzigd",
+    "targetWorkspace": "Werkruimte {{name}}",
+    "statusChange": "Status {{from}} → {{to}}",
     "actionOther": "Account gewijzigd",
     "by": "Door {{email}}",
     "target": "Account {{email}}",
@@ -4475,5 +4478,28 @@
       "max_business_workspaces": "Zakelijke werkruimtes: {{current}} van {{maximum}}, verwijder er {{excess}}",
       "max_members_per_workspace": "Leden in een werkruimte: {{current}} van {{maximum}}, verwijder er {{excess}}"
     }
+  }
+,
+  "workspaceStatus": {
+    "notice": "Deze werkruimte is opgeschort. Je kunt alles lezen en exporteren, maar niets wijzigen.",
+    "error": "Deze werkruimte is opgeschort: lezen en exporteren kan, wijzigen niet.",
+    "title": "Werkruimtes",
+    "description": "Een opgeschorte werkruimte kan worden gelezen en geëxporteerd, maar niet gewijzigd, en de bankkoppelingen worden niet meer gesynchroniseerd.",
+    "search": "Zoek op naam of e-mailadres van de eigenaar...",
+    "empty": "Geen werkruimtes gevonden",
+    "active": "Actief",
+    "suspended": "Opgeschort",
+    "suspend": "Opschorten",
+    "reactivate": "Heractiveren",
+    "suspendNamed": "{{name}} opschorten",
+    "reactivateNamed": "{{name}} heractiveren",
+    "confirmTitle": "{{name}} opschorten?",
+    "confirmDescription": "Leden kunnen blijven lezen en exporteren, maar niets wijzigen tot de werkruimte wordt geheractiveerd. Ook geplande taken stoppen.",
+    "reasonLabel": "Reden voor deze wijziging",
+    "reasonPlaceholder": "Waarom deze werkruimte wordt gewijzigd",
+    "reactivateTitle": "{{name}} heractiveren?",
+    "reactivateDescription": "De leden kunnen weer dingen wijzigen, en geplande taken gaan verder waar ze stopten.",
+    "range": "{{from}}–{{to}} van {{total}}",
+    "updated": "Werkruimte bijgewerkt"
   }
 }

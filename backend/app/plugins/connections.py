@@ -648,6 +648,11 @@ async def _write_payload(
                     complete_feed=_integration(manifest, connection.integration).complete_feed,
                 ),
             )
+        except connection_service.WorkspaceSuspendedError:
+            # Suspended while this run waited for the connection lock: nothing
+            # is written into the workspace, and the cursor is not kept, so the
+            # next run fetches the same payload again.
+            return
         except quota_service.SyncPausedError:
             # The operator's date came while the plugin ran (ADR 0055): a pause,
             # not a failure. The kept secrets stay, the cursor does not move, and

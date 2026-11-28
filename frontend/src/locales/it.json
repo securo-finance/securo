@@ -2380,9 +2380,9 @@
     "newWallet": "Nuovo portafoglio",
     "editWallet": "Modifica portafoglio",
     "deleteWallet": "Elimina portafoglio",
-    "reorderWallet": "Trascina per riordinare {{name}}",
-    "moveWalletUp": "Sposta su",
-    "moveWalletDown": "Sposta giù",
+    "reorder": "Trascina per riordinare {{name}}",
+    "moveUp": "Sposta su",
+    "moveDown": "Sposta giù",
     "walletName": "Nome",
     "walletNamePlaceholder": "es. Azioni USA, Reddito fisso a lungo termine",
     "walletColor": "Colore",
@@ -4455,6 +4455,9 @@
     "empty": "Nessuna azione amministrativa registrata.",
     "actionUpdate": "Account modificato",
     "actionDelete": "Account eliminato",
+    "actionWorkspaceStatus": "Stato dello spazio di lavoro modificato",
+    "targetWorkspace": "Spazio di lavoro {{name}}",
+    "statusChange": "Stato {{from}} → {{to}}",
     "actionOther": "Account modificato",
     "by": "Da {{email}}",
     "target": "Account {{email}}",
@@ -4488,5 +4491,28 @@
       "max_business_workspaces": "Spazi aziendali: {{current}} di {{maximum}}, rimuovine {{excess}}",
       "max_members_per_workspace": "Membri in uno spazio: {{current}} di {{maximum}}, rimuovine {{excess}}"
     }
+  }
+,
+  "workspaceStatus": {
+    "notice": "Questo spazio di lavoro è sospeso. Puoi leggere ed esportare tutto, ma non modificare nulla.",
+    "error": "Questo spazio di lavoro è sospeso: può essere letto ed esportato, ma non modificato.",
+    "title": "Spazi di lavoro",
+    "description": "Uno spazio sospeso può essere letto ed esportato, ma non modificato, e le sue connessioni bancarie smettono di sincronizzarsi.",
+    "search": "Cerca per nome o e-mail del proprietario...",
+    "empty": "Nessuno spazio di lavoro trovato",
+    "active": "Attivo",
+    "suspended": "Sospeso",
+    "suspend": "Sospendi",
+    "reactivate": "Riattiva",
+    "suspendNamed": "Sospendi {{name}}",
+    "reactivateNamed": "Riattiva {{name}}",
+    "confirmTitle": "Sospendere {{name}}?",
+    "confirmDescription": "I membri possono ancora leggere ed esportare, ma non modificare nulla fino alla riattivazione. Si fermano anche le attività pianificate.",
+    "reasonLabel": "Motivo di questa modifica",
+    "reasonPlaceholder": "Perché questo spazio di lavoro viene modificato",
+    "reactivateTitle": "Riattivare {{name}}?",
+    "reactivateDescription": "I membri possono di nuovo modificare le cose, e le attività pianificate riprendono da dove si erano fermate.",
+    "range": "{{from}}–{{to}} di {{total}}",
+    "updated": "Spazio di lavoro aggiornato"
   }
 }

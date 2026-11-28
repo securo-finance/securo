@@ -332,6 +332,61 @@ async def _record_instance_access(
     return entry
 
 
+async def record_workspace_access(
+    session: AsyncSession,
+    actor_id: uuid.UUID,
+    workspace,
+    action: str,
+    reason: str,
+    ip: Optional[str],
+    *,
+    changes: Optional[dict] = None,
+) -> AdminAccessLog:
+    """Add the audit row for an action on a workspace; the caller commits it.
+
+    The same table and the same rule as an action on an account (ADR 0042): the
+    reason is required, the record names the workspace with the name it had at
+    the time, and the owners read it (ADR 0052).
+    """
+    actor = await get_user(session, actor_id)
+    entry = AdminAccessLog(
+        id=uuid.uuid4(),
+        actor_id=actor_id,
+        actor_email=actor.email if actor else "unknown",
+        target_workspace_id=workspace.id,
+        target_workspace_name=workspace.name,
+        action=action,
+        changes=changes,
+        reason=reason,
+        ip=ip,
+    )
+    session.add(entry)
+    for viewer_id in await _workspace_audience(session, workspace):
+        session.add(AdminAccessLogViewer(entry_id=entry.id, viewer_id=viewer_id))
+    return entry
+
+
+async def _workspace_audience(session: AsyncSession, workspace) -> set[uuid.UUID]:
+    """Who may read a record about `workspace`: its owners and its manager.
+
+    A manager acts with owner rights without being on the roster (ADR 0003),
+    so they are named here too. Read now and written with the record, for the
+    same reason the account audience is.
+    """
+    from app.models.workspace import WorkspaceMember
+
+    owners = await session.execute(
+        select(WorkspaceMember.user_id).where(
+            WorkspaceMember.workspace_id == workspace.id,
+            WorkspaceMember.role == "owner",
+        )
+    )
+    audience = set(owners.scalars().all())
+    if workspace.managed_by_user_id:
+        audience.add(workspace.managed_by_user_id)
+    return audience
+
+
 async def _audience_for(session: AsyncSession, target: User) -> set[uuid.UUID]:
     """Who may read a record about `target`: the target, its owners and managers.
 

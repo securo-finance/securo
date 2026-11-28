@@ -2371,9 +2371,9 @@
     "newWallet": "新規ウォレット",
     "editWallet": "ウォレットを編集",
     "deleteWallet": "ウォレットを削除",
-    "reorderWallet": "ドラッグして並べ替え: {{name}}",
-    "moveWalletUp": "上へ移動",
-    "moveWalletDown": "下へ移動",
+    "reorder": "ドラッグして並べ替え: {{name}}",
+    "moveUp": "上へ移動",
+    "moveDown": "下へ移動",
     "walletName": "名前",
     "walletNamePlaceholder": "例: 米国株、長期債券",
     "walletColor": "色",
@@ -4440,6 +4440,9 @@
     "empty": "管理者操作は記録されていません。",
     "actionUpdate": "アカウントを更新しました",
     "actionDelete": "アカウントを削除しました",
+    "actionWorkspaceStatus": "ワークスペースの状態が変更されました",
+    "targetWorkspace": "ワークスペース: {{name}}",
+    "statusChange": "状態: {{from}} → {{to}}",
     "actionOther": "アカウントを更新しました",
     "by": "実行者: {{email}}",
     "target": "アカウント: {{email}}",
@@ -4473,5 +4476,28 @@
       "max_business_workspaces": "ビジネスワークスペース: {{current}} / {{maximum}}、{{excess}} 件を削除してください",
       "max_members_per_workspace": "ワークスペースのメンバー: {{current}} / {{maximum}}、{{excess}} 人を削除してください"
     }
+  }
+,
+  "workspaceStatus": {
+    "notice": "このワークスペースは停止中です。すべての閲覧とエクスポートはできますが、変更はできません。",
+    "error": "このワークスペースは停止中のため、閲覧とエクスポートはできますが変更はできません。",
+    "title": "ワークスペース",
+    "description": "停止中のワークスペースは閲覧とエクスポートのみ可能で、変更はできず、銀行連携の同期も止まります。",
+    "search": "名前または所有者のメールで検索...",
+    "empty": "ワークスペースが見つかりません",
+    "active": "有効",
+    "suspended": "停止中",
+    "suspend": "停止",
+    "reactivate": "再開",
+    "suspendNamed": "{{name}}を停止",
+    "reactivateNamed": "{{name}}を再開",
+    "confirmTitle": "{{name}}を停止しますか?",
+    "confirmDescription": "メンバーは引き続き閲覧とエクスポートができますが、再開するまで何も変更できません。予定された処理も止まります。",
+    "reasonLabel": "この変更の理由",
+    "reasonPlaceholder": "このワークスペースを変更する理由",
+    "reactivateTitle": "{{name}}を再開しますか?",
+    "reactivateDescription": "メンバーは再び変更できるようになり、予定された処理は止まったところから再開します。",
+    "range": "{{total}}件中 {{from}}–{{to}}件",
+    "updated": "ワークスペースを更新しました"
   }
 }

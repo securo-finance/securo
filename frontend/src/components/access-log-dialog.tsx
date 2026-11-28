@@ -1,6 +1,6 @@
 import { useInfiniteQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
-import { History, PenLine, Trash2 } from 'lucide-react'
+import { Building2, History, PenLine, Trash2 } from 'lucide-react'
 import { accessLog as accessLogApi } from '@/lib/api'
 import { useDateLocale } from '@/hooks/use-display-locale'
 import type { AdminAccessLogEntry } from '@/types'
@@ -18,6 +18,13 @@ const PAGE_SIZE = 50
 const ACTION_LABELS: Record<string, string> = {
   'user.update': 'accessLog.actionUpdate',
   'user.delete': 'accessLog.actionDelete',
+  'workspace.status': 'accessLog.actionWorkspaceStatus',
+}
+
+/** A workspace status is a value the person reads, not a field name, so it is said in their language. */
+const STATUS_LABELS: Record<string, string> = {
+  active: 'workspaceStatus.active',
+  suspended: 'workspaceStatus.suspended',
 }
 
 /**
@@ -42,7 +49,24 @@ function ChangeLines({ entry }: { entry: AdminAccessLogEntry }) {
     lines.push(email.pending ? `${moved} · ${t('accessLog.emailPending')}` : moved)
   }
 
-  const others = Object.keys(changes).filter((field) => field !== 'email')
+  // A workspace's status moves between two named states, so it says which way.
+  const status = changes.status
+  if (status && (status.from || status.to)) {
+    const named = (value: unknown) => {
+      const key = STATUS_LABELS[String(value ?? '')]
+      return key ? t(key) : String(value ?? '')
+    }
+    lines.push(
+      t('accessLog.statusChange', {
+        from: named(status.from),
+        to: named(status.to),
+      }),
+    )
+  }
+
+  const others = Object.keys(changes).filter(
+    (field) => field !== 'email' && field !== 'status',
+  )
   if (others.length > 0) {
     lines.push(t('accessLog.otherChanges', { fields: others.join(', ') }))
   }
@@ -60,6 +84,7 @@ function ChangeLines({ entry }: { entry: AdminAccessLogEntry }) {
 function ActionIcon({ action }: { action: string }) {
   if (action === 'user.delete') return <Trash2 size={14} />
   if (action === 'user.update') return <PenLine size={14} />
+  if (action === 'workspace.status') return <Building2 size={14} />
   return <History size={14} />
 }
 
@@ -120,7 +145,9 @@ export function AccessLogDialog({ open, onClose }: AccessLogDialogProps) {
                     {t(ACTION_LABELS[entry.action] ?? 'accessLog.actionOther')}
                   </p>
                   <p className="text-xs text-muted-foreground break-words">
-                    {t('accessLog.target', { email: entry.target_email })}
+                    {entry.target_workspace_name
+                      ? t('accessLog.targetWorkspace', { name: entry.target_workspace_name })
+                      : t('accessLog.target', { email: entry.target_email ?? '' })}
                   </p>
                   <ChangeLines entry={entry} />
                   <p className="rounded-md bg-muted px-2 py-1 text-xs break-words">{entry.reason}</p>

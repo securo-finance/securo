@@ -13,6 +13,9 @@ import type {
   AdminUser,
   AdminAccessLogList,
   AdminUserList,
+  AdminWorkspace,
+  AdminWorkspaceList,
+  WorkspaceStatus,
   Passkey,
   PasskeyOptionsResponse,
   AppSetting,
@@ -1674,6 +1677,9 @@ export const dashboard = {
 export const assets = {
   // workspaceId pins the read to one workspace, for a caller whose cache
   // belongs to it while another tab may have switched the shared default.
+  reorder: async (assetIds: string[]): Promise<void> => {
+    await api.put('/assets/order', { asset_ids: assetIds })
+  },
   list: async (includeArchived = false, workspaceId?: string | null): Promise<Asset[]> => {
     const { data } = await api.get('/assets', {
       params: { include_archived: includeArchived },
@@ -2281,6 +2287,18 @@ export const admin = {
   },
   instanceMode: async (): Promise<InstanceMode> => {
     const { data } = await api.get('/admin/instance-mode')
+    return data
+  },
+  listWorkspaces: async (params?: { search?: string; page?: number; limit?: number }): Promise<AdminWorkspaceList> => {
+    const { data } = await api.get('/admin/workspaces', { params })
+    return data
+  },
+  updateWorkspaceStatus: async (
+    id: string,
+    status: WorkspaceStatus,
+    reason: string,
+  ): Promise<AdminWorkspace> => {
+    const { data } = await api.patch(`/admin/workspaces/${id}/status`, { status, reason })
     return data
   },
   providerSettings: async (): Promise<ProviderSettingStatus[]> => {

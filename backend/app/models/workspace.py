@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Literal, Optional, get_args
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, String, UniqueConstraint
+from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, String, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -25,6 +25,12 @@ if TYPE_CHECKING:
 # workspace that turns out to be the wrong kind is a new workspace.
 WorkspaceKind = Literal["personal", "business"]
 WORKSPACE_KINDS: tuple[str, ...] = get_args(WorkspaceKind)
+
+# Whether a workspace can be written to (ADR 0052). Set by an instance
+# administrator; unrelated to `is_archived`, which is the owner's own choice
+# and hides the workspace.
+WorkspaceStatus = Literal["active", "suspended"]
+WORKSPACE_ACTIVE: WorkspaceStatus = "active"
 
 # Roles a member can hold inside a workspace. `owner` is the
 # member-management + workspace-config role; `editor` can read/write
@@ -53,6 +59,14 @@ class Workspace(Base):
     # is too aggressive; archived workspaces stay in the DB until an
     # admin purge.
     is_archived: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    # See `WorkspaceStatus`. A suspended workspace is read and exported, never
+    # written: `WorkspaceContext.require_write` and the scheduled jobs check it.
+    status: Mapped[str] = mapped_column(
+        String(20), default=WORKSPACE_ACTIVE, server_default=WORKSPACE_ACTIVE
+    )
+    status_changed_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     # Optional external administrator. When set, this user has effective
     # owner rights in the workspace without being a member. Use case:
     # one user provisions and operates a workspace on behalf of another
@@ -92,6 +106,10 @@ class Workspace(Base):
     tax_jurisdiction: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)
     icon: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     color: Mapped[Optional[str]] = mapped_column(String(7), nullable=True)
+    # The modules this workspace may use on a managed instance, copied from
+    # its creator's `user_module_limits` row (ADR 0054). Null means every
+    # module, and with MANAGED_INSTANCE off it is never read.
+    module_allowlist: Mapped[Optional[list[str]]] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )

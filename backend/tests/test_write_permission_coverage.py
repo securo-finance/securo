@@ -66,6 +66,7 @@ ALLOWLIST: dict[tuple[str, str], str] = {
     ("DELETE", "/api/admin/settings/{key}"): "superuser-gated instance administration",
     ("PATCH", "/api/admin/provider-settings/{provider}"): "superuser-gated instance administration",
     ("PUT", "/api/admin/email"): "superuser-gated instance administration",
+    ("PATCH", "/api/admin/workspaces/{workspace_id}/status"): "superuser-gated instance administration",
     # Workspace administration: uses its own, stricter owner floor via
     # `require_membership(min_role="owner")` inside the handler. Converting
     # these to the write gate would *widen* access, since editors can write.
@@ -120,6 +121,8 @@ ALLOWLIST: dict[tuple[str, str], str] = {
     ("PUT", "/api/operator/quotas/{user_id}"): "operator-token-gated per-account limits, no user",
     ("POST", "/api/operator/quotas/{user_id}/fit-check"): "operator-token-gated read of the account's counts",
     ("PUT", "/api/operator/quotas/{user_id}/excess-date"): "operator-token-gated date an excess takes effect (ADR 0055)",
+    ("PUT", "/api/operator/modules/{user_id}"): "operator-token-gated per-account module list, no user",
+    ("POST", "/api/operator/accounts"): "operator-token-gated opening of a new account, no user (#1965)",
 }
 
 # Gated by the operator's token instead of a user (ADR 0049).
@@ -127,6 +130,8 @@ OPERATOR_ROUTES = {
     ("PUT", "/api/operator/quotas/{user_id}"),
     ("POST", "/api/operator/quotas/{user_id}/fit-check"),
     ("PUT", "/api/operator/quotas/{user_id}/excess-date"),
+    ("PUT", "/api/operator/modules/{user_id}"),
+    ("POST", "/api/operator/accounts"),
 }
 
 # These routes establish authentication (or end it), so requiring an existing

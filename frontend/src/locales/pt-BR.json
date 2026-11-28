@@ -2380,9 +2380,9 @@
     "newWallet": "Nova Carteira",
     "editWallet": "Editar carteira",
     "deleteWallet": "Excluir carteira",
-    "reorderWallet": "Arraste para reordenar {{name}}",
-    "moveWalletUp": "Mover para cima",
-    "moveWalletDown": "Mover para baixo",
+    "reorder": "Arraste para reordenar {{name}}",
+    "moveUp": "Mover para cima",
+    "moveDown": "Mover para baixo",
     "walletName": "Nome",
     "walletNamePlaceholder": "ex: Ações EUA, Renda Fixa Longo Prazo",
     "walletColor": "Cor",
@@ -4455,6 +4455,9 @@
     "empty": "Nenhuma ação administrativa registrada.",
     "actionUpdate": "Conta alterada",
     "actionDelete": "Conta excluída",
+    "actionWorkspaceStatus": "Status do espaço de trabalho alterado",
+    "targetWorkspace": "Espaço de trabalho {{name}}",
+    "statusChange": "Status {{from}} → {{to}}",
     "actionOther": "Conta alterada",
     "by": "Por {{email}}",
     "target": "Conta {{email}}",
@@ -4488,5 +4491,28 @@
       "max_business_workspaces": "Espaços empresariais: {{current}} de {{maximum}}, remova {{excess}}",
       "max_members_per_workspace": "Membros em um espaço: {{current}} de {{maximum}}, remova {{excess}}"
     }
+  }
+,
+  "workspaceStatus": {
+    "notice": "Este espaço de trabalho está suspenso. Você pode ler e exportar tudo, mas nada pode ser alterado.",
+    "error": "Este espaço de trabalho está suspenso: dá para ler e exportar, mas não alterar.",
+    "title": "Espaços de trabalho",
+    "description": "Um espaço suspenso pode ser lido e exportado, mas não alterado, e suas conexões bancárias param de sincronizar.",
+    "search": "Buscar por nome ou e-mail do proprietário...",
+    "empty": "Nenhum espaço de trabalho encontrado",
+    "active": "Ativo",
+    "suspended": "Suspenso",
+    "suspend": "Suspender",
+    "reactivate": "Reativar",
+    "suspendNamed": "Suspender {{name}}",
+    "reactivateNamed": "Reativar {{name}}",
+    "confirmTitle": "Suspender {{name}}?",
+    "confirmDescription": "Os membros continuam lendo e exportando, mas não podem alterar nada até a reativação. As tarefas agendadas também param.",
+    "reasonLabel": "Motivo desta alteração",
+    "reasonPlaceholder": "Por que este espaço de trabalho está sendo alterado",
+    "reactivateTitle": "Reativar {{name}}?",
+    "reactivateDescription": "Os membros voltam a poder alterar, e as tarefas agendadas retomam de onde pararam.",
+    "range": "{{from}}–{{to}} de {{total}}",
+    "updated": "Espaço de trabalho atualizado"
   }
 }

@@ -220,4 +220,32 @@ describe('Archived holdings on the Assets page', () => {
     expect(localStorage.getItem('securo:assets:showArchived')).toBe('0')
     expect(screen.queryByRole('checkbox', { name: t('assets.showArchived') })).not.toBeInTheDocument()
   })
+
+  it('falls back to showing the archive toggle when the archived-count request fails', async () => {
+    served([ACTIVE, ARCHIVED])
+    api.assets.archivedCount.mockRejectedValue(new Error('count endpoint unavailable'))
+    const { user } = renderWithProviders(<AssetsPage />)
+
+    await screen.findByText('Active Broker')
+    const checkbox = await screen.findByRole('checkbox', { name: t('assets.showArchived') })
+    expect(checkbox).toBeVisible()
+
+    await user.click(checkbox)
+    expect(await screen.findByText('Archived Broker')).toBeVisible()
+    expect(api.assets.list).toHaveBeenLastCalledWith(true)
+  })
+
+  it('falls back to showing the empty-state archive button when the archived-count request fails', async () => {
+    served([ARCHIVED])
+    api.assets.archivedCount.mockRejectedValue(new Error('count endpoint unavailable'))
+    const { user } = renderWithProviders(<AssetsPage />)
+
+    expect(await screen.findByText(t('assets.noAssets'))).toBeVisible()
+    const button = await screen.findByRole('button', { name: t('assets.showArchived') })
+    expect(button).toBeVisible()
+
+    await user.click(button)
+    expect(await screen.findByText('Archived Broker')).toBeVisible()
+    expect(screen.queryByText(t('assets.noAssets'))).not.toBeInTheDocument()
+  })
 })

@@ -2372,9 +2372,9 @@
     "newWallet": "Neues Portfolio",
     "editWallet": "Portfolio bearbeiten",
     "deleteWallet": "Portfolio loeschen",
-    "reorderWallet": "Ziehen, um {{name}} neu anzuordnen",
-    "moveWalletUp": "Nach oben verschieben",
-    "moveWalletDown": "Nach unten verschieben",
+    "reorder": "Ziehen, um {{name}} neu anzuordnen",
+    "moveUp": "Nach oben verschieben",
+    "moveDown": "Nach unten verschieben",
     "walletName": "Name",
     "walletNamePlaceholder": "z.B. US-Aktien, Langfristige Zinsanlagen",
     "walletColor": "Farbe",
@@ -4441,6 +4441,9 @@
     "empty": "Keine administrativen Aktionen erfasst.",
     "actionUpdate": "Konto geändert",
     "actionDelete": "Konto gelöscht",
+    "actionWorkspaceStatus": "Status des Arbeitsbereichs geändert",
+    "targetWorkspace": "Arbeitsbereich {{name}}",
+    "statusChange": "Status {{from}} → {{to}}",
     "actionOther": "Konto geändert",
     "by": "Von {{email}}",
     "target": "Konto {{email}}",
@@ -4474,5 +4477,28 @@
       "max_business_workspaces": "Geschäftliche Arbeitsbereiche: {{current}} von {{maximum}}, {{excess}} entfernen",
       "max_members_per_workspace": "Mitglieder in einem Arbeitsbereich: {{current}} von {{maximum}}, {{excess}} entfernen"
     }
+  }
+,
+  "workspaceStatus": {
+    "notice": "Dieser Arbeitsbereich ist gesperrt. Du kannst alles lesen und exportieren, aber nichts ändern.",
+    "error": "Dieser Arbeitsbereich ist gesperrt: Er kann gelesen und exportiert, aber nicht geändert werden.",
+    "title": "Arbeitsbereiche",
+    "description": "Ein gesperrter Arbeitsbereich kann gelesen und exportiert, aber nicht geändert werden, und seine Bankverbindungen werden nicht mehr synchronisiert.",
+    "search": "Nach Name oder E-Mail des Eigentümers suchen...",
+    "empty": "Keine Arbeitsbereiche gefunden",
+    "active": "Aktiv",
+    "suspended": "Gesperrt",
+    "suspend": "Sperren",
+    "reactivate": "Reaktivieren",
+    "suspendNamed": "{{name}} sperren",
+    "reactivateNamed": "{{name}} reaktivieren",
+    "confirmTitle": "{{name}} sperren?",
+    "confirmDescription": "Die Mitglieder können weiterhin lesen und exportieren, aber bis zur Reaktivierung nichts ändern. Auch geplante Aufgaben werden angehalten.",
+    "reasonLabel": "Grund für diese Änderung",
+    "reasonPlaceholder": "Warum dieser Arbeitsbereich geändert wird",
+    "reactivateTitle": "{{name}} reaktivieren?",
+    "reactivateDescription": "Seine Mitglieder können wieder etwas ändern, und geplante Aufgaben laufen dort weiter, wo sie angehalten wurden.",
+    "range": "{{from}}–{{to}} von {{total}}",
+    "updated": "Arbeitsbereich aktualisiert"
   }
 }

@@ -14,8 +14,11 @@ interface WorkspaceContextType {
   loadFailed: boolean
   /** Switch the active workspace. Persists to localStorage and invalidates queries. */
   switchWorkspace: (id: string) => Promise<void>
-  /** Re-fetch the list of workspaces the user can access. */
-  refresh: () => Promise<void>
+  /**
+   * Re-fetch the list of workspaces the user can access. `background` keeps
+   * the shell out of its loading state, and a failure keeps the list it has.
+   */
+  refresh: (options?: { background?: boolean }) => Promise<void>
   /** Role of the current user inside the active workspace, or null if no active workspace. */
   role: WorkspaceRole | null
   /** True for owner OR manager (the manager has effective owner rights). */

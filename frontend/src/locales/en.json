@@ -2371,9 +2371,9 @@
     "newWallet": "New Wallet",
     "editWallet": "Edit wallet",
     "deleteWallet": "Delete wallet",
-    "reorderWallet": "Drag to reorder {{name}}",
-    "moveWalletUp": "Move up",
-    "moveWalletDown": "Move down",
+    "reorder": "Drag to reorder {{name}}",
+    "moveUp": "Move up",
+    "moveDown": "Move down",
     "walletName": "Name",
     "walletNamePlaceholder": "e.g. US Stocks, Long-term fixed income",
     "walletColor": "Color",
@@ -4440,6 +4440,9 @@
     "empty": "No administrative actions recorded.",
     "actionUpdate": "Account updated",
     "actionDelete": "Account deleted",
+    "actionWorkspaceStatus": "Workspace status changed",
+    "targetWorkspace": "Workspace {{name}}",
+    "statusChange": "Status {{from}} → {{to}}",
     "actionOther": "Account changed",
     "by": "By {{email}}",
     "target": "Account {{email}}",
@@ -4473,5 +4476,28 @@
       "max_business_workspaces": "Business workspaces: {{current}} of {{maximum}}, remove {{excess}}",
       "max_members_per_workspace": "Members in a workspace: {{current}} of {{maximum}}, remove {{excess}}"
     }
+  }
+,
+  "workspaceStatus": {
+    "notice": "This workspace is suspended. You can read and export everything in it, but nothing can be changed.",
+    "error": "This workspace is suspended, so it can be read and exported but not changed.",
+    "title": "Workspaces",
+    "description": "A suspended workspace can be read and exported, but not changed, and its bank connections stop syncing.",
+    "search": "Search by name or owner's email...",
+    "empty": "No workspaces found",
+    "active": "Active",
+    "suspended": "Suspended",
+    "suspend": "Suspend",
+    "reactivate": "Reactivate",
+    "suspendNamed": "Suspend {{name}}",
+    "reactivateNamed": "Reactivate {{name}}",
+    "confirmTitle": "Suspend {{name}}?",
+    "confirmDescription": "Its members keep reading and exporting, but can't change anything until it is reactivated. Scheduled work stops too.",
+    "reasonLabel": "Reason for this change",
+    "reasonPlaceholder": "Why this workspace is being changed",
+    "reactivateTitle": "Reactivate {{name}}?",
+    "reactivateDescription": "Its members can change things again, and scheduled work resumes where it stopped.",
+    "range": "{{from}}–{{to}} of {{total}}",
+    "updated": "Workspace updated"
   }
 }

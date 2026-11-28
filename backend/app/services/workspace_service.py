@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
 from app.core.row_security import bind_workspace
-from app.services import quota_service
+from app.services import module_limit_service, quota_service
 from app.models.user import User
 from app.models.workspace import (
     MANAGER_VIRTUAL_ROLE,
@@ -75,6 +75,7 @@ async def create_personal_workspace_for_user(
         default_currency=prefs.get("currency_display", "USD"),
         locale=lang,
     )
+    await module_limit_service.stamp_new_workspace(session, workspace)
     session.add(workspace)
     await session.flush()
     await bind_workspace(session, workspace.id, user.id)
@@ -224,6 +225,7 @@ async def create_workspace(
     color: Optional[str] = None,
     self_membership: bool = False,
     seed_defaults: bool = True,
+    commit_defaults: bool = True,
 ) -> Workspace:
     """Create a new workspace administered by `creator`.
 
@@ -235,7 +237,8 @@ async def create_workspace(
     `seed_defaults=True` (the default) seeds the same starter
     categories + rules the Personal workspace gets. Without this every
     new workspace would force the user to rebuild their taxonomy from
-    scratch.
+    scratch. The seeding commits on its own unless `commit_defaults=False`,
+    which keeps the whole workspace in the caller's transaction.
     """
     await quota_service.check_new_workspace(session, creator.id, kind)
     prefs = creator.preferences or {}
@@ -251,6 +254,7 @@ async def create_workspace(
         icon=icon,
         color=color,
     )
+    await module_limit_service.stamp_new_workspace(session, workspace)
     session.add(workspace)
     await session.flush()
     await bind_workspace(session, workspace.id, creator.id)
@@ -271,10 +275,12 @@ async def create_workspace(
         from app.services.rule_service import create_default_rules
 
         await create_default_categories(
-            session, creator.id, workspace_locale, workspace_id=workspace.id
+            session, creator.id, workspace_locale, workspace_id=workspace.id,
+            commit=commit_defaults,
         )
         await create_default_rules(
-            session, creator.id, workspace_locale, workspace_id=workspace.id
+            session, creator.id, workspace_locale, workspace_id=workspace.id,
+            commit=commit_defaults,
         )
     return workspace
 
