@@ -69,6 +69,7 @@ import {
   AlertTriangle,
   Upload,
   Activity,
+  Link2,
 } from 'lucide-react'
 import {
   AreaChart,
@@ -85,6 +86,7 @@ import { PortfolioPerformance } from '@/components/portfolio-performance'
 import { ExchangeRateSetupAction, ExchangeRateSetupIcon } from '@/components/exchange-rate-setup-notice'
 import { needsConversion, useExchangeRatesNeedSetup } from '@/hooks/use-exchange-rates-need-setup'
 import { PropertyEquitySummary } from '@/components/property-equity-summary'
+import { LinkTickerDialog } from '@/components/link-ticker-dialog'
 import { LOAN_COLLATERAL_TYPES } from '@/lib/property-equity'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
 import { useAuth } from '@/contexts/auth-context'
@@ -253,6 +255,10 @@ function Sortable({
 // Ativo · Quant. · Preço Médio · Preço Atual · Rentab. · Saldo · % · actions.
 const HOLDINGS_GRID = 'minmax(0,2.4fr) 0.7fr 1.1fr 1fr 0.9fr 1.3fr 0.6fr 4.5rem'
 
+// Holding types a market ticker can price. Providers tag exchange-traded
+// positions with these (a synced CDB or pension stays the generic 'investment').
+const LINKABLE_TICKER_TYPES = new Set(['stock', 'etf', 'crypto', 'fund'])
+
 /** Whether archived holdings are shown, kept across visits (issue #1046). */
 const SHOW_ARCHIVED_KEY = 'securo:assets:showArchived'
 
@@ -404,6 +410,7 @@ export default function AssetsPage() {
   const [collapsedWallets, setCollapsedWallets] = useState<Set<string>>(new Set())
   // Asset being moved to a wallet (null = no picker open)
   const [movingAsset, setMovingAsset] = useState<Asset | null>(null)
+  const [linkingAsset, setLinkingAsset] = useState<Asset | null>(null)
 
   // Form state
   const [formName, setFormName] = useState('')
@@ -1105,7 +1112,10 @@ export default function AssetsPage() {
   function holdingActions(asset: Asset, orderedRows?: Asset[]): AssetRowAction[] {
     if (!canWrite) return []
     const isMarketPriced = asset.valuation_method === 'market_price'
-    const isProviderOwned = asset.source !== 'manual' && !isMarketPriced
+    // A bank connection owns the position (units) even once the holding is
+    // priced from the market through a linked ticker.
+    const isConnectionSynced = asset.connection_id != null
+    const isProviderOwned = isConnectionSynced || (asset.source !== 'manual' && !isMarketPriced)
     const actions: AssetRowAction[] = [
       {
         key: 'edit',
@@ -1116,8 +1126,14 @@ export default function AssetsPage() {
         hint: isProviderOwned ? t('assets.syncedReadOnly') : undefined,
       },
     ]
+    if (isConnectionSynced && !asset.sell_date && LINKABLE_TICKER_TYPES.has(asset.type)) {
+      actions.push({ key: 'link-ticker', label: t('assets.linkTicker'), icon: Link2, onSelect: () => setLinkingAsset(asset) })
+    }
     if (isMarketPriced) {
-      actions.push({ key: 'add-transaction', label: t('assets.addTransaction'), icon: Plus, onSelect: () => openAddTransaction(asset.id) })
+      // A bank-synced holding takes its buys and sells from the connection.
+      if (!isConnectionSynced) {
+        actions.push({ key: 'add-transaction', label: t('assets.addTransaction'), icon: Plus, onSelect: () => openAddTransaction(asset.id) })
+      }
       if (asset.ticker && !asset.sell_date) {
         actions.push({
           key: 'refresh-price',
@@ -1175,6 +1191,10 @@ export default function AssetsPage() {
     const isExpanded = expandedId === asset.id
     const isSynced = asset.source !== 'manual'
     const isMarketPriced = asset.valuation_method === 'market_price'
+    // A bank connection owns the position (units) even once the holding is
+    // priced from the market through a linked ticker.
+    const isConnectionSynced = asset.connection_id != null
+    const isProviderOwned = isConnectionSynced || (isSynced && !isMarketPriced)
     const hasCost = asset.average_price != null && asset.total_invested != null
     const profit = getAssetProfit(asset)
     // Foreign-currency asset the backend could not convert (no FX rate):
@@ -1187,7 +1207,7 @@ export default function AssetsPage() {
     // Archived holdings sit outside the portfolio total, so a share of it
     // would be meaningless (issue #1046).
     const pctOfPortfolio = asset.sell_date || asset.is_archived ? null : getPortfolioShare(asset, portfolioTotalPrimary, userCurrency)
-    const needsBuys = isMarketPriced && !hasCost && !asset.sell_date
+    const needsBuys = isMarketPriced && !hasCost && !asset.sell_date && !isConnectionSynced
     const needsExchangeRate = exchangeRatesNeedSetup && needsConversion(asset, userCurrency)
     // The API only fills the date while the provider's own figure is on
     // screen, so the row just asks how old it is.
@@ -1260,7 +1280,7 @@ export default function AssetsPage() {
                 {asset.sell_date && variant !== 'sold' && (
                   <Badge variant="outline" className="text-[9px] px-1 py-0 text-rose-600 border-rose-200">{t('assets.sold')}</Badge>
                 )}
-                {isSynced && !isMarketPriced && (
+                {isProviderOwned && (
                   <Badge variant="outline" className="text-[9px] px-1 py-0 text-sky-600 border-sky-200">{t('assets.synced')}</Badge>
                 )}
               </div>
@@ -1386,7 +1406,7 @@ export default function AssetsPage() {
                 locale={locale}
                 dateLocale={dateLocale}
                 mask={mask}
-                canWrite={canWrite}
+                canWrite={canWrite && !isConnectionSynced}
                 onAdd={() => openAddTransaction(asset.id)}
                 onChanged={refetchAssetViews}
               />
@@ -2491,6 +2511,8 @@ export default function AssetsPage() {
       </Dialog>
 
       {/* Move Asset to Wallet Picker */}
+      <LinkTickerDialog asset={linkingAsset} onClose={() => setLinkingAsset(null)} />
+
       <Dialog open={!!movingAsset} onOpenChange={() => setMovingAsset(null)}>
         <DialogContent className="max-w-md">
           <DialogHeader>
@@ -3142,8 +3164,10 @@ function AssetTransactionsTab({
     queryFn: () => assets.allTransactions(),
   })
 
+  // Bank-synced holdings are left out: their position comes from the
+  // connection, so buys and sells can't be recorded against them by hand.
   const marketHoldings = useMemo(
-    () => holdings.filter((h) => h.valuation_method === 'market_price' && !h.sell_date),
+    () => holdings.filter((h) => h.valuation_method === 'market_price' && !h.sell_date && h.connection_id == null),
     [holdings],
   )
   // Market holdings that exist but have no recorded buys → flagged in amber so

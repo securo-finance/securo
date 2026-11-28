@@ -33,6 +33,7 @@ Securo's promise is that a person's financial data stays on their own infrastruc
 - Extended by [0037](0037-document-reading.md), which sends an uploaded document to the provider of the agents LLM connection a workspace picked for reading, when someone uploads one.
 - Extended by [0026](0026-plugin-icons-outside-the-catalog.md), which also fetches the plugin index when Connect Bank or Accounts shows an installed plugin's avatar.
 - Extended by [0046](0046-email-provider-and-templates.md), which adds the hosted email API as the second path behind `EMAIL_ENABLED`, next to the instance's SMTP relay.
+- Extended by [0051](0051-synced-holdings-priced-by-a-market-ticker.md), which also asks Yahoo Finance during a bank sync to confirm a ticker the provider reports for a holding.
 - The browser makes three requests of its own: the GitHub releases API to show the update banner (every 6 hours, can be turned off per browser), Google Fonts from `frontend/index.html`, and institution favicons from Google (the backend only builds the URL).
 
 ## Consequences
