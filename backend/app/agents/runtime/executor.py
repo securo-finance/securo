@@ -95,6 +95,27 @@ def _model_for(agent: Agent) -> str:
     return os.getenv("AGENTS_DEFAULT_MODEL", "")
 
 
+async def _connection_for(session, agent: Agent):
+    """The user-managed connection the agent runs on, or None for the instance's own."""
+    from app.agents.services import connection_service  # local import: cycle safety
+
+    conn = None
+    if agent.connection_id:
+        conn = await connection_service.get_connection(session, agent.connection_id, agent.user_id)
+    if conn is None:
+        conn = await connection_service.get_default_connection(session, agent.user_id)
+    return conn
+
+
+async def uses_instance_connection(session, agent: Agent) -> bool:
+    """Whether the instance's own LLM settings would answer this agent.
+
+    The same resolution as `_provider_and_model_for`: an agent whose creator
+    set a connection, or has a default one, runs on that account's own key.
+    """
+    return await _connection_for(session, agent) is None
+
+
 async def _provider_and_model_for(session, agent: Agent):
     """Resolve (provider, model) using this priority:
         1. agent.connection_id        — explicit user-managed connection
@@ -105,12 +126,7 @@ async def _provider_and_model_for(session, agent: Agent):
     """
     from app.agents.services import connection_service  # local import: cycle safety
 
-    conn = None
-    if agent.connection_id:
-        conn = await connection_service.get_connection(session, agent.connection_id, agent.user_id)
-    if conn is None:
-        conn = await connection_service.get_default_connection(session, agent.user_id)
-
+    conn = await _connection_for(session, agent)
     if conn is not None:
         provider = connection_service.build_provider_for_connection(conn)
         model = agent.model or conn.default_model or os.getenv("AGENTS_DEFAULT_MODEL", "")
@@ -338,10 +354,13 @@ class AgentExecutor:
         user_message: str,
         channel: str = "web",
         page_context: Optional[dict[str, Any]] = None,
+        instance_llm: bool = False,
     ) -> AsyncIterator[ExecutorEvent]:
-        # 1. Persist the user message first so it survives crashes.
-        await conversation_service.append_message(
-            session, conversation_id=conversation_id, role="user", content=user_message
+        # 1. Persist the user message first so it survives crashes. It counts
+        #    toward the monthly assistant limit only once the instance's own
+        #    model has answered it (ADR 0053), so it is stored uncounted here.
+        user_msg = await conversation_service.append_message(
+            session, conversation_id=conversation_id, role="user", content=user_message,
         )
         await conversation_service.update_title_if_empty(session, conversation_id, user_message)
 
@@ -446,6 +465,17 @@ class AgentExecutor:
         try:
             provider, model = await _provider_and_model_for(session, agent)
         except Exception:  # noqa: BLE001
+            if not instance_llm:
+                # The account's own connection is broken. Falling back would
+                # have the instance's model answer, uncounted (ADR 0053).
+                logger.exception("the agent's own LLM connection could not be built")
+                yield ExecutorEvent(
+                    type="error",
+                    error_code="config",
+                    error_message="The agent's LLM connection could not be used. Check its settings.",
+                )
+                yield ExecutorEvent(type="done", finish_reason="error")
+                return
             logger.exception("provider resolution failed; falling back to legacy path")
             provider = _provider_for(agent)
             model = _model_for(agent)
@@ -498,6 +528,14 @@ class AgentExecutor:
                 yield ExecutorEvent(type="error", error_code="unknown", error_message=str(exc))
                 yield ExecutorEvent(type="done", finish_reason="error")
                 return
+
+            if instance_llm and iteration == 0 and (
+                text_buf or open_calls or usage_input or usage_output
+            ):
+                # The instance's model answered: the message counts, committed
+                # with the assistant turn below. An empty answer (the
+                # empty_response case further down) spends nothing.
+                user_msg.instance_llm = True
 
             assistant_text = "".join(text_buf)
             assembled_calls: list[ToolCall] = []

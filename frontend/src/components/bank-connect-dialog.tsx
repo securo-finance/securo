@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { useQueryClient } from '@tanstack/react-query'
 import { PluggyConnect } from 'react-pluggy-connect'
 import { connections } from '@/lib/api'
+import { useQuotaNotice } from '@/hooks/use-quota'
 import { invalidateSyncedRecords } from '@/lib/invalidate-queries'
 import type { BankConnection } from '@/types'
 import { toast } from 'sonner'
@@ -35,6 +36,7 @@ export function BankConnectDialog({
 }: BankConnectDialogProps) {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
+  const quotaNotice = useQuotaNotice()
   const [connectToken, setConnectToken] = useState<string | null>(null)
   const [syncAssets, setSyncAssets] = useState(true)
   const [optionsConfirmed, setOptionsConfirmed] = useState(false)
@@ -107,8 +109,8 @@ export function BankConnectDialog({
       } else {
         toast.success(t('accounts.connected'))
       }
-    } catch {
-      toast.error(t('accounts.connectError'))
+    } catch (err) {
+      if (!quotaNotice.handle(err)) toast.error(t('accounts.connectError'))
     } finally {
       // Also after a failure: the callback may have reactivated the
       // connection before the sync failed, and the list must show that.

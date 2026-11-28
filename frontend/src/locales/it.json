@@ -4435,6 +4435,10 @@
       "backup_failed": {
         "label": "Backup",
         "hint": "Un backup pianificato non è riuscito."
+      },
+      "quota_excess": {
+        "label": "Limiti dell'account",
+        "hint": "Il tuo account supera uno dei suoi limiti."
       }
     },
     "group": {
@@ -4451,6 +4455,9 @@
     "empty": "Nessuna azione amministrativa registrata.",
     "actionUpdate": "Account modificato",
     "actionDelete": "Account eliminato",
+    "actionWorkspaceStatus": "Stato dello spazio di lavoro modificato",
+    "targetWorkspace": "Spazio di lavoro {{name}}",
+    "statusChange": "Stato {{from}} → {{to}}",
     "actionOther": "Account modificato",
     "by": "Da {{email}}",
     "target": "Account {{email}}",
@@ -4472,5 +4479,67 @@
     "failed": "Impossibile registrare la tua decisione",
     "replaced": "L'amministratore ha inviato una nuova richiesta. Controlla il nuovo indirizzo prima di accettare",
     "withdrawn": "La richiesta è stata ritirata. Il tuo account mantiene l'indirizzo attuale"
+  },
+  "quota": {
+    "aboveTitle": "Il tuo account supera i suoi limiti",
+    "aboveTitleFrom": "Il tuo account supera i suoi limiti dal {{date}}",
+    "syncPaused": "La sincronizzazione bancaria è in pausa finché non rientri nel limite.",
+    "hint": "Non viene rimosso nulla al posto tuo. Appena rientri nei limiti, tutto funziona come prima.",
+    "counter": {
+      "max_bank_connections": "Connessioni bancarie: {{current}} di {{maximum}}, rimuovine {{excess}}",
+      "max_personal_workspaces": "Spazi personali: {{current}} di {{maximum}}, rimuovine {{excess}}",
+      "max_business_workspaces": "Spazi aziendali: {{current}} di {{maximum}}, rimuovine {{excess}}",
+      "max_members_per_workspace": "Membri in uno spazio: {{current}} di {{maximum}}, rimuovine {{excess}}"
+    },
+    "title": "Limiti di utilizzo",
+    "menu": "Limiti di utilizzo",
+    "description": "Cosa può creare questo account su questa istanza. I contatori senza limite non sono elencati.",
+    "loadError": "Impossibile caricare i limiti di utilizzo",
+    "usage": "{{current}} di {{maximum}}",
+    "membersHint": "Nel tuo spazio di lavoro più pieno, senza contare te",
+    "learnMore": "Scopri di più",
+    "counters": {
+      "max_personal_workspaces": "Spazi di lavoro personali",
+      "max_business_workspaces": "Spazi di lavoro aziendali",
+      "max_bank_connections": "Connessioni bancarie",
+      "max_members_per_workspace": "Membri per spazio di lavoro",
+      "max_assistant_messages_per_month": "Messaggi all'assistente questo mese"
+    },
+    "reached": {
+      "max_personal_workspaces": "Questo account ha raggiunto il limite di {{maximum}} spazi di lavoro personali. Archivia spazi di lavoro finché ne restano meno di {{maximum}}, poi creane un altro.",
+      "max_business_workspaces": "Questo account ha raggiunto il limite di {{maximum}} spazi di lavoro aziendali. Archivia spazi di lavoro finché ne restano meno di {{maximum}}, poi creane un altro.",
+      "max_bank_connections": "Questo account ha raggiunto il limite di {{maximum}} connessioni bancarie negli spazi di lavoro che ha creato. Rimuovi connessioni finché ne restano meno di {{maximum}}, poi aggiungine un'altra.",
+      "max_members_per_workspace": "Questo spazio di lavoro ha raggiunto il limite di {{maximum}} membri. Rimuovi membri finché ne restano meno di {{maximum}}, poi aggiungine un altro.",
+      "max_assistant_messages_per_month": "È stato raggiunto il limite di {{maximum}} messaggi all'assistente per questo mese. Riparte il primo giorno del mese prossimo."
+    },
+    "ownerReached": {
+      "max_bank_connections": "Il proprietario di questo spazio di lavoro ha raggiunto il limite di {{maximum}} connessioni bancarie. Chi può modificare questo spazio di lavoro può rimuoverne le connessioni; una nuova entra quando il proprietario ne ha meno di {{maximum}}.",
+      "max_members_per_workspace": "Questo spazio di lavoro ha raggiunto il limite di {{maximum}} membri del suo proprietario. Per aggiungerne un altro bisogna rimuovere membri finché ne restano meno di {{maximum}}."
+    },
+    "none": "{{label}}: il limite di questo account su questa istanza è 0, quindi non se ne possono aggiungere.",
+    "ownerNone": "{{label}}: il proprietario di questo spazio di lavoro ha un limite di 0 su questa istanza, quindi non se ne possono aggiungere.",
+    "reachedGeneric": "Questo account ha raggiunto uno dei suoi limiti di utilizzo."
+  },
+  "workspaceStatus": {
+    "notice": "Questo spazio di lavoro è sospeso. Puoi leggere ed esportare tutto, ma non modificare nulla.",
+    "error": "Questo spazio di lavoro è sospeso: può essere letto ed esportato, ma non modificato.",
+    "title": "Spazi di lavoro",
+    "description": "Uno spazio sospeso può essere letto ed esportato, ma non modificato, e le sue connessioni bancarie smettono di sincronizzarsi.",
+    "search": "Cerca per nome o e-mail del proprietario...",
+    "empty": "Nessuno spazio di lavoro trovato",
+    "active": "Attivo",
+    "suspended": "Sospeso",
+    "suspend": "Sospendi",
+    "reactivate": "Riattiva",
+    "suspendNamed": "Sospendi {{name}}",
+    "reactivateNamed": "Riattiva {{name}}",
+    "confirmTitle": "Sospendere {{name}}?",
+    "confirmDescription": "I membri possono ancora leggere ed esportare, ma non modificare nulla fino alla riattivazione. Si fermano anche le attività pianificate.",
+    "reasonLabel": "Motivo di questa modifica",
+    "reasonPlaceholder": "Perché questo spazio di lavoro viene modificato",
+    "reactivateTitle": "Riattivare {{name}}?",
+    "reactivateDescription": "I membri possono di nuovo modificare le cose, e le attività pianificate riprendono da dove si erano fermate.",
+    "range": "{{from}}–{{to}} di {{total}}",
+    "updated": "Spazio di lavoro aggiornato"
   }
 }

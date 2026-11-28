@@ -21,7 +21,7 @@ from app.models.user import User
 from app.models.user_quota import UserQuota
 from app.models.workspace import Workspace, WorkspaceMember, WorkspaceTaxId
 from app.schemas.user import UserUpdate
-from app.services import operator_account_service
+from app.services import operator_account_service, quota_service
 
 TOKEN = "operator-secret-token"
 URL = "/api/operator/accounts"
@@ -124,6 +124,7 @@ async def test_a_first_call_opens_the_account_ready_to_use(managed, operator, cl
     assert data["quotas"] == {
         "max_personal_workspaces": 1, "max_business_workspaces": 1,
         "max_bank_connections": 3, "max_members_per_workspace": None,
+        "max_assistant_messages_per_month": None,
     }
 
     [user] = await _accounts(session, "ana@example.com")
@@ -330,9 +331,7 @@ async def test_without_limits_the_account_gets_no_row_of_its_own(managed, operat
     user_id = uuid.UUID(resp.json()["user_id"])
     # No row, so the instance's defaults hold for it, not a row of nulls.
     assert await session.get(UserQuota, user_id) is None
-    assert resp.json()["quotas"] == dict.fromkeys(
-        ["max_personal_workspaces", "max_business_workspaces", "max_bank_connections", "max_members_per_workspace"]
-    )
+    assert resp.json()["quotas"] == dict.fromkeys(quota_service.COUNTERS)
     [entry] = list(await session.scalars(select(AdminAccessLog).where(AdminAccessLog.target_user_id == user_id)))
     assert entry.changes["quotas"] == {"from": None, "to": None}
 
@@ -347,7 +346,7 @@ async def test_without_limits_the_answer_shows_the_defaults_that_hold(managed, o
     resp = await client.post(URL, json=body, headers=operator)
     assert resp.status_code == 201, resp.text
     assert await session.get(UserQuota, uuid.UUID(resp.json()["user_id"])) is None
-    assert resp.json()["quotas"] == defaults | {"max_members_per_workspace": None}
+    assert resp.json()["quotas"] == defaults | {"max_members_per_workspace": None, "max_assistant_messages_per_month": None}
 
 
 @pytest.mark.asyncio

@@ -46,6 +46,7 @@ from app.services.fx_rate_service import (
     has_rate,
     stamp_primary_amount,
 )
+from app.services.workspace_status_service import hold_active, in_active_workspace
 
 logger = logging.getLogger(__name__)
 
@@ -1933,6 +1934,7 @@ async def refresh_all_market_prices(
         Asset.is_archived == False,
         Asset.sell_date.is_(None),
         Asset.ticker.isnot(None),
+        in_active_workspace(Asset.workspace_id),
     ]
     if workspace_id is not None:
         conditions.append(Asset.workspace_id == workspace_id)
@@ -2003,6 +2005,11 @@ async def refresh_all_market_prices(
     # predicate, lock them and use these rows for the write: an id-only
     # recheck would still write the AAPL quote into a holding that became
     # MSFT, and a write to a deleted row rolls back every price in the batch.
+    # Their workspaces are held first: the re-read then leaves out one
+    # suspended while the provider answered, and a suspension that comes later
+    # waits for this commit instead of landing between the re-read and the
+    # writes (ADR 0052).
+    await hold_active(session, {asset.workspace_id for asset in assets})
     locked = await session.execute(
         select(Asset)
         .where(Asset.id.in_([asset.id for asset in assets]), *conditions)

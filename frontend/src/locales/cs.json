@@ -4632,6 +4632,10 @@
       "backup_failed": {
         "label": "Zálohy",
         "hint": "Plánovaná záloha selhala."
+      },
+      "quota_excess": {
+        "label": "Limity účtu",
+        "hint": "Váš účet překračuje jeden ze svých limitů."
       }
     },
     "group": {
@@ -4648,6 +4652,9 @@
     "empty": "Nejsou zaznamenány žádné administrativní akce.",
     "actionUpdate": "Účet změněn",
     "actionDelete": "Účet smazán",
+    "actionWorkspaceStatus": "Stav pracovního prostoru změněn",
+    "targetWorkspace": "Pracovní prostor {{name}}",
+    "statusChange": "Stav {{from}} → {{to}}",
     "actionOther": "Účet změněn",
     "by": "Provedl {{email}}",
     "target": "Účet {{email}}",
@@ -4669,5 +4676,67 @@
     "failed": "Vaše rozhodnutí se nepodařilo uložit",
     "replaced": "Administrátor poslal novou žádost. Před přijetím zkontrolujte novou adresu",
     "withdrawn": "Žádost byla stažena. Váš účet si ponechá současnou adresu"
+  },
+  "quota": {
+    "aboveTitle": "Váš účet překračuje své limity",
+    "aboveTitleFrom": "Váš účet překračuje své limity od {{date}}",
+    "syncPaused": "Synchronizace s bankou je pozastavena, dokud se nevejdete do limitu.",
+    "hint": "Nic se za vás neodstraňuje. Jakmile se vejdete do limitů, vše funguje jako dřív.",
+    "counter": {
+      "max_bank_connections": "Bankovní připojení: {{current}} z {{maximum}}, odeberte {{excess}}",
+      "max_personal_workspaces": "Osobní prostory: {{current}} z {{maximum}}, odeberte {{excess}}",
+      "max_business_workspaces": "Firemní prostory: {{current}} z {{maximum}}, odeberte {{excess}}",
+      "max_members_per_workspace": "Členové v prostoru: {{current}} z {{maximum}}, odeberte {{excess}}"
+    },
+    "title": "Limity využití",
+    "menu": "Limity využití",
+    "description": "Co může tento účet v této instanci vytvořit. Počítadla bez limitu se nezobrazují.",
+    "loadError": "Limity využití se nepodařilo načíst",
+    "usage": "{{current}} z {{maximum}}",
+    "membersHint": "V nejplnějším pracovním prostoru, bez vás",
+    "learnMore": "Další informace",
+    "counters": {
+      "max_personal_workspaces": "Osobní pracovní prostory",
+      "max_business_workspaces": "Firemní pracovní prostory",
+      "max_bank_connections": "Bankovní připojení",
+      "max_members_per_workspace": "Členové na pracovní prostor",
+      "max_assistant_messages_per_month": "Zprávy asistentovi tento měsíc"
+    },
+    "reached": {
+      "max_personal_workspaces": "Tento účet dosáhl limitu osobních pracovních prostorů ({{maximum}}). Archivujte pracovní prostory, dokud jich nezůstane méně než {{maximum}}, a pak vytvořte další.",
+      "max_business_workspaces": "Tento účet dosáhl limitu firemních pracovních prostorů ({{maximum}}). Archivujte pracovní prostory, dokud jich nezůstane méně než {{maximum}}, a pak vytvořte další.",
+      "max_bank_connections": "Tento účet dosáhl limitu bankovních připojení ({{maximum}}) v pracovních prostorech, které vytvořil. Odeberte připojení, dokud jich nezůstane méně než {{maximum}}, a pak přidejte další.",
+      "max_members_per_workspace": "Tento pracovní prostor dosáhl limitu členů ({{maximum}}). Odeberte členy, dokud jich nezůstane méně než {{maximum}}, a pak přidejte dalšího.",
+      "max_assistant_messages_per_month": "Byl dosažen limit {{maximum}} zpráv asistentovi pro tento měsíc. Začíná znovu prvním dnem příštího měsíce."
+    },
+    "ownerReached": {
+      "max_bank_connections": "Vlastník tohoto pracovního prostoru dosáhl limitu bankovních připojení ({{maximum}}). Kdokoli, kdo může tento pracovní prostor upravovat, může odebírat jeho připojení; nové se vejde, až bude mít vlastník méně než {{maximum}}.",
+      "max_members_per_workspace": "Tento pracovní prostor dosáhl limitu členů svého vlastníka ({{maximum}}). Pro přidání dalšího je třeba odebírat členy, dokud jich nezůstane méně než {{maximum}}."
+    },
+    "none": "{{label}}: limit tohoto účtu na této instanci je 0, takže nelze nic přidat.",
+    "ownerNone": "{{label}}: vlastník tohoto pracovního prostoru má na této instanci limit 0, takže nelze nic přidat.",
+    "reachedGeneric": "Tento účet dosáhl jednoho ze svých limitů využití."
+  },
+  "workspaceStatus": {
+    "notice": "Tento pracovní prostor je pozastaven. Vše můžete číst a exportovat, ale nic nelze měnit.",
+    "error": "Tento pracovní prostor je pozastaven: lze jej číst a exportovat, ale ne měnit.",
+    "title": "Pracovní prostory",
+    "description": "Pozastavený prostor lze číst a exportovat, ale ne měnit, a jeho bankovní připojení se přestanou synchronizovat.",
+    "search": "Hledat podle názvu nebo e-mailu vlastníka...",
+    "empty": "Nenalezeny žádné pracovní prostory",
+    "active": "Aktivní",
+    "suspended": "Pozastaveno",
+    "suspend": "Pozastavit",
+    "reactivate": "Obnovit",
+    "suspendNamed": "Pozastavit {{name}}",
+    "reactivateNamed": "Obnovit {{name}}",
+    "confirmTitle": "Pozastavit {{name}}?",
+    "confirmDescription": "Členové mohou dál číst a exportovat, ale do obnovení nemohou nic měnit. Zastaví se i plánované úlohy.",
+    "reasonLabel": "Důvod této změny",
+    "reasonPlaceholder": "Proč se tento pracovní prostor mění",
+    "reactivateTitle": "Obnovit {{name}}?",
+    "reactivateDescription": "Členové mohou znovu měnit věci a naplánované úlohy pokračují tam, kde se zastavily.",
+    "range": "{{from}}–{{to}} z {{total}}",
+    "updated": "Pracovní prostor aktualizován"
   }
 }

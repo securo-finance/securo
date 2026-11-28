@@ -4420,6 +4420,10 @@
       "backup_failed": {
         "label": "备份",
         "hint": "定时备份失败时通知。"
+      },
+      "quota_excess": {
+        "label": "账号限额",
+        "hint": "你的账号已超出某项限额。"
       }
     },
     "group": {
@@ -4436,6 +4440,9 @@
     "empty": "暂无管理操作记录。",
     "actionUpdate": "账号已更新",
     "actionDelete": "账号已删除",
+    "actionWorkspaceStatus": "工作区状态已变更",
+    "targetWorkspace": "工作区 {{name}}",
+    "statusChange": "状态 {{from}} → {{to}}",
     "actionOther": "账号已变更",
     "by": "操作人：{{email}}",
     "target": "目标账号：{{email}}",
@@ -4457,5 +4464,67 @@
     "failed": "无法保存你的选择",
     "replaced": "管理员发送了新的更改请求，请先核对新邮箱地址再确认接受",
     "withdrawn": "该请求已被撤回，你的账号将继续使用当前邮箱地址"
+  },
+  "quota": {
+    "aboveTitle": "你的账号已超出限额",
+    "aboveTitleFrom": "自 {{date}} 起，你的账号已超出限额",
+    "syncPaused": "银行同步已暂停，直到你回到限额以内。",
+    "hint": "系统不会替你删除任何内容。回到限额以内后，一切将恢复如常。",
+    "counter": {
+      "max_bank_connections": "银行连接：{{current}} / {{maximum}}，需移除 {{excess}} 个",
+      "max_personal_workspaces": "个人工作区：{{current}} / {{maximum}}，需移除 {{excess}} 个",
+      "max_business_workspaces": "企业工作区：{{current}} / {{maximum}}，需移除 {{excess}} 个",
+      "max_members_per_workspace": "单个工作区成员：{{current}} / {{maximum}}，需移除 {{excess}} 位"
+    },
+    "title": "使用限额",
+    "menu": "使用限额",
+    "description": "此账号在本实例上可以创建的内容。没有限额的计数项不会列出。",
+    "loadError": "无法加载使用限额",
+    "usage": "{{current}} / {{maximum}}",
+    "membersHint": "按你成员最多的工作区计算，不包括你自己",
+    "learnMore": "了解更多",
+    "counters": {
+      "max_personal_workspaces": "个人工作区",
+      "max_business_workspaces": "商业工作区",
+      "max_bank_connections": "银行连接",
+      "max_members_per_workspace": "每个工作区的成员",
+      "max_assistant_messages_per_month": "本月助手消息"
+    },
+    "reached": {
+      "max_personal_workspaces": "此账号已达到 {{maximum}} 个个人工作区的限额。请归档工作区，直到少于 {{maximum}} 个后再新建。",
+      "max_business_workspaces": "此账号已达到 {{maximum}} 个商业工作区的限额。请归档工作区，直到少于 {{maximum}} 个后再新建。",
+      "max_bank_connections": "此账号在其创建的所有工作区中已达到 {{maximum}} 个银行连接的限额。请移除连接，直到少于 {{maximum}} 个后再添加。",
+      "max_members_per_workspace": "此工作区已达到 {{maximum}} 名成员的限额。请移除成员，直到少于 {{maximum}} 名后再添加。",
+      "max_assistant_messages_per_month": "本月 {{maximum}} 条助手消息的限额已用完。下个月第一天将重新开始计算。"
+    },
+    "ownerReached": {
+      "max_bank_connections": "此工作区的所有者已达到 {{maximum}} 个银行连接的限额。任何可以编辑此工作区的人都可以移除其连接；当所有者的连接少于 {{maximum}} 个时即可添加新连接。",
+      "max_members_per_workspace": "此工作区已达到其所有者 {{maximum}} 名成员的限额。需要移除成员，直到少于 {{maximum}} 名后才能再添加。"
+    },
+    "none": "{{label}}：此账号在本实例上的限额为 0，因此无法添加。",
+    "ownerNone": "{{label}}：此工作区的所有者在本实例上的限额为 0，因此无法添加。",
+    "reachedGeneric": "此账号已达到其某项使用限额。"
+  },
+  "workspaceStatus": {
+    "notice": "此工作区已被暂停。你可以查看和导出其中的所有内容，但无法进行任何更改。",
+    "error": "此工作区已被暂停，只能查看和导出，无法更改。",
+    "title": "工作区",
+    "description": "已暂停的工作区可以查看和导出，但无法更改，其银行连接也会停止同步。",
+    "search": "按名称或所有者邮箱搜索...",
+    "empty": "未找到工作区",
+    "active": "正常",
+    "suspended": "已暂停",
+    "suspend": "暂停",
+    "reactivate": "重新启用",
+    "suspendNamed": "暂停 {{name}}",
+    "reactivateNamed": "重新启用 {{name}}",
+    "confirmTitle": "暂停 {{name}}？",
+    "confirmDescription": "成员仍可查看和导出，但在重新启用之前无法进行任何更改。计划任务也会停止。",
+    "reasonLabel": "变更原因",
+    "reasonPlaceholder": "说明为何更改此工作区",
+    "reactivateTitle": "重新启用 {{name}}？",
+    "reactivateDescription": "成员将可以重新进行更改，计划任务会从停止处继续。",
+    "range": "第 {{from}}–{{to}} 条，共 {{total}} 条",
+    "updated": "工作区已更新"
   }
 }

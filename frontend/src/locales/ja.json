@@ -4420,6 +4420,10 @@
       "backup_failed": {
         "label": "バックアップ",
         "hint": "スケジュールされたバックアップに失敗したとき。"
+      },
+      "quota_excess": {
+        "label": "アカウントの上限",
+        "hint": "アカウントが上限のいずれかを超えています。"
       }
     },
     "group": {
@@ -4436,6 +4440,9 @@
     "empty": "管理者操作は記録されていません。",
     "actionUpdate": "アカウントを更新しました",
     "actionDelete": "アカウントを削除しました",
+    "actionWorkspaceStatus": "ワークスペースの状態が変更されました",
+    "targetWorkspace": "ワークスペース: {{name}}",
+    "statusChange": "状態: {{from}} → {{to}}",
     "actionOther": "アカウントを更新しました",
     "by": "実行者: {{email}}",
     "target": "アカウント: {{email}}",
@@ -4457,5 +4464,67 @@
     "failed": "決定を記録できませんでした",
     "replaced": "管理者が新しいリクエストを送信しました。承諾する前に新しいアドレスを確認してください",
     "withdrawn": "リクエストは取り下げられました。アカウントは現在のアドレスを維持します"
+  },
+  "quota": {
+    "aboveTitle": "アカウントが上限を超えています",
+    "aboveTitleFrom": "{{date}} からアカウントが上限を超えています",
+    "syncPaused": "上限内に収まるまで、銀行の同期は一時停止されています。",
+    "hint": "代わりに削除されるものはありません。上限内に収まれば、すべて元どおりに動作します。",
+    "counter": {
+      "max_bank_connections": "銀行連携: {{current}} / {{maximum}}、{{excess}} 件を削除してください",
+      "max_personal_workspaces": "個人ワークスペース: {{current}} / {{maximum}}、{{excess}} 件を削除してください",
+      "max_business_workspaces": "ビジネスワークスペース: {{current}} / {{maximum}}、{{excess}} 件を削除してください",
+      "max_members_per_workspace": "ワークスペースのメンバー: {{current}} / {{maximum}}、{{excess}} 人を削除してください"
+    },
+    "title": "利用上限",
+    "menu": "利用上限",
+    "description": "このアカウントがこのインスタンスで作成できるもの。上限のない項目は表示されません。",
+    "loadError": "利用上限を読み込めませんでした",
+    "usage": "{{current}} / {{maximum}}",
+    "membersHint": "最もメンバーの多いワークスペース(あなたを除く)",
+    "learnMore": "詳細",
+    "counters": {
+      "max_personal_workspaces": "個人ワークスペース",
+      "max_business_workspaces": "ビジネスワークスペース",
+      "max_bank_connections": "銀行連携",
+      "max_members_per_workspace": "ワークスペースあたりのメンバー",
+      "max_assistant_messages_per_month": "今月のアシスタントへのメッセージ"
+    },
+    "reached": {
+      "max_personal_workspaces": "このアカウントは個人ワークスペースの上限({{maximum}})に達しました。新しく作成するには、残りが{{maximum}}未満になるまでワークスペースをアーカイブしてください。",
+      "max_business_workspaces": "このアカウントはビジネスワークスペースの上限({{maximum}})に達しました。新しく作成するには、残りが{{maximum}}未満になるまでワークスペースをアーカイブしてください。",
+      "max_bank_connections": "このアカウントは、作成したワークスペース全体で銀行連携の上限({{maximum}})に達しました。追加するには、残りが{{maximum}}未満になるまで連携を削除してください。",
+      "max_members_per_workspace": "このワークスペースはメンバーの上限({{maximum}})に達しました。追加するには、残りが{{maximum}}未満になるまでメンバーを削除してください。",
+      "max_assistant_messages_per_month": "今月のアシスタントへのメッセージ上限 {{maximum}} 件に達しました。翌月の初日に再びリセットされます。"
+    },
+    "ownerReached": {
+      "max_bank_connections": "このワークスペースの所有者は銀行連携の上限({{maximum}})に達しました。このワークスペースを編集できる人なら誰でも連携を削除できます。所有者の連携が{{maximum}}未満になると、新しい連携を追加できます。",
+      "max_members_per_workspace": "このワークスペースは所有者のメンバー上限({{maximum}})に達しました。追加するには、残りが{{maximum}}未満になるまでメンバーを削除する必要があります。"
+    },
+    "none": "{{label}}:このインスタンスでのこのアカウントの上限は0のため、追加できません。",
+    "ownerNone": "{{label}}:このインスタンスでのこのワークスペースの所有者の上限は0のため、追加できません。",
+    "reachedGeneric": "このアカウントは利用上限のいずれかに達しました。"
+  },
+  "workspaceStatus": {
+    "notice": "このワークスペースは停止中です。すべての閲覧とエクスポートはできますが、変更はできません。",
+    "error": "このワークスペースは停止中のため、閲覧とエクスポートはできますが変更はできません。",
+    "title": "ワークスペース",
+    "description": "停止中のワークスペースは閲覧とエクスポートのみ可能で、変更はできず、銀行連携の同期も止まります。",
+    "search": "名前または所有者のメールで検索...",
+    "empty": "ワークスペースが見つかりません",
+    "active": "有効",
+    "suspended": "停止中",
+    "suspend": "停止",
+    "reactivate": "再開",
+    "suspendNamed": "{{name}}を停止",
+    "reactivateNamed": "{{name}}を再開",
+    "confirmTitle": "{{name}}を停止しますか?",
+    "confirmDescription": "メンバーは引き続き閲覧とエクスポートができますが、再開するまで何も変更できません。予定された処理も止まります。",
+    "reasonLabel": "この変更の理由",
+    "reasonPlaceholder": "このワークスペースを変更する理由",
+    "reactivateTitle": "{{name}}を再開しますか?",
+    "reactivateDescription": "メンバーは再び変更できるようになり、予定された処理は止まったところから再開します。",
+    "range": "{{total}}件中 {{from}}–{{to}}件",
+    "updated": "ワークスペースを更新しました"
   }
 }

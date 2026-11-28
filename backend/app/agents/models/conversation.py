@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING, Optional
 
-from sqlalchemy import JSON, DateTime, ForeignKey, Index, Integer, String, Text
+from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Index, Integer, String, Text, false
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
@@ -59,6 +59,9 @@ class Message(Base):
 
     input_tokens: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     output_tokens: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    # A person's message that the instance's own LLM connection answered:
+    # what the monthly assistant limit counts on a managed instance (ADR 0053).
+    instance_llm: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     conversation: Mapped["Conversation"] = relationship(back_populates="messages")

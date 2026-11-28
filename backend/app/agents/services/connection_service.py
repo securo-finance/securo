@@ -114,6 +114,8 @@ async def update_connection(
     if conn is None:
         return None
     base_url = _clean_base_url(base_url)
+    if conn.kind == "openai_compatible" and base_url == "":
+        raise ValueError("openai_compatible requires base_url")
     if name is not None:
         conn.name = name.strip()
     if base_url is not None:

@@ -4422,6 +4422,10 @@
       "backup_failed": {
         "label": "Back-ups",
         "hint": "Een geplande back-up is mislukt."
+      },
+      "quota_excess": {
+        "label": "Accountlimieten",
+        "hint": "Je account zit boven een van zijn limieten."
       }
     },
     "group": {
@@ -4438,6 +4442,9 @@
     "empty": "Geen administratieve acties vastgelegd.",
     "actionUpdate": "Account gewijzigd",
     "actionDelete": "Account verwijderd",
+    "actionWorkspaceStatus": "Status van de werkruimte gewijzigd",
+    "targetWorkspace": "Werkruimte {{name}}",
+    "statusChange": "Status {{from}} → {{to}}",
     "actionOther": "Account gewijzigd",
     "by": "Door {{email}}",
     "target": "Account {{email}}",
@@ -4459,5 +4466,67 @@
     "failed": "Je beslissing kon niet worden opgeslagen",
     "replaced": "De beheerder heeft een nieuw verzoek gestuurd. Controleer het nieuwe adres voordat je accepteert",
     "withdrawn": "Het verzoek is ingetrokken. Je account behoudt het huidige adres"
+  },
+  "quota": {
+    "aboveTitle": "Je account zit boven zijn limieten",
+    "aboveTitleFrom": "Je account zit vanaf {{date}} boven zijn limieten",
+    "syncPaused": "Banksynchronisatie is gepauzeerd tot je binnen de limiet zit.",
+    "hint": "Er wordt niets voor je verwijderd. Zodra je binnen de limieten zit, werkt alles weer zoals voorheen.",
+    "counter": {
+      "max_bank_connections": "Bankkoppelingen: {{current}} van {{maximum}}, verwijder er {{excess}}",
+      "max_personal_workspaces": "Persoonlijke werkruimtes: {{current}} van {{maximum}}, verwijder er {{excess}}",
+      "max_business_workspaces": "Zakelijke werkruimtes: {{current}} van {{maximum}}, verwijder er {{excess}}",
+      "max_members_per_workspace": "Leden in een werkruimte: {{current}} van {{maximum}}, verwijder er {{excess}}"
+    },
+    "title": "Gebruikslimieten",
+    "menu": "Gebruikslimieten",
+    "description": "Wat dit account op deze instantie kan aanmaken. Tellers zonder limiet worden niet getoond.",
+    "loadError": "De gebruikslimieten konden niet worden geladen",
+    "usage": "{{current}} van {{maximum}}",
+    "membersHint": "In je volste werkruimte, jezelf niet meegeteld",
+    "learnMore": "Meer informatie",
+    "counters": {
+      "max_personal_workspaces": "Persoonlijke werkruimtes",
+      "max_business_workspaces": "Zakelijke werkruimtes",
+      "max_bank_connections": "Bankkoppelingen",
+      "max_members_per_workspace": "Leden per werkruimte",
+      "max_assistant_messages_per_month": "Berichten aan de assistent deze maand"
+    },
+    "reached": {
+      "max_personal_workspaces": "Dit account heeft zijn limiet van {{maximum}} persoonlijke werkruimtes bereikt. Archiveer werkruimtes tot er minder dan {{maximum}} over zijn en maak dan een nieuwe aan.",
+      "max_business_workspaces": "Dit account heeft zijn limiet van {{maximum}} zakelijke werkruimtes bereikt. Archiveer werkruimtes tot er minder dan {{maximum}} over zijn en maak dan een nieuwe aan.",
+      "max_bank_connections": "Dit account heeft zijn limiet van {{maximum}} bankkoppelingen in de werkruimtes die het heeft aangemaakt bereikt. Verwijder koppelingen tot er minder dan {{maximum}} over zijn en voeg dan een nieuwe toe.",
+      "max_members_per_workspace": "Deze werkruimte heeft zijn limiet van {{maximum}} leden bereikt. Verwijder leden tot er minder dan {{maximum}} over zijn en voeg dan een nieuw lid toe.",
+      "max_assistant_messages_per_month": "De limiet van {{maximum}} berichten aan de assistent voor deze maand is bereikt. Die begint opnieuw op de eerste dag van volgende maand."
+    },
+    "ownerReached": {
+      "max_bank_connections": "De eigenaar van deze werkruimte heeft de limiet van {{maximum}} bankkoppelingen bereikt. Iedereen die deze werkruimte kan bewerken, kan de koppelingen verwijderen; een nieuwe past zodra de eigenaar er minder dan {{maximum}} heeft.",
+      "max_members_per_workspace": "Deze werkruimte heeft de limiet van {{maximum}} leden van de eigenaar bereikt. Om een nieuw lid toe te voegen, moeten leden worden verwijderd tot er minder dan {{maximum}} over zijn."
+    },
+    "none": "{{label}}: de limiet van dit account op deze instantie is 0, dus er kan niets worden toegevoegd.",
+    "ownerNone": "{{label}}: de eigenaar van deze werkruimte heeft op deze instantie een limiet van 0, dus er kan niets worden toegevoegd.",
+    "reachedGeneric": "Dit account heeft een van zijn gebruikslimieten bereikt."
+  },
+  "workspaceStatus": {
+    "notice": "Deze werkruimte is opgeschort. Je kunt alles lezen en exporteren, maar niets wijzigen.",
+    "error": "Deze werkruimte is opgeschort: lezen en exporteren kan, wijzigen niet.",
+    "title": "Werkruimtes",
+    "description": "Een opgeschorte werkruimte kan worden gelezen en geëxporteerd, maar niet gewijzigd, en de bankkoppelingen worden niet meer gesynchroniseerd.",
+    "search": "Zoek op naam of e-mailadres van de eigenaar...",
+    "empty": "Geen werkruimtes gevonden",
+    "active": "Actief",
+    "suspended": "Opgeschort",
+    "suspend": "Opschorten",
+    "reactivate": "Heractiveren",
+    "suspendNamed": "{{name}} opschorten",
+    "reactivateNamed": "{{name}} heractiveren",
+    "confirmTitle": "{{name}} opschorten?",
+    "confirmDescription": "Leden kunnen blijven lezen en exporteren, maar niets wijzigen tot de werkruimte wordt geheractiveerd. Ook geplande taken stoppen.",
+    "reasonLabel": "Reden voor deze wijziging",
+    "reasonPlaceholder": "Waarom deze werkruimte wordt gewijzigd",
+    "reactivateTitle": "{{name}} heractiveren?",
+    "reactivateDescription": "De leden kunnen weer dingen wijzigen, en geplande taken gaan verder waar ze stopten.",
+    "range": "{{from}}–{{to}} van {{total}}",
+    "updated": "Werkruimte bijgewerkt"
   }
 }

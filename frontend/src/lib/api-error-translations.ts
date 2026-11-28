@@ -1,6 +1,7 @@
 // The app configures the default i18next instance (see lib/i18n.ts); reading
 // it here avoids importing that module and its browser-only setup.
 import i18n from 'i18next'
+import { quotaMessageKey } from '@/lib/quota'
 
 /**
  * Backend messages the user can trigger from the UI, mapped to translation
@@ -49,6 +50,7 @@ const KNOWN_MESSAGES: Record<string, string> = {
     'categoryLines.errors.destinationInvalid',
   'These budgets are in different currencies and there is no exchange rate for their month to combine them.':
     'categoryLines.errors.mergeNeedsRate',
+  'This workspace is suspended, so it can be read and exported but not changed': 'workspaceStatus.error',
   // Budget amount bounds, raised by the schema as a 422 for every create,
   // update and batch call.
   'The budget limit must be at least 0.01': 'budgets.amountTooSmall',
@@ -131,12 +133,18 @@ export function translateApiMessage(message: string): string {
  * code when there is one, else its message (translated when a known one).
  */
 export function translateApiDetail(detail: Record<string, unknown>): string | null {
-  const key = typeof detail.code === 'string' ? KNOWN_CODES[detail.code] : undefined
+  const key = typeof detail.code === 'string'
+    ? detail.code === 'quota_exceeded' && typeof detail.counter === 'string'
+      // A usage limit (ADR 0049): the counter picks the sentence.
+      ? quotaMessageKey(detail.counter, false, Number(detail.maximum))
+      : KNOWN_CODES[detail.code]
+    : undefined
   if (key && i18n.isInitialized && i18n.exists(key)) {
     const values: Record<string, string> = {}
     for (const [name, value] of Object.entries(detail)) {
       if (typeof value === 'string' || typeof value === 'number') values[name] = String(value)
     }
+    if (detail.code === 'quota_exceeded') values.label = i18n.t(`quota.counters.${String(detail.counter)}`)
     return i18n.t(key, values)
   }
   const message = detail.message

@@ -13,6 +13,8 @@ transaction begins. Off, nothing here sends a statement.
 from __future__ import annotations
 
 import uuid
+from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
 from typing import Any
 
 from sqlalchemy import Connection, Table, event, select, text
@@ -82,6 +84,27 @@ async def bind_workspace(
     info[_USER] = user_id
     if session.in_transaction() and session.get_bind().dialect.name == "postgresql":
         await session.execute(_SET, _values(info))
+
+
+@asynccontextmanager
+async def bound(session: AsyncSession, workspace_id: uuid.UUID) -> AsyncGenerator[None]:
+    """Work for one workspace inside the block, then go back to what the session
+    worked for before (none, for an operator's request)."""
+    if not enabled():
+        yield
+        return
+    info = session.sync_session.info
+    before = {key: info[key] for key in (_WORKSPACE, _USER) if key in info}
+    await bind_workspace(session, workspace_id)
+    try:
+        yield
+    finally:
+        info.pop(_WORKSPACE, None)
+        info.pop(_USER, None)
+        info.update(before)
+        if session.in_transaction() and session.get_bind().dialect.name == "postgresql":
+            values = _values(info) if _WORKSPACE in info else {"workspace": "", "user": ""}
+            await session.execute(_SET, values)
 
 
 def bound_to(session: AsyncSession) -> uuid.UUID | None:
@@ -170,11 +193,23 @@ def setup_statements(tables: dict[str, Table], role: str, schema: str, quote: An
         f"SELECT count(*) FROM {sch}.bank_connections c "
         f"JOIN {sch}.workspaces w ON w.id = c.workspace_id "
         "WHERE w.created_by_user_id = p_user AND NOT w.is_archived $f$",
+        # How many messages people sent, answered by the instance's own LLM,
+        # in the workspaces a user created over one range, for the monthly
+        # assistant limit (ADR 0053). A count as well, and nothing else.
+        f"CREATE OR REPLACE FUNCTION {sch}.securo_owned_assistant_messages("
+        "p_user uuid, p_from timestamptz, p_to timestamptz) RETURNS bigint "
+        "LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog AS $f$ "
+        f"SELECT count(*) FROM {sch}.agent_messages m "
+        f"JOIN {sch}.agent_conversations c ON c.id = m.conversation_id "
+        f"JOIN {sch}.workspaces w ON w.id = c.workspace_id "
+        "WHERE w.created_by_user_id = p_user AND m.role = 'user' AND m.instance_llm "
+        "AND m.created_at >= p_from AND m.created_at < p_to $f$",
     ]
     for signature in (
         "securo_row_workspace(text, uuid)",
         "securo_shared_with_viewer()",
         "securo_owned_bank_connections(uuid)",
+        "securo_owned_assistant_messages(uuid, timestamptz, timestamptz)",
     ):
         out.append(f"REVOKE ALL ON FUNCTION {sch}.{signature} FROM PUBLIC")
         out.append(f"GRANT EXECUTE ON FUNCTION {sch}.{signature} TO {rol}")

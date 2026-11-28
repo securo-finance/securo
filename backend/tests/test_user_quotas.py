@@ -478,6 +478,7 @@ async def test_check_fit_reports_the_excess_per_counter(session: AsyncSession, t
         "max_business_workspaces": (0, None, 0),
         "max_bank_connections": (3, 0, 3),
         "max_members_per_workspace": (3, 1, 2),
+        "max_assistant_messages_per_month": (0, None, 0),
     }
 
     fits = await quota_service.check_fit(session, test_user.id, {
@@ -512,10 +513,13 @@ async def test_the_operator_writes_reads_and_checks_a_fit(operator, client: Asyn
     assert resp.status_code == 200 and resp.json()["max_bank_connections"] is None
     assert resp.json()["source"] == "none"
 
-    body = {"max_personal_workspaces": 1, "max_business_workspaces": 0, "max_bank_connections": 3, "max_members_per_workspace": 2}
+    body = {
+        "max_personal_workspaces": 1, "max_business_workspaces": 0, "max_bank_connections": 3,
+        "max_members_per_workspace": 2, "max_assistant_messages_per_month": 500,
+    }
     resp = await client.put(url, json=body, headers=operator)
     assert resp.status_code == 200, resp.text
-    assert resp.json() == {"user_id": str(test_user.id), "source": "own", **body}
+    assert resp.json() == {"user_id": str(test_user.id), "source": "own", "excess_effective_at": None, **body}
     assert (await client.get(url, headers=operator)).json() == resp.json()
 
     resp = await client.put(url, json={"max_bank_connections": -1}, headers=operator)

@@ -71,9 +71,15 @@ def _value(column):
 
 
 def _row(table, **fixed):
+    # A column the table gives a default is left out, so the default applies.
+    # Filling it with a placeholder instead changes what the row means: a
+    # workspace's status would stop being `active` (ADR 0052) and every job
+    # that skips suspended workspaces would skip this one too.
     values = {
         c.name: _value(c) for c in table.columns
-        if c.name not in fixed and (not c.nullable or c.primary_key)
+        if c.name not in fixed
+        and (not c.nullable or c.primary_key)
+        and (c.primary_key or (c.default is None and c.server_default is None))
     }
     return values | fixed
 
@@ -256,6 +262,82 @@ async def test_the_quota_counts_connections_across_workspaces_and_reads_nothing_
             "SELECT has_function_privilege('public', 'securo_owned_bank_connections(uuid)', 'EXECUTE')"
         ))
         assert public is False
+
+
+async def test_the_quota_counts_assistant_messages_across_workspaces_and_reads_nothing_else(stack):
+    """ADR 0050: the monthly assistant count crosses workspaces the same way."""
+    from app.services import quota_service
+
+    await _seed(stack)
+    user = uuid.uuid4()
+    messages = TABLES["agent_messages"]
+    async with _unchecked(stack) as session:
+        await session.execute(TABLES["workspaces"].update().values(created_by_user_id=user))
+        await session.execute(messages.update().values(
+            role="user", instance_llm=True, created_at=datetime(2026, 11, 10, 12, tzinfo=timezone.utc),
+        ))
+    november, october = date(2026, 11, 15), date(2026, 10, 15)
+    async with stack.bound(A)() as session:
+        assert await session.scalar(select(func.count()).select_from(messages)) == 1
+        assert await quota_service.count_assistant_messages(session, user, today=november) == 2
+        assert await quota_service.count_assistant_messages(session, uuid.uuid4(), today=november) == 0
+    # The function bounds the month too: B's message moves to October.
+    async with _unchecked(stack) as session:
+        await session.execute(messages.update().where(messages.c.id == stack.rows["agent_messages", B]["id"]).values(
+            created_at=datetime(2026, 10, 31, 12, tzinfo=timezone.utc),
+        ))
+    async with stack.bound(A)() as session:
+        assert await quota_service.count_assistant_messages(session, user, today=november) == 1
+        assert await quota_service.count_assistant_messages(session, user, today=october) == 1
+        assert await quota_service.count_assistant_messages(session, user, today=date(2026, 12, 15)) == 0
+    async with stack.owner() as session:
+        public = await session.scalar(text(
+            "SELECT has_function_privilege('public', "
+            "'securo_owned_assistant_messages(uuid, timestamptz, timestamptz)', 'EXECUTE')"
+        ))
+        assert public is False
+
+
+async def test_the_operator_tells_an_account_above_its_numbers_in_each_workspace(stack, monkeypatch):
+    """ADR 0055: the operator's request works for no workspace, yet the notice
+    lands in every workspace the account created, and the session works for
+    none again afterwards."""
+    from app.models.notification import Notification
+    from app.services import notification_service
+
+    monkeypatch.setattr(get_settings(), "managed_instance", True)
+    await _seed(stack)
+    user = uuid.uuid4()
+    async with _unchecked(stack) as session:
+        await session.execute(insert(TABLES["users"]).values(**_row(TABLES["users"], id=user, is_active=True)))
+        await session.execute(TABLES["workspaces"].update().values(created_by_user_id=user))
+        await session.execute(insert(TABLES["user_quotas"]).values(
+            **_row(TABLES["user_quotas"], user_id=user, max_bank_connections=1,
+                   excess_effective_at=datetime(2026, 1, 1, tzinfo=timezone.utc))
+        ))
+    async with stack.app() as session:
+        await notification_service.quota_changed(session, user)
+        assert row_security.bound_to(session) is None
+        assert await session.scalar(select(func.count()).select_from(Transaction)) == 0
+        await session.commit()
+    async with stack.owner() as session:
+        told = await session.scalars(
+            select(Notification.workspace_id).where(Notification.kind == notification_service.QUOTA_EXCESS)
+        )
+        assert sorted(told.all()) == sorted([A, B])
+
+    async with _unchecked(stack) as session:
+        await session.execute(TABLES["user_quotas"].update().values(excess_effective_at=None))
+    async with stack.app() as session:
+        await notification_service.quota_changed(session, user)
+        await session.commit()
+    async with stack.owner() as session:
+        open_notices = await session.scalar(
+            select(func.count()).select_from(Notification).where(
+                Notification.kind == notification_service.QUOTA_EXCESS, Notification.resolved_at.is_(None)
+            )
+        )
+        assert open_notices == 0
 
 
 async def test_jobs_run_one_workspace_at_a_time(stack):

@@ -26,6 +26,8 @@ vi.mock('@/lib/api', () => ({
     deleteUser: vi.fn(),
     emailState: vi.fn(),
     updateEmailTemplates: vi.fn(),
+    listWorkspaces: vi.fn(),
+    updateWorkspaceStatus: vi.fn(),
   },
   currencies: { list: vi.fn() },
   auth: { oidcConfig: vi.fn() },
@@ -37,6 +39,8 @@ vi.mock('@/contexts/auth-context', () => ({
   }),
 }))
 
+vi.mock('@/contexts/workspace-context', () => ({ useWorkspace: () => ({ refresh: vi.fn() }) }))
+
 const managedMode = {
   managed: true,
   locked_settings: ['registration_enabled', 'timezone'],
@@ -47,6 +51,7 @@ beforeEach(() => {
   vi.clearAllMocks()
   vi.mocked(admin.instanceMode).mockResolvedValue(managedMode)
   vi.mocked(admin.listUsers).mockResolvedValue({ items: [], total: 0 })
+  vi.mocked(admin.listWorkspaces).mockResolvedValue({ items: [], total: 0 })
   vi.mocked(admin.registrationStatus).mockResolvedValue({ enabled: true })
   vi.mocked(admin.getSetting).mockRejectedValue(new Error('not saved'))
   vi.mocked(admin.timezone).mockResolvedValue({
