@@ -921,7 +921,8 @@
     "ratesRefreshed": "Kurzy aktualizované",
     "ratesError": "Kurzy sa nepodarilo aktualizovať",
     "cashBalance": "Hotovosť",
-    "investmentAccounts": "Investičné účty"
+    "investmentAccounts": "Investičné účty",
+    "budgetExhausted": "Rozpočet vyčerpaný"
   },
   "transactions": {
     "title": "Transakcie",
@@ -1683,7 +1684,29 @@
     "copySuccess": "Skopírované rozpočty: {{count}}",
     "copyNothing": "Neboli skopírované žiadne rozpočty.",
     "copyError": "Rozpočty sa nepodarilo skopírovať.",
-    "copyEmptyHint": "Skopírujte rozpočty z predchádzajúceho mesiaca, aby ste z nich začali."
+    "copyEmptyHint": "Skopírujte rozpočty z predchádzajúceho mesiaca, aby ste z nich začali.",
+    "rolloverFor": "Preniesť nevyčerpaný rozpočet pre {{category}}",
+    "rolloverHint": "Preniesť nevyčerpané alebo prekročené sumy do ďalšieho mesiaca",
+    "resetCarryover": "Vynulovať prenos",
+    "resetCarryoverPending": "Čaká na vynulovanie",
+    "carryoverBreakdown": "Základ {{base}} {{carryover}} = K dispozícii {{available}}",
+    "rolloverForecastTitle": "Prenos a viacmesačná prognóza",
+    "rolloverForecastDescription": "Rozpis prenosu pre {{month}} a predpokladaný zostatok na ďalšie mesiace.",
+    "forecastHorizon": "Horizont prognózy",
+    "forecastMonthsOption": "{{count}} mesiacov",
+    "rolloverSummaryTitle": "Mesačný prehľad prenosu",
+    "forecastTableTitle": "Viacmesačná prognóza",
+    "colMonth": "Mesiac",
+    "colBaseBudget": "Základný rozpočet",
+    "colCarryover": "Prenos",
+    "colAvailable": "K dispozícii",
+    "colProjectedSpend": "Plánované výdavky",
+    "colRemaining": "Zostáva",
+    "colVariance": "Rozdiel",
+    "netSurplus": "Čistý prebytok",
+    "rolloverEnabled": "Prenos",
+    "rolloverForecastEmpty": "Pre tento mesiac nie sú žiadne rozpočtované kategórie.",
+    "rolloverForecastError": "Nepodarilo sa načítať údaje o prenose a prognóze."
   },
   "goals": {
     "title": "Ciele",

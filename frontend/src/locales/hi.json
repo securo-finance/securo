@@ -907,7 +907,8 @@
     "ratesRefreshed": "FX दरें अपडेट हुईं",
     "ratesError": "FX दरें अपडेट करने में विफल",
     "cashBalance": "नकद",
-    "investmentAccounts": "निवेश खाते"
+    "investmentAccounts": "निवेश खाते",
+    "budgetExhausted": "बजट समाप्त"
   },
   "transactions": {
     "title": "लेन-देन",
@@ -1613,7 +1614,29 @@
     "copySuccess": "कॉपी किए गए बजट: {{count}}",
     "copyNothing": "कोई बजट कॉपी नहीं हुआ।",
     "copyError": "बजट कॉपी नहीं हो सके।",
-    "copyEmptyHint": "शुरुआत करने के लिए किसी पिछले महीने के बजट कॉपी करें।"
+    "copyEmptyHint": "शुरुआत करने के लिए किसी पिछले महीने के बजट कॉपी करें।",
+    "rolloverFor": "{{category}} के लिए बचा हुआ बजट आगे ले जाएं",
+    "rolloverHint": "बिना खर्च की गई या अधिक खर्च हुई राशि को अगले महीने में ले जाएं",
+    "resetCarryover": "कैरीओवर रीसेट करें",
+    "resetCarryoverPending": "रीसेट लंबित",
+    "carryoverBreakdown": "आधार {{base}} {{carryover}} = उपलब्ध {{available}}",
+    "rolloverForecastTitle": "रोलओवर और बहु-मासिक पूर्वानुमान",
+    "rolloverForecastDescription": "{{month}} का कैरीओवर विवरण और बहु-मासिक अनुमानित शेष।",
+    "forecastHorizon": "पूर्वानुमान अवधि",
+    "forecastMonthsOption": "{{count}} महीने",
+    "rolloverSummaryTitle": "मासिक रोलओवर सारांश",
+    "forecastTableTitle": "बहु-मासिक पूर्वानुमान",
+    "colMonth": "माह",
+    "colBaseBudget": "आधार बजट",
+    "colCarryover": "कैरीओवर",
+    "colAvailable": "उपलब्ध",
+    "colProjectedSpend": "अनुमानित खर्च",
+    "colRemaining": "शेष",
+    "colVariance": "अंतर",
+    "netSurplus": "शुद्ध अधिशेष",
+    "rolloverEnabled": "रोलओवर",
+    "rolloverForecastEmpty": "इस महीने के लिए कोई बजट श्रेणी नहीं है।",
+    "rolloverForecastError": "रोलओवर और पूर्वानुमान डेटा लोड नहीं हो सका।"
   },
   "goals": {
     "title": "लक्ष्य",

@@ -731,13 +731,16 @@ export default function DashboardPage() {
         } else if (actual > 0) {
           momPct = 100
         }
+        const baseBudget = budget?.budget_amount != null ? Number(budget.budget_amount) : null
+        const rawBudget = budget ? (budget.effective_budget_amount ?? budget.budget_amount) : null
         return {
           category_id: s.category_id!,
           category_name: s.category_name,
           category_icon: s.category_icon,
           category_color: s.category_color,
           actual,
-          budget_amount: budget ? Number(budget.budget_amount) : null,
+          base_budget_amount: baseBudget,
+          budget_amount: rawBudget != null ? Number(rawBudget) : null,
           percentage_used: budget?.percentage_used ?? null,
           momPct,
         }
@@ -1223,7 +1226,8 @@ export default function DashboardPage() {
             ) : mergedCategories.length > 0 ? (
               <div className="space-y-1.5">
                 {mergedCategories.map((item) => {
-                  const hasBudget = item.budget_amount != null && item.budget_amount > 0
+                  const hasBudget = item.base_budget_amount != null && item.base_budget_amount > 0
+                  const isExhausted = hasBudget && (item.budget_amount == null || item.budget_amount <= 0)
                   const pct = item.percentage_used
 
                   return (
@@ -1253,9 +1257,26 @@ export default function DashboardPage() {
                               )}
                             </div>
                           </div>
-                          {hasBudget && (
-                            <BudgetSpendingProgress categoryName={item.category_name} percentage={pct!} budgetAmount={item.budget_amount!} currency={userCurrency} />
-                          )}
+                          {isExhausted ? (
+                            <div className="flex items-center gap-2" data-testid="budget-exhausted-indicator">
+                              <div
+                                role="progressbar"
+                                aria-label={`${t('dashboard.spendingByCategory')}: ${item.category_name}`}
+                                aria-valuemin={0}
+                                aria-valuemax={100}
+                                aria-valuenow={100}
+                                aria-valuetext={t('dashboard.budgetExhausted')}
+                                className="flex-1 h-1.5 bg-muted/60 rounded-full overflow-hidden"
+                              >
+                                <div className="h-full w-full rounded-full bg-rose-500" />
+                              </div>
+                              <span className="text-[11px] tabular-nums font-medium shrink-0 text-rose-500">
+                                {t('dashboard.budgetExhausted')}
+                              </span>
+                            </div>
+                          ) : hasBudget && pct != null ? (
+                            <BudgetSpendingProgress categoryName={item.category_name} percentage={pct} budgetAmount={item.budget_amount!} currency={userCurrency} />
+                          ) : null}
                         </div>
                       </div>
                     </div>

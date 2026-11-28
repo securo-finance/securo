@@ -596,3 +596,104 @@ async def test_create_budget_twice_answers_a_readable_error(
     assert response.json()["detail"] == (
         "A budget for this category already exists for this month"
     )
+
+
+@pytest.mark.asyncio
+async def test_budget_rollover_flags_and_comparison_and_forecast_endpoints(
+    client, auth_headers, test_categories
+):
+    """API exposes rollover/reset_rollover on create/batch/patch and returns
+    carryover/effective budget fields on comparison, rollover-summary, and forecast."""
+    cat = test_categories[0]
+    m1 = _month_str(1)
+    m2 = _month_str(2)
+    m3 = _month_str(3)
+
+    create_resp = await client.post(
+        "/api/budgets",
+        json={
+            "category_id": str(cat.id),
+            "amount": 500,
+            "month": m1,
+            "is_recurring": True,
+            "rollover": True,
+        },
+        headers=auth_headers,
+    )
+    assert create_resp.status_code == 201
+    created = create_resp.json()
+    assert created["rollover"] is True
+    assert created["reset_rollover"] is False
+
+    # Split at m2 with reset_rollover=True
+    patch_resp = await client.patch(
+        f"/api/budgets/{created['id']}",
+        json={"amount": 600, "effective_month": m2, "reset_rollover": True},
+        headers=auth_headers,
+    )
+    assert patch_resp.status_code == 200
+    patched = patch_resp.json()
+    assert patched["id"] != created["id"]
+    assert patched["rollover"] is True
+    assert patched["reset_rollover"] is True
+
+    # Batch create with rollover=True on another category
+    cat2 = test_categories[1]
+    batch_resp = await client.post(
+        "/api/budgets/batch",
+        json={
+            "month": m1,
+            "is_recurring": False,
+            "rollover": True,
+            "items": [{"category_id": str(cat2.id), "amount": 250}],
+        },
+        headers=auth_headers,
+    )
+    assert batch_resp.status_code == 201
+    assert batch_resp.json()[0]["rollover"] is True
+
+    # Comparison at m3 chains m2's 600 (since m2 reset carryover_in=0 and spent 0) -> +600 carryover
+    comp_resp = await client.get(
+        "/api/budgets/comparison",
+        params={"month": m3},
+        headers=auth_headers,
+    )
+    assert comp_resp.status_code == 200
+    comp_cat = next(c for c in comp_resp.json() if c["category_id"] == str(cat.id))
+    assert float(comp_cat["budget_amount"]) == 600.0
+    assert comp_cat["rollover"] is True
+    assert comp_cat["reset_rollover"] is False
+    assert float(comp_cat["carryover_amount"]) == 600.0
+    assert float(comp_cat["effective_budget_amount"]) == 1200.0
+
+    # Rollover summary & forecast at m1 over 3 months
+    summary_resp = await client.get(
+        "/api/budgets/rollover-summary",
+        params={"month": m1},
+        headers=auth_headers,
+    )
+    assert summary_resp.status_code == 200
+    summary = summary_resp.json()
+    assert float(summary["total_budgeted"]) == 750.0
+    assert float(summary["total_carryover"]) == 0.0
+    assert float(summary["total_effective_budget"]) == 750.0
+    sum_cat = next(c for c in summary["categories"] if c["category_id"] == str(cat.id))
+    assert sum_cat["rollover_enabled"] is True
+
+    forecast_resp = await client.get(
+        "/api/budgets/forecast",
+        params={"start_month": m1, "months": 3},
+        headers=auth_headers,
+    )
+    assert forecast_resp.status_code == 200
+    items = forecast_resp.json()["items"]
+    assert len(items) == 3
+    assert float(items[0]["projected_budget"]) == 750.0
+    assert float(items[0]["carryover_balance"]) == 0.0
+    # m2 has reset_rollover=True on cat -> carryover_balance=0
+    assert float(items[1]["projected_budget"]) == 600.0
+    assert float(items[1]["carryover_balance"]) == 0.0
+    # m3 inherits m2's 600
+    assert float(items[2]["projected_budget"]) == 600.0
+    assert float(items[2]["carryover_balance"]) == 600.0
+    assert float(items[2]["effective_budget"]) == 1200.0

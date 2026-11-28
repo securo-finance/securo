@@ -907,7 +907,8 @@
     "fxRateUsed": "使用汇率：{{rate}}",
     "refreshRates": "刷新汇率",
     "ratesRefreshed": "汇率已更新",
-    "ratesError": "汇率更新失败"
+    "ratesError": "汇率更新失败",
+    "budgetExhausted": "预算已用尽"
   },
   "transactions": {
     "title": "交易记录",
@@ -1613,7 +1614,29 @@
     "copySuccess": "已复制 {{count}} 项预算",
     "copyNothing": "未复制任何预算。",
     "copyError": "无法复制预算。",
-    "copyEmptyHint": "可复制往期月份的预算作为起点。"
+    "copyEmptyHint": "可复制往期月份的预算作为起点。",
+    "rolloverFor": "结转 {{category}} 的剩余预算",
+    "rolloverHint": "将未用完或超支的金额结转至下个月",
+    "resetCarryover": "重置结转",
+    "resetCarryoverPending": "结转重置待生效",
+    "carryoverBreakdown": "基础 {{base}} {{carryover}} = 可用 {{available}}",
+    "rolloverForecastTitle": "结转与多月预测",
+    "rolloverForecastDescription": "{{month}} 的结转明细及未来多月余额预测。",
+    "forecastHorizon": "预测周期",
+    "forecastMonthsOption": "{{count}} 个月",
+    "rolloverSummaryTitle": "月度结转汇总",
+    "forecastTableTitle": "多月预测",
+    "colMonth": "月份",
+    "colBaseBudget": "基础预算",
+    "colCarryover": "结转",
+    "colAvailable": "可用",
+    "colProjectedSpend": "预计支出",
+    "colRemaining": "剩余",
+    "colVariance": "差异",
+    "netSurplus": "净结余",
+    "rolloverEnabled": "结转",
+    "rolloverForecastEmpty": "本月暂无已设预算的分类。",
+    "rolloverForecastError": "无法加载结转和预测数据。"
   },
   "goals": {
     "title": "目标",

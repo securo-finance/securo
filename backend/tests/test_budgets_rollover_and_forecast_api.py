@@ -19,7 +19,16 @@ from app.services.budget_service import (
 )
 
 
-def _budget(user_id, workspace_id, category_id, amount, month, is_recurring=False):
+def _budget(
+    user_id,
+    workspace_id,
+    category_id,
+    amount,
+    month,
+    is_recurring=False,
+    rollover=False,
+    reset_rollover=False,
+):
     return Budget(
         user_id=user_id,
         workspace_id=workspace_id,
@@ -27,6 +36,8 @@ def _budget(user_id, workspace_id, category_id, amount, month, is_recurring=Fals
         amount=Decimal(amount),
         month=month,
         is_recurring=is_recurring,
+        rollover=rollover,
+        reset_rollover=reset_rollover,
     )
 
 
@@ -358,3 +369,84 @@ async def test_rollover_net_surplus_counts_only_budgeted_categories(
     assert [c["category_id"] for c in summary["categories"]] == [budgeted]
     assert summary["total_projected_spent"] == Decimal("120.00")
     assert summary["net_surplus"] == Decimal("380.00")
+
+
+@pytest.mark.asyncio
+async def test_copy_preserves_rollover_clears_reset_and_overwrites_on_rollover_flip(
+    session: AsyncSession, test_user, test_workspace, test_categories
+):
+    cat = test_categories[0].id
+    session.add_all([
+        _budget(test_user.id, test_workspace.id, cat, "200.00", date(2026, 4, 1), rollover=True, reset_rollover=True),
+        _budget(test_user.id, test_workspace.id, cat, "200.00", date(2026, 5, 1), is_recurring=True, rollover=False),
+    ])
+    await session.commit()
+
+    copied = await copy_monthly_budgets(
+        session,
+        test_workspace.id,
+        test_user.id,
+        source_month=date(2026, 4, 1),
+        target_month=date(2026, 5, 1),
+        overwrite_existing=True,
+    )
+    assert len(copied) == 1
+    assert copied[0].amount == Decimal("200.00")
+    assert copied[0].rollover is True
+    assert copied[0].reset_rollover is False
+
+
+@pytest.mark.asyncio
+async def test_forecast_chains_carryover_across_months_with_reset_and_tombstone_break(
+    session: AsyncSession, test_user, test_workspace, test_categories
+):
+    cat = test_categories[0].id
+    session.add_all([
+        # Pre-seed Dec 2029 with 500 rollover -> +500 enters Jan 2030
+        _budget(test_user.id, test_workspace.id, cat, "500.00", date(2029, 12, 1), is_recurring=True, rollover=True),
+        # Mar 2030 override resets carryover
+        _budget(test_user.id, test_workspace.id, cat, "500.00", date(2030, 3, 1), rollover=True, reset_rollover=True),
+        # Apr 2030 cleared tombstone breaks chain
+        _budget(test_user.id, test_workspace.id, cat, "0.00", date(2030, 4, 1), rollover=False),
+    ])
+    session.add(RecurringTransaction(
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        category_id=cat,
+        description="Gym",
+        amount=Decimal("120.00"),
+        currency="BRL",
+        type="debit",
+        frequency="monthly",
+        start_date=date(2030, 1, 10),
+        next_occurrence=date(2030, 1, 10),
+        is_active=True,
+    ))
+    await session.commit()
+
+    forecast = await get_multi_month_forecast(
+        session, test_workspace.id, test_user.id, start_month=date(2030, 1, 1), num_months=5,
+    )
+    rows = [
+        (
+            i["month"],
+            i["projected_budget"],
+            i["carryover_balance"],
+            i["effective_budget"],
+            i["projected_spend"],
+            i["projected_variance"],
+        )
+        for i in forecast["items"]
+    ]
+    assert rows == [
+        # Jan: base 500 + carry 500 = 1000, spend 120 -> var +880
+        (date(2030, 1, 1), Decimal("500.00"), Decimal("500.00"), Decimal("1000.00"), Decimal("120.00"), Decimal("880.00")),
+        # Feb: base 500 + carry 880 = 1380, spend 120 -> var +1260
+        (date(2030, 2, 1), Decimal("500.00"), Decimal("880.00"), Decimal("1380.00"), Decimal("120.00"), Decimal("1260.00")),
+        # Mar: reset_rollover=True -> carry 0, eff 500, spend 120 -> var +380
+        (date(2030, 3, 1), Decimal("500.00"), Decimal("0.00"), Decimal("500.00"), Decimal("120.00"), Decimal("380.00")),
+        # Apr: 0 tombstone keeps its row/spend (main parity) and breaks rollover chain
+        (date(2030, 4, 1), Decimal("0.00"), Decimal("0.00"), Decimal("0.00"), Decimal("120.00"), Decimal("-120.00")),
+        # May: falls back to recurring 500, but Apr tombstone broke chain -> carry 0
+        (date(2030, 5, 1), Decimal("500.00"), Decimal("0.00"), Decimal("500.00"), Decimal("120.00"), Decimal("380.00")),
+    ]

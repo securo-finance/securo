@@ -907,7 +907,8 @@
     "ratesRefreshed": "Οι ισοτιμίες FX ενημερώθηκαν",
     "ratesError": "Αποτυχία ενημέρωσης ισοτιμιών FX",
     "cashBalance": "Μετρητά",
-    "investmentAccounts": "Επενδυτικοί λογαριασμοί"
+    "investmentAccounts": "Επενδυτικοί λογαριασμοί",
+    "budgetExhausted": "Εξαντλημένος προϋπολογισμός"
   },
   "accounts": {
     "title": "Λογαριασμοί",
@@ -1613,7 +1614,29 @@
     "copySuccess": "Αντιγράφηκαν προϋπολογισμοί: {{count}}",
     "copyNothing": "Δεν αντιγράφηκε κανένας προϋπολογισμός.",
     "copyError": "Δεν ήταν δυνατή η αντιγραφή των προϋπολογισμών.",
-    "copyEmptyHint": "Αντιγράψτε τους προϋπολογισμούς ενός προηγούμενου μήνα για να ξεκινήσετε από αυτούς."
+    "copyEmptyHint": "Αντιγράψτε τους προϋπολογισμούς ενός προηγούμενου μήνα για να ξεκινήσετε από αυτούς.",
+    "rolloverFor": "Μεταφορά υπολοίπου προϋπολογισμού για {{category}}",
+    "rolloverHint": "Μεταφορά αχρησιμοποίητων ή υπερβαινόμενων ποσών στον επόμενο μήνα",
+    "resetCarryover": "Μηδενισμός μεταφοράς",
+    "resetCarryoverPending": "Εκκρεμεί μηδενισμός",
+    "carryoverBreakdown": "Βάση {{base}} {{carryover}} = Διαθέσιμο {{available}}",
+    "rolloverForecastTitle": "Μεταφορά & Πολυμηνιαία Πρόβλεψη",
+    "rolloverForecastDescription": "Ανάλυση μεταφοράς για {{month}} και προβλεπόμενο πολυμηνιαίο υπόλοιπο.",
+    "forecastHorizon": "Ορίζοντας πρόβλεψης",
+    "forecastMonthsOption": "{{count}} μήνες",
+    "rolloverSummaryTitle": "Σύνοψη μεταφοράς μήνα",
+    "forecastTableTitle": "Πολυμηνιαία πρόβλεψη",
+    "colMonth": "Μήνας",
+    "colBaseBudget": "Βασικός προϋπολογισμός",
+    "colCarryover": "Μεταφορά",
+    "colAvailable": "Διαθέσιμο",
+    "colProjectedSpend": "Προβλεπόμενη δαπάνη",
+    "colRemaining": "Υπόλοιπο",
+    "colVariance": "Απόκλιση",
+    "netSurplus": "Καθαρό πλεόνασμα",
+    "rolloverEnabled": "Μεταφορά",
+    "rolloverForecastEmpty": "Δεν υπάρχουν κατηγορίες με προϋπολογισμό για αυτόν τον μήνα.",
+    "rolloverForecastError": "Δεν ήταν δυνατή η φόρτωση των δεδομένων μεταφοράς και πρόβλεψης."
   },
   "goals": {
     "title": "Στόχοι",

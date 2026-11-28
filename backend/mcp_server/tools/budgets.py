@@ -46,5 +46,9 @@ async def get_budget_vs_actual(
             "actual_amount": num(d.get("actual_amount") or d.get("actual") or d.get("spent")),
             "remaining": num(d.get("remaining")),
             "currency": d.get("currency"),
+            "rollover": bool(d.get("rollover", False)),
+            "reset_rollover": bool(d.get("reset_rollover", False)),
+            "carryover_amount": num(d.get("carryover_amount")),
+            "effective_budget_amount": num(d.get("effective_budget_amount")),
         })
     return {"month": target.isoformat(), "items": items, "total": len(items)}

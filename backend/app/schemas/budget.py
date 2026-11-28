@@ -64,11 +64,15 @@ class BudgetCreate(BaseModel):
     amount: BudgetAmount
     month: _Date  # First day of month
     is_recurring: bool = False
+    rollover: bool = False
+    reset_rollover: bool = False
 
 
 class BudgetUpdate(BaseModel):
     amount: Optional[BudgetUpdateAmount] = None
     effective_month: Optional[_Date] = None
+    rollover: Optional[bool] = None
+    reset_rollover: Optional[bool] = None
 
 
 class BudgetRead(BaseModel):
@@ -82,6 +86,8 @@ class BudgetRead(BaseModel):
     amount_primary: Optional[Decimal] = None
     month: _Date
     is_recurring: bool
+    rollover: bool = False
+    reset_rollover: bool = False
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -100,6 +106,10 @@ class BudgetVsActual(BaseModel):
     projected_prev_month_amount: Decimal = Decimal("0")
     percentage_used: Optional[float] = None
     is_recurring: bool = False
+    rollover: bool = False
+    reset_rollover: bool = False
+    carryover_amount: Decimal = Decimal("0")
+    effective_budget_amount: Optional[Decimal] = None
 
 
 class BudgetSuggestion(BaseModel):
@@ -125,11 +135,15 @@ class BudgetSuggestionResponse(BaseModel):
 class BudgetBatchItem(BaseModel):
     category_id: uuid.UUID
     amount: BudgetAmount
+    rollover: Optional[bool] = None
+    reset_rollover: Optional[bool] = None
 
 
 class BudgetBatchCreate(BaseModel):
     month: _Date
     is_recurring: bool = False
+    rollover: bool = False
+    reset_rollover: bool = False
     items: list[BudgetBatchItem] = Field(min_length=1, max_length=200)
 
 
@@ -150,6 +164,10 @@ class BudgetRolloverCategory(BaseModel):
     projected_spent: Decimal
     remaining: Decimal
     carryover_eligible: bool
+    rollover_enabled: bool = False
+    reset_rollover: bool = False
+    carryover_in: Decimal = Decimal("0.00")
+    effective_budget: Decimal = Decimal("0.00")
 
 
 class BudgetRolloverSummaryResponse(BaseModel):
@@ -158,6 +176,8 @@ class BudgetRolloverSummaryResponse(BaseModel):
     total_spent: Decimal
     total_projected_spent: Decimal
     net_surplus: Decimal
+    total_carryover: Decimal = Decimal("0.00")
+    total_effective_budget: Decimal = Decimal("0.00")
     categories: list[BudgetRolloverCategory]
 
 
@@ -166,6 +186,8 @@ class BudgetMultiMonthForecastItem(BaseModel):
     projected_budget: Decimal
     projected_spend: Decimal
     projected_variance: Decimal
+    carryover_balance: Decimal = Decimal("0.00")
+    effective_budget: Decimal = Decimal("0.00")
 
 
 class BudgetForecastResponse(BaseModel):

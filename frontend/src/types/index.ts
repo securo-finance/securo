@@ -1577,6 +1577,8 @@ export interface Budget {
   amount_primary?: number | string | null
   month: string
   is_recurring: boolean
+  rollover?: boolean
+  reset_rollover?: boolean
 }
 
 export interface BudgetVsActual {
@@ -1593,6 +1595,49 @@ export interface BudgetVsActual {
   projected_prev_month_amount: number
   percentage_used: number | null
   is_recurring: boolean
+  rollover?: boolean
+  reset_rollover?: boolean
+  carryover_amount?: number
+  effective_budget_amount?: number | null
+}
+
+export interface BudgetRolloverCategory {
+  category_id: string
+  category_name: string
+  budgeted: number
+  actual_spent: number
+  projected_spent: number
+  remaining: number
+  carryover_eligible: boolean
+  rollover_enabled: boolean
+  reset_rollover: boolean
+  carryover_in: number
+  effective_budget: number
+}
+
+export interface BudgetRolloverSummary {
+  month: string
+  total_budgeted: number
+  total_spent: number
+  total_projected_spent: number
+  net_surplus: number
+  total_carryover: number
+  total_effective_budget: number
+  categories: BudgetRolloverCategory[]
+}
+
+export interface BudgetMultiMonthForecastItem {
+  month: string
+  projected_budget: number
+  projected_spend: number
+  projected_variance: number
+  carryover_balance: number
+  effective_budget: number
+}
+
+export interface BudgetForecastResponse {
+  forecast_months: number
+  items: BudgetMultiMonthForecastItem[]
 }
 
 export interface BudgetSuggestion {

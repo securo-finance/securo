@@ -920,7 +920,8 @@
     "fxRateUsed": "שער חליפין: {{rate}}",
     "refreshRates": "רענון שערי חליפין",
     "ratesRefreshed": "שערי החליפין עודכנו",
-    "ratesError": "עדכון שערי החליפין נכשל"
+    "ratesError": "עדכון שערי החליפין נכשל",
+    "budgetExhausted": "התקציב מוצה"
   },
   "transactions": {
     "title": "תנועות",
@@ -1628,7 +1629,29 @@
     "copySuccess": "תקציבים הועתקו: {{count}}",
     "copyNothing": "לא הועתקו תקציבים.",
     "copyError": "לא ניתן היה להעתיק את התקציבים.",
-    "copyEmptyHint": "העתיקו תקציבים מחודש קודם כדי להתחיל מהם."
+    "copyEmptyHint": "העתיקו תקציבים מחודש קודם כדי להתחיל מהם.",
+    "rolloverFor": "גלגול יתרת תקציב עבור {{category}}",
+    "rolloverHint": "העברת סכומים שלא נוצלו או חריגות לחודש הבא",
+    "resetCarryover": "איפוס יתרה מצטברת",
+    "resetCarryoverPending": "איפוס ממתין לשמירה",
+    "carryoverBreakdown": "בסיס {{base}} {{carryover}} = זמין {{available}}",
+    "rolloverForecastTitle": "גלגול ותחזית רב-חודשית",
+    "rolloverForecastDescription": "פירוט יתרה מצטברת עבור {{month}} ותחזית יתרה רב-חודשית.",
+    "forecastHorizon": "טווח תחזית",
+    "forecastMonthsOption": "{{count}} חודשים",
+    "rolloverSummaryTitle": "סיכום גלגול חודשי",
+    "forecastTableTitle": "תחזית רב-חודשית",
+    "colMonth": "חודש",
+    "colBaseBudget": "תקציב בסיס",
+    "colCarryover": "העברה",
+    "colAvailable": "זמין",
+    "colProjectedSpend": "הוצאה חזויה",
+    "colRemaining": "נותר",
+    "colVariance": "פער",
+    "netSurplus": "עודף נטו",
+    "rolloverEnabled": "גלגול",
+    "rolloverForecastEmpty": "אין קטגוריות מתוקצבות לחודש זה.",
+    "rolloverForecastError": "לא ניתן לטעון את נתוני הגלגול והתחזית."
   },
   "goals": {
     "title": "יעדים",

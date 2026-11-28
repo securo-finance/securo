@@ -907,7 +907,8 @@
     "ratesRefreshed": "FX-tarieven bijgewerkt",
     "ratesError": "Kan de valutakoersen niet updaten",
     "cashBalance": "Contant",
-    "investmentAccounts": "Beleggingsrekeningen"
+    "investmentAccounts": "Beleggingsrekeningen",
+    "budgetExhausted": "Budget uitgeput"
   },
   "transactions": {
     "title": "Transacties",
@@ -1615,7 +1616,29 @@
     "copySuccess": "Budgetten gekopieerd: {{count}}",
     "copyNothing": "Er zijn geen budgetten gekopieerd.",
     "copyError": "De budgetten konden niet worden gekopieerd.",
-    "copyEmptyHint": "Kopieer de budgetten van een vorige maand om ermee te beginnen."
+    "copyEmptyHint": "Kopieer de budgetten van een vorige maand om ermee te beginnen.",
+    "rolloverFor": "Ongebruikt budget voor {{category}} meenemen",
+    "rolloverHint": "Ongebruikte of overschreden bedragen meenemen naar volgende maand",
+    "resetCarryover": "Overdracht resetten",
+    "resetCarryoverPending": "Reset in behandeling",
+    "carryoverBreakdown": "Basis {{base}} {{carryover}} = Beschikbaar {{available}}",
+    "rolloverForecastTitle": "Overdracht & Meermaandelijkse Prognose",
+    "rolloverForecastDescription": "Overzicht van de overdracht voor {{month}} en verwachte meermaandelijkse balans.",
+    "forecastHorizon": "Prognoseperiode",
+    "forecastMonthsOption": "{{count}} maanden",
+    "rolloverSummaryTitle": "Maandoverzicht overdracht",
+    "forecastTableTitle": "Meermaandelijkse prognose",
+    "colMonth": "Maand",
+    "colBaseBudget": "Basisbudget",
+    "colCarryover": "Overdracht",
+    "colAvailable": "Beschikbaar",
+    "colProjectedSpend": "Verwachte uitgaven",
+    "colRemaining": "Resterend",
+    "colVariance": "Afwijking",
+    "netSurplus": "Netto-overschot",
+    "rolloverEnabled": "Overdracht",
+    "rolloverForecastEmpty": "Geen gebudgetteerde categorieën voor deze maand.",
+    "rolloverForecastError": "Kon overdracht- en prognosegegevens niet laden."
   },
   "goals": {
     "title": "Doelen",

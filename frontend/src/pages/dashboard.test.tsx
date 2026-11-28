@@ -1066,6 +1066,40 @@ it('identifies each category in its spending progress bar accessible name', asyn
   expect(screen.getByRole('progressbar', { name: `${t('dashboard.spendingByCategory')}: Groceries` })).toHaveAttribute('aria-valuenow', '40')
 })
 
+it('uses effective_budget_amount on category progress and shows exhausted indicator when carryover drives effective budget <= 0', async () => {
+  api.dashboard.spendingByCategory.mockResolvedValue([
+    { category_id: 'rent', category_name: 'Rent', projected_total: 450, total: 450 },
+    { category_id: 'food', category_name: 'Groceries', projected_total: 200, total: 200 },
+  ])
+  api.budgets.comparison.mockResolvedValue([
+    {
+      category_id: 'rent',
+      budget_amount: 800,
+      carryover_amount: 200,
+      effective_budget_amount: 1000,
+      percentage_used: 45,
+      projected_prev_month_amount: 0,
+    },
+    {
+      category_id: 'food',
+      budget_amount: 300,
+      carryover_amount: -400,
+      effective_budget_amount: -100,
+      percentage_used: null,
+      projected_prev_month_amount: 0,
+    },
+  ])
+  renderWithProviders(<TooltipProvider><DashboardPage /></TooltipProvider>)
+
+  const rentBar = await screen.findByRole('progressbar', { name: `${t('dashboard.spendingByCategory')}: Rent` })
+  expect(rentBar).toHaveAttribute('aria-valuenow', '45')
+  expect(screen.getByText(t('dashboard.ofBudget', { budget: formatCurrency(1000, 'USD', 'en-US') }))).toBeInTheDocument()
+  const groceriesBar = screen.getByRole('progressbar', { name: `${t('dashboard.spendingByCategory')}: Groceries` })
+  expect(groceriesBar).toHaveAttribute('aria-valuenow', '100')
+  expect(groceriesBar).toHaveAttribute('aria-valuetext', t('dashboard.budgetExhausted'))
+  expect(screen.getByText(t('dashboard.budgetExhausted'))).toBeInTheDocument()
+})
+
 describe('Dashboard arranged from the library', () => {
   const regions = () => screen.getAllByRole('region').map((region) => region.getAttribute('aria-label'))
 
