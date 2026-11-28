@@ -84,14 +84,14 @@ async def aggregate(
     description_contains: str | None = None,
     status: str = "posted",
     exclude_transfers: bool = True,
-    include_opening_balance: bool = False,
+    include_opening_balance: bool | None = False,
     limit: int = 25,
 ) -> dict[str, Any]:
     # Hard cap regardless of LLM input — keeps payload small enough for
     # token-tight providers.
     limit = max(1, min(int(limit), 50))
     include_opening_balance = parse_bool(
-        include_opening_balance, field="include_opening_balance"
+        include_opening_balance, field="include_opening_balance", default=False
     )
     ws_id = await resolve_workspace_id(session, ctx)
     # Read category parts: a transaction split across categories becomes one
