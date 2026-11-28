@@ -1,7 +1,7 @@
 """recurring schedule rules: business day, holidays, grace, keywords, tolerance
 
-Revision ID: 136
-Revises: 135
+Revision ID: 137
+Revises: 136
 
 Adds the rules a salary paid on the fifth business day and a rent that may be
 paid a day late need, and repairs a pointer that sits on ``start_date`` when
@@ -20,8 +20,8 @@ import sqlalchemy as sa
 
 from alembic import op
 
-revision = "136"
-down_revision = "135"
+revision = "137"
+down_revision = "136"
 branch_labels = None
 depends_on = None
 
