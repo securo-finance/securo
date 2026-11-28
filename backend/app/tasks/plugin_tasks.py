@@ -19,6 +19,7 @@ from app.core.redis import close_redis
 from app.core.row_security import maker_for_row, workspace_makers
 from app.models.plugin_connection import PluginConnection, PluginConnectionRoutine
 from app.plugins import connections, runner
+from app.services import quota_service
 from app.services.workspace_status_service import is_suspended
 from app.worker import celery_app
 
@@ -53,6 +54,9 @@ async def sync_due(session: AsyncSession) -> int:
                 continue
             await connections.sync(session, connection)
             ran += 1
+        except quota_service.SyncPausedError:
+            # Above the account's connection number past the operator's date (ADR 0055).
+            logger.info("Plugin connection %s skipped: sync paused by the account's limit", connection_id)
         except Exception:
             logger.exception("Plugin connection %s failed to sync", connection_id)
             await session.rollback()
@@ -109,7 +113,10 @@ async def _sync_one(connection_id: str) -> None:
                 and connection.status != "needs_auth"
                 and not await is_suspended(session, connection.workspace_id)
             ):
-                await connections.sync(session, connection)
+                try:
+                    await connections.sync(session, connection)
+                except quota_service.SyncPausedError:
+                    logger.info("Plugin connection %s skipped: sync paused by the account's limit", connection_id)
     finally:
         await engine.dispose()
         await close_redis()

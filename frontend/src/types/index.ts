@@ -80,6 +80,34 @@ export interface AdminAccessLogList {
   total: number
 }
 
+/** One limited counter of the account and what it holds now (ADR 0049). */
+export interface QuotaUsage {
+  counter: string
+  current: number
+  maximum: number
+}
+
+/** The account's own limits. `enforced` false: the instance sets none. */
+export interface MyQuotas {
+  enforced: boolean
+  /** The operator's page about the limits, when it set one. */
+  info_url: string | null
+  /** False when the account fits every limit, or has none. */
+  above: boolean
+  /** When an excess starts to have an effect (ADR 0055); null, never. */
+  effective_at: string | null
+  in_effect: boolean
+  /** Bank sync stops while the account holds more connections than its limit. */
+  sync_paused: boolean
+  /** Only the bounded counters; an unbounded one is never listed. */
+  counters: QuotaUsageExcess[]
+}
+
+/** A bounded counter with how many to remove to fit it. */
+export interface QuotaUsageExcess extends QuotaUsage {
+  excess: number
+}
+
 export interface Passkey {
   id: string
   name: string
@@ -2820,6 +2848,20 @@ export type AppNotificationKind =
   | 'group_expense'
   | 'group_settlement'
   | 'backup_failed'
+  | 'quota_excess'
+
+export type QuotaCounter =
+  | 'max_personal_workspaces'
+  | 'max_business_workspaces'
+  | 'max_bank_connections'
+  | 'max_members_per_workspace'
+
+export interface QuotaCounterExcess {
+  counter: QuotaCounter
+  current: number
+  maximum: number | null
+  excess: number
+}
 
 export interface NotificationPreference {
   kind: AppNotificationKind
@@ -2883,6 +2925,10 @@ export type AppNotification = {
       }
     }
   | { kind: 'backup_failed'; data: { failed_at: string } }
+  | {
+      kind: 'quota_excess'
+      data: { effective_at: string; in_effect: boolean; sync_paused: boolean; counters: QuotaCounterExcess[] }
+    }
 )
 
 export interface AppNotificationList {

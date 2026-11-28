@@ -11,6 +11,8 @@ import axios from 'axios'
 import { accounts, assets, connections, currencies, plugins as pluginsApi } from '@/lib/api'
 import { localDateString, todayInTimezone } from '@/lib/date-utils'
 import { extractApiError } from '@/lib/api-errors'
+import { fullCounter } from '@/lib/quota'
+import { useQuotaNotice } from '@/hooks/use-quota'
 import { invalidateFinancialQueries, invalidateSyncedRecords } from '@/lib/invalidate-queries'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -80,7 +82,16 @@ export default function AccountsPage() {
   const { mask } = usePrivacyMode()
   const { user } = useAuth()
   const { activeAccountIds } = useCollectionFilter()
-  const { canWrite } = useWorkspace()
+  const { canWrite, current: currentWorkspace } = useWorkspace()
+  const quotaNotice = useQuotaNotice()
+  // A new connection fills the number of the workspace's creator. When that is
+  // this account and it is already full, say so instead of opening the flow:
+  // the refusal would only come after the whole bank consent.
+  const connectionsFull = currentWorkspace?.created_by_user_id === user?.id
+    ? fullCounter(quotaNotice.quotas, 'max_bank_connections')
+    : null
+  const openConnectBank = () =>
+    connectionsFull ? quotaNotice.show(connectionsFull, currentWorkspace) : setConnectorSelectOpen(true)
   // The "Viewing" bar sits directly above this page, so its scope has to reach
   // the lists too — the sidebar was already filtered, this page was not.
   // null = no active collection = every account.
@@ -256,6 +267,7 @@ export default function AccountsPage() {
     mutationFn: ({ id, keepAccounts }: { id: string; keepAccounts: boolean }) =>
       connections.delete(id, { keepAccounts }),
     onSuccess: (_data, { keepAccounts }) => {
+      // Also reads the usage limits again: a place in the bank connection limit may be free now.
       invalidateSyncedRecords(queryClient)
       setDisconnectingConnection(null)
       toast.success(t(keepAccounts ? 'accounts.disconnectedKept' : 'accounts.disconnected'))
@@ -349,7 +361,7 @@ export default function AccountsPage() {
             <AccountPageActions
               canWrite={canWrite}
               onAddAccount={() => { setEditingAccount(null); setDialogOpen(true) }}
-              onConnectBank={() => setConnectorSelectOpen(true)}
+              onConnectBank={openConnectBank}
               onOpenCollections={() => navigate('/collections')}
             />
           </div>

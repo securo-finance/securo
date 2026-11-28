@@ -10,6 +10,7 @@ import { TimezoneSelect } from '@/components/timezone-select'
 import { useAuth } from '@/contexts/auth-context'
 import { useWorkspace } from '@/contexts/workspace-context'
 import { useLocalAuthEnabled } from '@/hooks/use-local-auth'
+import { MY_QUOTAS_KEY, useQuotaNotice } from '@/hooks/use-quota'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -217,6 +218,8 @@ export default function WorkspaceSettingsPage() {
     },
   })
 
+  const quotaNotice = useQuotaNotice()
+
   const inviteMutation = useMutation({
     mutationFn: () => {
       if (!current) throw new Error('No workspace')
@@ -234,8 +237,10 @@ export default function WorkspaceSettingsPage() {
       setInviteRole('editor')
       queryClient.invalidateQueries({ queryKey: ['workspace-members', current?.id] })
       queryClient.invalidateQueries({ queryKey: ['workspace-stats', current?.id] })
+      queryClient.invalidateQueries({ queryKey: MY_QUOTAS_KEY })
     },
     onError: (e: unknown) => {
+      if (quotaNotice.handle(e)) return
       const detail =
         (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail ||
         (e instanceof Error ? e.message : 'Failed')
@@ -253,6 +258,8 @@ export default function WorkspaceSettingsPage() {
       setRemoveTarget(null)
       queryClient.invalidateQueries({ queryKey: ['workspace-members', current?.id] })
       queryClient.invalidateQueries({ queryKey: ['workspace-stats', current?.id] })
+      // The member limit counts seats, so a place may be free now.
+      queryClient.invalidateQueries({ queryKey: MY_QUOTAS_KEY })
     },
     onError: (e: unknown) => {
       const detail =
@@ -293,6 +300,16 @@ export default function WorkspaceSettingsPage() {
   const isManaged = !!current.managed_by_user_id
   const isManagerSelf = isManaged && current.managed_by_user_id === currentUser?.id
   const kindLabelKey = WORKSPACE_KIND_LABEL_KEY[current.kind as WorkspaceKind]
+  // Seats are counted on the creator's limit; only the creator holds that
+  // number here, so only they are stopped before the attempt.
+  const seatLimit = current.created_by_user_id === currentUser?.id
+    ? quotaNotice.quotas?.counters.find((c) => c.counter === 'max_members_per_workspace')
+    : undefined
+  const seats = members.filter((m) => m.user_id !== current.created_by_user_id).length
+  const seatsFull = seatLimit && !membersQuery.isLoading && seats >= seatLimit.maximum
+    ? { counter: seatLimit.counter, current: seats, maximum: seatLimit.maximum }
+    : null
+  const openInvite = () => (seatsFull ? quotaNotice.show(seatsFull, current) : setInviteOpen(true))
 
   return (
     <div className="container max-w-5xl py-8 space-y-6">
@@ -521,7 +538,7 @@ export default function WorkspaceSettingsPage() {
             </Badge>
           </div>
           {canManage && (
-            <Button onClick={() => setInviteOpen(true)} size="sm" className="rounded-lg">
+            <Button onClick={openInvite} size="sm" className="rounded-lg">
               <Plus className="me-2 h-4 w-4" />
               {t('workspace.addMember')}
             </Button>

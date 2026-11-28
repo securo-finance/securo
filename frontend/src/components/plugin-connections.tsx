@@ -19,6 +19,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useWorkspace } from '@/contexts/workspace-context'
+import { useQuotaNotice } from '@/hooks/use-quota'
 import { plugins as pluginsApi } from '@/lib/api'
 import { localized } from '@/lib/localized-text'
 import { intervalLabel, relativeDate } from '@/lib/plugin-format'
@@ -291,6 +292,7 @@ export function PluginConnectionDialog({
 }) {
   const { t, i18n } = useTranslation()
   const lang = i18n.language
+  const quotaNotice = useQuotaNotice()
   const [key, setKey] = useState(connection?.integration ?? preselected ?? plugin.integrations[0]?.key ?? '')
   const [name, setName] = useState(connection?.name ?? '')
   const [values, setValues] = useState<Record<string, string | PluginFileValue>>({})
@@ -320,7 +322,10 @@ export function PluginConnectionDialog({
       toast.success(t(connection ? 'plugins.connections.updated' : 'plugins.connections.added', { name: saved.name }))
       onClose()
     },
-    onError: (err) => toast.error(errorMessage(err, t('common.error'))),
+    onError: (err) => {
+      if (quotaNotice.handle(err)) return
+      toast.error(errorMessage(err, t('common.error')))
+    },
   })
 
   const filled = (field: PluginField) => {

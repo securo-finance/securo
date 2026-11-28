@@ -4435,6 +4435,10 @@
       "backup_failed": {
         "label": "Sauvegardes",
         "hint": "Une sauvegarde planifiée a échoué."
+      },
+      "quota_excess": {
+        "label": "Limites du compte",
+        "hint": "Votre compte dépasse l'une de ses limites."
       }
     },
     "group": {
@@ -4475,8 +4479,45 @@
     "failed": "Impossible d'enregistrer votre décision",
     "replaced": "L'administrateur a envoyé une nouvelle demande. Vérifiez la nouvelle adresse avant d'accepter",
     "withdrawn": "La demande a été retirée. Votre compte conserve son adresse actuelle"
-  }
-,
+  },
+  "quota": {
+    "aboveTitle": "Votre compte dépasse ses limites",
+    "aboveTitleFrom": "Votre compte dépasse ses limites à partir du {{date}}",
+    "syncPaused": "La synchronisation bancaire est en pause jusqu'à ce que vous soyez dans la limite.",
+    "hint": "Rien n'est supprimé à votre place. Dès que vous êtes dans les limites, tout fonctionne comme avant.",
+    "counter": {
+      "max_bank_connections": "Connexions bancaires : {{current}} sur {{maximum}}, retirez-en {{excess}}",
+      "max_personal_workspaces": "Espaces personnels : {{current}} sur {{maximum}}, retirez-en {{excess}}",
+      "max_business_workspaces": "Espaces professionnels : {{current}} sur {{maximum}}, retirez-en {{excess}}",
+      "max_members_per_workspace": "Membres dans un espace : {{current}} sur {{maximum}}, retirez-en {{excess}}"
+    },
+    "title": "Limites d'utilisation",
+    "menu": "Limites d'utilisation",
+    "description": "Ce que ce compte peut créer sur cette instance. Les compteurs sans limite ne sont pas affichés.",
+    "loadError": "Impossible de charger les limites d'utilisation",
+    "usage": "{{current}} sur {{maximum}}",
+    "membersHint": "Dans votre espace de travail le plus rempli, sans vous compter",
+    "learnMore": "En savoir plus",
+    "counters": {
+      "max_personal_workspaces": "Espaces de travail personnels",
+      "max_business_workspaces": "Espaces de travail professionnels",
+      "max_bank_connections": "Connexions bancaires",
+      "max_members_per_workspace": "Membres par espace de travail"
+    },
+    "reached": {
+      "max_personal_workspaces": "Ce compte a atteint sa limite de {{maximum}} espaces de travail personnels. Archivez des espaces de travail jusqu'à ce qu'il en reste moins de {{maximum}}, puis créez-en un autre.",
+      "max_business_workspaces": "Ce compte a atteint sa limite de {{maximum}} espaces de travail professionnels. Archivez des espaces de travail jusqu'à ce qu'il en reste moins de {{maximum}}, puis créez-en un autre.",
+      "max_bank_connections": "Ce compte a atteint sa limite de {{maximum}} connexions bancaires dans les espaces de travail qu'il a créés. Supprimez des connexions jusqu'à ce qu'il en reste moins de {{maximum}}, puis ajoutez-en une autre.",
+      "max_members_per_workspace": "Cet espace de travail a atteint sa limite de {{maximum}} membres. Retirez des membres jusqu'à ce qu'il en reste moins de {{maximum}}, puis ajoutez-en un autre."
+    },
+    "ownerReached": {
+      "max_bank_connections": "Le propriétaire de cet espace de travail a atteint sa limite de {{maximum}} connexions bancaires. Toute personne pouvant modifier cet espace de travail peut supprimer ses connexions ; une nouvelle trouve sa place quand le propriétaire en a moins de {{maximum}}.",
+      "max_members_per_workspace": "Cet espace de travail a atteint la limite de {{maximum}} membres de son propriétaire. Pour en ajouter un autre, il faut retirer des membres jusqu'à ce qu'il en reste moins de {{maximum}}."
+    },
+    "none": "{{label}} : la limite de ce compte sur cette instance est de 0, aucun ajout n'est donc possible.",
+    "ownerNone": "{{label}} : le propriétaire de cet espace de travail a une limite de 0 sur cette instance, aucun ajout n'est donc possible.",
+    "reachedGeneric": "Ce compte a atteint l'une de ses limites d'utilisation."
+  },
   "workspaceStatus": {
     "notice": "Cet espace de travail est suspendu. Vous pouvez tout lire et exporter, mais rien ne peut être modifié.",
     "error": "Cet espace de travail est suspendu : il peut être lu et exporté, mais pas modifié.",

@@ -67,3 +67,6 @@ Each file here records one decision about how Securo is built: what we chose, wh
 | [0051](0051-the-operator-opens-accounts.md) | The operator of a managed instance opens an account in one call, with no password |
 | [0052](0052-suspended-workspaces.md) | A suspended workspace is read and exported, never written |
 | [0054](0054-account-module-limits.md) | A managed instance can keep modules off for an account's workspaces |
+| [0055](0055-quota-excess-pauses-sync.md) | An excess over the limits pauses sync, only after a date the operator sets |
+| [0056](0056-operator-quota-defaults.md) | An account with no limits of its own follows the operator's defaults |
+| [0057](0057-account-reads-its-usage-limits.md) | An account can read its own usage limits |

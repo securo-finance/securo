@@ -4435,6 +4435,10 @@
       "backup_failed": {
         "label": "Copias de seguridad",
         "hint": "Una copia de seguridad programada falló."
+      },
+      "quota_excess": {
+        "label": "Límites de la cuenta",
+        "hint": "Tu cuenta supera uno de sus límites."
       }
     },
     "group": {
@@ -4475,8 +4479,45 @@
     "failed": "No se pudo registrar su decisión",
     "replaced": "El administrador envió una nueva solicitud. Revisa la nueva dirección antes de aceptar",
     "withdrawn": "La solicitud fue retirada. Tu cuenta mantiene su dirección actual"
-  }
-,
+  },
+  "quota": {
+    "aboveTitle": "Tu cuenta supera sus límites",
+    "aboveTitleFrom": "Tu cuenta supera sus límites a partir del {{date}}",
+    "syncPaused": "La sincronización bancaria está en pausa hasta que estés dentro del límite.",
+    "hint": "No se elimina nada por ti. En cuanto estés dentro de los límites, todo vuelve a funcionar como antes.",
+    "counter": {
+      "max_bank_connections": "Conexiones bancarias: {{current}} de {{maximum}}, elimina {{excess}}",
+      "max_personal_workspaces": "Espacios personales: {{current}} de {{maximum}}, elimina {{excess}}",
+      "max_business_workspaces": "Espacios de empresa: {{current}} de {{maximum}}, elimina {{excess}}",
+      "max_members_per_workspace": "Miembros en un espacio: {{current}} de {{maximum}}, elimina {{excess}}"
+    },
+    "title": "Límites de uso",
+    "menu": "Límites de uso",
+    "description": "Lo que esta cuenta puede crear en esta instancia. Los contadores sin límite no se muestran.",
+    "loadError": "No se pudieron cargar los límites de uso",
+    "usage": "{{current}} de {{maximum}}",
+    "membersHint": "En tu espacio de trabajo más lleno, sin contarte a ti",
+    "learnMore": "Más información",
+    "counters": {
+      "max_personal_workspaces": "Espacios de trabajo personales",
+      "max_business_workspaces": "Espacios de trabajo de empresa",
+      "max_bank_connections": "Conexiones bancarias",
+      "max_members_per_workspace": "Miembros por espacio de trabajo"
+    },
+    "reached": {
+      "max_personal_workspaces": "Esta cuenta alcanzó su límite de {{maximum}} espacios de trabajo personales. Archiva espacios de trabajo hasta que queden menos de {{maximum}} y luego crea otro.",
+      "max_business_workspaces": "Esta cuenta alcanzó su límite de {{maximum}} espacios de trabajo de empresa. Archiva espacios de trabajo hasta que queden menos de {{maximum}} y luego crea otro.",
+      "max_bank_connections": "Esta cuenta alcanzó su límite de {{maximum}} conexiones bancarias en los espacios de trabajo que creó. Elimina conexiones hasta que queden menos de {{maximum}} y luego añade otra.",
+      "max_members_per_workspace": "Este espacio de trabajo alcanzó su límite de {{maximum}} miembros. Elimina miembros hasta que queden menos de {{maximum}} y luego añade otro."
+    },
+    "ownerReached": {
+      "max_bank_connections": "La persona propietaria de este espacio de trabajo alcanzó su límite de {{maximum}} conexiones bancarias. Quien pueda editar este espacio de trabajo puede eliminar sus conexiones; cabe una nueva cuando la persona propietaria tenga menos de {{maximum}}.",
+      "max_members_per_workspace": "Este espacio de trabajo alcanzó el límite de {{maximum}} miembros de su propietario. Para añadir otro, hay que eliminar miembros hasta que queden menos de {{maximum}}."
+    },
+    "none": "{{label}}: el límite de esta cuenta en esta instancia es 0, así que no se puede agregar ninguno.",
+    "ownerNone": "{{label}}: la persona propietaria de este espacio de trabajo tiene un límite de 0 en esta instancia, así que no se puede agregar ninguno.",
+    "reachedGeneric": "Esta cuenta alcanzó uno de sus límites de uso."
+  },
   "workspaceStatus": {
     "notice": "Este espacio de trabajo está suspendido. Puedes leer y exportar todo, pero no se puede cambiar nada.",
     "error": "Este espacio de trabajo está suspendido: se puede leer y exportar, pero no cambiar.",

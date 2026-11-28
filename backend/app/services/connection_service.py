@@ -4859,6 +4859,9 @@ async def _sync_connection(
     # before anything is written (ADR 0052).
     if await is_suspended(session, workspace_id):
         raise WorkspaceSuspendedError(SUSPENDED_DETAIL)
+    # Past the operator's date and above the connection number (ADR 0055):
+    # nothing is fetched, nothing is disconnected.
+    await quota_service.check_sync(session, workspace_id)
 
     # Authorization is workspace-scoped and happens before this service is
     # called. Data imported from a bank connection, however, must always be
