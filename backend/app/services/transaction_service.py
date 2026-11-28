@@ -1871,7 +1871,7 @@ async def create_transfer(
                 session, debit_amount, from_account.currency, to_account.currency, data.date
             )
             # The stored rate can carry an amount that fits past the column on
-            # the other leg: 2e12 USD is 1e13 BRL (issue #422).
+            # the other leg: 2e12 USD is 1e13 BRL (issue #1795).
             credit_amount = bounded_conversion(converted, "amount")
     else:
         credit_amount = debit_amount

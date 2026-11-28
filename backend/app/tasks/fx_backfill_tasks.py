@@ -111,7 +111,7 @@ async def _backfill_in(session_maker) -> dict:
                 stats["transactions"] += 1
             except Exception:
                 # Left as it was, not half stamped: the account leg can
-                # convert past the column after the primary one fit (#422).
+                # convert past the column after the primary one fit (#1795).
                 tx.amount_primary, tx.fx_rate_used = before
                 logger.exception("Failed to backfill tx %s", tx.id)
         await session.commit()

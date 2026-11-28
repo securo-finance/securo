@@ -30,6 +30,7 @@ from app.core.currency import normalize_currency_code, same_currency
 from app.core.money import (
     MAX_FX_RATE,
     MAX_MONEY_AMOUNT,
+    MoneyOutOfRange,
     bounded_fx_rate,
     bounded_money,
 )
@@ -2609,54 +2610,65 @@ async def propose_update_transaction(
                         ),
                     }
             else:
-                stamp = await fx_rate_service.resolve_primary_stamp(
-                    session,
-                    user.primary_currency,
-                    amount,
-                    target_currency,
-                    changes.get("date", tx.date),
-                    # The preview never reaches the provider. It shows the
-                    # rate stored for the date, or the closest stored one as
-                    # an estimate, and says which.
-                    allow_fetch=False,
-                )
-                if stamp.amount_primary is None:
-                    # No stored rate at all: the save resolves one, and the
-                    # preview cannot know which, so it must not imply the row
-                    # keeps its current conversion.
+                try:
+                    stamp = await fx_rate_service.resolve_primary_stamp(
+                        session,
+                        user.primary_currency,
+                        amount,
+                        target_currency,
+                        changes.get("date", tx.date),
+                        # The preview never reaches the provider. It shows the
+                        # rate stored for the date, or the closest stored one as
+                        # an estimate, and says which.
+                        allow_fetch=False,
+                    )
+                except MoneyOutOfRange as exc:
+                    # The conversion at the stored rate overflows the column
+                    # (issue #1795): surface the limit in the preview rather
+                    # than failing the tool call.
                     preview["derived"] = {
-                        "amount_primary": "auto",
-                        "fx_rate_used": "auto",
-                        "note": (
-                            "no market rate stored for this date: the save "
-                            "resolves the rate automatically, so the preview "
-                            "cannot show the exact conversion"
-                        ),
+                        "amount_primary": None,
+                        "fx_rate_used": None,
+                        "note": str(exc),
                     }
                 else:
-                    notes: list[str] = []
-                    if not stamp.rate_is_exact_date:
-                        notes.append(
-                            "estimated from the closest stored market rate; "
-                            "the save uses the market rate for the row's date, "
-                            "which may differ"
-                        )
-                    if (
-                        tx.fx_rate_used is not None
-                        and tx.fx_rate_used != stamp.fx_rate_used
-                    ):
-                        notes.append(
-                            "the stored fx_rate_used is replaced by the market "
-                            "rate for the row's date; pass amount_primary or "
-                            "fx_rate_used to keep a manual conversion"
-                        )
-                    derived: dict[str, Any] = {
-                        "amount_primary": num(stamp.amount_primary),
-                        "fx_rate_used": num(stamp.fx_rate_used),
-                    }
-                    if notes:
-                        derived["note"] = " ".join(notes)
-                    preview["derived"] = derived
+                    if stamp.amount_primary is None:
+                        # No stored rate at all: the save resolves one, and the
+                        # preview cannot know which, so it must not imply the row
+                        # keeps its current conversion.
+                        preview["derived"] = {
+                            "amount_primary": "auto",
+                            "fx_rate_used": "auto",
+                            "note": (
+                                "no market rate stored for this date: the save "
+                                "resolves the rate automatically, so the preview "
+                                "cannot show the exact conversion"
+                            ),
+                        }
+                    else:
+                        notes: list[str] = []
+                        if not stamp.rate_is_exact_date:
+                            notes.append(
+                                "estimated from the closest stored market rate; "
+                                "the save uses the market rate for the row's date, "
+                                "which may differ"
+                            )
+                        if (
+                            tx.fx_rate_used is not None
+                            and tx.fx_rate_used != stamp.fx_rate_used
+                        ):
+                            notes.append(
+                                "the stored fx_rate_used is replaced by the market "
+                                "rate for the row's date; pass amount_primary or "
+                                "fx_rate_used to keep a manual conversion"
+                            )
+                        derived: dict[str, Any] = {
+                            "amount_primary": num(stamp.amount_primary),
+                            "fx_rate_used": num(stamp.fx_rate_used),
+                        }
+                        if notes:
+                            derived["note"] = " ".join(notes)
+                        preview["derived"] = derived
 
     if tx.transfer_pair_id:
         cascaded_fields = {"amount", "date", "description", "notes"} & set(changes)

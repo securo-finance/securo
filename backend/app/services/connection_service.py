@@ -5,7 +5,7 @@ import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
-from decimal import Decimal, InvalidOperation
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from typing import Any, Literal, Optional
 
 from sqlalchemy import delete, exists, func, or_, select, update
@@ -16,7 +16,14 @@ from sqlalchemy.orm.attributes import flag_modified
 
 from app.core.app_clock import app_today
 from app.core.config import get_settings
-from app.core.money import MoneyOutOfRange, bounded_asset_value
+from app.core.money import (
+    CENTS,
+    MAX_MONEY_AMOUNT,
+    MoneyOutOfRange,
+    bounded_asset_value,
+    bounded_fx_rate,
+    quantize_bounded_conversion,
+)
 from app.models.asset import PROVIDER_VALUE_DATE_METADATA_KEY, Asset
 from app.models.asset_group import AssetGroup
 from app.models.asset_transaction import AssetTransaction
@@ -1859,8 +1866,21 @@ def _same_cents(left: Optional[Decimal], right: Optional[Decimal]) -> bool:
     """Whether two optional money values agree to the cent."""
     if left is None or right is None:
         return left is right
-    cent = Decimal("0.01")
-    return Decimal(str(left)).quantize(cent) == Decimal(str(right)).quantize(cent)
+    try:
+        left_dec = Decimal(str(left))
+        right_dec = Decimal(str(right))
+        if (
+            not left_dec.is_finite()
+            or not right_dec.is_finite()
+            or abs(left_dec) > MAX_MONEY_AMOUNT + Decimal("1")
+            or abs(right_dec) > MAX_MONEY_AMOUNT + Decimal("1")
+        ):
+            return False
+        return left_dec.quantize(CENTS, rounding=ROUND_HALF_UP) == right_dec.quantize(
+            CENTS, rounding=ROUND_HALF_UP
+        )
+    except InvalidOperation:
+        return False
 
 
 async def _stamp_synced_primary_amount(
@@ -1878,18 +1898,52 @@ async def _stamp_synced_primary_amount(
     row's account-currency amount whatever the user's primary currency is,
     since the account balance must not depend on it (ADR 0027).
 
-    The transaction's amount must already be the charged amount.
+    The transaction's amount must already be the charged amount. If either the
+    primary or account stamp overflows its column (issue #1795), all four FX
+    fields are restored to their previous values so one bad conversion never
+    half-stamps the row or fails the sync.
     """
-    if converted is not None:
-        transaction.amount_primary = converted
-        transaction.fx_rate_used = converted / transaction.amount
-        await stamp_account_amount(
-            session, transaction, bank_amount=account_amount, recompute=restamp_account
-        )
-    else:
-        await stamp_primary_amount(
-            session, user_id, transaction,
-            account_amount=account_amount, restamp_account=restamp_account,
+    before = (
+        transaction.amount_primary,
+        transaction.fx_rate_used,
+        transaction.amount_account,
+        transaction.amount_account_source,
+    )
+    try:
+        if converted is not None:
+            raw_converted = Decimal(str(converted))
+            primary = quantize_bounded_conversion(raw_converted)
+            if transaction.amount:
+                try:
+                    rate = bounded_fx_rate(
+                        raw_converted / Decimal(str(transaction.amount)),
+                        allow_zero=(primary == 0),
+                    )
+                except ValueError as exc:
+                    raise MoneyOutOfRange(str(exc)) from exc
+            else:
+                rate = Decimal("1")
+            transaction.amount_primary = primary
+            transaction.fx_rate_used = rate
+            await stamp_account_amount(
+                session, transaction, bank_amount=account_amount, recompute=restamp_account
+            )
+        else:
+            await stamp_primary_amount(
+                session, user_id, transaction,
+                account_amount=account_amount, restamp_account=restamp_account,
+            )
+    except MoneyOutOfRange as exc:
+        (
+            transaction.amount_primary,
+            transaction.fx_rate_used,
+            transaction.amount_account,
+            transaction.amount_account_source,
+        ) = before
+        logger.warning(
+            "Not stamping synced FX amounts for transaction %s: %s",
+            transaction.id,
+            exc,
         )
 
 
