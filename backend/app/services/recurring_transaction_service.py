@@ -25,6 +25,7 @@ from app.services import category_line_service, category_service, recurring_matc
 from app.services.credit_card_service import apply_effective_date
 from app.services.fx_rate_service import (
     convert_or_none,
+    rates_in_callers_transaction,
     resolve_primary_stamp,
     stamp_primary_amount,
 )
@@ -686,6 +687,21 @@ async def generate_pending(
     another workspace the user merely belongs to; unattended runs leave it
     unset and cover all of them.
     Returns the count of transactions generated."""
+    # A rate fetched for a new row must not commit midway: the commit would
+    # release the workspaces held below while the loop still writes.
+    with rates_in_callers_transaction():
+        return await _generate_pending(
+            session, user_id, up_to, include_manual, workspace_id
+        )
+
+
+async def _generate_pending(
+    session: AsyncSession,
+    user_id: uuid.UUID,
+    up_to: Optional[date],
+    include_manual: bool,
+    workspace_id: Optional[uuid.UUID],
+) -> int:
     # Unattended runs only touch schedules that opted in to auto-generation,
     # and nothing is written into a suspended workspace (ADR 0052).
     generation_filter = and_(

@@ -634,6 +634,49 @@ async def test_a_sync_suspended_while_the_provider_answers_writes_nothing(
         provider.get_transactions.assert_not_awaited()
 
 
+@pytest.mark.parametrize("ending", ["needs_user_action", "provider_error"])
+async def test_a_sync_suspended_before_it_fails_leaves_the_connection_alone(
+    session, test_user, test_workspace, ending
+):
+    """The run fails after the workspace was suspended: the bank asks for a
+    reconnect on refresh, or the provider errors. Neither marks the connection,
+    since nothing is written into a suspended workspace."""
+    workspace_id = test_workspace.id
+    conn = _bank(test_user, workspace_id)
+    session.add(conn)
+    await session.commit()
+    conn_id = conn.id
+    provider = _bank_provider()
+
+    async def suspend_then(*_args, **_kwargs):
+        # Committed, as the administrator's own transaction would be: the
+        # run's rollback must not take the suspension back with it.
+        await _suspend(session, workspace_id)
+        await session.commit()
+        if ending == "provider_error":
+            raise RuntimeError("bank is down")
+        return "needs_user_action"
+
+    if ending == "provider_error":
+        provider.get_accounts.side_effect = suspend_then
+    else:
+        provider.trigger_refresh.side_effect = suspend_then
+
+    with (
+        patch("app.services.connection_service.detect_transfer_pairs", new_callable=AsyncMock),
+        pytest.raises((connection_service.WorkspaceSuspendedError, RuntimeError)),
+    ):
+        await connection_service.sync_connection(
+            session, conn_id, workspace_id, test_user.id,
+            trigger_provider_refresh=ending == "needs_user_action", provider=provider,
+        )
+
+    status = await session.scalar(
+        select(BankConnection.status).where(BankConnection.id == conn_id)
+    )
+    assert status == "active"
+
+
 async def test_the_same_sync_writes_while_the_workspace_stays_active(
     session, test_user, test_workspace
 ):

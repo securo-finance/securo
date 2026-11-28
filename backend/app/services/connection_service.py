@@ -89,6 +89,7 @@ from app.services.transfer_detection_service import detect_transfer_pairs
 from app.services.fx_rate_service import (
     ACCOUNT_AMOUNT_FROM_BANK,
     ACCOUNT_AMOUNT_FROM_USER,
+    rates_in_callers_transaction,
     stamp_account_amount,
     stamp_primary_amount,
 )
@@ -4821,6 +4822,24 @@ async def sync_connection(
     and the provider serves what it returned (`app.plugins.provider`). Its
     credentials stay sealed with the plugin connection, so there are none here.
     """
+    # A rate fetched for an imported row must not commit midway: the run
+    # writes nothing until its own commit, which holds the workspace first.
+    with rates_in_callers_transaction():
+        return await _sync_connection(
+            session, connection_id, workspace_id, requesting_user_id,
+            trigger_provider_refresh, retry_trade_import, provider,
+        )
+
+
+async def _sync_connection(
+    session: AsyncSession,
+    connection_id: uuid.UUID,
+    workspace_id: uuid.UUID,
+    requesting_user_id: uuid.UUID,
+    trigger_provider_refresh: bool,
+    retry_trade_import: bool,
+    provider: BankProvider | None,
+) -> tuple[BankConnection, int, SyncOutcome]:
     connection = await get_connection(
         session, connection_id, workspace_id, for_update=True
     )
@@ -4905,6 +4924,10 @@ async def sync_connection(
                 # Surfacing reconnect immediately is better than silently
                 # reading stale data the user knows is stale.
                 connection.status = "error"
+                # This commit keeps the refreshed credentials too, so it is
+                # held like the final one (ADR 0052).
+                if workspace_id not in await hold_active(session, [workspace_id]):
+                    raise WorkspaceSuspendedError(SUSPENDED_DETAIL)
                 await session.commit()
                 raise ProviderUserActionRequired(
                     "Provider needs the user to reconnect before fetching fresh data",
@@ -5980,10 +6003,15 @@ async def _mark_failed_sync(
 
     `retry_after` is the provider's Retry-After on a throttled sync, noted as
     a floor on the scheduler backoff. `failure` is why the sync failed, kept
-    until a sync succeeds (issue #1405)."""
+    until a sync succeeds (issue #1405).
+
+    A workspace suspended meanwhile is left as it is: nothing is written into
+    it, a connection's status included (ADR 0052)."""
     async with session.begin():
         conn = await session.get(BankConnection, connection_id, with_for_update=True)
         if conn is None or conn.status == DISCONNECTED_STATUS:
+            return
+        if conn.workspace_id not in await hold_active(session, [conn.workspace_id]):
             return
         if conn.status not in keep:
             conn.status = status

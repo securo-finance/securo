@@ -1063,6 +1063,28 @@ class TestSyncRates:
         assert count == 1
 
     @pytest.mark.asyncio
+    async def test_sync_rates_leaves_the_commit_to_a_holding_job(self):
+        """Inside a job's transaction the rates go in a savepoint, uncommitted."""
+        from app.services.fx_rate_service import rates_in_callers_transaction, sync_rates
+
+        mock_provider = MagicMock()
+        mock_provider.name = "test_provider"
+        mock_provider.fetch_historical = AsyncMock(return_value={"BRL": Decimal("4.8")})
+        mock_session = AsyncMock()
+        mock_session.begin_nested = MagicMock()
+
+        with patch("app.services.fx_rate_service.OpenExchangeRatesProvider", return_value=mock_provider):
+            with rates_in_callers_transaction():
+                count = await sync_rates(mock_session, date(2025, 6, 15))
+            assert count == 1
+            mock_session.begin_nested.assert_called_once()
+            mock_session.commit.assert_not_awaited()
+
+            # Outside it, a refresh still commits its own rates.
+            await sync_rates(mock_session, date(2025, 6, 15))
+        mock_session.commit.assert_awaited_once()
+
+    @pytest.mark.asyncio
     async def test_sync_rates_defaults_to_today(self):
         from app.services.fx_rate_service import sync_rates
 
