@@ -516,7 +516,7 @@ async def authorize_url(
     """The service's sign-in link for this connection, built by the plugin.
 
     A plugin may return ``secrets`` and/or ``state`` alongside ``url`` (for
-    example a PKCE verifier or a Hosted Link token, ADR 0051); those are kept
+    example a PKCE verifier or a Hosted Link token, ADR 0058); those are kept
     on the connection so ``oauth_exchange`` can read them when the browser
     returns. Holds ``plugin-sync:{connection.id}`` and refreshes the connection
     first so saving handshake state cannot overwrite a token rotated by a

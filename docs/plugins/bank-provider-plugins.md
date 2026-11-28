@@ -195,7 +195,7 @@ unknown fields are refused. The rules that catch people out:
   over any of them is refused whole. Reserved balances can't be split across
   syncs: a reported list is the account's whole set, and reserves missing from
   it are deleted.
-- **Cursor-based incremental feeds** ([ADR 0051](../adr/0051-plugin-hosted-signin-and-incremental-sync.md)):
+- **Cursor-based incremental feeds** ([ADR 0058](../adr/0058-plugin-hosted-signin-and-incremental-sync.md)):
   set `incremental: true` on an account whose `transactions` list is a delta
   from a cursor (such as Plaid `/transactions/sync`) rather than a full
   date-window snapshot. Securo advances `last_sync_at` normally while skipping

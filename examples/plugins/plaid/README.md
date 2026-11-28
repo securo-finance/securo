@@ -2,7 +2,7 @@
 
 A reference bank sync provider plugin for the [Plaid API](https://plaid.com/docs/)
 built on Securo's provider plugin contract ([ADR 0023](../../../docs/adr/0023-new-bank-providers-are-plugins.md),
-[ADR 0051](../../../docs/adr/0051-plugin-hosted-signin-and-incremental-sync.md)).
+[ADR 0058](../../../docs/adr/0058-plugin-hosted-signin-and-incremental-sync.md)).
 
 Copy this folder into your own public GitHub repository with the `securo-plugin`
 topic to publish or self-host it in your plugin catalog.

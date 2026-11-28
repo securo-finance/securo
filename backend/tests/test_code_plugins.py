@@ -863,7 +863,7 @@ async def test_stateful_hosted_sign_in_persists_handshake_secrets_and_accepts_pa
 ):
     """Plugins like Plaid Hosted Link or OAuth+PKCE save an ephemeral secret in
     `oauth_url`, receive callback `params` with no `code`, and delete the
-    ephemeral secret by setting it to None in `oauth_exchange` (ADR 0051)."""
+    ephemeral secret by setting it to None in `oauth_exchange` (ADR 0058)."""
     hosted_source = '''
 class Plugin:
     def oauth_url(self, params, context):

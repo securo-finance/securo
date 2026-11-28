@@ -182,7 +182,7 @@ class Transaction(_Model):
     card_masked_number: str | None = Field(default=None, max_length=4)
     """The last four characters of the card used for this charge, never the PAN."""
     replaces_external_id: ExternalId | None = None
-    """The `external_id` of an earlier pending transaction that this posted transaction settles (ADR 0051)."""
+    """The `external_id` of an earlier pending transaction that this posted transaction settles (ADR 0058)."""
 
     @model_validator(mode="after")
     def _valid_replacement(self) -> Transaction:
@@ -278,7 +278,7 @@ class Account(_Model):
     """Whether `transactions` is an incremental delta (cursor-based feed) rather than a date-window snapshot."""
     transactions: list[Transaction] | None = None
     removed_transaction_ids: list[ExternalId] | None = None
-    """External IDs of transactions explicitly removed by the provider since the last cursor (ADR 0051)."""
+    """External IDs of transactions explicitly removed by the provider since the last cursor (ADR 0058)."""
     bills: list[Bill] | None = None
 
     @model_validator(mode="after")

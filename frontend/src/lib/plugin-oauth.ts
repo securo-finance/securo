@@ -1,7 +1,7 @@
 /**
  * Browser-side handoff for plugin redirect sign-in flows whose external service
  * does not echo Securo's single-use `state` parameter back on the completion
- * redirect (for example Plaid Hosted Link, ADR 0051).
+ * redirect (for example Plaid Hosted Link, ADR 0058).
  */
 const PLUGIN_OAUTH_STATE_KEY = 'securo:pluginOAuthState'
 

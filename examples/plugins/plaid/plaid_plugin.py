@@ -1,4 +1,4 @@
-"""Plaid bank sync provider plugin for Securo (ADR 0023, ADR 0051).
+"""Plaid bank sync provider plugin for Securo (ADR 0023, ADR 0058).
 
 Connects institutions through Plaid Hosted Link (`oauth_url` / `oauth_exchange`)
 and syncs accounts, incremental `/transactions/sync` deltas, credit/loan

@@ -1209,7 +1209,7 @@ async def test_replaces_external_id_settles_pending_even_when_amount_and_date_ch
 ):
     """A posted entry naming `replaces_external_id` upgrades that exact pending
     row in place even when tip/hold amount and posting date shifted, preserving
-    user-assigned category and notes (ADR 0051)."""
+    user-assigned category and notes (ADR 0058)."""
     from app.models.category import Category
 
     cat = Category(
@@ -1309,7 +1309,7 @@ async def test_incremental_delta_advances_last_sync_and_preserves_same_day_repea
 ):
     """An incremental cursor-based delta advances `last_sync_at` without letting
     phantom duplicate cleanup delete a legitimate repeat transaction whose paired
-    sibling simply wasn't part of today's delta (ADR 0051)."""
+    sibling simply wasn't part of today's delta (ADR 0058)."""
     first = payload_data(
         transactions=[
             {"external_id": "xfer-1", "description": "Transfer Out", "amount": "100.00", "date": "2026-11-15", "type": "debit", "status": "posted"},
@@ -1345,7 +1345,7 @@ async def test_synced_loan_account_persists_terms_and_preserves_them_when_omitte
     session: AsyncSession, bank_connection, test_user
 ):
     """Loan contract terms flow from the provider contract onto `Account` and
-    survive a later sync that omits them (ADR 0051)."""
+    survive a later sync that omits them (ADR 0058)."""
     first = {
         "contract": 1,
         "accounts": [

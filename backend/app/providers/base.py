@@ -131,7 +131,7 @@ class AccountData:
     # thing, and `balance` is the debt as usual.
     available_credit: Optional[Decimal] = None
     # Loan accounts only: contract terms when the provider exposes them
-    # (e.g. Plaid liabilities for student loans and mortgages, ADR 0051).
+    # (e.g. Plaid liabilities for student loans and mortgages, ADR 0058).
     loan_kind: Optional[str] = None
     loan_original_amount: Optional[Decimal] = None
     loan_interest_rate: Optional[Decimal] = None
@@ -565,6 +565,6 @@ class BankProvider(ABC):
         self, credentials: dict, account_external_id: str
     ) -> list[str]:
         """External IDs of transactions the provider explicitly removed since
-        the previous cursor (for cursor-based incremental syncs, ADR 0051).
+        the previous cursor (for cursor-based incremental syncs, ADR 0058).
         Default is none."""
         return []

@@ -4141,7 +4141,7 @@ async def _settle_replaced_pending(
     """Upgrade the exact pending transaction named by ``txn_data.replaces_external_id``.
 
     Used when a provider explicitly links a posted entry to the pending entry
-    it settled (e.g. Plaid ``pending_transaction_id``, ADR 0051), even when the
+    it settled (e.g. Plaid ``pending_transaction_id``, ADR 0058), even when the
     settled amount (tips, holds) or posting date shifted.
     """
     if not txn_data.replaces_external_id or txn_data.status != "posted":
@@ -4302,7 +4302,7 @@ async def _delete_removed_transactions(
     *,
     protected_external_ids: set[str],
 ) -> None:
-    """Delete synced rows the provider explicitly removed (ADR 0051).
+    """Delete synced rows the provider explicitly removed (ADR 0058).
 
     Runs after the transaction upsert pass so a pending row upgraded via
     ``replaces_external_id`` already carries its posted ``external_id`` and is
@@ -5602,7 +5602,7 @@ async def sync_connection(
                     _relink_bill(existing_tx, txn_data, account, bills_by_external_id)
                     continue
 
-                # Pass 1.5: Explicit pending→posted replacement (ADR 0051).
+                # Pass 1.5: Explicit pending→posted replacement (ADR 0058).
                 # When a provider names the pending external_id this posted row
                 # settles (e.g. Plaid `pending_transaction_id`), upgrade that
                 # row in place before fuzzy matching or twin heuristics.
@@ -6003,7 +6003,7 @@ async def sync_connection(
                     claimable=connection.provider == "enable_banking",
                 )
 
-            # Explicit removals from cursor-based incremental feeds (ADR 0051).
+            # Explicit removals from cursor-based incremental feeds (ADR 0058).
             # Runs after the upsert loop so pending rows upgraded via
             # `replaces_external_id` already carry their posted id.
             get_removed = getattr(provider, "get_removed_transaction_ids", None)

@@ -1,4 +1,4 @@
-# 0051. Plugin hosted sign-in, incremental cursor feeds, and synced loan terms
+# 0058. Plugin hosted sign-in, incremental cursor feeds, and synced loan terms
 
 - Status: Accepted
 - Date: 2026-11-27
