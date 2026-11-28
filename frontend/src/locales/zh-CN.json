@@ -4420,6 +4420,10 @@
       "backup_failed": {
         "label": "备份",
         "hint": "定时备份失败时通知。"
+      },
+      "quota_excess": {
+        "label": "账号限额",
+        "hint": "你的账号已超出某项限额。"
       }
     },
     "group": {
@@ -4460,6 +4464,18 @@
     "failed": "无法保存你的选择",
     "replaced": "管理员发送了新的更改请求，请先核对新邮箱地址再确认接受",
     "withdrawn": "该请求已被撤回，你的账号将继续使用当前邮箱地址"
+  },
+  "quota": {
+    "title": "你的账号已超出限额",
+    "titleFrom": "自 {{date}} 起，你的账号已超出限额",
+    "syncPaused": "银行同步已暂停，直到你回到限额以内。",
+    "hint": "系统不会替你删除任何内容。回到限额以内后，一切将恢复如常。",
+    "counter": {
+      "max_bank_connections": "银行连接：{{current}} / {{maximum}}，需移除 {{excess}} 个",
+      "max_personal_workspaces": "个人工作区：{{current}} / {{maximum}}，需移除 {{excess}} 个",
+      "max_business_workspaces": "企业工作区：{{current}} / {{maximum}}，需移除 {{excess}} 个",
+      "max_members_per_workspace": "单个工作区成员：{{current}} / {{maximum}}，需移除 {{excess}} 位"
+    }
   },
   "workspaceStatus": {
     "notice": "此工作区已被暂停。你可以查看和导出其中的所有内容，但无法进行任何更改。",
