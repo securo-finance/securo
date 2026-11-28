@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import calendar
-import math
 from bisect import bisect_right
 from collections.abc import Iterable
 from dataclasses import dataclass, field
@@ -39,6 +38,7 @@ from app.schemas.asset import (
 )
 from app.services import asset_service
 from app.services.fx_rate_service import convert
+from app.services.money_weighted_return import solve_on_points
 
 
 logger = logging.getLogger(__name__)
@@ -56,6 +56,8 @@ _SYNCED_FIXED_INCOME_TYPES = {
 _SPLIT_PRICE_RATIO = 0.6
 # Amounts are money: anything this small left after a sale is float residue.
 _HELD_DUST = 1e-6
+# A portfolio worth less than half a cent holds nothing.
+_EMPTY_VALUE = 0.005
 # How long a snapshot without a share count may take to show a trade (a
 # weekend, a holiday, settlement) before the trade is dated the old way.
 _SHOWN_WITHIN = timedelta(days=7)
@@ -523,126 +525,6 @@ def time_weighted_returns(
     return output
 
 
-# Bounds on the log of the period's growth: from about -100% to +2e19%.
-_MAX_LOG_GROWTH = 45.0
-_CASH_EPSILON = 1e-9
-
-
-def money_weighted_return(
-    start_date: date,
-    start_value: float,
-    flows: list[tuple[date, float]],
-    end_date: date,
-    end_value: float,
-    *,
-    guess: float = 0.0,
-) -> Optional[float]:
-    """Money-weighted return (IRR) over a period, as a cumulative percentage.
-
-    The single rate at which what was held at the start, plus every amount
-    put in (``flows`` positive) and less every amount taken out (negative),
-    grows into ``end_value``. Unlike the time-weighted return, when and how
-    much money moved changes the result: adding money before a rise raises
-    it. The rate is compounded over the time money was actually invested,
-    from the first money in to the last value held or taken out, so the
-    days before the first buy or after selling everything do not stretch
-    it. ``guess`` is a starting cumulative percentage for the solver.
-
-    None when no rate balances the money (only possible with money taken
-    out and none ever put in).
-    """
-    cash = [(start_date, -start_value)]
-    cash.extend((point_date, -amount) for point_date, amount in flows)
-    cash.append((end_date, end_value))
-    cash = [(point_date, amount) for point_date, amount in cash if abs(amount) > _CASH_EPSILON]
-    paid = sum(-amount for _, amount in cash if amount < 0)
-    received = sum(amount for _, amount in cash if amount > 0)
-    if not cash:
-        return 0.0
-    if paid <= 0:
-        return None
-    if received <= 0:
-        return -100.0
-    first = min(point_date for point_date, _ in cash)
-    span = (max(point_date for point_date, _ in cash) - first).days
-    if span == 0:
-        # Everything happened on one day: there is no time to compound over.
-        return (received / paid - 1.0) * 100.0
-    # Solve sum(amount * growth ** -elapsed) = 0 for the period's growth,
-    # with elapsed as a fraction of the span, on x = ln(growth).
-    timed = [((point_date - first).days / span, amount) for point_date, amount in cash]
-
-    def npv(x: float) -> tuple[float, float]:
-        total = slope = 0.0
-        for elapsed, amount in timed:
-            term = amount * math.exp(-x * elapsed)
-            total += term
-            slope -= elapsed * term
-        return total, slope
-
-    low, high = -_MAX_LOG_GROWTH, _MAX_LOG_GROWTH
-    low_value, _ = npv(low)
-    high_value, _ = npv(high)
-    if low_value == 0:
-        return (math.exp(low) - 1.0) * 100.0
-    if (low_value > 0) == (high_value > 0):
-        return None
-    low_positive = low_value > 0
-    tolerance = 1e-12 * (paid + received)
-    x = min(max(math.log1p(max(guess, -99.9999) / 100.0), low), high)
-    for _ in range(200):
-        value, slope = npv(x)
-        if abs(value) <= tolerance:
-            break
-        if (value > 0) == low_positive:
-            low = x
-        else:
-            high = x
-        # Newton's step, falling back to bisection when it leaves the bracket.
-        step = x - value / slope if slope else math.nan
-        next_x = step if low < step < high else (low + high) / 2.0
-        if abs(next_x - x) < 1e-13:
-            x = next_x
-            break
-        x = next_x
-    return (math.exp(x) - 1.0) * 100.0
-
-
-def money_weighted_returns(
-    values: list[tuple[date, float]],
-    flows: dict[date, float],
-) -> list[tuple[date, float]]:
-    """Cumulative money-weighted return from the first value to each later one.
-
-    ``flows`` is the net money put in per date (negative when taken out),
-    already reflected in the value on that date. A point no rate can be
-    solved for repeats the one before it.
-    """
-    if not values:
-        return []
-    start_date, start_value = values[0]
-    dated_flows = sorted(
-        (point_date, amount)
-        for point_date, amount in flows.items()
-        if point_date > start_date and amount
-    )
-    output = [(start_date, 0.0)]
-    included: list[tuple[date, float]] = []
-    flow_index = 0
-    previous = 0.0
-    for point_date, value in values[1:]:
-        while flow_index < len(dated_flows) and dated_flows[flow_index][0] <= point_date:
-            included.append(dated_flows[flow_index])
-            flow_index += 1
-        result = money_weighted_return(
-            start_date, max(start_value, 0.0), included, point_date, max(value, 0.0), guess=previous
-        )
-        if result is not None:
-            previous = result
-        output.append((point_date, previous))
-    return output
-
-
 async def _usd_rates(
     session: AsyncSession, currency: str, first: date, last: date
 ) -> list[tuple[date, float]]:
@@ -773,6 +655,9 @@ def _benchmark_shadow_portfolio(
     start_value: float,
     flows: dict[date, float],
     extra_dates: set[date],
+    *,
+    opening: Optional[dict[date, float]] = None,
+    exits: Iterable[date] = (),
 ) -> tuple[list[tuple[date, float]], dict[date, float]]:
     """The benchmark held with the portfolio's own money, for a money-weighted
     comparison.
@@ -780,26 +665,50 @@ def _benchmark_shadow_portfolio(
     A money-weighted return depends on when money moved, so the index alone
     is not comparable with it. Instead the benchmark is bought with what the
     portfolio held at the start and with every later contribution, at that
-    day's price, and sold for every withdrawal. A withdrawal larger than the
-    shadow holds (the portfolio did better) only takes out what is there.
+    day's price, and sold for every withdrawal. ``opening`` is the part of
+    a day's money the portfolio bought at its previous valuation's price
+    (a trade only a later snapshot reflects): the shadow buys it at the
+    benchmark's price as of that valuation too, so the move in between
+    counts for both. On ``exits``, the days the portfolio sold everything,
+    the shadow sells everything as well, so neither keeps compounding after
+    the other has stopped. Otherwise a withdrawal larger than the shadow
+    holds (the portfolio did better) only takes out what is there.
     Returns its value per date and the money actually moved.
     """
     prices = _benchmark_prices(history, start_date, end_date, extra_dates | set(flows))
     if not prices:
         return [], {}
+    opening = opening or {}
+    exits = set(exits)
+    valuations = sorted(extra_dates)
     units = max(start_value, 0.0) / prices[0][1]
     values: list[tuple[date, float]] = []
     moved: dict[date, float] = {}
     for point_date, price in prices:
-        flow = flows.get(point_date, 0.0) if point_date > start_date else 0.0
-        if flow > 0:
-            units += flow / price
-            moved[point_date] = flow
-        elif flow < 0:
-            sold = min(-flow, units * price)
-            units = max(units - sold / price, 0.0)
-            if sold > 0:
-                moved[point_date] = -sold
+        if point_date <= start_date:
+            values.append((point_date, units * price))
+            continue
+        flow = flows.get(point_date, 0.0)
+        today = 0.0
+        at_open = min(max(opening.get(point_date, 0.0), 0.0), max(flow, 0.0))
+        if at_open > 0:
+            previous = bisect_right(valuations, point_date - timedelta(days=1))
+            as_of = (
+                _last_on_or_before(prices, valuations[previous - 1]) if previous else None
+            )
+            open_price = as_of[1] if as_of is not None else prices[0][1]
+            units += at_open / open_price
+            today += at_open
+        rest = flow - at_open
+        if rest > 0:
+            units += rest / price
+            today += rest
+        elif rest < 0 or point_date in exits:
+            sold = units * price if point_date in exits else min(-rest, units * price)
+            units = 0.0 if point_date in exits else max(units - sold / price, 0.0)
+            today -= sold
+        if today:
+            moved[point_date] = today
         values.append((point_date, units * price))
     return values, moved
 
@@ -830,29 +739,6 @@ def _return_since(cumulative: list[tuple[date, float]], since: date) -> Optional
     if growth_before <= 0:
         return None
     return ((1.0 + cumulative[-1][1] / 100.0) / growth_before - 1.0) * 100.0
-
-
-def _money_weighted_return_since(
-    values: list[tuple[date, float]], flows: dict[date, float], since: date
-) -> Optional[float]:
-    """The money-weighted return from ``since`` to the last value.
-
-    Unlike a time-weighted one it can't be read off the cumulative series:
-    what was held on ``since`` plus the money moved after it is solved
-    again against what is held at the end.
-    """
-    held_then = _last_on_or_before(values, since)
-    if held_then is None:
-        return None
-    end_date, end_value = values[-1]
-    moved = sorted(
-        (point_date, amount)
-        for point_date, amount in flows.items()
-        if since < point_date <= end_date and amount
-    )
-    return money_weighted_return(
-        since, max(held_then[1], 0.0), moved, end_date, max(end_value, 0.0)
-    )
 
 
 def _fill_aligned_series(
@@ -1396,8 +1282,15 @@ async def get_portfolio_performance_multi(
     sorted_dates = sorted(portfolio_dates)
     portfolio_values = [(d, snapshot(d)) for d in sorted_dates]
     net_flows = flows.net()
+    # A total exit: everything sold and nothing left.
+    exits = {
+        point_date
+        for point_date, value in portfolio_values
+        if abs(value) < _EMPTY_VALUE and net_flows.get(point_date, 0.0) < 0
+    }
     if method == "mwr":
-        portfolio_returns = money_weighted_returns(portfolio_values, net_flows)
+        # Solved on the chart's own dates once they are known, below.
+        portfolio_returns = [(point_date, 0.0) for point_date, _ in portfolio_values]
     else:
         asset_by_key = {str(asset.id): asset for asset in assets}
         intraday: dict[date, list[IntradayTrade]] = {}
@@ -1463,8 +1356,10 @@ async def get_portfolio_performance_multi(
                 held_then[1] if held_then is not None else 0.0,
                 net_flows,
                 portfolio_dates,
+                opening=flows.opening,
+                exits=exits,
             )
-            returns = money_weighted_returns(shadow_values, shadow_flows)
+            returns = [(point_date, 0.0) for point_date, _ in shadow_values]
             if returns:
                 shadows[key] = (shadow_values, shadow_flows)
         else:
@@ -1486,6 +1381,16 @@ async def get_portfolio_performance_multi(
         portfolio_start,
         last_date,
     )
+    money_weighted: Optional[MoneyWeightedSeriesRead] = None
+    windows: dict[str, Optional[float]] = {}
+    if method == "mwr":
+        solved = await asyncio.to_thread(
+            solve_on_points, points, portfolio_values, net_flows, shadows, benchmark_starts
+        )
+        money_weighted = solved.series
+        portfolio_returns = solved.portfolio
+        benchmark_returns.update(solved.benchmarks)
+        windows = solved.windows
     primary_key = f"{first_provider}:{first_symbol}" if benchmarks else None
     for point in points:
         # The legacy scalar still refers to the first requested benchmark.
@@ -1501,7 +1406,7 @@ async def get_portfolio_performance_multi(
         excess_return = None
         if benchmark_return is not None and benchmark_start is not None:
             window_return = (
-                _money_weighted_return_since(portfolio_values, net_flows, benchmark_start)
+                windows.get(key)
                 if method == "mwr"
                 else _return_since(portfolio_returns, benchmark_start)
             )
@@ -1533,53 +1438,8 @@ async def get_portfolio_performance_multi(
         excess_return=first_metric.excess_return if first_metric else None,
         benchmarks=benchmark_metrics,
         points=points,
-        money_weighted=(
-            _money_weighted_series(points, portfolio_values, net_flows, shadows)
-            if method == "mwr"
-            else None
-        ),
+        money_weighted=money_weighted,
     )
-
-
-def _money_weighted_series(
-    points: list[PortfolioPerformancePoint],
-    portfolio_values: list[tuple[date, float]],
-    net_flows: dict[date, float],
-    shadows: dict[str, tuple[list[tuple[date, float]], dict[date, float]]],
-) -> MoneyWeightedSeriesRead:
-    """Each point's value and money moved, so a range can be re-solved."""
-    point_dates = [point.date for point in points]
-
-    def aligned(
-        values: list[tuple[date, float]], moved: dict[date, float]
-    ) -> tuple[list[float], list[float]]:
-        # Values carry forward to dates only a benchmark has; money moved
-        # on the first date is already part of what was held then.
-        held: list[float] = []
-        flows: list[float] = []
-        value = 0.0
-        value_index = 0
-        for index, point_date in enumerate(point_dates):
-            started = value_index > 0
-            while value_index < len(values) and values[value_index][0] <= point_date:
-                value = values[value_index][1]
-                value_index += 1
-            held.append(round(value, 2))
-            flow = moved.get(point_date, 0.0) if index else 0.0
-            if index and not started and value_index:
-                # A benchmark that starts after the chart buys in with what
-                # the portfolio held on its first date.
-                flow += value
-            flows.append(round(flow, 2))
-        return held, flows
-
-    values, flows = aligned(portfolio_values, net_flows)
-    series = MoneyWeightedSeriesRead(values=values, flows=flows)
-    for key, (shadow_values, shadow_flows) in shadows.items():
-        held, moved = aligned(shadow_values, shadow_flows)
-        series.benchmark_values[key] = held
-        series.benchmark_flows[key] = moved
-    return series
 
 
 async def get_portfolio_performance(

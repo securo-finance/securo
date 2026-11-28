@@ -643,14 +643,16 @@ export function PortfolioPerformance({
       startDate: String(from.date),
       endDate: String(to.date),
       portfolio: series ? solved(series.values, series.flows) : between('portfolio'),
-      benchmarks: selected.map((benchmark, index) =>
-        series
-          ? solved(
-              series.benchmark_values[benchmarkKey(benchmark)],
-              series.benchmark_flows[benchmarkKey(benchmark)],
-            )
-          : between(`benchmark_${index}`),
-      ),
+      benchmarks: selected.map((benchmark, index) => {
+        const key = `benchmark_${index}`
+        // As under time-weighted, a range reaching outside a benchmark's
+        // own data has no return for it.
+        if (!series || from[key] == null || to[key] == null) return between(key)
+        return solved(
+          series.benchmark_values[benchmarkKey(benchmark)],
+          series.benchmark_flows[benchmarkKey(benchmark)],
+        )
+      }),
     }
   }, [range, chartData, indexByDate, selected, data])
   // Within about six months, month labels alone repeat; show the day too.

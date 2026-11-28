@@ -256,6 +256,9 @@ export function moneyWeightedReturn(
   if (lowValue > 0 === highValue > 0) return null
   const lowPositive = lowValue > 0
   const tolerance = 1e-12 * (paid + received)
+  // The server solves its line warm-started from each previous point; from
+  // 0 here, both land on the same rate unless the cash has several (money
+  // put in and taken out more than once around a loss), which is rare.
   let x = 0
   for (let iteration = 0; iteration < 200; iteration += 1) {
     const [value, slope] = npv(x)

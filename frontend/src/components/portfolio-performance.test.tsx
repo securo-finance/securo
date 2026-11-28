@@ -870,6 +870,51 @@ describe('PortfolioPerformance', () => {
     expect(screen.getByText('+12.50%')).toBeInTheDocument()
   })
 
+  it('solves a money-weighted range again and leaves out a benchmark it reaches before', async () => {
+    writeBenchmarkSelections(workspaceId, benchmarks.slice(0, 2))
+    vi.mocked(assets.performance).mockResolvedValue({
+      ...performanceData,
+      method: 'mwr',
+      points: [
+        { date: '2026-01-07', portfolio: 0, benchmark: 0, benchmarks: { 'yahoo:^GSPC': 0 } },
+        {
+          date: '2026-05-04',
+          portfolio: 20,
+          benchmark: 0,
+          benchmarks: { 'yahoo:^GSPC': 0, 'yahoo:^IXIC': 0 },
+        },
+        {
+          date: '2026-09-29',
+          portfolio: 12.5,
+          benchmark: 5,
+          benchmarks: { 'yahoo:^GSPC': 5, 'yahoo:^IXIC': 4 },
+        },
+      ],
+      // 100 held, 100 more put in on May 4 when it is worth 220 in all.
+      money_weighted: {
+        values: [100, 220, 230],
+        flows: [0, 100, 0],
+        benchmark_values: { 'yahoo:^GSPC': [100, 200, 210], 'yahoo:^IXIC': [0, 220, 230] },
+        benchmark_flows: { 'yahoo:^GSPC': [0, 100, 0], 'yahoo:^IXIC': [0, 220, 0] },
+      },
+    })
+    const { container } = renderPerformance()
+    await screen.findByText('+12.50%')
+    const chart = await waitFor(() => {
+      const surface = container.querySelector<SVGElement>('.recharts-surface')
+      expect(surface).toBeInTheDocument()
+      return surface!
+    })
+
+    await markRange(container, chart, 1)
+    // -100 now, then -100 + 220 on May 4: the 100 held grew 20%.
+    expect(screen.getByText('Selected period').nextElementSibling).toHaveTextContent('+20.00%')
+    const card = (name: string) => screen.getByTitle(name).closest('.rounded-lg') as HTMLElement
+    expect(within(card('S&P 500')).getByText(/0\.00%/)).toBeInTheDocument()
+    // The Nasdaq only has data from May 4: like time-weighted, no return.
+    expect(within(card('Nasdaq Composite')).queryByText(/%/)).not.toBeInTheDocument()
+  })
+
   it('plots dates on a time scale with one tick per month and finds dates by time', async () => {
     const dates = ['01-10', '01-12', '03-10', '06-10', '08-10', '08-11', '10-10', '11-10', '11-25']
     vi.mocked(assets.performance).mockResolvedValue({

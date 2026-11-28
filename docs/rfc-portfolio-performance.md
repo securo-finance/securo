@@ -115,12 +115,23 @@ percentage on the same scale as the time-weighted chart rather than an
 annualised rate. The span runs from the first money in to the last value held
 or taken out: the days before the first buy and after selling everything do
 not stretch or dilute the rate, and the line stays flat after a full sale.
-The solver is Newton's method inside a bracket on `ln g`, falling back to
-bisection, warm-started from the previous point.
+The solver is Newton's method on `ln g`, warm-started from the previous
+point; when that does not converge it searches a bracket, falling back to
+bisection.
+
+The line is solved on the chart's own dates, from the same per-point values
+and money moved the response sends for dragging (below), and a dragged range
+is solved the same way. Dragging from the chart's first date to any point
+therefore reads exactly the line there, also on a date only a benchmark close
+adds. Each point is solved over every flow before it, so the work grows with
+both; it runs off the request's event loop.
 
 Every flow counts on the date it is recorded, the first valuation that
-reflects it. The start-of-day and previous-snapshot timing the time-weighted
-return uses only matters within one interval, and is not modelled here.
+reflects it: buys and sales from the ledger (a trade's fee on top of a buy
+and off a sale's proceeds), contributions and withdrawals read from
+share-count and balance changes, and money bought at a previous snapshot's
+price. The start-of-day timing the time-weighted return uses only matters
+within one interval, and is not modelled here.
 
 Worked example: 100 held, halves to 50, another 100 is bought at the bottom
 and both double. Time-weighted: 0.5 × 2 − 1 = **0%**. Money-weighted over 30
@@ -135,8 +146,22 @@ portfolio** instead: it is bought with what the portfolio held at the start
 and with every later contribution at that day's price, and sold for every
 withdrawal, and its money-weighted return is taken the same way. The excess
 then answers "did my timing and picks beat buying the index whenever I
-invested?". A withdrawal larger than the shadow holds (the portfolio did much
-better) only takes out what is there.
+invested?".
+
+- A benchmark whose data starts after the portfolio's is bought on its own
+  first date with what the portfolio held then, and the excess compares the
+  portfolio's money-weighted return over that same window. A dragged range
+  that reaches before a benchmark's data has no return for it, as under the
+  time-weighted method.
+- Money the portfolio bought at a previous snapshot's price (a trade only a
+  later snapshot reflects) is bought by the shadow at the index's price as of
+  that snapshot too, so the move in between counts for both.
+- When the portfolio sells everything, the shadow sells everything on the
+  same day, so neither keeps compounding after the other has stopped.
+- A withdrawal larger than the shadow holds (the portfolio did much better)
+  only takes out what is there. The shadow is then empty first and its span
+  ends earlier than the portfolio's, so the two cumulative rates cover
+  different lengths of time; see Known limitations.
 
 The response carries, only for this method, each point's value and money
 moved for the portfolio and each shadow (`money_weighted`), so the client can
@@ -272,6 +297,10 @@ with the expected return worked out by hand:
 - **Money-weighted return with no money in.** A scope that only shows money
   taken out (a sale whose purchase is outside the data) has no rate; the line
   repeats its last value.
+- **An emptied shadow.** When the portfolio takes out more than its shadow
+  holds, the shadow ends early and its cumulative rate covers a shorter span
+  than the portfolio's. A public-market-equivalent method that lets the
+  shadow go negative would keep the spans equal; it is not done here.
 - **Benchmark fairness.** The Ibovespa is a total-return index (dividends
   reinvested), and the Índice DI compounds all of its income, so comparing
   either with a price-only portfolio is unfair to the portfolio until
