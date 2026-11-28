@@ -28,7 +28,13 @@ from app.models.account import Account
 from app.models.admin_access_log import AdminAccessLog, AdminAccessLogViewer
 from app.models.user import User
 from app.models.workspace import Workspace
-from app.services import account_lookup_service, invoice_service, quota_service, workspace_service
+from app.services import (
+    account_lookup_service,
+    invoice_service,
+    quota_service,
+    user_removal_service,
+    workspace_service,
+)
 
 #: Who acted, in the record (ADR 0042): the operator is no account.
 OPERATOR_ACTOR = "operator"
@@ -265,13 +271,17 @@ async def find_account(
     email: Optional[str] = None,
     external_reference: Optional[str] = None,
 ) -> Optional[User]:
+    """The account, or None; a deleted person's closed shell (ADR 0047) is no account."""
+    user = None
     if user_id is not None:
-        return await session.get(User, user_id)
-    if email is not None:
-        return await account_lookup_service.find_account_by_email(session, email)
-    if external_reference is not None:
-        return await _by_reference(session, external_reference)
-    return None
+        user = await session.get(User, user_id)
+    elif email is not None:
+        user = await account_lookup_service.find_account_by_email(session, email)
+    elif external_reference is not None:
+        user = await _by_reference(session, external_reference)
+    if user is None or user_removal_service.is_removed(user):
+        return None
+    return user
 
 
 def password_is_set(user: User) -> bool:

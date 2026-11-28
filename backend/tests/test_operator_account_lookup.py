@@ -191,6 +191,23 @@ async def test_an_unknown_account_is_404(operator, client: AsyncClient):
 
 
 @pytest.mark.asyncio
+async def test_a_removed_account_is_404_and_an_inactive_one_is_not(operator, client: AsyncClient, session):
+    # Removal keeps a closed shell when the person authored kept rows (ADR 0047).
+    shell = await _user(session, "shell@example.com")
+    shell.email = f"removed-{shell.id}@removed.invalid"
+    shell.is_active = False
+    paused = await _user(session, "paused@example.com")
+    paused.is_active = False
+    await session.commit()
+    assert (await client.get(URL, params={"user_id": str(shell.id)}, headers=operator)).status_code == 404
+    # Its address is reserved (RFC 2606) and refused as an email before any lookup.
+    assert (await client.get(URL, params={"email": shell.email}, headers=operator)).status_code == 422
+    resp = await client.get(URL, params={"user_id": str(paused.id)}, headers=operator)
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["is_active"] is False
+
+
+@pytest.mark.asyncio
 async def test_exactly_one_key_is_asked_for(operator, client: AsyncClient, test_user):
     assert (await client.get(URL, headers=operator)).status_code == 422
     both = {"user_id": str(test_user.id), "email": test_user.email}

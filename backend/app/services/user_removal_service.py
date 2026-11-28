@@ -85,6 +85,12 @@ def not_removed()-> sa.ColumnElement[bool]:
     return or_(User.is_active.is_(True), User.email.not_like(_REMOVED_EMAIL_PATTERN))
 
 
+def is_removed(user: User) -> bool:
+    """`not_removed()` for a row already loaded: the closed shell of a deleted person."""
+    prefix, suffix = _REMOVED_EMAIL_PATTERN.split("%")
+    return not user.is_active and user.email.startswith(prefix) and user.email.endswith(suffix)
+
+
 def _table(name: str) -> sa.TableClause:
     """The table by name: the agents models are only imported when that module is on."""
     loaded = Base.metadata.tables.get(name)
