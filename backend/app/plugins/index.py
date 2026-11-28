@@ -20,17 +20,15 @@ import hashlib
 import json
 import logging
 import re
-import tomllib
 from dataclasses import dataclass
 from datetime import datetime
-from importlib.metadata import PackageNotFoundError, version as package_version
-from pathlib import Path
 from urllib.parse import urljoin, urlsplit
 
 import httpx
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
 from app.models.workspace import WORKSPACE_KINDS
+from app.core.app_version import securo_version
 from app.core.config import get_settings
 from app.plugins.logos import content_type as image_type
 from app.plugins.manifest import (
@@ -306,24 +304,6 @@ async def fetch_archive(client: httpx.AsyncClient, entry: IndexEntry) -> tuple[b
         raise PluginIndexError(f"{entry.id}: the code doesn't match the catalog's checksum")
     _last_archive = (entry.archive_sha256, body)
     return body, entry.archive_sha256
-
-
-def securo_version() -> str | None:
-    """The running backend's version.
-
-    pyproject.toml ships with the code, so it can't lag behind it; an
-    editable install's package metadata keeps the version it was installed
-    at, which goes stale on a long-lived development image.
-    """
-    pyproject = Path(__file__).resolve().parents[2] / "pyproject.toml"
-    try:
-        return tomllib.loads(pyproject.read_text())["project"]["version"]
-    except (OSError, KeyError, tomllib.TOMLDecodeError):
-        pass
-    try:
-        return package_version("securo-backend")
-    except PackageNotFoundError:
-        return None
 
 
 def is_compatible(min_securo_version: str) -> bool:

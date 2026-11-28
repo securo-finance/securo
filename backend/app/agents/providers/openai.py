@@ -2,12 +2,12 @@ from __future__ import annotations
 
 import json
 import re
-from importlib.metadata import PackageNotFoundError, version as _pkg_version
 from typing import AsyncIterator, Optional
 from urllib.parse import urlparse
 
 import httpx
 
+from app.core.app_version import securo_version
 from app.agents.providers.base import (
     ChatChunk,
     ChatMessage,
@@ -116,10 +116,8 @@ def _app_user_agent() -> str:
     a few of them ask for the real client instead. Identifying as
     `securo/<version>` keeps the logs on their side meaningful.
     """
-    try:
-        return f"securo/{_pkg_version('securo-backend')}"
-    except PackageNotFoundError:
-        return "securo"
+    version = securo_version()
+    return f"securo/{version}" if version else "securo"
 
 
 _APP_USER_AGENT = _app_user_agent()
