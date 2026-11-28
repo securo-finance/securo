@@ -3977,6 +3977,7 @@
     "planIntro": "Toto sa v tomto pracovnom priestore zmení:",
     "planFailed": "Nepodarilo sa načítať, čo by sa zmenilo.",
     "planChanged": "Od tohto náhľadu sa niečo zmenilo. Skontrolujte ho znova.",
+    "runnerUnavailable": "Spúšťač pluginov nie je dostupný. Uistite sa, že služba pluginov beží, a skúste to znova.",
     "privacy": "Tento plugin iba pridáva údaje do tohto pracovného priestoru. Nič sa nikam neodosiela.",
     "history": "Transakcie si ponechajú svoje súčasné kategórie.",
     "confirm": {

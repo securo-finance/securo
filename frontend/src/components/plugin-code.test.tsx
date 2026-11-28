@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { QueryClient } from '@tanstack/react-query'
 import { fireEvent, screen, waitFor } from '@testing-library/react'
 
 import { PluginConnections } from '@/components/plugin-connections'
@@ -6,6 +7,9 @@ import { PluginPlanDialog } from '@/components/plugin-plan-dialog'
 import { WorkspaceContext } from '@/contexts/workspace-context'
 import { renderWithProviders, t } from '@/test/utils'
 import type { InstalledPlugin, PluginConnection, PluginPlan } from '@/types'
+
+const toast = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn() }))
+vi.mock('sonner', () => ({ toast }))
 
 const api = vi.hoisted(() => ({
   plugins: {
@@ -94,6 +98,8 @@ function workspace(canManage: boolean, canWrite = true) {
 
 beforeEach(() => {
   Object.values(api.plugins).forEach((fn) => fn.mockReset())
+  toast.success.mockReset()
+  toast.error.mockReset()
 })
 
 describe('PluginPlanDialog with code', () => {
@@ -150,6 +156,109 @@ describe('PluginPlanDialog with code', () => {
     expect(await screen.findByText(t('plugins.code.provides'))).toBeInTheDocument()
     expect(screen.getByText(`${t('plugins.code.kinds.accounts')}, ${t('plugins.code.kinds.holdings')}`)).toBeInTheDocument()
     expect(screen.queryByText('Ledger hooks')).not.toBeInTheDocument()
+  })
+
+  it('shows runnerUnavailable toast and invalidates catalog/detail without refetching plan when apply returns 503', async () => {
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: { retry: false, retryDelay: 0, gcTime: 0, staleTime: 0 },
+        mutations: { retry: false },
+      },
+    })
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries')
+    api.plugins.plan.mockResolvedValue(PLAN)
+    api.plugins.apply.mockRejectedValue({ response: { status: 503 } })
+    const { user } = renderWithProviders(
+      <WorkspaceContext.Provider value={workspace(true)}>
+        <PluginPlanDialog target={{ id: 'acme/ledger', name: 'Ledger', action: 'install' }} onClose={() => {}} />
+      </WorkspaceContext.Provider>,
+      { queryClient },
+    )
+    expect(await screen.findByText('api.ledger.example')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: t('plugins.confirm.install') }))
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith(t('plugins.runnerUnavailable')))
+    expect(toast.error).not.toHaveBeenCalledWith(t('plugins.planChanged'))
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['plugins', 'catalog'] })
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['plugins', 'detail', 'acme/ledger'] })
+    expect(invalidateSpy).not.toHaveBeenCalledWith(
+      expect.objectContaining({ queryKey: expect.arrayContaining(['plan']) }),
+    )
+    expect(api.plugins.plan).toHaveBeenCalledTimes(1)
+  })
+
+  it('shows runnerUnavailable description when plan fails with 503', async () => {
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: { retry: false, retryDelay: 0, gcTime: 0, staleTime: 0 },
+        mutations: { retry: false },
+      },
+    })
+    api.plugins.plan.mockRejectedValue({ response: { status: 503 } })
+    renderWithProviders(
+      <WorkspaceContext.Provider value={workspace(true)}>
+        <PluginPlanDialog target={{ id: 'acme/ledger', name: 'Ledger', action: 'install' }} onClose={() => {}} />
+      </WorkspaceContext.Provider>,
+      { queryClient },
+    )
+    expect(await screen.findByText(t('plugins.runnerUnavailable'))).toBeInTheDocument()
+    expect(screen.queryByText(t('plugins.planFailed'))).not.toBeInTheDocument()
+  })
+
+  it('shows planFailed description when plan fails with a non-503 error', async () => {
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: { retry: false, retryDelay: 0, gcTime: 0, staleTime: 0 },
+        mutations: { retry: false },
+      },
+    })
+    api.plugins.plan.mockRejectedValue({ response: { status: 500 } })
+    renderWithProviders(
+      <WorkspaceContext.Provider value={workspace(true)}>
+        <PluginPlanDialog target={{ id: 'acme/ledger', name: 'Ledger', action: 'install' }} onClose={() => {}} />
+      </WorkspaceContext.Provider>,
+      { queryClient },
+    )
+    expect(await screen.findByText(t('plugins.planFailed'))).toBeInTheDocument()
+    expect(screen.queryByText(t('plugins.runnerUnavailable'))).not.toBeInTheDocument()
+  })
+
+  it('shows planChanged toast and refetches when apply returns 409', async () => {
+    api.plugins.plan.mockResolvedValue(PLAN)
+    api.plugins.apply.mockRejectedValue({ response: { status: 409 } })
+    const { user } = renderWithProviders(
+      <WorkspaceContext.Provider value={workspace(true)}>
+        <PluginPlanDialog target={{ id: 'acme/ledger', name: 'Ledger', action: 'install' }} onClose={() => {}} />
+      </WorkspaceContext.Provider>,
+    )
+    expect(await screen.findByText('api.ledger.example')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: t('plugins.confirm.install') }))
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith(t('plugins.planChanged')))
+    await waitFor(() => expect(api.plugins.plan).toHaveBeenCalledTimes(2))
+  })
+
+  it('transitions to runnerUnavailable in dialog when 409 on apply triggers a refetch that returns 503', async () => {
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: { retry: false, retryDelay: 0, gcTime: 0, staleTime: 0 },
+        mutations: { retry: false },
+      },
+    })
+    api.plugins.plan
+      .mockResolvedValueOnce(PLAN)
+      .mockRejectedValue({ response: { status: 503 } })
+    api.plugins.apply.mockRejectedValue({ response: { status: 409 } })
+    const { user } = renderWithProviders(
+      <WorkspaceContext.Provider value={workspace(true)}>
+        <PluginPlanDialog target={{ id: 'acme/ledger', name: 'Ledger', action: 'install' }} onClose={() => {}} />
+      </WorkspaceContext.Provider>,
+      { queryClient },
+    )
+    expect(await screen.findByText('api.ledger.example')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: t('plugins.confirm.install') }))
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith(t('plugins.planChanged')))
+    expect(await screen.findByText(t('plugins.runnerUnavailable'))).toBeInTheDocument()
+    expect(screen.queryByText('api.ledger.example')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: t('common.retry') })).toBeInTheDocument()
   })
 })
 

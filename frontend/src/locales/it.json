@@ -3814,6 +3814,7 @@
     "planIntro": "Ecco cosa cambia in questo spazio di lavoro:",
     "planFailed": "Impossibile caricare cosa cambierebbe.",
     "planChanged": "Qualcosa è cambiato da questa anteprima. Controllala di nuovo.",
+    "runnerUnavailable": "Impossibile raggiungere il runner dei plugin. Assicurati che il servizio dei plugin sia in esecuzione e riprova.",
     "privacy": "Questo plugin aggiunge solo dati a questo spazio di lavoro. Nulla viene inviato altrove.",
     "history": "Le transazioni mantengono le categorie che hanno già.",
     "confirm": {

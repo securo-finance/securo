@@ -3814,6 +3814,7 @@
     "planIntro": "Isto é o que muda neste workspace:",
     "planFailed": "Não foi possível carregar o que isso mudaria.",
     "planChanged": "Algo mudou desde esta prévia. Revise de novo.",
+    "runnerUnavailable": "Não foi possível alcançar o executor de plugins. Verifique se o serviço de plugins está em execução e tente novamente.",
     "privacy": "Este plugin só adiciona dados a este workspace. Nada é enviado para fora.",
     "history": "As transações mantêm as categorias que já têm.",
     "confirm": {

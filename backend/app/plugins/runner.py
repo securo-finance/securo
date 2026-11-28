@@ -8,6 +8,7 @@ call needs travel in its body, never in a URL.
 from __future__ import annotations
 
 import json
+import time
 from dataclasses import dataclass
 from typing import Any
 from urllib.parse import quote
@@ -19,6 +20,11 @@ from app.core.config import get_settings
 #: The runner waits up to its own call timeout; this leaves room for it.
 _CALL_MARGIN = 15.0
 _INSTALL_TIMEOUT = 660.0
+_HEALTH_TIMEOUT = 3.0
+_REACHABILITY_TTL = 15.0
+
+#: Last `/health` probe: ((url, token), client_cls, checked_at, reachable).
+_reachability_cache: tuple[tuple[str, str], object, float, bool] | None = None
 
 
 class RunnerUnavailable(Exception):
@@ -52,6 +58,38 @@ class RunnerPlugin:
 def configured() -> bool:
     settings = get_settings()
     return bool(settings.plugins_runner_url and settings.plugins_runner_token)
+
+
+def reset_reachability_cache() -> None:
+    """Forget the cached runner health check so the next probe contacts the runner."""
+    global _reachability_cache
+    _reachability_cache = None
+
+
+async def reachable(*, force: bool = False) -> bool:
+    """Whether the configured plugin runner currently responds to `/health`.
+
+    Cached for a short TTL keyed by runner URL and token so listing the catalog
+    stays responsive while still noticing when the runner comes up or goes down.
+    """
+    global _reachability_cache
+    if not configured():
+        return False
+    settings = get_settings()
+    key = (settings.plugins_runner_url, settings.plugins_runner_token)
+    now = time.monotonic()
+    if not force and _reachability_cache is not None:
+        cached_key, cached_client, checked_at, cached_result = _reachability_cache
+        if cached_key == key and cached_client is RunnerClient and (now - checked_at) < _REACHABILITY_TTL:
+            return cached_result
+    try:
+        async with RunnerClient() as client:
+            await client.health(timeout=_HEALTH_TIMEOUT)
+        ok = True
+    except Exception:
+        ok = False
+    _reachability_cache = (key, RunnerClient, time.monotonic(), ok)
+    return ok
 
 
 def _path(plugin_id: str) -> str:
@@ -93,8 +131,8 @@ class RunnerClient:
             raise RunnerRefused(str(detail or f"runner error {response.status_code}"), response.status_code)
         return response
 
-    async def health(self) -> dict[str, Any]:
-        return (await self._send("GET", "/health")).json()
+    async def health(self, *, timeout: float = _HEALTH_TIMEOUT) -> dict[str, Any]:
+        return (await self._send("GET", "/health", timeout=timeout)).json()
 
     async def installed(self) -> list[RunnerPlugin]:
         rows = (await self._send("GET", "/plugins")).json()

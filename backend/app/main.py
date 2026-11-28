@@ -116,6 +116,21 @@ async def _load_stored_secret_key() -> None:
         await asyncio.sleep(5)
 
 
+async def _check_plugin_runner() -> None:
+    """Probe the configured plugin runner at startup and warn if it can't be reached."""
+    try:
+        from app.plugins import runner
+
+        if not await runner.reachable(force=True):
+            logger.warning(
+                "Startup: plugin runner is configured (%s) but could not be reached. "
+                "Plugins with code will be unavailable until the plugins service is running.",
+                get_settings().plugins_runner_url,
+            )
+    except Exception:
+        logger.exception("Startup: plugin runner reachability check failed")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Agents on means the API mints MCP tokens and the MCP server accepts
@@ -149,8 +164,18 @@ async def lifespan(app: FastAPI):
     # Background pre-warm of the Tesouro cache (non-blocking; gated to BRL
     # instances inside the helper). Kept on app.state so it isn't GC'd.
     app.state.tesouro_warm_task = asyncio.create_task(_warm_tesouro_cache())
+
+    from app.core.feature_flags import feature_flag
+    from app.plugins import runner
+
+    if feature_flag("PLUGINS_ENABLED") and runner.configured():
+        app.state.plugin_runner_check_task = asyncio.create_task(_check_plugin_runner())
     yield
     # Shutdown
+    task = getattr(app.state, "plugin_runner_check_task", None)
+    if task is not None and not task.done():
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
     await close_redis()
 
 

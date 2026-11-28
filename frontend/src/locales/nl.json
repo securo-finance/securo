@@ -3801,6 +3801,7 @@
     "planIntro": "Dit verandert er in deze workspace:",
     "planFailed": "Kon niet laden wat dit zou veranderen.",
     "planChanged": "Er is iets veranderd sinds dit voorbeeld. Bekijk het opnieuw.",
+    "runnerUnavailable": "De plugin-runner is niet bereikbaar. Controleer of de plugins-service actief is en probeer het opnieuw.",
     "privacy": "Deze plugin voegt alleen gegevens toe aan deze workspace. Er wordt niets verstuurd.",
     "history": "Transacties houden de categorieën die ze al hebben.",
     "confirm": {
