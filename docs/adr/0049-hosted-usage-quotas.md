@@ -5,6 +5,7 @@
 - Origin: #1959 (a ceiling per account on a managed instance with open sign-up)
 - Extends: [0045](0045-managed-instance.md)
 - Extended by [0056](0056-operator-quota-defaults.md): an account with no row follows the operator's defaults when they are set, and the Personal workspace created with the account is never checked.
+- Extended by [0057](0057-account-reads-its-usage-limits.md): the signed-in account reads its own limits and counts, so the screens can warn before a refusal.
 
 ## Context
 
@@ -31,8 +32,6 @@ ADR 0045 already separates the operator from the customer with one switch, `MANA
 All three counts leave archived workspaces out: closing a workspace (`archive_workspace` in `backend/app/services/workspace_service.py`) gives its place back, and the bank connections inside a closed workspace stop counting, so a person at a limit can close one workspace and open another. Every count reads `Workspace.is_archived` rather than a stored counter, which is why the row keeps existing while the place is free.
 
 **Over a limit**, the route answers `403` with `detail.code = "quota_exceeded"`, naming the counter that filled and its current count and maximum, so a screen can say what happened. The response carries the counter, its count and its maximum, and nothing the operator did not give it as a number.
-
-**The account can read its own numbers (#1972).** `GET /api/quotas/mine` (`backend/app/api/quotas.py`, `usage` in `backend/app/services/quota_service.py`) answers, for the signed-in account only, each bounded counter with its current count and its effective maximum, the same count the gates make. With `MANAGED_INSTANCE` off it answers `enforced: false` and no counters. The screens use it to list the limits in the account menu and to stop before an attempt that would be refused; the server gate stays the one that decides. In a workspace someone else created, the connection and seat limits are the creator's, so the refusal says the limit belongs to the workspace owner. One optional setting, `QUOTA_INFO_URL`, is an operator page explaining the limits: when set, the answer carries it and the messages link to it, and when unset they do not link anywhere.
 
 **The connection count needs one narrow definer function.** `bank_connections` is a covered table — its policy is `workspace_id = app.workspace_id` — so with row security on a request sees only the workspace it is bound to (`bind_workspace`), and a count across all the workspaces a user created would come back short: the ceiling could be dodged by spreading connections over several workspaces. The count therefore gets its own function, `securo_owned_bank_connections(p_user uuid) RETURNS bigint`, built in `setup_statements` in `backend/app/core/row_security.py` the way `securo_row_workspace` and `securo_shared_with_viewer` already are: `STABLE SECURITY DEFINER`, fixed `search_path = pg_catalog`, revoked from `PUBLIC`, granted to the restricted role only, and answering one number and nothing else. With row security off it is an ordinary `SELECT`. The other two counts need no function: `workspaces` carries no `workspace_id`, and `workspace_members` is listed in `NOT_COVERED`, so both are readable whole.
 
