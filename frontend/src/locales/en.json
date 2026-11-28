@@ -2371,9 +2371,9 @@
     "newWallet": "New Wallet",
     "editWallet": "Edit wallet",
     "deleteWallet": "Delete wallet",
-    "reorderWallet": "Drag to reorder {{name}}",
-    "moveWalletUp": "Move up",
-    "moveWalletDown": "Move down",
+    "reorder": "Drag to reorder {{name}}",
+    "moveUp": "Move up",
+    "moveDown": "Move down",
     "walletName": "Name",
     "walletNamePlaceholder": "e.g. US Stocks, Long-term fixed income",
     "walletColor": "Color",
@@ -4474,15 +4474,15 @@
       "max_assistant_messages_per_month": "Assistant messages this month"
     },
     "reached": {
-      "max_personal_workspaces": "This account has reached its limit of {{maximum}} personal workspaces. Archive one to create another.",
-      "max_business_workspaces": "This account has reached its limit of {{maximum}} business workspaces. Archive one to create another.",
-      "max_bank_connections": "This account has reached its limit of {{maximum}} bank connections across the workspaces it created. Remove a connection to add another.",
-      "max_members_per_workspace": "This workspace has reached its limit of {{maximum}} members. Remove a member to add another.",
+      "max_personal_workspaces": "This account has reached its limit of {{maximum}} personal workspaces. Archive workspaces until fewer than {{maximum}} are left, then create another.",
+      "max_business_workspaces": "This account has reached its limit of {{maximum}} business workspaces. Archive workspaces until fewer than {{maximum}} are left, then create another.",
+      "max_bank_connections": "This account has reached its limit of {{maximum}} bank connections across the workspaces it created. Remove connections until fewer than {{maximum}} are left, then add another.",
+      "max_members_per_workspace": "This workspace has reached its limit of {{maximum}} members. Remove members until fewer than {{maximum}} are left, then add another.",
       "max_assistant_messages_per_month": "This month's limit of {{maximum}} assistant messages has been reached. It starts again on the first day of next month."
     },
     "ownerReached": {
-      "max_bank_connections": "This workspace's owner has reached their limit of {{maximum}} bank connections. Anyone who can edit this workspace can free a place by removing one of its connections.",
-      "max_members_per_workspace": "This workspace has reached its owner's limit of {{maximum}} members. A member has to be removed to add another."
+      "max_bank_connections": "This workspace's owner has reached their limit of {{maximum}} bank connections. Anyone who can edit this workspace can remove its connections; a new one fits once the owner has fewer than {{maximum}}.",
+      "max_members_per_workspace": "This workspace has reached its owner's limit of {{maximum}} members. Members have to be removed until fewer than {{maximum}} are left to add another."
     },
     "none": "{{label}}: this account's limit is 0 on this instance, so none can be added.",
     "ownerNone": "{{label}}: this workspace's owner has a limit of 0 on this instance, so none can be added.",

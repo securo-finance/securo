@@ -2478,9 +2478,9 @@
     "newWallet": "Nowy portfel",
     "editWallet": "Edytuj portfel",
     "deleteWallet": "Usuń portfel",
-    "reorderWallet": "Przeciągnij, aby zmienić kolejność: {{name}}",
-    "moveWalletUp": "Przenieś w górę",
-    "moveWalletDown": "Przenieś w dół",
+    "reorder": "Przeciągnij, aby zmienić kolejność: {{name}}",
+    "moveUp": "Przenieś w górę",
+    "moveDown": "Przenieś w dół",
     "walletName": "Nazwa",
     "walletNamePlaceholder": "np. Akcje USA, Obligacje długoterminowe",
     "walletColor": "Kolor",
@@ -4636,15 +4636,15 @@
       "max_assistant_messages_per_month": "Wiadomości do asystenta w tym miesiącu"
     },
     "reached": {
-      "max_personal_workspaces": "To konto osiągnęło limit osobistych przestrzeni roboczych ({{maximum}}). Zarchiwizuj jedną, aby utworzyć kolejną.",
-      "max_business_workspaces": "To konto osiągnęło limit firmowych przestrzeni roboczych ({{maximum}}). Zarchiwizuj jedną, aby utworzyć kolejną.",
-      "max_bank_connections": "To konto osiągnęło limit połączeń bankowych ({{maximum}}) w utworzonych przez siebie przestrzeniach roboczych. Usuń połączenie, aby dodać kolejne.",
-      "max_members_per_workspace": "Ta przestrzeń robocza osiągnęła limit członków ({{maximum}}). Usuń członka, aby dodać kolejnego.",
+      "max_personal_workspaces": "To konto osiągnęło limit osobistych przestrzeni roboczych ({{maximum}}). Archiwizuj przestrzenie robocze, aż zostanie ich mniej niż {{maximum}}, a potem utwórz kolejną.",
+      "max_business_workspaces": "To konto osiągnęło limit firmowych przestrzeni roboczych ({{maximum}}). Archiwizuj przestrzenie robocze, aż zostanie ich mniej niż {{maximum}}, a potem utwórz kolejną.",
+      "max_bank_connections": "To konto osiągnęło limit połączeń bankowych ({{maximum}}) w utworzonych przez siebie przestrzeniach roboczych. Usuwaj połączenia, aż zostanie ich mniej niż {{maximum}}, a potem dodaj kolejne.",
+      "max_members_per_workspace": "Ta przestrzeń robocza osiągnęła limit członków ({{maximum}}). Usuwaj członków, aż zostanie ich mniej niż {{maximum}}, a potem dodaj kolejnego.",
       "max_assistant_messages_per_month": "Osiągnięto limit {{maximum}} wiadomości do asystenta w tym miesiącu. Zaczyna się od nowa pierwszego dnia następnego miesiąca."
     },
     "ownerReached": {
-      "max_bank_connections": "Właściciel tej przestrzeni roboczej osiągnął limit połączeń bankowych ({{maximum}}). Każdy, kto może edytować tę przestrzeń roboczą, może zwolnić miejsce, usuwając jedno z jej połączeń.",
-      "max_members_per_workspace": "Ta przestrzeń robocza osiągnęła limit członków jej właściciela ({{maximum}}). Trzeba usunąć członka, aby dodać kolejnego."
+      "max_bank_connections": "Właściciel tej przestrzeni roboczej osiągnął limit połączeń bankowych ({{maximum}}). Każdy, kto może edytować tę przestrzeń roboczą, może usuwać jej połączenia; nowe zmieści się, gdy właściciel będzie miał ich mniej niż {{maximum}}.",
+      "max_members_per_workspace": "Ta przestrzeń robocza osiągnęła limit członków jej właściciela ({{maximum}}). Aby dodać kolejnego, trzeba usuwać członków, aż zostanie ich mniej niż {{maximum}}."
     },
     "none": "{{label}}: limit tego konta w tej instancji wynosi 0, więc nie można nic dodać.",
     "ownerNone": "{{label}}: właściciel tej przestrzeni roboczej ma w tej instancji limit 0, więc nie można nic dodać.",

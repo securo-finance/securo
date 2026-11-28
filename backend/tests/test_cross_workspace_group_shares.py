@@ -538,3 +538,197 @@ async def test_report_for_the_invited_member_counts_their_own_share(
         if item.group == "expenses"
     }
     assert trend["Groceries"].total == pytest.approx(50.0)
+
+
+@pytest.mark.asyncio
+async def test_cross_workspace_equivalent_categories_merge_across_views(
+    session: AsyncSession, test_user, test_workspace
+):
+    """Equivalent categories across workspaces (same name or localized default
+    variants like 'Alimentação' <-> 'Food & Dining') map onto the viewer's
+    workspace category across Dashboard, Reports, Budgets, Category Statement,
+    and Transactions filtering (#1309)."""
+    from app.models.budget import Budget
+    from app.services import budget_service, category_statement_service, transaction_service
+
+    _group, me, friend, guest, guest_ws = await _trip_group(
+        session, test_user, test_workspace, linked_self=False
+    )
+    viewer_food = await _make_category(
+        session, test_user, test_workspace, "Food & Dining", "#F97316"
+    )
+    guest_food_pt = await _make_category(
+        session, guest, guest_ws, "Alimentação", "#10B981"
+    )
+    guest_only = await _make_category(
+        session, guest, guest_ws, "Guest-Only Tag", "#6366F1"
+    )
+
+    today = date.today()
+    month = today.replace(day=1)
+    month_end = (month + timedelta(days=32)).replace(day=1)
+
+    session.add(
+        Budget(
+            id=uuid.uuid4(),
+            user_id=test_user.id,
+            workspace_id=test_workspace.id,
+            category_id=viewer_food.id,
+            amount=Decimal("200.00"),
+            currency="BRL",
+            month=month,
+        )
+    )
+    await session.flush()
+
+    # Viewer's own expense in "Food & Dining": 40
+    await _record_split_expense(
+        session, test_user, test_workspace, [me, friend], "80.00", "Own dinner",
+        category=viewer_food,
+    )
+    # Guest's expense in "Alimentação" (maps to viewer's "Food & Dining"): viewer share 50
+    await _record_split_expense(
+        session, guest, guest_ws, [me, friend], "100.00", "Shared lunch",
+        category=guest_food_pt,
+    )
+    # Guest's expense in unmapped "Guest-Only Tag": viewer share 30
+    await _record_split_expense(
+        session, guest, guest_ws, [me, friend], "60.00", "Shared misc",
+        category=guest_only,
+    )
+
+    # 1. Dashboard spending-by-category merges mapped categories into viewer_food.id
+    #    while preserving unmapped foreign categories so drill-downs match Reports.
+    spending = await dashboard_service.get_spending_by_category(
+        session, test_workspace.id, test_user.id, month=month
+    )
+    by_id = {item.category_id: item for item in spending}
+    assert str(viewer_food.id) in by_id
+    assert by_id[str(viewer_food.id)].total == pytest.approx(90.0)
+    assert str(guest_food_pt.id) not in by_id
+    assert str(guest_only.id) in by_id
+    assert by_id[str(guest_only.id)].category_name == "Guest-Only Tag"
+    assert by_id[str(guest_only.id)].total == pytest.approx(30.0)
+
+    # 2. Reports merge "Alimentação" into viewer's "Food & Dining" slice & trend
+    report = await report_service.get_income_expenses_report(
+        session, test_workspace.id, test_user.id, months=1
+    )
+    comp = {item.label: item.value for item in report.composition if item.group == "expenses"}
+    assert comp["Food & Dining"] == pytest.approx(90.0)
+    assert "Alimentação" not in comp
+    assert comp["Guest-Only Tag"] == pytest.approx(30.0)
+
+    # 3. Budgets include the mapped cross-workspace share under viewer_food
+    bva = await budget_service.get_budget_vs_actual(
+        session, test_workspace.id, test_user.id, month=month
+    )
+    food_bva = next(row for row in bva if row.category_id == viewer_food.id)
+    assert food_bva.actual_amount == pytest.approx(90.0)
+
+    # 3b. Budget suggestions count months_with_data from final monthly_net
+    #     (ignoring months where mapped shared shares net to zero)
+    from sqlalchemy import update as sa_update
+    from app.models.transaction_split import TransactionSplit
+
+    viewer_transport = await _make_category(
+        session, test_user, test_workspace, "Transport", "#0EA5E9"
+    )
+    guest_transport_pt = await _make_category(
+        session, guest, guest_ws, "Transporte", "#38BDF8"
+    )
+    prev_month_first = (month - timedelta(days=1)).replace(day=1)
+    two_months_ago_first = (prev_month_first - timedelta(days=1)).replace(day=1)
+
+    # Two months ago: viewer share +40
+    older_tx = await _record_split_expense(
+        session, guest, guest_ws, [me, friend], "80.00", "Older shared taxi",
+        category=guest_transport_pt,
+    )
+    older_tx.date = two_months_ago_first.replace(day=12)
+
+    # Previous month: +60 on day 10 and -60 on day 20 cancel out -> net 0
+    cancel_pos = await _record_split_expense(
+        session, guest, guest_ws, [me, friend], "120.00", "Shared taxi +60",
+        category=guest_transport_pt,
+    )
+    cancel_pos.date = prev_month_first.replace(day=10)
+    cancel_neg = await _record_split_expense(
+        session, guest, guest_ws, [me, friend], "120.00", "Shared taxi -60",
+        category=guest_transport_pt,
+    )
+    cancel_neg.date = prev_month_first.replace(day=20)
+    await session.execute(
+        sa_update(TransactionSplit)
+        .where(
+            TransactionSplit.transaction_id == cancel_neg.id,
+            TransactionSplit.group_member_id == me.id,
+        )
+        .values(share_amount=Decimal("-60.00"))
+    )
+    await session.flush()
+
+    suggestions = await budget_service.get_budget_suggestions(
+        session, test_workspace.id, test_user.id, month=month, months=2
+    )
+    transport_sugg = next(
+        s for s in suggestions.suggestions if s.category_id == viewer_transport.id
+    )
+    assert transport_sugg.total_spent == Decimal("40.00")
+    assert transport_sugg.months_with_data == 1
+
+    # 4. Category statement attributes mapped share to viewer_food, unmapped to uncategorized
+    stmt = await category_statement_service.get_category_statement(
+        session, test_workspace.id, test_user.id, month=month, months=1
+    )
+    all_rows = [
+        child for r in stmt.expenses.rows for child in ([r] + list(r.children))
+    ]
+    food_row = next(r for r in all_rows if r.key == str(viewer_food.id))
+    assert food_row.values[-1] == pytest.approx(-90.0)
+    uncat_row = next(r for r in stmt.expenses.rows if r.kind == "uncategorized")
+    assert uncat_row.values[-1] == pytest.approx(-30.0)
+
+    # 5. Transactions filtered by viewer_food.id returns both own and mapped shared row with viewer category
+    txs, total, _ = await transaction_service.get_transactions(
+        session,
+        test_workspace.id,
+        test_user.id,
+        from_date=month,
+        to_date=month_end - timedelta(days=1),
+        category_id=viewer_food.id,
+    )
+    assert total == 2
+    shared_tx = next(t for t in txs if t.description == "Shared lunch")
+    assert shared_tx.category_id == viewer_food.id
+    assert shared_tx.category is not None and shared_tx.category.id == viewer_food.id
+
+    # 5b. Drilling down on an unmapped foreign category slice returns the shared row and matching summary
+    foreign_txs, foreign_total, foreign_summary = await transaction_service.get_transactions(
+        session,
+        test_workspace.id,
+        test_user.id,
+        from_date=month,
+        to_date=month_end - timedelta(days=1),
+        category_id=guest_only.id,
+        include_summary=True,
+    )
+    assert foreign_total == 1
+    assert foreign_txs[0].description == "Shared misc"
+    assert foreign_txs[0].category_id == guest_only.id
+    assert foreign_summary is not None
+    assert float(foreign_summary["expense"]) == pytest.approx(30.0)
+
+    # 6. shared_as_uncategorized drill-down returns only the unmapped shared row (not "Shared lunch")
+    uncat_txs, uncat_total, _ = await transaction_service.get_transactions(
+        session,
+        test_workspace.id,
+        test_user.id,
+        from_date=month,
+        to_date=month_end - timedelta(days=1),
+        uncategorized=True,
+        shared_as_uncategorized=True,
+    )
+    assert uncat_total == 1
+    assert uncat_txs[0].description == "Shared misc"
+    assert uncat_txs[0].category_id == guest_only.id

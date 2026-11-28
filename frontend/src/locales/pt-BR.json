@@ -2380,9 +2380,9 @@
     "newWallet": "Nova Carteira",
     "editWallet": "Editar carteira",
     "deleteWallet": "Excluir carteira",
-    "reorderWallet": "Arraste para reordenar {{name}}",
-    "moveWalletUp": "Mover para cima",
-    "moveWalletDown": "Mover para baixo",
+    "reorder": "Arraste para reordenar {{name}}",
+    "moveUp": "Mover para cima",
+    "moveDown": "Mover para baixo",
     "walletName": "Nome",
     "walletNamePlaceholder": "ex: Ações EUA, Renda Fixa Longo Prazo",
     "walletColor": "Cor",
@@ -4489,15 +4489,15 @@
       "max_assistant_messages_per_month": "Mensagens ao assistente neste mês"
     },
     "reached": {
-      "max_personal_workspaces": "Esta conta atingiu o limite de {{maximum}} espaços de trabalho pessoais. Arquive um para criar outro.",
-      "max_business_workspaces": "Esta conta atingiu o limite de {{maximum}} espaços de trabalho empresariais. Arquive um para criar outro.",
-      "max_bank_connections": "Esta conta atingiu o limite de {{maximum}} conexões bancárias nos espaços de trabalho que criou. Remova uma conexão para adicionar outra.",
-      "max_members_per_workspace": "Este espaço de trabalho atingiu o limite de {{maximum}} membros. Remova um membro para adicionar outro.",
+      "max_personal_workspaces": "Esta conta atingiu o limite de {{maximum}} espaços de trabalho pessoais. Arquive espaços de trabalho até restarem menos de {{maximum}} e depois crie outro.",
+      "max_business_workspaces": "Esta conta atingiu o limite de {{maximum}} espaços de trabalho empresariais. Arquive espaços de trabalho até restarem menos de {{maximum}} e depois crie outro.",
+      "max_bank_connections": "Esta conta atingiu o limite de {{maximum}} conexões bancárias nos espaços de trabalho que criou. Remova conexões até restarem menos de {{maximum}} e depois adicione outra.",
+      "max_members_per_workspace": "Este espaço de trabalho atingiu o limite de {{maximum}} membros. Remova membros até restarem menos de {{maximum}} e depois adicione outro.",
       "max_assistant_messages_per_month": "O limite de {{maximum}} mensagens ao assistente deste mês foi atingido. Ele recomeça no primeiro dia do próximo mês."
     },
     "ownerReached": {
-      "max_bank_connections": "O dono deste espaço de trabalho atingiu o limite de {{maximum}} conexões bancárias. Quem pode editar este espaço de trabalho pode liberar uma vaga removendo uma das conexões dele.",
-      "max_members_per_workspace": "Este espaço de trabalho atingiu o limite de {{maximum}} membros do seu dono. É preciso remover um membro para adicionar outro."
+      "max_bank_connections": "O dono deste espaço de trabalho atingiu o limite de {{maximum}} conexões bancárias. Quem pode editar este espaço de trabalho pode remover as conexões dele; uma nova cabe quando o dono tiver menos de {{maximum}}.",
+      "max_members_per_workspace": "Este espaço de trabalho atingiu o limite de {{maximum}} membros do seu dono. Para adicionar outro, é preciso remover membros até restarem menos de {{maximum}}."
     },
     "none": "{{label}}: o limite desta conta nesta instância é 0, então não é possível adicionar nenhum.",
     "ownerNone": "{{label}}: o dono deste espaço de trabalho tem limite 0 nesta instância, então não é possível adicionar nenhum.",

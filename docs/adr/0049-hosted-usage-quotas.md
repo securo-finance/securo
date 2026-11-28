@@ -4,6 +4,8 @@
 - Date: 2026-11-27
 - Origin: #1959 (a ceiling per account on a managed instance with open sign-up)
 - Extends: [0045](0045-managed-instance.md)
+- Extended by [0056](0056-operator-quota-defaults.md): an account with no row follows the operator's defaults when they are set, and the Personal workspace created with the account is never checked.
+- Extended by [0057](0057-account-reads-its-usage-limits.md): the signed-in account reads its own limits and counts, so the screens can warn before a refusal.
 
 ## Context
 
@@ -17,11 +19,7 @@ ADR 0045 already separates the operator from the customer with one switch, `MANA
 
 **This records the decision; the code comes with #1964.** Until #1964 is in the tree there is no `user_quotas`, no operator route and no check, so a managed instance enforces nothing. The rules below are what holds once it is in.
 
-**Four neutral numbers, nothing else.** The code keeps a table of limits per user — `user_quotas`: `user_id`, `max_personal_workspaces`, `max_business_workspaces`, `max_bank_connections`, `max_members_per_workspace`. The code attaches no meaning to them beyond the count it makes. A null counter means unbounded for that one. A user with no row follows the operator's defaults when they are set, and is unbounded on all four otherwise (see below).
-
-**Defaults for accounts with no row (#1971).** The operator can set one set of the same four numbers at `/api/operator/quota-defaults`, kept as an instance setting (`quota_defaults` in `app_settings`) that the customer's admin screen cannot write. They are read at check time (`effective_limits` in `backend/app/services/quota_service.py`) and never copied into `user_quotas`: every path that creates a user follows them without writing anything, and changing them moves every account without a row at once. A user's own row always wins over the defaults, even when all four of its counters are null, so the operator can still exempt one account. With no defaults set, an account with no row is unbounded, as before.
-
-**The bootstrap Personal workspace is exempt.** The Personal workspace created together with the account (`create_personal_workspace_for_user` in `backend/app/services/workspace_service.py`, on sign-up, first OIDC login, an admin-created user and instance setup) is never checked against `max_personal_workspaces`. Checking it would let a limit of 0 refuse the account itself — the first administrator's setup included — or leave a person with no workspace at all. Once it exists it counts like any other personal workspace the user created; the limit holds for the ones created after it.
+**Four neutral numbers, nothing else.** The code keeps a table of limits per user — `user_quotas`: `user_id`, `max_personal_workspaces`, `max_business_workspaces`, `max_bank_connections`, `max_members_per_workspace`. The code attaches no meaning to them beyond the count it makes. A null counter means unbounded for that one, and a user with no row is unbounded on all four.
 
 **It only serves the managed instance.** Checks run only when `MANAGED_INSTANCE` is on (`managed_instance` in `backend/app/core/config.py`, ADR 0045), documented in `.env.example` beside the flag. Off, no code path reads the table and a self-hosted instance behaves exactly as today, which is the ADR 0004 rule.
 
@@ -35,8 +33,6 @@ All three counts leave archived workspaces out: closing a workspace (`archive_wo
 
 **Over a limit**, the route answers `403` with `detail.code = "quota_exceeded"`, naming the counter that filled and its current count and maximum, so a screen can say what happened. The response carries the counter, its count and its maximum, and nothing the operator did not give it as a number.
 
-**The account can read its own numbers (#1972).** `GET /api/quotas/mine` (`backend/app/api/quotas.py`, `usage` in `backend/app/services/quota_service.py`) answers, for the signed-in account only, each bounded counter with its current count and its effective maximum, the same count the gates make. With `MANAGED_INSTANCE` off it answers `enforced: false` and no counters. The screens use it to list the limits in the account menu and to stop before an attempt that would be refused; the server gate stays the one that decides. In a workspace someone else created, the connection and seat limits are the creator's, so the refusal says the limit belongs to the workspace owner. One optional setting, `QUOTA_INFO_URL`, is an operator page explaining the limits: when set, the answer carries it and the messages link to it, and when unset they do not link anywhere.
-
 **The connection count needs one narrow definer function.** `bank_connections` is a covered table — its policy is `workspace_id = app.workspace_id` — so with row security on a request sees only the workspace it is bound to (`bind_workspace`), and a count across all the workspaces a user created would come back short: the ceiling could be dodged by spreading connections over several workspaces. The count therefore gets its own function, `securo_owned_bank_connections(p_user uuid) RETURNS bigint`, built in `setup_statements` in `backend/app/core/row_security.py` the way `securo_row_workspace` and `securo_shared_with_viewer` already are: `STABLE SECURITY DEFINER`, fixed `search_path = pg_catalog`, revoked from `PUBLIC`, granted to the restricted role only, and answering one number and nothing else. With row security off it is an ordinary `SELECT`. The other two counts need no function: `workspaces` carries no `workspace_id`, and `workspace_members` is listed in `NOT_COVERED`, so both are readable whole.
 
 **Only the operator writes the numbers.** A route outside the customer's admin — `/api/operator/quotas`, guarded by the `OPERATOR_TOKEN` setting (unset means the route answers `404`) — upserts a user's four numbers. It cannot be the instance superuser's route: on a managed instance the customer's administrator is a superuser (ADR 0045 says so), and these numbers are the operator's.
@@ -49,7 +45,7 @@ All three counts leave archived workspaces out: closing a workspace (`archive_wo
 
 - The connection count now crosses workspaces on purpose, from inside a definer function that returns a number and nothing else. That is a new privileged read: it is granted to the restricted role alone, its body names one column of one table, and it must never grow into a general lookup — the moment it returns rows instead of a count, it is a hole in the data boundary, not a quota.
 - `workspace_members` and `workspaces` are read whole, as ADR 0045 and the row-security work already accept. The quota reads them only to answer the caller's own count, and it is not a reason to leave either one out of the policy.
-- On a managed instance a user with no row follows the operator's defaults, and is unlimited only when no defaults are set. Setting the defaults, or writing the row when the account is opened, is the operator's job; with neither, a sign-up path hands out an unlimited account.
+- On a managed instance a user with no row is unlimited. Writing the row when the account is opened is the operator's job, and a sign-up path that forgets it hands out an unlimited account.
 - An invited member occupies a seat in the owner's number and frees it when they leave. The invited person's own workspace numbers never count workspaces they were invited into.
 - Deleting a user (ADR 0047) or closing a workspace gives the seats back for free, because every count is derived from the rows and never stored as a counter.
 - Changing what an account may hold is a rewrite of four numbers by the operator: no release, and nothing in the app needs to learn why the numbers changed.

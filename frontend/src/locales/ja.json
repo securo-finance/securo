@@ -2371,9 +2371,9 @@
     "newWallet": "新規ウォレット",
     "editWallet": "ウォレットを編集",
     "deleteWallet": "ウォレットを削除",
-    "reorderWallet": "ドラッグして並べ替え: {{name}}",
-    "moveWalletUp": "上へ移動",
-    "moveWalletDown": "下へ移動",
+    "reorder": "ドラッグして並べ替え: {{name}}",
+    "moveUp": "上へ移動",
+    "moveDown": "下へ移動",
     "walletName": "名前",
     "walletNamePlaceholder": "例: 米国株、長期債券",
     "walletColor": "色",
@@ -4474,15 +4474,15 @@
       "max_assistant_messages_per_month": "今月のアシスタントへのメッセージ"
     },
     "reached": {
-      "max_personal_workspaces": "このアカウントは個人ワークスペースの上限({{maximum}})に達しました。新しく作成するには、いずれかをアーカイブしてください。",
-      "max_business_workspaces": "このアカウントはビジネスワークスペースの上限({{maximum}})に達しました。新しく作成するには、いずれかをアーカイブしてください。",
-      "max_bank_connections": "このアカウントは、作成したワークスペース全体で銀行連携の上限({{maximum}})に達しました。追加するには連携を一つ削除してください。",
-      "max_members_per_workspace": "このワークスペースはメンバーの上限({{maximum}})に達しました。追加するにはメンバーを一人削除してください。",
+      "max_personal_workspaces": "このアカウントは個人ワークスペースの上限({{maximum}})に達しました。新しく作成するには、残りが{{maximum}}未満になるまでワークスペースをアーカイブしてください。",
+      "max_business_workspaces": "このアカウントはビジネスワークスペースの上限({{maximum}})に達しました。新しく作成するには、残りが{{maximum}}未満になるまでワークスペースをアーカイブしてください。",
+      "max_bank_connections": "このアカウントは、作成したワークスペース全体で銀行連携の上限({{maximum}})に達しました。追加するには、残りが{{maximum}}未満になるまで連携を削除してください。",
+      "max_members_per_workspace": "このワークスペースはメンバーの上限({{maximum}})に達しました。追加するには、残りが{{maximum}}未満になるまでメンバーを削除してください。",
       "max_assistant_messages_per_month": "今月のアシスタントへのメッセージ上限 {{maximum}} 件に達しました。翌月の初日に再びリセットされます。"
     },
     "ownerReached": {
-      "max_bank_connections": "このワークスペースの所有者は銀行連携の上限({{maximum}})に達しました。このワークスペースを編集できる人なら誰でも、連携を一つ削除して枠を空けられます。",
-      "max_members_per_workspace": "このワークスペースは所有者のメンバー上限({{maximum}})に達しました。追加するにはメンバーを一人削除する必要があります。"
+      "max_bank_connections": "このワークスペースの所有者は銀行連携の上限({{maximum}})に達しました。このワークスペースを編集できる人なら誰でも連携を削除できます。所有者の連携が{{maximum}}未満になると、新しい連携を追加できます。",
+      "max_members_per_workspace": "このワークスペースは所有者のメンバー上限({{maximum}})に達しました。追加するには、残りが{{maximum}}未満になるまでメンバーを削除する必要があります。"
     },
     "none": "{{label}}:このインスタンスでのこのアカウントの上限は0のため、追加できません。",
     "ownerNone": "{{label}}:このインスタンスでのこのワークスペースの所有者の上限は0のため、追加できません。",

@@ -2373,9 +2373,9 @@
     "newWallet": "Nieuwe portemonnee",
     "editWallet": "Portemonnee bewerken",
     "deleteWallet": "Portemonnee verwijderen",
-    "reorderWallet": "Sleep om {{name}} te verplaatsen",
-    "moveWalletUp": "Omhoog verplaatsen",
-    "moveWalletDown": "Omlaag verplaatsen",
+    "reorder": "Sleep om {{name}} te verplaatsen",
+    "moveUp": "Omhoog verplaatsen",
+    "moveDown": "Omlaag verplaatsen",
     "walletName": "Naam",
     "walletNamePlaceholder": "bijv. Amerikaanse aandelen, vastrentende waarden op lange termijn",
     "walletColor": "Kleur",
@@ -4476,15 +4476,15 @@
       "max_assistant_messages_per_month": "Berichten aan de assistent deze maand"
     },
     "reached": {
-      "max_personal_workspaces": "Dit account heeft zijn limiet van {{maximum}} persoonlijke werkruimtes bereikt. Archiveer er een om een nieuwe aan te maken.",
-      "max_business_workspaces": "Dit account heeft zijn limiet van {{maximum}} zakelijke werkruimtes bereikt. Archiveer er een om een nieuwe aan te maken.",
-      "max_bank_connections": "Dit account heeft zijn limiet van {{maximum}} bankkoppelingen in de werkruimtes die het heeft aangemaakt bereikt. Verwijder een koppeling om een nieuwe toe te voegen.",
-      "max_members_per_workspace": "Deze werkruimte heeft zijn limiet van {{maximum}} leden bereikt. Verwijder een lid om een nieuw lid toe te voegen.",
+      "max_personal_workspaces": "Dit account heeft zijn limiet van {{maximum}} persoonlijke werkruimtes bereikt. Archiveer werkruimtes tot er minder dan {{maximum}} over zijn en maak dan een nieuwe aan.",
+      "max_business_workspaces": "Dit account heeft zijn limiet van {{maximum}} zakelijke werkruimtes bereikt. Archiveer werkruimtes tot er minder dan {{maximum}} over zijn en maak dan een nieuwe aan.",
+      "max_bank_connections": "Dit account heeft zijn limiet van {{maximum}} bankkoppelingen in de werkruimtes die het heeft aangemaakt bereikt. Verwijder koppelingen tot er minder dan {{maximum}} over zijn en voeg dan een nieuwe toe.",
+      "max_members_per_workspace": "Deze werkruimte heeft zijn limiet van {{maximum}} leden bereikt. Verwijder leden tot er minder dan {{maximum}} over zijn en voeg dan een nieuw lid toe.",
       "max_assistant_messages_per_month": "De limiet van {{maximum}} berichten aan de assistent voor deze maand is bereikt. Die begint opnieuw op de eerste dag van volgende maand."
     },
     "ownerReached": {
-      "max_bank_connections": "De eigenaar van deze werkruimte heeft de limiet van {{maximum}} bankkoppelingen bereikt. Iedereen die deze werkruimte kan bewerken, kan een plek vrijmaken door een van de koppelingen te verwijderen.",
-      "max_members_per_workspace": "Deze werkruimte heeft de limiet van {{maximum}} leden van de eigenaar bereikt. Er moet een lid worden verwijderd om een nieuw lid toe te voegen."
+      "max_bank_connections": "De eigenaar van deze werkruimte heeft de limiet van {{maximum}} bankkoppelingen bereikt. Iedereen die deze werkruimte kan bewerken, kan de koppelingen verwijderen; een nieuwe past zodra de eigenaar er minder dan {{maximum}} heeft.",
+      "max_members_per_workspace": "Deze werkruimte heeft de limiet van {{maximum}} leden van de eigenaar bereikt. Om een nieuw lid toe te voegen, moeten leden worden verwijderd tot er minder dan {{maximum}} over zijn."
     },
     "none": "{{label}}: de limiet van dit account op deze instantie is 0, dus er kan niets worden toegevoegd.",
     "ownerNone": "{{label}}: de eigenaar van deze werkruimte heeft op deze instantie een limiet van 0, dus er kan niets worden toegevoegd.",

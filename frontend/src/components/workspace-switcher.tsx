@@ -501,6 +501,13 @@ export function WorkspaceSwitcher({
                   <span className="flex-1">עברית</span>
                   {currentLang === 'he' && <Check size={13} className="text-primary" />}
                 </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => i18n.changeLanguage('zh-CN')}
+                  className="flex items-center gap-2"
+                >
+                  <span className="flex-1">简体中文</span>
+                  {currentLang === 'zh-CN' && <Check size={13} className="text-primary" />}
+                </DropdownMenuItem>
               </DropdownMenuSubContent>
             </DropdownMenuPortal>
           </DropdownMenuSub>

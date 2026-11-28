@@ -65,3 +65,5 @@ Each file here records one decision about how Securo is built: what we chose, wh
 | [0049](0049-hosted-usage-quotas.md) | A managed instance can limit each account with four neutral counters |
 | [0050](0050-instance-settings-leave-a-record.md) | Instance settings an administrator changes leave a record, with no account as its target |
 | [0053](0053-assistant-message-quota.md) | A managed instance can limit each account's assistant messages per month, counting only the instance's model |
+| [0056](0056-operator-quota-defaults.md) | An account with no limits of its own follows the operator's defaults |
+| [0057](0057-account-reads-its-usage-limits.md) | An account can read its own usage limits |
