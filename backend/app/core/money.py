@@ -61,10 +61,10 @@ def max_asset_value() -> Decimal:
     """The largest value `asset_values.amount` holds, read from its column.
 
     The asset columns keep 6 decimals and have their own width — today
-    `Numeric(15, 6)`, 9 integer digits, while the money columns keep 13. The
-    bound is taken from the model instead of written down here so a migration
-    that widens the column (the one in #1951 takes it to `Numeric(19, 6)`)
-    moves it along, without an ordering between the two changes.
+    `Numeric(19, 6)`, 13 integer digits like the money columns, after
+    migration 137 widened it from `Numeric(15, 6)`. The bound is taken from
+    the model instead of written down here so a migration that changes the
+    column moves it along.
     """
     from sqlalchemy import Numeric
 
