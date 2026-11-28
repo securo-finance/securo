@@ -128,11 +128,24 @@ describe('Invested line on the portfolio chart', () => {
     expect(screen.queryByText(t('assets.gainLoss'))).not.toBeInTheDocument()
   })
 
-  it('asks for the active collection wallets only', async () => {
+  it('shows only the active collection wallets in Net invested and Gain/Loss', async () => {
     ui.wallets = ['w2', 'w1']
+    api.assets.portfolioTrend.mockResolvedValue({
+      assets: [
+        { id: 'in-col', name: 'In Collection', type: 'stock', group_id: 'w1' },
+        { id: 'out-col', name: 'Outside', type: 'stock', group_id: 'w3' },
+      ],
+      trend: [{ date: '2026-01-01', 'in-col': 650, 'out-col': 550, _total: 1200 }],
+      total: 1200,
+    })
+    api.assets.portfolioInvested.mockResolvedValue([{ date: '2026-01-01', amount: 500 }])
     renderWithProviders(<AssetsPage />)
 
     await waitFor(() => expect(api.assets.portfolioInvested).toHaveBeenCalledWith(['w2', 'w1']))
+    const invested = await screen.findByText(t('assets.chartInvested'), { selector: 'p' })
+    expect(invested).toHaveTextContent('$500.00')
+    const gain = screen.getByText(t('assets.gainLoss'), { selector: 'p' })
+    expect(gain).toHaveTextContent('+$150.00')
   })
 
   it('does not ask for invested points when the collection has no wallets', async () => {
