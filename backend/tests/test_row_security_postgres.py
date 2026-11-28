@@ -233,6 +233,31 @@ async def test_shared_expense_is_read_only_for_the_member(stack):
             )).rowcount == 0
 
 
+async def test_the_quota_counts_connections_across_workspaces_and_reads_nothing_else(stack):
+    """ADR 0049: bound to one workspace, the request still learns how many
+    connections every workspace its user created holds, and only that number."""
+    from app.services import quota_service
+
+    await _seed(stack)
+    user = uuid.uuid4()
+    async with _unchecked(stack) as session:
+        await session.execute(TABLES["workspaces"].update().values(created_by_user_id=user))
+    connections = TABLES["bank_connections"]
+    async with stack.bound(A)() as session:
+        assert await session.scalar(select(func.count()).select_from(connections)) == 1
+        assert await quota_service.count_bank_connections(session, user) == 2
+        assert await quota_service.count_bank_connections(session, uuid.uuid4()) == 0
+    async with _unchecked(stack) as session:
+        await session.execute(TABLES["workspaces"].update().where(TABLES["workspaces"].c.id == B).values(is_archived=True))
+    async with stack.bound(A)() as session:
+        assert await quota_service.count_bank_connections(session, user) == 1
+    async with stack.owner() as session:
+        public = await session.scalar(text(
+            "SELECT has_function_privilege('public', 'securo_owned_bank_connections(uuid)', 'EXECUTE')"
+        ))
+        assert public is False
+
+
 async def test_jobs_run_one_workspace_at_a_time(stack):
     await _seed(stack)
     seen = []

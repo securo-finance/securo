@@ -31,6 +31,7 @@ from app.core.money import (
     check_zero_rate,
 )
 from app.core.shared_scope import (
+    bound_workspace_id,
     in_bound_workspace,
     invited_group_member_ids,
     viewer_member_predicate,
@@ -74,6 +75,7 @@ from app.services.viewer_currency import viewer_currency
 from app.services._query_filters import (
     CATEGORY_LINE,
     any_line_in,
+    any_unmapped_pnl_line,
     counts_as_pnl,
     counts_as_user_pnl_row,
     is_not_ignored,
@@ -81,14 +83,40 @@ from app.services._query_filters import (
     is_transfer_row,
     line_category_id,
     line_primary_or_amount,
+    matching_foreign_category_ids,
     reporting_date_col,
     reporting_date_value,
+    resolve_viewer_category_map,
     with_category_lines,
     member_shares,
 )
 from app.services.recurring_transaction_service import _advance_date
 from app.services import goal_allocation_service
 from app.services.goal_service import _lock_pocket_account
+
+
+async def _candidate_foreign_category_ids(
+    session: AsyncSession,
+    workspace_id: uuid.UUID,
+    foreign_tx_ids_subq,
+) -> set[uuid.UUID]:
+    """Distinct foreign category IDs referenced by cross-workspace rows
+    reachable in the current query scope (plain or split category lines)."""
+    if bound_workspace_id() is not None or foreign_tx_ids_subq is None:
+        return set()
+    rows = await session.execute(
+        with_category_lines(
+            select(line_category_id()).select_from(Transaction)
+        )
+        .where(
+            Transaction.id.in_(foreign_tx_ids_subq),
+            Transaction.workspace_id != workspace_id,
+            in_bound_workspace(Transaction.workspace_id),
+            line_category_id().is_not(None),
+        )
+        .distinct()
+    )
+    return {cid for cid in rows.scalars().all() if cid is not None}
 
 
 async def _ensure_category_in_workspace(
@@ -426,6 +454,7 @@ async def get_transactions(
     )
     if transaction_ids:
         base_query = base_query.where(Transaction.id.in_(transaction_ids))
+    foreign_tx_ids_subq = None
     if use_group_scope:
         from app.models.group import GroupMember
         from app.models.transaction_split import TransactionSplit
@@ -436,6 +465,7 @@ async def get_transactions(
             .where(TransactionSplit.group_member_id.in_(member_ids_subq))
             .distinct()
         )
+        foreign_tx_ids_subq = tx_ids_subq
         # A group can hold splits of expenses from other workspaces; a token
         # bound to one workspace still reads only that workspace's.
         base_query = base_query.where(
@@ -474,6 +504,7 @@ async def get_transactions(
             )
             .distinct()
         )
+        foreign_tx_ids_subq = shared_tx_ids
         base_query = base_query.where(
             or_(
                 Transaction.workspace_id == workspace_id,
@@ -495,19 +526,96 @@ async def get_transactions(
     filter_category_ids = list(category_ids) if category_ids else (
         [category_id] if category_id else []
     )
+    cand_foreign_cat_ids: Optional[set[uuid.UUID]] = None
+    foreign_cat_ids: set[uuid.UUID] = set()
     if filter_category_ids:
-        base_query = base_query.where(
-            or_(
-                Transaction.category_id.in_(filter_category_ids),
-                any_line_in(filter_category_ids),
-            )
+        cand_foreign_cat_ids = await _candidate_foreign_category_ids(
+            session, workspace_id, foreign_tx_ids_subq
         )
+        if cand_foreign_cat_ids:
+            foreign_cat_ids = await matching_foreign_category_ids(
+                session,
+                filter_category_ids,
+                workspace_id,
+                candidate_foreign_cat_ids=cand_foreign_cat_ids,
+            )
+            # Also allow drilling down directly on an unmapped foreign category
+            # slice emitted by Dashboard or Income & Expenses reports.
+            direct_foreign_candidates = set(filter_category_ids) & cand_foreign_cat_ids
+            if direct_foreign_candidates:
+                direct_resolved = await resolve_viewer_category_map(
+                    session, direct_foreign_candidates, workspace_id
+                )
+                foreign_cat_ids |= {
+                    cid
+                    for cid in direct_foreign_candidates
+                    if direct_resolved.get(cid) is None
+                }
+        cat_clauses = [
+            and_(
+                Transaction.workspace_id == workspace_id,
+                or_(
+                    Transaction.category_id.in_(filter_category_ids),
+                    any_line_in(filter_category_ids),
+                ),
+            )
+        ]
+        if foreign_cat_ids:
+            cat_clauses.append(
+                and_(
+                    Transaction.workspace_id != workspace_id,
+                    or_(
+                        Transaction.category_id.in_(foreign_cat_ids),
+                        any_line_in(foreign_cat_ids),
+                    ),
+                )
+            )
+        base_query = base_query.where(or_(*cat_clauses))
     if payee_id:
         base_query = base_query.where(Transaction.payee_id == payee_id)
     if uncategorized and shared_as_uncategorized:
         # The reports' view of uncategorized: this workspace's rows without
         # a category, plus the viewer's shares of expenses from other
-        # workspaces, whose categories this workspace can't show.
+        # workspaces whose categories (or any PnL category line) do not map
+        # to any category in this workspace.
+        if cand_foreign_cat_ids is None:
+            cand_foreign_cat_ids = await _candidate_foreign_category_ids(
+                session, workspace_id, foreign_tx_ids_subq
+            )
+        mapped_foreign_ids: set[uuid.UUID] = set()
+        if cand_foreign_cat_ids:
+            viewer_cat_ids = (
+                await session.execute(
+                    select(Category.id).where(Category.workspace_id == workspace_id)
+                )
+            ).scalars().all()
+            if viewer_cat_ids:
+                mapped_foreign_ids = await matching_foreign_category_ids(
+                    session,
+                    viewer_cat_ids,
+                    workspace_id,
+                    candidate_foreign_cat_ids=cand_foreign_cat_ids,
+                )
+        plain_unmapped = (
+            and_(
+                Transaction.has_category_lines.is_(False),
+                or_(
+                    Transaction.category_id.is_(None),
+                    Transaction.category_id.notin_(mapped_foreign_ids),
+                ),
+            )
+            if mapped_foreign_ids
+            else Transaction.has_category_lines.is_(False)
+        )
+        split_unmapped = and_(
+            Transaction.has_category_lines.is_(True),
+            any_unmapped_pnl_line(mapped_foreign_ids),
+        )
+        foreign_uncat_clause = and_(
+            Transaction.workspace_id != workspace_id,
+            Transaction.type == "debit",
+            or_(plain_unmapped, split_unmapped),
+        )
         base_query = base_query.where(
             or_(
                 and_(
@@ -515,7 +623,7 @@ async def get_transactions(
                     Transaction.category_id.is_(None),
                     Transaction.has_category_lines.is_(False),
                 ),
-                and_(Transaction.workspace_id != workspace_id, Transaction.type == "debit"),
+                foreign_uncat_clause,
             ),
             Transaction.transfer_pair_id.is_(None),
         )
@@ -899,7 +1007,8 @@ async def get_transactions(
             ).select_from(Transaction)
         ).where(Transaction.id.in_(select(base_query.subquery().c.id)))
         if filter_category_ids:
-            parts_query = parts_query.where(line_category_id().in_(filter_category_ids))
+            all_filter_cat_ids = list(set(filter_category_ids) | foreign_cat_ids)
+            parts_query = parts_query.where(line_category_id().in_(all_filter_cat_ids))
         if txn_type == "transfer":
             # The rows qualify by holding a transfer part; their income and
             # expense parts are not what this filter asks about.
@@ -1022,6 +1131,35 @@ async def get_transactions(
         # by `group_id`, a linked member sees the owner's transactions
         # and the frontend needs `is_shared` to lock them from edits.
         await _tag_shared_view(session, transactions, user_id, workspace_id)
+        # Remap foreign categories on cross-workspace rows to equivalent
+        # viewer-workspace categories (without dirtying SQLAlchemy objects).
+        foreign_cat_ids_to_remap: set[uuid.UUID] = set()
+        for tx in transactions:
+            if tx.workspace_id != workspace_id:
+                if tx.category_id is not None:
+                    foreign_cat_ids_to_remap.add(tx.category_id)
+                for line in tx.category_lines or ():
+                    if line.category_id is not None:
+                        foreign_cat_ids_to_remap.add(line.category_id)
+        if foreign_cat_ids_to_remap:
+            cat_map = await resolve_viewer_category_map(
+                session, foreign_cat_ids_to_remap, workspace_id
+            )
+            for tx in transactions:
+                if tx.workspace_id != workspace_id:
+                    if tx.category_id is not None:
+                        mapped_cat = cat_map.get(tx.category_id)
+                        if mapped_cat is not None:
+                            set_committed_value(tx, "category", mapped_cat)
+                            set_committed_value(tx, "category_id", mapped_cat.id)
+                    if tx.category_lines:
+                        for line in tx.category_lines:
+                            mapped_line_cat = cat_map.get(line.category_id)
+                            if mapped_line_cat is not None:
+                                set_committed_value(line, "category", mapped_line_cat)
+                                set_committed_value(
+                                    line, "category_id", mapped_line_cat.id
+                                )
         # Paybacks recorded on these rows, so reopening one shows it.
         # Only on the viewer's own rows: another member's row could point at
         # a group the viewer can't see.
@@ -1044,13 +1182,14 @@ async def get_transactions(
         if filter_category_ids:
             # The part of each split row inside the filter, so a drill-down
             # footer computed from the rows matches the report it came from.
+            all_filter_cat_ids = list(set(filter_category_ids) | foreign_cat_ids)
             split_ids = [tx.id for tx in transactions if tx.has_category_lines]
             if split_ids:
                 matched_rows = await session.execute(
                     select(CATEGORY_LINE.transaction_id, func.sum(CATEGORY_LINE.amount))
                     .where(
                         CATEGORY_LINE.transaction_id.in_(split_ids),
-                        CATEGORY_LINE.category_id.in_(filter_category_ids),
+                        CATEGORY_LINE.category_id.in_(all_filter_cat_ids),
                     )
                     .group_by(CATEGORY_LINE.transaction_id)
                 )
@@ -2431,10 +2570,16 @@ async def _apply_update_to_row(
                         paired_date_changed = update_data[key] != paired_tx.date
                     setattr(paired_tx, key, update_data[key])
             if paired_amount_changed or paired_date_changed:
-                _drop_typed_primary(paired_tx)
+                if paired_amount_changed:
+                    _drop_typed_primary(paired_tx)
+                paired_user_id = paired_tx.user_id or user_id
                 await stamp_primary_amount(
-                    session, paired_tx.user_id or user_id, paired_tx, restamp_account=True
+                    session, paired_user_id, paired_tx, restamp_account=True
                 )
+                if await _restore_typed_primary(session, paired_tx, paired_user_id):
+                    await stamp_account_amount(
+                        session, paired_tx, typed_primary=True, recompute=False
+                    )
             if paired_date_changed:
                 paired_account = await session.get(Account, paired_tx.account_id)
                 apply_effective_date(paired_tx, paired_account)
@@ -3296,19 +3441,19 @@ async def _restamp_posted_leg(
 ) -> None:
     """Stamp a leg that was just posted today.
 
-    When posting moved the date, the account amount follows it and a
-    conversion typed for the old date no longer holds (ADR 0031). A leg
-    already dated today changed nothing a conversion depends on, so what the
-    user typed stays.
+    Posting only moves the date, so a conversion the owner typed stays
+    (ADR 0039). A derived primary stamp still follows today's rate, and when
+    the date moved the account leg restamps too before any typed figure is
+    put back on an owner-currency account.
     """
     date_changed = transaction.date != previous_date
-    if date_changed:
-        _drop_typed_primary(transaction)
     await stamp_primary_amount(
         session, transaction.user_id, transaction, restamp_account=date_changed
     )
-    if not date_changed:
-        await _restore_typed_primary(session, transaction, transaction.user_id)
+    if await _restore_typed_primary(session, transaction, transaction.user_id):
+        await stamp_account_amount(
+            session, transaction, typed_primary=True, recompute=False
+        )
 
 
 async def toggle_ignore_transaction(
