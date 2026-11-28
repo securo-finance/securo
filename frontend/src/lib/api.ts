@@ -91,6 +91,7 @@ import type {
   WorkspaceKind,
   WorkspaceMember,
   WorkspaceRole,
+  ArchivedAssetCounts,
   Asset,
   AssetGroup,
   AssetImportPreview,
@@ -1677,6 +1678,10 @@ export const assets = {
       params: { include_archived: includeArchived },
       ...workspaceHeader(workspaceId),
     })
+    return data
+  },
+  archivedCount: async (): Promise<ArchivedAssetCounts> => {
+    const { data } = await api.get('/assets/archived-count')
     return data
   },
   get: async (id: string): Promise<Asset> => {

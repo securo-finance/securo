@@ -6,7 +6,7 @@ import { renderWithProviders, t } from '@/test/utils'
 import type { AssetGroup } from '@/types'
 
 const api = vi.hoisted(() => ({
-  assets: { list: vi.fn(), portfolioTrend: vi.fn() },
+  assets: { list: vi.fn(), archivedCount: vi.fn(), portfolioTrend: vi.fn() },
   assetGroups: { list: vi.fn(), reorder: vi.fn() },
   accounts: { list: vi.fn() },
   currencies: { list: vi.fn() },
@@ -70,6 +70,7 @@ beforeEach(() => {
   vi.clearAllMocks()
   workspace.canWrite = true
   api.assets.list.mockResolvedValue([])
+  api.assets.archivedCount.mockResolvedValue({ count: 0, by_wallet: {}, ungrouped: 0 })
   api.assets.portfolioTrend.mockResolvedValue({ assets: [], trend: [], total: 0 })
   api.assetGroups.list.mockResolvedValue(WALLETS)
   api.accounts.list.mockResolvedValue([])

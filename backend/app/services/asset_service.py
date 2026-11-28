@@ -29,6 +29,7 @@ from app.providers.market_price import (
     get_market_price_provider,
 )
 from app.schemas.asset import (
+    ArchivedAssetCountsRead,
     AssetCreate,
     AssetUpdate,
     AssetValueCreate,
@@ -810,6 +811,28 @@ async def get_assets(
         reads.append(_asset_to_read(asset, latest, count, tx_counts.get(asset.id, 0)))
     await _fill_closed_positions(session, workspace_id, assets, reads)
     return reads
+
+
+async def get_archived_asset_counts(
+    session: AsyncSession, workspace_id: uuid.UUID
+) -> ArchivedAssetCountsRead:
+    """Count archived holdings in a workspace, broken down by wallet."""
+    result = await session.execute(
+        select(Asset.group_id, func.count(Asset.id))
+        .where(Asset.workspace_id == workspace_id, Asset.is_archived.is_(True))
+        .group_by(Asset.group_id)
+    )
+    by_wallet: dict[str, int] = {}
+    ungrouped = 0
+    total = 0
+    for group_id, row_count in result.all():
+        n = int(row_count)
+        total += n
+        if group_id is None:
+            ungrouped += n
+        else:
+            by_wallet[str(group_id)] = n
+    return ArchivedAssetCountsRead(count=total, by_wallet=by_wallet, ungrouped=ungrouped)
 
 
 async def _fill_closed_positions(
