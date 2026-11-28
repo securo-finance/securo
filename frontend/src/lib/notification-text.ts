@@ -1,7 +1,7 @@
 import type { TFunction } from 'i18next'
-import { ArchiveX, CalendarX2, Flag, HandCoins, Link2, PiggyBank, ReceiptText, Unplug, Users, type LucideIcon } from 'lucide-react'
+import { ArchiveX, CalendarX2, Flag, Gauge, HandCoins, Link2, PiggyBank, ReceiptText, Unplug, Users, type LucideIcon } from 'lucide-react'
 import { forwardArrow } from '@/lib/format'
-import type { AppNotification, AppNotificationKind } from '@/types'
+import type { AppNotification, AppNotificationKind, QuotaCounterExcess } from '@/types'
 
 export const NOTIFICATION_ICONS: Record<AppNotificationKind, LucideIcon> = {
   connection_error: Unplug,
@@ -13,6 +13,14 @@ export const NOTIFICATION_ICONS: Record<AppNotificationKind, LucideIcon> = {
   group_expense: Users,
   group_settlement: HandCoins,
   backup_failed: ArchiveX,
+  quota_excess: Gauge,
+}
+
+/** One line per limit the account is above: where it stands and how many to remove to fit. */
+export function quotaExcessLines(t: TFunction, counters: QuotaCounterExcess[]): string[] {
+  return counters
+    .filter((c) => c.excess > 0)
+    .map((c) => t(`quota.counter.${c.counter}`, { current: c.current, maximum: c.maximum ?? 0, excess: c.excess }))
 }
 
 /** Whether this bundle has the words and the icon of a kind. */
@@ -104,6 +112,16 @@ export function describeNotification(
         title: t('notifications.backup.title'),
         detail: t('notifications.backup.detail', { date: date(item.data.failed_at) }),
       }
+    case 'quota_excess': {
+      const { data } = item
+      const lines = quotaExcessLines(t, data.counters).join(' · ')
+      return {
+        title: data.in_effect
+          ? t('quota.title')
+          : t('quota.titleFrom', { date: date(data.effective_at) }),
+        detail: data.sync_paused ? `${t('quota.syncPaused')} ${lines}` : lines,
+      }
+    }
     // A kind newer than this bundle: said without its words, so the rest still shows.
     default:
       return { title: t('notifications.title'), detail: '' }
@@ -130,6 +148,11 @@ export function notificationTarget(item: AppNotification): string {
       return `/groups/${item.data.group_id}`
     case 'backup_failed':
       return '/backups'
+    case 'quota_excess':
+      // Connections are removed from the accounts page; the other limits from the workspace menu.
+      return item.data.counters.some((c) => c.counter === 'max_bank_connections' && c.excess > 0)
+        ? '/accounts'
+        : '/notifications'
     // A kind newer than this bundle.
     default:
       return '/notifications'

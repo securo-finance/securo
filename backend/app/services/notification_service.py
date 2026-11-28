@@ -25,6 +25,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.app_clock import app_timezone, app_today
+from app.core.config import get_settings
 from app.core.feature_flags import feature_flag
 from app.models.bank_connection import BankConnection
 from app.models.budget import Budget
@@ -52,6 +53,7 @@ INVOICE_OVERDUE: NotificationKind = "invoice_overdue"
 BACKUP_FAILED: NotificationKind = "backup_failed"
 GROUP_EXPENSE: NotificationKind = "group_expense"
 GROUP_SETTLEMENT: NotificationKind = "group_settlement"
+QUOTA_EXCESS: NotificationKind = "quota_excess"
 
 #: Kinds that only inform: told once, where it happens, and done once read.
 _EVENTS: tuple[NotificationKind, ...] = (GROUP_EXPENSE, GROUP_SETTLEMENT)
@@ -63,6 +65,8 @@ class _Kind:
     module: Optional[ModuleId] = None
     #: Whether only who can act on it hears of it, viewers left out.
     writers: bool = True
+    #: Only on a managed instance (MANAGED_INSTANCE); elsewhere it never exists.
+    managed: bool = False
 
 
 _KINDS: dict[NotificationKind, _Kind] = {
@@ -75,6 +79,7 @@ _KINDS: dict[NotificationKind, _Kind] = {
     GROUP_EXPENSE: _Kind(ModuleId.SPLIT_GROUPS, writers=False),
     GROUP_SETTLEMENT: _Kind(ModuleId.SPLIT_GROUPS, writers=False),
     BACKUP_FAILED: _Kind(),
+    QUOTA_EXCESS: _Kind(managed=True),
 }
 
 #: Failures only the person can end; the others may pass on their own, so they
@@ -201,10 +206,13 @@ async def mark_all_read(session: AsyncSession, workspace_id: uuid.UUID, user_id:
 def kinds_for(workspace: Workspace, *, can_write: bool) -> list[NotificationKind]:
     """The kinds someone with this access can get in this workspace."""
     modules = resolve_modules(workspace)
+    managed = get_settings().managed_instance
     return [
         kind
         for kind, spec in _KINDS.items()
-        if (spec.module is None or spec.module.value in modules) and (can_write or not spec.writers)
+        if (spec.module is None or spec.module.value in modules)
+        and (can_write or not spec.writers)
+        and (managed or not spec.managed)
     ]
 
 
@@ -870,6 +878,48 @@ async def _check_backups(session: AsyncSession, workspace: Workspace) -> None:
     await _reconcile(session, workspace.id, BACKUP_FAILED, wanted)
 
 
+# --- Limits of a managed instance (ADR 0055) ---------------------------------
+
+
+async def _check_quota(session: AsyncSession, workspace: Workspace) -> None:
+    """The account that created the workspace is above a number and the operator set a date.
+
+    Told to that account alone, when the date is set and again when it comes
+    (`newest` moves from "0" to "1"); over once the account fits or the date is
+    cleared. The numbers are the ones `check_fit` gives the operator.
+    """
+    from app.services import quota_service
+
+    owner = workspace.created_by_user_id
+    wanted: list[_Wanted] = []
+    if quota_service.enforced() and owner is not None:
+        standing = await quota_service.standing(session, owner)
+        if standing is not None and standing.effective_at is not None and not standing.fit.allowed:
+            data = {
+                "effective_at": standing.effective_at.isoformat(),
+                "in_effect": standing.in_effect,
+                "sync_paused": standing.sync_paused,
+                "counters": [
+                    {"counter": f.counter, "current": f.current, "maximum": f.target, "excess": f.excess}
+                    for f in standing.fit.counters
+                    if f.excess > 0
+                ],
+            }
+            user = await session.get(User, owner)
+            if user is not None and user.is_active:
+                wanted = [_Wanted(owner, QUOTA_EXCESS, data, newest="1" if standing.in_effect else "0")]
+    await _reconcile(session, workspace.id, QUOTA_EXCESS, wanted)
+
+
+async def quota_changed(session: AsyncSession, user_id: uuid.UUID) -> None:
+    """Tell the account now, in every workspace it created, after the operator writes. Does not commit."""
+    rows = await session.execute(
+        select(Workspace).where(Workspace.created_by_user_id == user_id, Workspace.is_archived.is_(False))
+    )
+    for workspace in rows.scalars().all():
+        await _check_quota(session, workspace)
+
+
 # --- Scheduled --------------------------------------------------------------
 
 _CHECKS = (
@@ -881,6 +931,7 @@ _CHECKS = (
     _check_invoices,
     _check_group_events,
     _check_backups,
+    _check_quota,
 )
 
 

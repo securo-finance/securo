@@ -4829,6 +4829,9 @@ async def sync_connection(
         raise ProviderNotConfiguredError("This connection is synced by its plugin.")
     if provider is None and not connection.credentials:
         raise ValueError("Credentials not found")
+    # Past the operator's date and above the connection number (ADR 0055):
+    # nothing is fetched, nothing is disconnected.
+    await quota_service.check_sync(session, workspace_id)
 
     # Authorization is workspace-scoped and happens before this service is
     # called. Data imported from a bank connection, however, must always be

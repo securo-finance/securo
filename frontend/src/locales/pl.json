@@ -4582,6 +4582,10 @@
       "backup_failed": {
         "label": "Kopie zapasowe",
         "hint": "Zaplanowana kopia zapasowa nie powiodła się."
+      },
+      "quota_excess": {
+        "label": "Limity konta",
+        "hint": "Twoje konto przekracza jeden z limitów."
       }
     },
     "group": {
@@ -4619,5 +4623,17 @@
     "failed": "Nie udało się zapisać decyzji",
     "replaced": "Administrator wysłał nową prośbę. Sprawdź nowy adres przed zaakceptowaniem",
     "withdrawn": "Prośba została wycofana. Twoje konto zachowuje obecny adres"
+  },
+  "quota": {
+    "title": "Twoje konto przekracza limity",
+    "titleFrom": "Twoje konto przekracza limity od {{date}}",
+    "syncPaused": "Synchronizacja bankowa jest wstrzymana, dopóki nie zmieścisz się w limicie.",
+    "hint": "Nic nie jest usuwane za Ciebie. Gdy zmieścisz się w limitach, wszystko działa jak wcześniej.",
+    "counter": {
+      "max_bank_connections": "Połączenia bankowe: {{current}} z {{maximum}}, usuń {{excess}}",
+      "max_personal_workspaces": "Przestrzenie osobiste: {{current}} z {{maximum}}, usuń {{excess}}",
+      "max_business_workspaces": "Przestrzenie firmowe: {{current}} z {{maximum}}, usuń {{excess}}",
+      "max_members_per_workspace": "Członkowie w przestrzeni: {{current}} z {{maximum}}, usuń {{excess}}"
+    }
   }
 }

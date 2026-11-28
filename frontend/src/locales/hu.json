@@ -4420,6 +4420,10 @@
       "backup_failed": {
         "label": "Biztonsági mentések",
         "hint": "Egy ütemezett biztonsági mentés sikertelen."
+      },
+      "quota_excess": {
+        "label": "Fiókkorlátok",
+        "hint": "A fiókod túllépi az egyik korlátját."
       }
     },
     "group": {
@@ -4457,5 +4461,17 @@
     "failed": "A döntését nem sikerült rögzíteni",
     "replaced": "Az adminisztrátor új kérést küldött. Elfogadás előtt ellenőrizze az új címet",
     "withdrawn": "A kérést visszavonták. A fiókja megtartja a jelenlegi címét"
+  },
+  "quota": {
+    "title": "A fiókod túllépi a korlátait",
+    "titleFrom": "A fiókod {{date}} naptól túllépi a korlátait",
+    "syncPaused": "A banki szinkronizálás szünetel, amíg a korláton belülre nem kerülsz.",
+    "hint": "Semmit sem törlünk helyetted. Amint a korlátokon belül vagy, minden úgy működik, mint korábban.",
+    "counter": {
+      "max_bank_connections": "Banki kapcsolatok: {{current}} / {{maximum}}, távolíts el {{excess}} darabot",
+      "max_personal_workspaces": "Személyes munkaterületek: {{current}} / {{maximum}}, távolíts el {{excess}} darabot",
+      "max_business_workspaces": "Üzleti munkaterületek: {{current}} / {{maximum}}, távolíts el {{excess}} darabot",
+      "max_members_per_workspace": "Tagok egy munkaterületen: {{current}} / {{maximum}}, távolíts el {{excess}} főt"
+    }
   }
 }

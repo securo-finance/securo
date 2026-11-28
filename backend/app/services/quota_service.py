@@ -252,3 +252,104 @@ async def set_quota(session: AsyncSession, user_id: uuid.UUID, values: Mapping[s
     quota = await session.get(UserQuota, user_id, populate_existing=True)
     assert quota is not None
     return quota
+
+
+# --- An excess that stays (ADR 0055) -----------------------------------------
+
+
+def _aware(moment: datetime) -> datetime:
+    return moment if moment.tzinfo else moment.replace(tzinfo=timezone.utc)
+
+
+def in_effect(quota: Optional[UserQuota], now: Optional[datetime] = None) -> bool:
+    """Whether the operator's date for this account has come."""
+    if quota is None or quota.excess_effective_at is None:
+        return False
+    return _aware(quota.excess_effective_at) <= (now or datetime.now(timezone.utc))
+
+
+class SyncPausedError(Exception):
+    """Sync was asked of a workspace whose creator holds more connections than their number."""
+
+    def __init__(self, current: int, maximum: int) -> None:
+        super().__init__("Sync is paused while this account is above its bank connection limit.")
+        self.current = current
+        self.maximum = maximum
+
+    def detail(self) -> dict:
+        return {
+            "code": "quota_sync_paused",
+            "counter": BANK_CONNECTIONS,
+            "current": self.current,
+            "maximum": self.maximum,
+            "message": str(self),
+        }
+
+
+async def check_sync(
+    session: AsyncSession, workspace_id: uuid.UUID, now: Optional[datetime] = None
+) -> None:
+    """Refuse a sync while the workspace's creator is above the connection number past the date.
+
+    Derived from the rows every time, so removing a connection ends the pause
+    with no one acting. Nothing is disconnected or deleted.
+    """
+    if not enforced():
+        return
+    owner = await _workspace_owner(session, workspace_id)
+    if owner is None:
+        return
+    quota = await get_quota(session, owner)
+    if quota is None or quota.max_bank_connections is None or not in_effect(quota, now):
+        return
+    current = await count_bank_connections(session, owner)
+    if current > quota.max_bank_connections:
+        raise SyncPausedError(current, quota.max_bank_connections)
+
+
+async def set_excess_date(
+    session: AsyncSession, user_id: uuid.UUID, moment: Optional[datetime]
+) -> UserQuota:
+    """Write the date after which an excess has an effect (None: never), in one upsert.
+
+    Leaves the four numbers as they are. An account with no row gets one with
+    every number unbounded, so the date alone changes nothing until a number is set.
+    """
+    row: dict[str, object] = {
+        "excess_effective_at": _aware(moment) if moment is not None else None,
+        "updated_at": datetime.now(timezone.utc),
+    }
+    insert = pg_insert if session.get_bind().dialect.name == "postgresql" else sqlite_insert
+    statement = insert(UserQuota).values(user_id=user_id, **row)
+    await session.execute(statement.on_conflict_do_update(index_elements=[UserQuota.user_id], set_=row))
+    quota = await session.get(UserQuota, user_id, populate_existing=True)
+    assert quota is not None
+    return quota
+
+
+@dataclass(frozen=True)
+class Standing:
+    """Where an account stands against its own numbers, as the person sees it."""
+
+    effective_at: Optional[datetime]
+    in_effect: bool
+    sync_paused: bool
+    fit: FitCheck
+
+
+async def standing(
+    session: AsyncSession, user_id: uuid.UUID, now: Optional[datetime] = None
+) -> Optional[Standing]:
+    """None when the account has no numbers: nothing to be above."""
+    quota = await get_quota(session, user_id)
+    if quota is None:
+        return None
+    fit = await check_fit(session, user_id, {c: getattr(quota, c) for c in COUNTERS})
+    effective = in_effect(quota, now)
+    connections = next(f for f in fit.counters if f.counter == BANK_CONNECTIONS)
+    return Standing(
+        effective_at=_aware(quota.excess_effective_at) if quota.excess_effective_at else None,
+        in_effect=effective,
+        sync_paused=effective and connections.excess > 0,
+        fit=fit,
+    )

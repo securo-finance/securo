@@ -4435,6 +4435,10 @@
       "backup_failed": {
         "label": "Copias de seguridad",
         "hint": "Una copia de seguridad programada falló."
+      },
+      "quota_excess": {
+        "label": "Límites de la cuenta",
+        "hint": "Tu cuenta supera uno de sus límites."
       }
     },
     "group": {
@@ -4472,5 +4476,17 @@
     "failed": "No se pudo registrar su decisión",
     "replaced": "El administrador envió una nueva solicitud. Revisa la nueva dirección antes de aceptar",
     "withdrawn": "La solicitud fue retirada. Tu cuenta mantiene su dirección actual"
+  },
+  "quota": {
+    "title": "Tu cuenta supera sus límites",
+    "titleFrom": "Tu cuenta supera sus límites a partir del {{date}}",
+    "syncPaused": "La sincronización bancaria está en pausa hasta que estés dentro del límite.",
+    "hint": "No se elimina nada por ti. En cuanto estés dentro de los límites, todo vuelve a funcionar como antes.",
+    "counter": {
+      "max_bank_connections": "Conexiones bancarias: {{current}} de {{maximum}}, elimina {{excess}}",
+      "max_personal_workspaces": "Espacios personales: {{current}} de {{maximum}}, elimina {{excess}}",
+      "max_business_workspaces": "Espacios de empresa: {{current}} de {{maximum}}, elimina {{excess}}",
+      "max_members_per_workspace": "Miembros en un espacio: {{current}} de {{maximum}}, elimina {{excess}}"
+    }
   }
 }

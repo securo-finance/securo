@@ -18,7 +18,7 @@ from app.core.row_security import maker_for_row, workspace_makers
 from app.models.bank_connection import BankConnection
 from app.plugins.provider import PLUGIN_PROVIDER_PREFIX
 from app.providers.base import ProviderNotConfiguredError
-from app.services import connection_service
+from app.services import connection_service, quota_service
 from app.services.connection_service import SyncOutcome
 
 logger = logging.getLogger(__name__)
@@ -246,6 +246,11 @@ async def _sync_stale(session_maker) -> dict:
                         settings, datetime.now(timezone.utc)
                     ),
                 )
+            except quota_service.SyncPausedError:
+                # The account is above its connection number past the
+                # operator's date (ADR 0055). Not a failure: no backoff.
+                logger.info("Skipping connection %s: sync paused by the account's limit", conn_id)
+                continue
             except ProviderNotConfiguredError as exc:
                 # Actionable one-liner instead of a buried traceback: this
                 # means THIS process is missing the provider's configuration.
@@ -354,8 +359,11 @@ async def _sync_one_celery(connection_id: str, user_id: str) -> None:
                 logger.warning("Connection %s has no workspace; skipping sync", connection_id)
                 return
             async with use_timezone(session, workspace_id, fresh=True):
-                await connection_service.sync_connection(
-                    session, conn_uuid, workspace_id, uuid.UUID(user_id)
-                )
+                try:
+                    await connection_service.sync_connection(
+                        session, conn_uuid, workspace_id, uuid.UUID(user_id)
+                    )
+                except quota_service.SyncPausedError:
+                    logger.info("Skipping connection %s: sync paused by the account's limit", connection_id)
     finally:
         await engine.dispose()

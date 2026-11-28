@@ -7,6 +7,7 @@ import type { NumberFormat, DateFormat } from '@/lib/format'
 import type {
   AppNotificationKind,
   AppNotificationList,
+  QuotaStanding,
   NotificationPreference,
   User,
   AdminUser,
@@ -2397,6 +2398,19 @@ export const notifications = {
   },
   markAllRead: async (): Promise<void> => {
     await api.post('/notifications/read-all', undefined, readOnly)
+  },
+}
+
+// Where the account stands against its own limits; only a managed instance answers.
+export const quotas = {
+  mine: async (): Promise<QuotaStanding | null> => {
+    try {
+      const { data } = await api.get('/quotas/mine')
+      return data
+    } catch (error) {
+      if (axios.isAxiosError(error) && error.response?.status === 404) return null
+      throw error
+    }
   },
 }
 

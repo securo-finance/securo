@@ -4,6 +4,7 @@
 - Date: 2026-11-27
 - Origin: #1959 (a ceiling per account on a managed instance with open sign-up)
 - Extends: [0045](0045-managed-instance.md)
+- Extended by [0055](0055-quota-excess-pauses-sync.md): an excess that stays pauses sync, only after a date the operator sets.
 
 ## Context
 

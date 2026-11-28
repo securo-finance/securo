@@ -4435,6 +4435,10 @@
       "backup_failed": {
         "label": "Sauvegardes",
         "hint": "Une sauvegarde planifiée a échoué."
+      },
+      "quota_excess": {
+        "label": "Limites du compte",
+        "hint": "Votre compte dépasse l'une de ses limites."
       }
     },
     "group": {
@@ -4472,5 +4476,17 @@
     "failed": "Impossible d'enregistrer votre décision",
     "replaced": "L'administrateur a envoyé une nouvelle demande. Vérifiez la nouvelle adresse avant d'accepter",
     "withdrawn": "La demande a été retirée. Votre compte conserve son adresse actuelle"
+  },
+  "quota": {
+    "title": "Votre compte dépasse ses limites",
+    "titleFrom": "Votre compte dépasse ses limites à partir du {{date}}",
+    "syncPaused": "La synchronisation bancaire est en pause jusqu'à ce que vous soyez dans la limite.",
+    "hint": "Rien n'est supprimé à votre place. Dès que vous êtes dans les limites, tout fonctionne comme avant.",
+    "counter": {
+      "max_bank_connections": "Connexions bancaires : {{current}} sur {{maximum}}, retirez-en {{excess}}",
+      "max_personal_workspaces": "Espaces personnels : {{current}} sur {{maximum}}, retirez-en {{excess}}",
+      "max_business_workspaces": "Espaces professionnels : {{current}} sur {{maximum}}, retirez-en {{excess}}",
+      "max_members_per_workspace": "Membres dans un espace : {{current}} sur {{maximum}}, retirez-en {{excess}}"
+    }
   }
 }

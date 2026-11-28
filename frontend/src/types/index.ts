@@ -2797,6 +2797,29 @@ export type AppNotificationKind =
   | 'group_expense'
   | 'group_settlement'
   | 'backup_failed'
+  | 'quota_excess'
+
+export type QuotaCounter =
+  | 'max_personal_workspaces'
+  | 'max_business_workspaces'
+  | 'max_bank_connections'
+  | 'max_members_per_workspace'
+
+export interface QuotaCounterExcess {
+  counter: QuotaCounter
+  current: number
+  maximum: number | null
+  excess: number
+}
+
+/** The signed-in account against its own limits (managed instance only). */
+export interface QuotaStanding {
+  above: boolean
+  effective_at: string | null
+  in_effect: boolean
+  sync_paused: boolean
+  counters: QuotaCounterExcess[]
+}
 
 export interface NotificationPreference {
   kind: AppNotificationKind
@@ -2860,6 +2883,10 @@ export type AppNotification = {
       }
     }
   | { kind: 'backup_failed'; data: { failed_at: string } }
+  | {
+      kind: 'quota_excess'
+      data: { effective_at: string; in_effect: boolean; sync_paused: boolean; counters: QuotaCounterExcess[] }
+    }
 )
 
 export interface AppNotificationList {

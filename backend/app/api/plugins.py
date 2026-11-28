@@ -18,6 +18,7 @@ from app.core.workspace_context import WorkspaceContext, current_workspace, curr
 from app.plugins import connections, index, logos, runner, service
 from app.plugins.index import PluginIndexError
 from app.plugins.manifest import parse_manifest
+from app.services import quota_service
 from app.services.access_token_service import AccessTokenError
 from app.plugins.sync import SyncPlanChanged
 from app.schemas.plugin import (
@@ -281,7 +282,11 @@ async def sync_connection(
     integration = await connections.integration_of(session, connection)
     if integration is not None and not integration.syncs:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="This connection doesn't sync; it runs its routines")
-    return await _read(session, await connections.sync(session, connection))
+    try:
+        synced = await connections.sync(session, connection)
+    except quota_service.SyncPausedError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=exc.detail())
+    return await _read(session, synced)
 
 
 @router.post("/connections/{connection_id}/routines/{routine}/run", response_model=PluginConnectionRead)

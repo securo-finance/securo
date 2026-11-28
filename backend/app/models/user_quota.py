@@ -26,6 +26,12 @@ class UserQuota(Base):
     max_business_workspaces: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     max_bank_connections: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     max_members_per_workspace: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    # From this moment an account still above a number feels it (ADR 0055):
+    # sync pauses while it holds more bank connections than its number. Null
+    # means an excess has no effect, as ADR 0049 first had it.
+    excess_effective_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),

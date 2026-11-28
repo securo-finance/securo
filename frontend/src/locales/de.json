@@ -4421,6 +4421,10 @@
       "backup_failed": {
         "label": "Sicherungen",
         "hint": "Eine geplante Sicherung ist fehlgeschlagen."
+      },
+      "quota_excess": {
+        "label": "Kontolimits",
+        "hint": "Ihr Konto liegt über einem seiner Limits."
       }
     },
     "group": {
@@ -4458,5 +4462,17 @@
     "failed": "Ihre Entscheidung konnte nicht gespeichert werden",
     "replaced": "Der Administrator hat eine neue Anfrage gesendet. Prüfe die neue Adresse, bevor du annimmst",
     "withdrawn": "Die Anfrage wurde zurückgezogen. Dein Konto behält seine aktuelle Adresse"
+  },
+  "quota": {
+    "title": "Ihr Konto liegt über seinen Limits",
+    "titleFrom": "Ihr Konto liegt ab dem {{date}} über seinen Limits",
+    "syncPaused": "Die Banksynchronisierung ist pausiert, bis Sie wieder innerhalb des Limits sind.",
+    "hint": "Es wird nichts für Sie entfernt. Sobald Sie innerhalb der Limits sind, funktioniert alles wie vorher.",
+    "counter": {
+      "max_bank_connections": "Bankverbindungen: {{current}} von {{maximum}}, {{excess}} entfernen",
+      "max_personal_workspaces": "Private Arbeitsbereiche: {{current}} von {{maximum}}, {{excess}} entfernen",
+      "max_business_workspaces": "Geschäftliche Arbeitsbereiche: {{current}} von {{maximum}}, {{excess}} entfernen",
+      "max_members_per_workspace": "Mitglieder in einem Arbeitsbereich: {{current}} von {{maximum}}, {{excess}} entfernen"
+    }
   }
 }

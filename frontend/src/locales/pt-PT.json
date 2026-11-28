@@ -4434,6 +4434,10 @@
       "backup_failed": {
         "label": "Cópias de segurança",
         "hint": "Uma cópia de segurança agendada falhou."
+      },
+      "quota_excess": {
+        "label": "Limites da conta",
+        "hint": "A sua conta está acima de um dos limites."
       }
     },
     "group": {
@@ -4471,5 +4475,17 @@
     "failed": "Não foi possível registar a sua decisão",
     "replaced": "O administrador enviou um novo pedido. Verifique o novo endereço antes de aceitar",
     "withdrawn": "O pedido foi retirado. A sua conta mantém o endereço atual"
+  },
+  "quota": {
+    "title": "A sua conta está acima dos limites",
+    "titleFrom": "A sua conta está acima dos limites a partir de {{date}}",
+    "syncPaused": "A sincronização bancária está em pausa até ficar dentro do limite.",
+    "hint": "Nada é removido por si. Assim que estiver dentro dos limites, tudo volta a funcionar como antes.",
+    "counter": {
+      "max_bank_connections": "Ligações bancárias: {{current}} de {{maximum}}, remova {{excess}}",
+      "max_personal_workspaces": "Espaços pessoais: {{current}} de {{maximum}}, remova {{excess}}",
+      "max_business_workspaces": "Espaços empresariais: {{current}} de {{maximum}}, remova {{excess}}",
+      "max_members_per_workspace": "Membros num espaço: {{current}} de {{maximum}}, remova {{excess}}"
+    }
   }
 }

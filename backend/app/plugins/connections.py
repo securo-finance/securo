@@ -542,7 +542,12 @@ async def sync(session: AsyncSession, connection: PluginConnection) -> PluginCon
 
     One sync per connection at a time (the schedule, "sync now" and the first
     sync can meet): a second one returns the connection as it is.
+
+    Raises `quota_service.SyncPausedError` before the plugin runs while the
+    workspace's creator is above the connection number past the operator's
+    date (ADR 0055); the connection is left as it is.
     """
+    await quota_service.check_sync(session, connection.workspace_id)
     lock = f"plugin-sync:{connection.id}"
     if not await _acquire(lock):
         return connection

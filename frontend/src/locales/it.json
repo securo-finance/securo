@@ -4435,6 +4435,10 @@
       "backup_failed": {
         "label": "Backup",
         "hint": "Un backup pianificato non è riuscito."
+      },
+      "quota_excess": {
+        "label": "Limiti dell'account",
+        "hint": "Il tuo account supera uno dei suoi limiti."
       }
     },
     "group": {
@@ -4472,5 +4476,17 @@
     "failed": "Impossibile registrare la tua decisione",
     "replaced": "L'amministratore ha inviato una nuova richiesta. Controlla il nuovo indirizzo prima di accettare",
     "withdrawn": "La richiesta è stata ritirata. Il tuo account mantiene l'indirizzo attuale"
+  },
+  "quota": {
+    "title": "Il tuo account supera i suoi limiti",
+    "titleFrom": "Il tuo account supera i suoi limiti dal {{date}}",
+    "syncPaused": "La sincronizzazione bancaria è in pausa finché non rientri nel limite.",
+    "hint": "Non viene rimosso nulla al posto tuo. Appena rientri nei limiti, tutto funziona come prima.",
+    "counter": {
+      "max_bank_connections": "Connessioni bancarie: {{current}} di {{maximum}}, rimuovine {{excess}}",
+      "max_personal_workspaces": "Spazi personali: {{current}} di {{maximum}}, rimuovine {{excess}}",
+      "max_business_workspaces": "Spazi aziendali: {{current}} di {{maximum}}, rimuovine {{excess}}",
+      "max_members_per_workspace": "Membri in uno spazio: {{current}} di {{maximum}}, rimuovine {{excess}}"
+    }
   }
 }

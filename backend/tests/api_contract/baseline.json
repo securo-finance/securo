@@ -188,6 +188,7 @@
   "GET /api/public/invoices/{token}": 404,
   "GET /api/public/invoices/{token}/logo": 404,
   "GET /api/public/invoices/{token}/pdf": 404,
+  "GET /api/quotas/mine": 401,
   "GET /api/reconciliation/history": 401,
   "GET /api/reconciliation/rules": 401,
   "GET /api/reconciliation/rules/export": 401,
@@ -408,6 +409,7 @@
   "PUT /api/mortgage-payments/{payment_id}": 401,
   "PUT /api/notifications/preferences/{kind}/{channel}": 401,
   "PUT /api/operator/quotas/{user_id}": 404,
+  "PUT /api/operator/quotas/{user_id}/excess-date": 404,
   "PUT /api/plugins/connections/{connection_id}/values": 404,
   "PUT /api/reconciliation/rules/{node}/order": 401,
   "PUT /api/ui/layouts/{surface}": 401
@@ -684,6 +686,7 @@
   "GET /api/public/invoices/{token}": 404,
   "GET /api/public/invoices/{token}/logo": 404,
   "GET /api/public/invoices/{token}/pdf": 404,
+  "GET /api/quotas/mine": 404,
   "GET /api/reconciliation/history": 200,
   "GET /api/reconciliation/rules": 200,
   "GET /api/reconciliation/rules/export": 200,
@@ -903,6 +906,7 @@
   "PUT /api/mortgage-payments/{payment_id}": 404,
   "PUT /api/notifications/preferences/{kind}/{channel}": 204,
   "PUT /api/operator/quotas/{user_id}": 404,
+  "PUT /api/operator/quotas/{user_id}/excess-date": 404,
   "PUT /api/plugins/connections/{connection_id}/values": 404,
   "PUT /api/reconciliation/rules/{node}/order": 400,
   "PUT /api/ui/layouts/{surface}": 200
@@ -1096,6 +1100,7 @@
   "PUT /api/agents/{agent_id}/tools": 404,
   "PUT /api/mortgage-payments/{payment_id}": 422,
   "PUT /api/operator/quotas/{user_id}": 404,
+  "PUT /api/operator/quotas/{user_id}/excess-date": 404,
   "PUT /api/plugins/connections/{connection_id}/values": 404
  },
  "viewer": {
@@ -1320,6 +1325,7 @@
   "PUT /api/mortgage-payments/{payment_id}": 403,
   "PUT /api/notifications/preferences/{kind}/{channel}": 204,
   "PUT /api/operator/quotas/{user_id}": 404,
+  "PUT /api/operator/quotas/{user_id}/excess-date": 404,
   "PUT /api/plugins/connections/{connection_id}/values": 404,
   "PUT /api/reconciliation/rules/{node}/order": 403,
   "PUT /api/ui/layouts/{surface}": 200

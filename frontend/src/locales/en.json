@@ -4420,6 +4420,10 @@
       "backup_failed": {
         "label": "Backups",
         "hint": "A scheduled backup failed."
+      },
+      "quota_excess": {
+        "label": "Account limits",
+        "hint": "Your account is above one of its limits."
       }
     },
     "group": {
@@ -4457,5 +4461,17 @@
     "failed": "Could not record your decision",
     "replaced": "The administrator sent a new request. Check the new address before accepting",
     "withdrawn": "The request was withdrawn. Your account keeps its current address"
+  },
+  "quota": {
+    "title": "Your account is above its limits",
+    "titleFrom": "Your account is above its limits from {{date}}",
+    "syncPaused": "Bank sync is paused until you are within your limit.",
+    "hint": "Nothing is removed for you. Once you are within your limits, everything works as before.",
+    "counter": {
+      "max_bank_connections": "Bank connections: {{current}} of {{maximum}}, remove {{excess}}",
+      "max_personal_workspaces": "Personal workspaces: {{current}} of {{maximum}}, remove {{excess}}",
+      "max_business_workspaces": "Business workspaces: {{current}} of {{maximum}}, remove {{excess}}",
+      "max_members_per_workspace": "Members in a workspace: {{current}} of {{maximum}}, remove {{excess}}"
+    }
   }
 }

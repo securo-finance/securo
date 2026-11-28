@@ -40,6 +40,7 @@ import { cn } from '@/lib/utils'
 import { APP_VERSION } from '@/lib/build-info'
 import { ShellLogo } from '@/components/shell-logo'
 import { UpdateAvailableBanner } from '@/components/update-available-banner'
+import { QuotaExcessBanner } from '@/components/quota-excess-banner'
 import { UpdateAvailableDialog } from '@/components/update-available-dialog'
 import { WorkspaceSwitcher } from '@/components/workspace-switcher'
 import { navItems, visibleNavItems, type NavItem } from '@/lib/nav-items'
@@ -613,6 +614,7 @@ export function AppLayout() {
           </div>
 
           <div className={cn(desktopSidebarCollapsed && 'lg:hidden')}>
+            <QuotaExcessBanner />
             <UpdateAvailableBanner onOpen={() => setUpdateDialogOpen(true)} />
           </div>
 

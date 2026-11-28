@@ -4422,6 +4422,10 @@
       "backup_failed": {
         "label": "Back-ups",
         "hint": "Een geplande back-up is mislukt."
+      },
+      "quota_excess": {
+        "label": "Accountlimieten",
+        "hint": "Je account zit boven een van zijn limieten."
       }
     },
     "group": {
@@ -4459,5 +4463,17 @@
     "failed": "Je beslissing kon niet worden opgeslagen",
     "replaced": "De beheerder heeft een nieuw verzoek gestuurd. Controleer het nieuwe adres voordat je accepteert",
     "withdrawn": "Het verzoek is ingetrokken. Je account behoudt het huidige adres"
+  },
+  "quota": {
+    "title": "Je account zit boven zijn limieten",
+    "titleFrom": "Je account zit vanaf {{date}} boven zijn limieten",
+    "syncPaused": "Banksynchronisatie is gepauzeerd tot je binnen de limiet zit.",
+    "hint": "Er wordt niets voor je verwijderd. Zodra je binnen de limieten zit, werkt alles weer zoals voorheen.",
+    "counter": {
+      "max_bank_connections": "Bankkoppelingen: {{current}} van {{maximum}}, verwijder er {{excess}}",
+      "max_personal_workspaces": "Persoonlijke werkruimtes: {{current}} van {{maximum}}, verwijder er {{excess}}",
+      "max_business_workspaces": "Zakelijke werkruimtes: {{current}} van {{maximum}}, verwijder er {{excess}}",
+      "max_members_per_workspace": "Leden in een werkruimte: {{current}} van {{maximum}}, verwijder er {{excess}}"
+    }
   }
 }
