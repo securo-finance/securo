@@ -32,6 +32,71 @@ def token_overlap(a: Optional[str], b: Optional[str]) -> float:
     return len(tokens_a & tokens_b) / max(len(tokens_a), len(tokens_b))
 
 
+#: Shorter than this, a name run together is not distinctive enough to be
+#: looked for inside a statement line: "ai" or "tv" occur everywhere.
+_COMPACT_MIN = 5
+
+#: What a containment hit is worth. Every word of the shorter side found
+#: in the longer one is strong evidence, but weaker than the two reading
+#: the same, so it sits below 1.0 and an identical pair still ranks first
+#: when a caller sorts several candidates by score.
+_CONTAINED_WEIGHT = 0.9
+
+
+def description_match(a: Optional[str], b: Optional[str]) -> float:
+    """How alike a hand-typed name and a statement line are, either way round.
+
+    `token_overlap` divides by the longer side, which is right for two
+    statement lines and wrong for the pair recurring matching actually
+    sees: a person types *Netflix* and the bank prints
+    `NETFLIX.COM 866-579-7172 CA`. One word shared out of four is 0.25,
+    `PAYPAL *SPOTIFY*P47A2033189708 NY` against *Spotify* is 0.0 because
+    the asterisks glue the name to its neighbours, and so every real
+    charge failed the 0.6 bar and sat next to its own placeholder as a
+    duplicate.
+
+    So three readings are taken and the best one kept:
+
+      - the plain overlap, unchanged, so two statement lines still grade
+        as they always did;
+      - **containment**: the share of the shorter side's words found in
+        the longer side, as a whole word or (for words of four letters
+        or more) as the start of one, the same rule `names_account`
+        trusts; a two-word name needs both words, so *Google One* does
+        not take a `GOOGLE *YOUTUBE TV` charge of the same value;
+      - the name run together as a substring of the line run together,
+        for banks that print `YOUTUBETV` as one word.
+
+    Words are normalised first (case, accents, punctuation), so *Disney+*
+    reads as *disney* and `MIKO.AI` as two words. Order does not matter:
+    the placeholder is the movement in one lookup and the candidate in
+    the other.
+    """
+    overlap = token_overlap(a, b)
+    words_a, words_b = normalize_words(a), normalize_words(b)
+    if not words_a or not words_b:
+        return overlap
+    shorter, longer = (
+        (words_a, words_b) if len(words_a) <= len(words_b) else (words_b, words_a)
+    )
+    wanted = set(shorter)
+    printed = set(longer)
+    hits = sum(
+        1
+        for word in wanted
+        if word in printed
+        or (
+            len(word) >= _PREFIX_MIN
+            and any(token.startswith(word) for token in printed)
+        )
+    )
+    contained = hits / len(wanted)
+    compact = "".join(shorter)
+    if len(compact) >= _COMPACT_MIN and compact in "".join(longer):
+        contained = 1.0
+    return max(overlap, contained * _CONTAINED_WEIGHT)
+
+
 #: Words that name a kind of account rather than a particular one.
 #: Without this list "Conta Corrente" would match every statement line
 #: carrying the word *conta*, which in Brazil is most of them, and the

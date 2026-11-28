@@ -89,6 +89,51 @@ def test_description_similarity():
     assert token_overlap(None, "x") == 0.0
 
 
+def test_description_match_reads_bank_descriptors():
+    """The pair recurring matching really sees: a name a person typed and a
+    line the bank printed. Every one of these is a real descriptor shape
+    that scored below the 0.6 bar under plain token overlap and left a
+    pending placeholder standing beside the posted charge."""
+    from app.services.text_similarity import description_match
+
+    linked = [
+        ("Netflix", "NETFLIX.COM 866-579-7172 CA"),
+        ("Spotify", "PAYPAL *SPOTIFY*P47A2033189708 NY"),
+        ("Anthropic", "ANTHROPIC* CLAUDE SUSAN FRANCISCO CA"),
+        ("Microsoft", "MICROSOFT MSBILL.INFO"),
+        ("Starlink", "AplPay STARLINK INTEHAWTHORNE CA"),
+        ("OpenAI ChatGPT", "OPENAI *CHATGPT SUBSSAN FRANCISCO CA"),
+        ("Disney+", "DISNEY PLUS BURBANK CA"),
+        ("Apple", "APPLE.COM/BILL INTERNET CHARGE CA"),
+        ("Google One", "GOOGLE*GOOGLE ONE GO G.CO HELPPAY#"),
+        ("Miko AI", "AplPay MIKO.AI PLEASANTON CA"),
+        ("YouTube TV", "GOOGLE *YOUTUBETV G.CO/HELPPAY# CA"),
+    ]
+    for name, printed in linked:
+        assert description_match(name, printed) >= 0.6, (name, printed)
+        # Either way round: the placeholder is the movement in one lookup
+        # and the candidate in the other.
+        assert description_match(printed, name) >= 0.6, (printed, name)
+
+    # Same value, same account, same week: told apart by the name.
+    refused = [
+        ("Apple", "TESLA, INC. SUBSCRIPPALO ALTO CA"),
+        ("Microsoft", "KINDLE SVCS*537BG1WC888-802-3080 WA"),
+        ("Google One", "OCULUS **OCULUS *DYMMENLO PARK CA"),
+        ("Google One", "GOOGLE *YOUTUBE TV G.CO/HELPPAY# CA"),
+        ("Netflix", "Spotify"),
+        ("Gas", "GASOLINA POSTO IPIRANGA"),
+    ]
+    for name, printed in refused:
+        assert description_match(name, printed) < 0.6, (name, printed)
+
+    # Two statement lines grade exactly as before, and an identical pair
+    # still outranks a contained one.
+    assert description_match("Netflix Sub", "netflix sub") == 1.0
+    assert description_match("NETFLIX ASSINATURA", "NETFLIX ASSINATURA MENSAL") < 1.0
+    assert description_match(None, "x") == 0.0
+
+
 def test_match_window():
     """The windows are policy now rather than a function, and they are the
     same windows.
@@ -232,6 +277,37 @@ async def test_find_placeholder_matches_generated_row(session, test_user, test_w
         date(2025, 1, 11), "NETFLIX SUBSCRIPTION",
     )
     assert found is not None and found.id == placeholder.id
+
+
+@pytest.mark.asyncio
+async def test_find_placeholder_matches_bank_descriptor(session, test_user, test_workspace, account):
+    """The placeholder carries the bill's own short name; the charge arrives
+    as the bank printed it. Same value a day apart on the same account must
+    still find the placeholder, or the charge lands as a second row."""
+    bill = await _make_bill(session, test_workspace, test_user, account, description="Netflix")
+    placeholder = await _add_tx(
+        session, test_user, test_workspace, account,
+        date=date(2025, 1, 10), source="recurring", external_id=None,
+        recurring_transaction_id=bill.id, description="Netflix",
+    )
+    # A same-value charge from somebody else sits in the window too; it is
+    # not a placeholder and must not be returned.
+    await _add_tx(
+        session, test_user, test_workspace, account,
+        date=date(2025, 1, 9), source="sync", external_id="ext-tesla",
+        description="TESLA, INC. SUBSCRIPPALO ALTO CA",
+    )
+    found = await rms.find_placeholder_for_incoming(
+        session, account.id, Decimal("39.90"), "BRL", "debit",
+        date(2025, 1, 11), "NETFLIX.COM 866-579-7172 CA",
+    )
+    assert found is not None and found.id == placeholder.id
+
+    unrelated = await rms.find_placeholder_for_incoming(
+        session, account.id, Decimal("39.90"), "BRL", "debit",
+        date(2025, 1, 11), "KINDLE SVCS*537BG1WC888-802-3080 WA",
+    )
+    assert unrelated is None
 
 
 @pytest.mark.asyncio
