@@ -4685,14 +4685,14 @@
       "max_members_per_workspace": "Členové na pracovní prostor"
     },
     "reached": {
-      "max_personal_workspaces": "Tento účet dosáhl limitu osobních pracovních prostorů ({{maximum}}). Archivujte jeden a vytvořte další.",
-      "max_business_workspaces": "Tento účet dosáhl limitu firemních pracovních prostorů ({{maximum}}). Archivujte jeden a vytvořte další.",
-      "max_bank_connections": "Tento účet dosáhl limitu bankovních připojení ({{maximum}}) v pracovních prostorech, které vytvořil. Odeberte připojení a přidejte další.",
-      "max_members_per_workspace": "Tento pracovní prostor dosáhl limitu členů ({{maximum}}). Odeberte člena a přidejte dalšího."
+      "max_personal_workspaces": "Tento účet dosáhl limitu osobních pracovních prostorů ({{maximum}}). Archivujte pracovní prostory, dokud jich nezůstane méně než {{maximum}}, a pak vytvořte další.",
+      "max_business_workspaces": "Tento účet dosáhl limitu firemních pracovních prostorů ({{maximum}}). Archivujte pracovní prostory, dokud jich nezůstane méně než {{maximum}}, a pak vytvořte další.",
+      "max_bank_connections": "Tento účet dosáhl limitu bankovních připojení ({{maximum}}) v pracovních prostorech, které vytvořil. Odeberte připojení, dokud jich nezůstane méně než {{maximum}}, a pak přidejte další.",
+      "max_members_per_workspace": "Tento pracovní prostor dosáhl limitu členů ({{maximum}}). Odeberte členy, dokud jich nezůstane méně než {{maximum}}, a pak přidejte dalšího."
     },
     "ownerReached": {
-      "max_bank_connections": "Vlastník tohoto pracovního prostoru dosáhl limitu bankovních připojení ({{maximum}}). Kdokoli, kdo může tento pracovní prostor upravovat, může uvolnit místo odebráním jednoho z jeho připojení.",
-      "max_members_per_workspace": "Tento pracovní prostor dosáhl limitu členů svého vlastníka ({{maximum}}). Pro přidání dalšího je třeba odebrat člena."
+      "max_bank_connections": "Vlastník tohoto pracovního prostoru dosáhl limitu bankovních připojení ({{maximum}}). Kdokoli, kdo může tento pracovní prostor upravovat, může odebírat jeho připojení; nové se vejde, až bude mít vlastník méně než {{maximum}}.",
+      "max_members_per_workspace": "Tento pracovní prostor dosáhl limitu členů svého vlastníka ({{maximum}}). Pro přidání dalšího je třeba odebírat členy, dokud jich nezůstane méně než {{maximum}}."
     },
     "none": "{{label}}: limit tohoto účtu na této instanci je 0, takže nelze nic přidat.",
     "ownerNone": "{{label}}: vlastník tohoto pracovního prostoru má na této instanci limit 0, takže nelze nic přidat.",

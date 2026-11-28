@@ -4669,14 +4669,14 @@
       "max_members_per_workspace": "Členovia na pracovný priestor"
     },
     "reached": {
-      "max_personal_workspaces": "Tento účet dosiahol limit osobných pracovných priestorov ({{maximum}}). Archivujte jeden a vytvorte ďalší.",
-      "max_business_workspaces": "Tento účet dosiahol limit firemných pracovných priestorov ({{maximum}}). Archivujte jeden a vytvorte ďalší.",
-      "max_bank_connections": "Tento účet dosiahol limit bankových pripojení ({{maximum}}) v pracovných priestoroch, ktoré vytvoril. Odstráňte pripojenie a pridajte ďalšie.",
-      "max_members_per_workspace": "Tento pracovný priestor dosiahol limit členov ({{maximum}}). Odstráňte člena a pridajte ďalšieho."
+      "max_personal_workspaces": "Tento účet dosiahol limit osobných pracovných priestorov ({{maximum}}). Archivujte pracovné priestory, kým ich nezostane menej ako {{maximum}}, a potom vytvorte ďalší.",
+      "max_business_workspaces": "Tento účet dosiahol limit firemných pracovných priestorov ({{maximum}}). Archivujte pracovné priestory, kým ich nezostane menej ako {{maximum}}, a potom vytvorte ďalší.",
+      "max_bank_connections": "Tento účet dosiahol limit bankových pripojení ({{maximum}}) v pracovných priestoroch, ktoré vytvoril. Odstraňujte pripojenia, kým ich nezostane menej ako {{maximum}}, a potom pridajte ďalšie.",
+      "max_members_per_workspace": "Tento pracovný priestor dosiahol limit členov ({{maximum}}). Odstraňujte členov, kým ich nezostane menej ako {{maximum}}, a potom pridajte ďalšieho."
     },
     "ownerReached": {
-      "max_bank_connections": "Vlastník tohto pracovného priestoru dosiahol limit bankových pripojení ({{maximum}}). Ktokoľvek, kto môže tento pracovný priestor upravovať, môže uvoľniť miesto odstránením jedného z jeho pripojení.",
-      "max_members_per_workspace": "Tento pracovný priestor dosiahol limit členov svojho vlastníka ({{maximum}}). Na pridanie ďalšieho treba odstrániť člena."
+      "max_bank_connections": "Vlastník tohto pracovného priestoru dosiahol limit bankových pripojení ({{maximum}}). Ktokoľvek, kto môže tento pracovný priestor upravovať, môže odstraňovať jeho pripojenia; nové sa zmestí, keď bude mať vlastník menej ako {{maximum}}.",
+      "max_members_per_workspace": "Tento pracovný priestor dosiahol limit členov svojho vlastníka ({{maximum}}). Na pridanie ďalšieho treba odstraňovať členov, kým ich nezostane menej ako {{maximum}}."
     },
     "none": "{{label}}: limit tohto účtu na tejto inštancii je 0, takže nie je možné nič pridať.",
     "ownerNone": "{{label}}: vlastník tohto pracovného priestoru má na tejto inštancii limit 0, takže nie je možné nič pridať.",

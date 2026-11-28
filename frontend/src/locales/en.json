@@ -4473,14 +4473,14 @@
       "max_members_per_workspace": "Members per workspace"
     },
     "reached": {
-      "max_personal_workspaces": "This account has reached its limit of {{maximum}} personal workspaces. Archive one to create another.",
-      "max_business_workspaces": "This account has reached its limit of {{maximum}} business workspaces. Archive one to create another.",
-      "max_bank_connections": "This account has reached its limit of {{maximum}} bank connections across the workspaces it created. Remove a connection to add another.",
-      "max_members_per_workspace": "This workspace has reached its limit of {{maximum}} members. Remove a member to add another."
+      "max_personal_workspaces": "This account has reached its limit of {{maximum}} personal workspaces. Archive workspaces until fewer than {{maximum}} are left, then create another.",
+      "max_business_workspaces": "This account has reached its limit of {{maximum}} business workspaces. Archive workspaces until fewer than {{maximum}} are left, then create another.",
+      "max_bank_connections": "This account has reached its limit of {{maximum}} bank connections across the workspaces it created. Remove connections until fewer than {{maximum}} are left, then add another.",
+      "max_members_per_workspace": "This workspace has reached its limit of {{maximum}} members. Remove members until fewer than {{maximum}} are left, then add another."
     },
     "ownerReached": {
-      "max_bank_connections": "This workspace's owner has reached their limit of {{maximum}} bank connections. Anyone who can edit this workspace can free a place by removing one of its connections.",
-      "max_members_per_workspace": "This workspace has reached its owner's limit of {{maximum}} members. A member has to be removed to add another."
+      "max_bank_connections": "This workspace's owner has reached their limit of {{maximum}} bank connections. Anyone who can edit this workspace can remove its connections; a new one fits once the owner has fewer than {{maximum}}.",
+      "max_members_per_workspace": "This workspace has reached its owner's limit of {{maximum}} members. Members have to be removed until fewer than {{maximum}} are left to add another."
     },
     "none": "{{label}}: this account's limit is 0 on this instance, so none can be added.",
     "ownerNone": "{{label}}: this workspace's owner has a limit of 0 on this instance, so none can be added.",

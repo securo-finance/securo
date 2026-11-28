@@ -4488,14 +4488,14 @@
       "max_members_per_workspace": "Membri per spazio di lavoro"
     },
     "reached": {
-      "max_personal_workspaces": "Questo account ha raggiunto il limite di {{maximum}} spazi di lavoro personali. Archiviane uno per crearne un altro.",
-      "max_business_workspaces": "Questo account ha raggiunto il limite di {{maximum}} spazi di lavoro aziendali. Archiviane uno per crearne un altro.",
-      "max_bank_connections": "Questo account ha raggiunto il limite di {{maximum}} connessioni bancarie negli spazi di lavoro che ha creato. Rimuovi una connessione per aggiungerne un'altra.",
-      "max_members_per_workspace": "Questo spazio di lavoro ha raggiunto il limite di {{maximum}} membri. Rimuovi un membro per aggiungerne un altro."
+      "max_personal_workspaces": "Questo account ha raggiunto il limite di {{maximum}} spazi di lavoro personali. Archivia spazi di lavoro finché ne restano meno di {{maximum}}, poi creane un altro.",
+      "max_business_workspaces": "Questo account ha raggiunto il limite di {{maximum}} spazi di lavoro aziendali. Archivia spazi di lavoro finché ne restano meno di {{maximum}}, poi creane un altro.",
+      "max_bank_connections": "Questo account ha raggiunto il limite di {{maximum}} connessioni bancarie negli spazi di lavoro che ha creato. Rimuovi connessioni finché ne restano meno di {{maximum}}, poi aggiungine un'altra.",
+      "max_members_per_workspace": "Questo spazio di lavoro ha raggiunto il limite di {{maximum}} membri. Rimuovi membri finché ne restano meno di {{maximum}}, poi aggiungine un altro."
     },
     "ownerReached": {
-      "max_bank_connections": "Il proprietario di questo spazio di lavoro ha raggiunto il limite di {{maximum}} connessioni bancarie. Chi può modificare questo spazio di lavoro può liberare un posto rimuovendo una delle sue connessioni.",
-      "max_members_per_workspace": "Questo spazio di lavoro ha raggiunto il limite di {{maximum}} membri del suo proprietario. Bisogna rimuovere un membro per aggiungerne un altro."
+      "max_bank_connections": "Il proprietario di questo spazio di lavoro ha raggiunto il limite di {{maximum}} connessioni bancarie. Chi può modificare questo spazio di lavoro può rimuoverne le connessioni; una nuova entra quando il proprietario ne ha meno di {{maximum}}.",
+      "max_members_per_workspace": "Questo spazio di lavoro ha raggiunto il limite di {{maximum}} membri del suo proprietario. Per aggiungerne un altro bisogna rimuovere membri finché ne restano meno di {{maximum}}."
     },
     "none": "{{label}}: il limite di questo account su questa istanza è 0, quindi non se ne possono aggiungere.",
     "ownerNone": "{{label}}: il proprietario di questo spazio di lavoro ha un limite di 0 su questa istanza, quindi non se ne possono aggiungere.",

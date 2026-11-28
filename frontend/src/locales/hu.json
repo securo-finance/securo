@@ -4473,14 +4473,14 @@
       "max_members_per_workspace": "Tagok munkaterületenként"
     },
     "reached": {
-      "max_personal_workspaces": "Ez a fiók elérte a személyes munkaterületek korlátját ({{maximum}}). Archiváljon egyet, hogy újat hozhasson létre.",
-      "max_business_workspaces": "Ez a fiók elérte az üzleti munkaterületek korlátját ({{maximum}}). Archiváljon egyet, hogy újat hozhasson létre.",
-      "max_bank_connections": "Ez a fiók elérte a banki kapcsolatok korlátját ({{maximum}}) az általa létrehozott munkaterületeken. Távolítson el egy kapcsolatot, hogy újat adhasson hozzá.",
-      "max_members_per_workspace": "Ez a munkaterület elérte a tagok korlátját ({{maximum}}). Távolítson el egy tagot, hogy újat adhasson hozzá."
+      "max_personal_workspaces": "Ez a fiók elérte a személyes munkaterületek korlátját ({{maximum}}). Archiváljon munkaterületeket, amíg kevesebb nem marad, mint {{maximum}}, majd hozzon létre újat.",
+      "max_business_workspaces": "Ez a fiók elérte az üzleti munkaterületek korlátját ({{maximum}}). Archiváljon munkaterületeket, amíg kevesebb nem marad, mint {{maximum}}, majd hozzon létre újat.",
+      "max_bank_connections": "Ez a fiók elérte a banki kapcsolatok korlátját ({{maximum}}) az általa létrehozott munkaterületeken. Távolítson el kapcsolatokat, amíg kevesebb nem marad, mint {{maximum}}, majd adjon hozzá újat.",
+      "max_members_per_workspace": "Ez a munkaterület elérte a tagok korlátját ({{maximum}}). Távolítson el tagokat, amíg kevesebb nem marad, mint {{maximum}}, majd adjon hozzá újat."
     },
     "ownerReached": {
-      "max_bank_connections": "A munkaterület tulajdonosa elérte a banki kapcsolatok korlátját ({{maximum}}). Bárki, aki szerkesztheti ezt a munkaterületet, helyet szabadíthat fel az egyik kapcsolatának eltávolításával.",
-      "max_members_per_workspace": "Ez a munkaterület elérte a tulajdonosa tagkorlátját ({{maximum}}). Új tag hozzáadásához el kell távolítani egy tagot."
+      "max_bank_connections": "A munkaterület tulajdonosa elérte a banki kapcsolatok korlátját ({{maximum}}). Bárki, aki szerkesztheti ezt a munkaterületet, eltávolíthatja a kapcsolatait; új akkor fér el, ha a tulajdonosnak kevesebb van, mint {{maximum}}.",
+      "max_members_per_workspace": "Ez a munkaterület elérte a tulajdonosa tagkorlátját ({{maximum}}). Új tag hozzáadásához tagokat kell eltávolítani, amíg kevesebb nem marad, mint {{maximum}}."
     },
     "none": "{{label}}: ennek a fióknak a korlátja ezen a példányon 0, ezért semmi sem adható hozzá.",
     "ownerNone": "{{label}}: a munkaterület tulajdonosának korlátja ezen a példányon 0, ezért semmi sem adható hozzá.",

@@ -76,6 +76,17 @@ it('names the counter and offers no removal when the limit is 0', async () => {
   )
 })
 
+it('says how far down to go, not to remove one, since a lowered limit can leave usage well above it', async () => {
+  await mount(null)
+
+  notice.handle(refusal('max_personal_workspaces', 2))
+
+  expect(mocks.toastError).toHaveBeenCalledWith(
+    'This account has reached its limit of 2 personal workspaces. Archive workspaces until fewer than 2 are left, then create another.',
+    undefined,
+  )
+})
+
 it('links to the operator page only when the instance sets one', async () => {
   const open = vi.spyOn(window, 'open').mockImplementation(() => null)
   await mount('/help/limits')

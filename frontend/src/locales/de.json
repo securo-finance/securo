@@ -4474,14 +4474,14 @@
       "max_members_per_workspace": "Mitglieder pro Arbeitsbereich"
     },
     "reached": {
-      "max_personal_workspaces": "Dieses Konto hat sein Limit von {{maximum}} privaten Arbeitsbereichen erreicht. Archiviere einen, um einen neuen anzulegen.",
-      "max_business_workspaces": "Dieses Konto hat sein Limit von {{maximum}} geschäftlichen Arbeitsbereichen erreicht. Archiviere einen, um einen neuen anzulegen.",
-      "max_bank_connections": "Dieses Konto hat sein Limit von {{maximum}} Bankverbindungen in den von ihm erstellten Arbeitsbereichen erreicht. Entferne eine Verbindung, um eine neue hinzuzufügen.",
-      "max_members_per_workspace": "Dieser Arbeitsbereich hat sein Limit von {{maximum}} Mitgliedern erreicht. Entferne ein Mitglied, um ein neues hinzuzufügen."
+      "max_personal_workspaces": "Dieses Konto hat sein Limit von {{maximum}} privaten Arbeitsbereichen erreicht. Archiviere Arbeitsbereiche, bis weniger als {{maximum}} übrig sind, und lege dann einen neuen an.",
+      "max_business_workspaces": "Dieses Konto hat sein Limit von {{maximum}} geschäftlichen Arbeitsbereichen erreicht. Archiviere Arbeitsbereiche, bis weniger als {{maximum}} übrig sind, und lege dann einen neuen an.",
+      "max_bank_connections": "Dieses Konto hat sein Limit von {{maximum}} Bankverbindungen in den von ihm erstellten Arbeitsbereichen erreicht. Entferne Verbindungen, bis weniger als {{maximum}} übrig sind, und füge dann eine neue hinzu.",
+      "max_members_per_workspace": "Dieser Arbeitsbereich hat sein Limit von {{maximum}} Mitgliedern erreicht. Entferne Mitglieder, bis weniger als {{maximum}} übrig sind, und füge dann ein neues hinzu."
     },
     "ownerReached": {
-      "max_bank_connections": "Der Inhaber dieses Arbeitsbereichs hat sein Limit von {{maximum}} Bankverbindungen erreicht. Wer diesen Arbeitsbereich bearbeiten kann, kann einen Platz freigeben, indem er eine seiner Verbindungen entfernt.",
-      "max_members_per_workspace": "Dieser Arbeitsbereich hat das Limit seines Inhabers von {{maximum}} Mitgliedern erreicht. Ein Mitglied muss entfernt werden, um ein neues hinzuzufügen."
+      "max_bank_connections": "Der Inhaber dieses Arbeitsbereichs hat sein Limit von {{maximum}} Bankverbindungen erreicht. Wer diesen Arbeitsbereich bearbeiten kann, kann seine Verbindungen entfernen; eine neue passt, sobald der Inhaber weniger als {{maximum}} hat.",
+      "max_members_per_workspace": "Dieser Arbeitsbereich hat das Limit seines Inhabers von {{maximum}} Mitgliedern erreicht. Um ein neues hinzuzufügen, müssen Mitglieder entfernt werden, bis weniger als {{maximum}} übrig sind."
     },
     "none": "{{label}}: Das Limit dieses Kontos auf dieser Instanz ist 0, daher kann nichts hinzugefügt werden.",
     "ownerNone": "{{label}}: Der Inhaber dieses Arbeitsbereichs hat auf dieser Instanz ein Limit von 0, daher kann nichts hinzugefügt werden.",
