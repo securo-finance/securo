@@ -4451,6 +4451,9 @@
     "empty": "Aucune action administrative enregistrée.",
     "actionUpdate": "Compte modifié",
     "actionDelete": "Compte supprimé",
+    "actionWorkspaceStatus": "Statut de l'espace de travail modifié",
+    "targetWorkspace": "Espace de travail {{name}}",
+    "statusChange": "Statut {{from}} → {{to}}",
     "actionOther": "Compte modifié",
     "by": "Par {{email}}",
     "target": "Compte {{email}}",
@@ -4472,5 +4475,28 @@
     "failed": "Impossible d'enregistrer votre décision",
     "replaced": "L'administrateur a envoyé une nouvelle demande. Vérifiez la nouvelle adresse avant d'accepter",
     "withdrawn": "La demande a été retirée. Votre compte conserve son adresse actuelle"
+  }
+,
+  "workspaceStatus": {
+    "notice": "Cet espace de travail est suspendu. Vous pouvez tout lire et exporter, mais rien ne peut être modifié.",
+    "error": "Cet espace de travail est suspendu : il peut être lu et exporté, mais pas modifié.",
+    "title": "Espaces de travail",
+    "description": "Un espace suspendu peut être lu et exporté, mais pas modifié, et ses connexions bancaires ne se synchronisent plus.",
+    "search": "Rechercher par nom ou e-mail du propriétaire...",
+    "empty": "Aucun espace de travail trouvé",
+    "active": "Actif",
+    "suspended": "Suspendu",
+    "suspend": "Suspendre",
+    "reactivate": "Réactiver",
+    "suspendNamed": "Suspendre {{name}}",
+    "reactivateNamed": "Réactiver {{name}}",
+    "confirmTitle": "Suspendre {{name}} ?",
+    "confirmDescription": "Ses membres peuvent toujours lire et exporter, mais ne peuvent rien modifier avant sa réactivation. Les tâches planifiées s'arrêtent aussi.",
+    "reasonLabel": "Motif de ce changement",
+    "reasonPlaceholder": "Pourquoi cet espace de travail est modifié",
+    "reactivateTitle": "Réactiver {{name}} ?",
+    "reactivateDescription": "Ses membres peuvent de nouveau modifier les choses, et les tâches planifiées reprennent là où elles s'étaient arrêtées.",
+    "range": "{{from}}–{{to}} sur {{total}}",
+    "updated": "Espace de travail mis à jour"
   }
 }

@@ -4436,6 +4436,9 @@
     "empty": "Nincs rögzített adminisztratív művelet.",
     "actionUpdate": "Fiók módosítva",
     "actionDelete": "Fiók törölve",
+    "actionWorkspaceStatus": "A munkaterület állapota módosult",
+    "targetWorkspace": "Munkaterület: {{name}}",
+    "statusChange": "Állapot: {{from}} → {{to}}",
     "actionOther": "Fiók módosítva",
     "by": "Végrehajtó: {{email}}",
     "target": "Fiók: {{email}}",
@@ -4457,5 +4460,28 @@
     "failed": "A döntését nem sikerült rögzíteni",
     "replaced": "Az adminisztrátor új kérést küldött. Elfogadás előtt ellenőrizze az új címet",
     "withdrawn": "A kérést visszavonták. A fiókja megtartja a jelenlegi címét"
+  }
+,
+  "workspaceStatus": {
+    "notice": "Ez a munkaterület fel van függesztve. Mindent olvashat és exportálhat, de semmi sem módosítható.",
+    "error": "Ez a munkaterület fel van függesztve: olvasható és exportálható, de nem módosítható.",
+    "title": "Munkaterületek",
+    "description": "A felfüggesztett munkaterület olvasható és exportálható, de nem módosítható, és a bankkapcsolatai nem szinkronizálódnak.",
+    "search": "Keresés név vagy a tulajdonos e-mail-címe alapján...",
+    "empty": "Nem található munkaterület",
+    "active": "Aktív",
+    "suspended": "Felfüggesztve",
+    "suspend": "Felfüggesztés",
+    "reactivate": "Újraaktiválás",
+    "suspendNamed": "{{name}} felfüggesztése",
+    "reactivateNamed": "{{name}} újraaktiválása",
+    "confirmTitle": "Felfüggeszti ezt: {{name}}?",
+    "confirmDescription": "A tagok továbbra is olvashatnak és exportálhatnak, de az újraaktiválásig semmit sem módosíthatnak. Az ütemezett feladatok is leállnak.",
+    "reasonLabel": "A módosítás oka",
+    "reasonPlaceholder": "Miért módosul ez a munkaterület",
+    "reactivateTitle": "Újraaktiválja ezt: {{name}}?",
+    "reactivateDescription": "A tagok ismét módosíthatnak dolgokat, és az ütemezett feladatok onnan folytatódnak, ahol megálltak.",
+    "range": "{{from}}–{{to}} / {{total}}",
+    "updated": "Munkaterület frissítve"
   }
 }

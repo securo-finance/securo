@@ -30,6 +30,7 @@ import {
 } from '@/components/ui/select'
 import { PageHeader } from '@/components/page-header'
 import { TimezoneSettings } from '@/components/timezone-settings'
+import { WorkspaceStatusSettings } from '@/components/workspace-status-settings'
 import { ProviderSettings } from '@/components/provider-settings'
 import { EmailSettings } from '@/components/email-settings'
 import { DEFAULT_COLORS_QUERY_KEY } from '@/hooks/use-app-theme'
@@ -418,6 +419,7 @@ export default function AdminSettingsPage() {
         )}
       </div>
 
+      <WorkspaceStatusSettings />
       <TimezoneSettings readOnly={managed} />
       <EmailSettings readOnly={managed} />
       <ProviderSettings readOnly={managed} />

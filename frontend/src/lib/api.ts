@@ -12,6 +12,9 @@ import type {
   AdminUser,
   AdminAccessLogList,
   AdminUserList,
+  AdminWorkspace,
+  AdminWorkspaceList,
+  WorkspaceStatus,
   Passkey,
   PasskeyOptionsResponse,
   AppSetting,
@@ -2283,6 +2286,18 @@ export const admin = {
   },
   instanceMode: async (): Promise<InstanceMode> => {
     const { data } = await api.get('/admin/instance-mode')
+    return data
+  },
+  listWorkspaces: async (params?: { search?: string; page?: number; limit?: number }): Promise<AdminWorkspaceList> => {
+    const { data } = await api.get('/admin/workspaces', { params })
+    return data
+  },
+  updateWorkspaceStatus: async (
+    id: string,
+    status: WorkspaceStatus,
+    reason: string,
+  ): Promise<AdminWorkspace> => {
+    const { data } = await api.patch(`/admin/workspaces/${id}/status`, { status, reason })
     return data
   },
   providerSettings: async (): Promise<ProviderSettingStatus[]> => {

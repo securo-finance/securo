@@ -47,6 +47,7 @@ _quota_blocked_until: Optional[datetime] = None
 _quota_warning_at: Optional[datetime] = None
 
 _stored_only: ContextVar[bool] = ContextVar("fx_stored_rates_only", default=False)
+_caller_commits: ContextVar[bool] = ContextVar("fx_caller_commits", default=False)
 
 
 def _now() -> datetime:
@@ -167,6 +168,21 @@ def stored_rates_only() -> Generator[None]:
         _stored_only.reset(token)
 
 
+@contextmanager
+def rates_in_callers_transaction() -> Generator[None]:
+    """Store a rate fetched on demand without committing the caller's session.
+
+    A job that holds its workspace with `hold_active` keeps that lock until
+    its transaction ends; a commit in the middle of a conversion would release
+    it while the job still writes (ADR 0052). Inside this context the rates
+    are written in a savepoint and the caller's own commit stores them."""
+    token = _caller_commits.set(True)
+    try:
+        yield
+    finally:
+        _caller_commits.reset(token)
+
+
 def _code(currency: str) -> str:
     """A currency code as rates are stored: no spaces, upper case (#1474)."""
     return currency.strip().upper()
@@ -191,6 +207,25 @@ async def sync_rates(
 
     rates = await _fetch(provider, target)
 
+    if _caller_commits.get():
+        # The caller's commit stores the rates; a failed upsert only undoes
+        # its savepoint, not the caller's rows.
+        async with session.begin_nested():
+            count = await _upsert_rates(session, rates, target, supported, provider.name)
+    else:
+        count = await _upsert_rates(session, rates, target, supported, provider.name)
+        await session.commit()
+    logger.info("Synced %d FX rates for %s", count, target)
+    return count
+
+
+async def _upsert_rates(
+    session: AsyncSession,
+    rates: dict[str, Decimal],
+    target: date,
+    supported: set[str],
+    source: str,
+) -> int:
     count = 0
     for currency_code, rate in rates.items():
         currency_code = _code(currency_code)
@@ -201,17 +236,14 @@ async def sync_rates(
             quote_currency=currency_code,
             date=target,
             rate=rate,
-            source=provider.name,
+            source=source,
         )
         stmt = stmt.on_conflict_do_update(
             constraint="uq_fx_rate_base_quote_date",
-            set_={"rate": rate, "source": provider.name},
+            set_={"rate": rate, "source": source},
         )
         await session.execute(stmt)
         count += 1
-
-    await session.commit()
-    logger.info("Synced %d FX rates for %s", count, target)
     return count
 
 

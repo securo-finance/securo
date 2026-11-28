@@ -14,6 +14,8 @@ class WorkspaceRead(BaseModel):
     # a row that predates the current kind list. Writes are validated.
     kind: str
     is_archived: bool
+    # `active` or `suspended`; see `models.workspace.WorkspaceStatus`.
+    status: str
     default_currency: str
     locale: Optional[str] = None
     # The workspace's own calendar, or None to follow the application
