@@ -4466,7 +4466,7 @@
     "title": "Your account is above its limits",
     "titleFrom": "Your account is above its limits from {{date}}",
     "syncPaused": "Bank sync is paused until you are within your limit.",
-    "hint": "Nothing is removed for you. Once you are within your limits, everything works as before.",
+    "hint": "Nothing is removed on your behalf. Once you are within your limits, everything works as before.",
     "counter": {
       "max_bank_connections": "Bank connections: {{current}} of {{maximum}}, remove {{excess}}",
       "max_personal_workspaces": "Personal workspaces: {{current}} of {{maximum}}, remove {{excess}}",

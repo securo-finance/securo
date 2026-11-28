@@ -545,7 +545,8 @@ async def sync(session: AsyncSession, connection: PluginConnection) -> PluginCon
 
     Raises `quota_service.SyncPausedError` before the plugin runs while the
     workspace's creator is above the connection number past the operator's
-    date (ADR 0055); the connection is left as it is.
+    date (ADR 0055), and the same when that date comes while the plugin
+    runs; the connection is left as it is.
     """
     await quota_service.check_sync(session, connection.workspace_id)
     lock = f"plugin-sync:{connection.id}"
@@ -647,6 +648,12 @@ async def _write_payload(
                     complete_feed=_integration(manifest, connection.integration).complete_feed,
                 ),
             )
+        except quota_service.SyncPausedError:
+            # The operator's date came while the plugin ran (ADR 0055): a pause,
+            # not a failure. The kept secrets stay, the cursor does not move, and
+            # the connection is left as it is, as if the check at the start had refused.
+            await session.rollback()
+            raise
         except Exception as exc:  # noqa: BLE001 - recorded on the connection, retried on the next sync
             logger.exception("Writing the records of plugin connection %s failed", connection_id)
             refreshed = await session.get(PluginConnection, connection_id)

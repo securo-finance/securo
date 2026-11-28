@@ -17,6 +17,9 @@ export function QuotaExcessBanner() {
     queryFn: () => quotas.mine(),
     retry: false,
     staleTime: 5 * 60 * 1000,
+    // The server decides when the date has come and when the account fits
+    // again: the notice lags it by five minutes at most.
+    refetchInterval: 5 * 60 * 1000,
   })
 
   if (!data || !data.above || !data.effective_at) return null

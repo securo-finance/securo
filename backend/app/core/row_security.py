@@ -13,6 +13,8 @@ transaction begins. Off, nothing here sends a statement.
 from __future__ import annotations
 
 import uuid
+from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
 from typing import Any
 
 from sqlalchemy import Connection, Table, event, select, text
@@ -82,6 +84,27 @@ async def bind_workspace(
     info[_USER] = user_id
     if session.in_transaction() and session.get_bind().dialect.name == "postgresql":
         await session.execute(_SET, _values(info))
+
+
+@asynccontextmanager
+async def bound(session: AsyncSession, workspace_id: uuid.UUID) -> AsyncGenerator[None]:
+    """Work for one workspace inside the block, then go back to what the session
+    worked for before (none, for an operator's request)."""
+    if not enabled():
+        yield
+        return
+    info = session.sync_session.info
+    before = {key: info[key] for key in (_WORKSPACE, _USER) if key in info}
+    await bind_workspace(session, workspace_id)
+    try:
+        yield
+    finally:
+        info.pop(_WORKSPACE, None)
+        info.pop(_USER, None)
+        info.update(before)
+        if session.in_transaction() and session.get_bind().dialect.name == "postgresql":
+            values = _values(info) if _WORKSPACE in info else {"workspace": "", "user": ""}
+            await session.execute(_SET, values)
 
 
 def bound_to(session: AsyncSession) -> uuid.UUID | None:

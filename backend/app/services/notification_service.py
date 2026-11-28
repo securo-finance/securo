@@ -24,6 +24,7 @@ from sqlalchemy import ColumnElement, delete, func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core import row_security
 from app.core.app_clock import app_timezone, app_today
 from app.core.config import get_settings
 from app.core.feature_flags import feature_flag
@@ -881,43 +882,57 @@ async def _check_backups(session: AsyncSession, workspace: Workspace) -> None:
 # --- Limits of a managed instance (ADR 0055) ---------------------------------
 
 
-async def _check_quota(session: AsyncSession, workspace: Workspace) -> None:
+async def _quota_wanted(session: AsyncSession, owner: Optional[uuid.UUID]) -> list[_Wanted]:
     """The account that created the workspace is above a number and the operator set a date.
 
     Told to that account alone, when the date is set and again when it comes
     (`newest` moves from "0" to "1"); over once the account fits or the date is
-    cleared. The numbers are the ones `check_fit` gives the operator.
+    cleared. The date is in the key, so a moved date is a notice of its own.
+    The numbers are the ones `check_fit` gives the operator, counted across the
+    account whatever workspace the session works for.
     """
     from app.services import quota_service
 
-    owner = workspace.created_by_user_id
-    wanted: list[_Wanted] = []
-    if quota_service.enforced() and owner is not None:
-        standing = await quota_service.standing(session, owner)
-        if standing is not None and standing.effective_at is not None and not standing.fit.allowed:
-            data = {
-                "effective_at": standing.effective_at.isoformat(),
-                "in_effect": standing.in_effect,
-                "sync_paused": standing.sync_paused,
-                "counters": [
-                    {"counter": f.counter, "current": f.current, "maximum": f.target, "excess": f.excess}
-                    for f in standing.fit.counters
-                    if f.excess > 0
-                ],
-            }
-            user = await session.get(User, owner)
-            if user is not None and user.is_active:
-                wanted = [_Wanted(owner, QUOTA_EXCESS, data, newest="1" if standing.in_effect else "0")]
+    if not quota_service.enforced() or owner is None:
+        return []
+    standing = await quota_service.standing(session, owner)
+    if standing is None or standing.effective_at is None or standing.fit.allowed:
+        return []
+    user = await session.get(User, owner)
+    if user is None or not user.is_active:
+        return []
+    data = {
+        "effective_at": standing.effective_at.isoformat(),
+        "in_effect": standing.in_effect,
+        "sync_paused": standing.sync_paused,
+        "counters": [
+            {"counter": f.counter, "current": f.current, "maximum": f.target, "excess": f.excess}
+            for f in standing.fit.counters
+            if f.excess > 0
+        ],
+    }
+    key = f"{QUOTA_EXCESS}:{data['effective_at']}"
+    return [_Wanted(owner, key, data, newest="1" if standing.in_effect else "0")]
+
+
+async def _check_quota(session: AsyncSession, workspace: Workspace) -> None:
+    wanted = await _quota_wanted(session, workspace.created_by_user_id)
     await _reconcile(session, workspace.id, QUOTA_EXCESS, wanted)
 
 
 async def quota_changed(session: AsyncSession, user_id: uuid.UUID) -> None:
-    """Tell the account now, in every workspace it created, after the operator writes. Does not commit."""
+    """Tell the account now, in every workspace it created, after the operator writes. Does not commit.
+
+    The operator's session works for no workspace; each notice is written
+    under its own workspace, so row security lets it through (ADR 0043).
+    """
+    wanted = await _quota_wanted(session, user_id)
     rows = await session.execute(
-        select(Workspace).where(Workspace.created_by_user_id == user_id, Workspace.is_archived.is_(False))
+        select(Workspace.id).where(Workspace.created_by_user_id == user_id, Workspace.is_archived.is_(False))
     )
-    for workspace in rows.scalars().all():
-        await _check_quota(session, workspace)
+    for workspace_id in rows.scalars().all():
+        async with row_security.bound(session, workspace_id):
+            await _reconcile(session, workspace_id, QUOTA_EXCESS, wanted)
 
 
 # --- Scheduled --------------------------------------------------------------

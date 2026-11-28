@@ -134,6 +134,64 @@ async def test_a_plugin_sync_pauses_before_the_plugin_runs(managed, session, ids
     assert connection.last_sync_at == synced_at and connection.status != "needs_auth"
 
 
+async def test_a_plugin_sync_the_date_reaches_mid_run_is_a_pause_not_a_failure(
+    managed, session, ids, provider_catalog, plugin_runner, monkeypatch
+):
+    connection = await provider_plugins._provider_connection(session, ids)
+    before = (connection.status, connection.failures, connection.last_sync_at, dict(connection.state or {}))
+    bank = await provider_plugins._bank(session, connection)
+    bank_status = bank.status
+    calls = 0
+
+    async def date_comes_while_the_plugin_runs(session, workspace_id, now=None):
+        nonlocal calls
+        calls += 1
+        if calls > 1:  # the check inside the write, after the plugin answered
+            raise quota_service.SyncPausedError(2, 1)
+
+    monkeypatch.setattr(quota_service, "check_sync", date_comes_while_the_plugin_runs)
+    with pytest.raises(quota_service.SyncPausedError):
+        await plugin_connections.sync(session, connection)
+    assert calls == 2
+    await session.refresh(connection)
+    assert (connection.status, connection.failures, connection.last_sync_at, dict(connection.state or {})) == before
+    assert (await provider_plugins._bank(session, connection)).status == bank_status
+
+
+async def test_a_moved_date_is_told_again_and_so_is_its_arrival(
+    managed, session, test_user, test_workspace, monkeypatch
+):
+    user_id = test_user.id
+    await _above(session, test_user, test_workspace, date=_now() + timedelta(days=3))
+    await notification_service.quota_changed(session, user_id)
+    [first] = await _open(session, user_id)
+    first.read_at = _now()
+    await session.commit()
+
+    # Postponed: a notice of its own, unread.
+    later = _now() + timedelta(days=10)
+    await quota_service.set_excess_date(session, user_id, later)
+    await notification_service.quota_changed(session, user_id)
+    await session.commit()
+    [moved] = await _open(session, user_id)
+    assert moved.id != first.id and moved.read_at is None and moved.data["newest"] == "0"
+    moved.read_at = _now()
+    await session.commit()
+
+    # Read again, unchanged: stays read.
+    await notification_service.quota_changed(session, user_id)
+    await session.commit()
+    [same] = await _open(session, user_id)
+    assert same.id == moved.id and same.read_at is not None
+
+    # The postponed date comes: unread again.
+    monkeypatch.setattr(quota_service, "in_effect", lambda quota, now=None: True)
+    await notification_service.quota_changed(session, user_id)
+    await session.commit()
+    [arrived] = await _open(session, user_id)
+    assert arrived.id == moved.id and arrived.read_at is None and arrived.data["newest"] == "1"
+
+
 async def test_the_manual_sync_answers_403(managed, client: AsyncClient, session, test_user, test_workspace, auth_headers):
     rows = await _above(session, test_user, test_workspace, date=_now() - timedelta(minutes=1))
     resp = await client.post(f"/api/connections/{rows[0].id}/sync", headers=auth_headers)

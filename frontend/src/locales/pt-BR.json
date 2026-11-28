@@ -4481,7 +4481,7 @@
     "title": "Sua conta está acima dos limites",
     "titleFrom": "Sua conta está acima dos limites a partir de {{date}}",
     "syncPaused": "A sincronização bancária está pausada até você ficar dentro do limite.",
-    "hint": "Nada é removido por você. Assim que estiver dentro dos limites, tudo volta a funcionar como antes.",
+    "hint": "Nada é removido no seu lugar. Assim que estiver dentro dos limites, tudo volta a funcionar como antes.",
     "counter": {
       "max_bank_connections": "Conexões bancárias: {{current}} de {{maximum}}, remova {{excess}}",
       "max_personal_workspaces": "Espaços pessoais: {{current}} de {{maximum}}, remova {{excess}}",

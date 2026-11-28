@@ -1,9 +1,9 @@
-import { screen } from '@testing-library/react'
+import { act, screen } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
 
 import { QuotaExcessBanner } from '@/components/quota-excess-banner'
 import { describeNotification, notificationTarget, quotaExcessLines } from '@/lib/notification-text'
-import { i18n, renderWithProviders } from '@/test/utils'
+import { createTestQueryClient, i18n, renderWithProviders } from '@/test/utils'
 import type { AppNotification, QuotaCounterExcess, QuotaStanding } from '@/types'
 
 vi.mock('@/hooks/use-display-locale', () => ({ useDisplayLocale: () => 'en-US', useDateLocale: () => 'en-US' }))
@@ -69,14 +69,29 @@ it('shows what is above the limit and that sync is paused', async () => {
 })
 
 it('shows nothing without a date, or off a managed instance', async () => {
-  api.mine.mockResolvedValue({ ...standing, effective_at: null, in_effect: false, sync_paused: false })
-  const { container, unmount } = renderWithProviders(<QuotaExcessBanner />)
-  await vi.waitFor(() => expect(api.mine).toHaveBeenCalled())
-  expect(container).toBeEmptyDOMElement()
-  unmount()
+  for (const answer of [{ ...standing, effective_at: null, in_effect: false, sync_paused: false }, null]) {
+    api.mine.mockResolvedValue(answer)
+    const queryClient = createTestQueryClient()
+    const { container, unmount } = renderWithProviders(<QuotaExcessBanner />, { queryClient })
+    // Past the answer's own render, so the date guard is what keeps it empty.
+    await vi.waitFor(() => expect(queryClient.getQueryState(['quotas', 'mine'])?.status).toBe('success'))
+    await act(async () => {})
+    expect(container).toBeEmptyDOMElement()
+    unmount()
+  }
+  expect(api.mine).toHaveBeenCalledTimes(2)
+})
 
-  api.mine.mockResolvedValue(null)
-  const second = renderWithProviders(<QuotaExcessBanner />)
-  await vi.waitFor(() => expect(api.mine).toHaveBeenCalledTimes(2))
-  expect(second.container).toBeEmptyDOMElement()
+it('refreshes the standing while it is shown', async () => {
+  vi.useFakeTimers()
+  try {
+    api.mine.mockResolvedValue(standing)
+    renderWithProviders(<QuotaExcessBanner />)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(api.mine).toHaveBeenCalledTimes(1)
+    await vi.advanceTimersByTimeAsync(5 * 60 * 1000)
+    expect(api.mine).toHaveBeenCalledTimes(2)
+  } finally {
+    vi.useRealTimers()
+  }
 })
