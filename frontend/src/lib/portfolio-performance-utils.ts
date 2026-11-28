@@ -208,6 +208,14 @@ export function periodReturn(startPercent: number, endPercent: number): number |
 const DAY_MS = 86_400_000
 const MAX_LOG_GROWTH = 45
 const CASH_EPSILON = 1e-9
+// The server's grid on ln(growth): every 0.05 from -5 to 5, then every 1
+// out to the bounds.
+const SEARCH_GRID = [
+  ...new Set([
+    ...Array.from({ length: 201 }, (_, index) => (index - 100) * 0.05),
+    ...Array.from({ length: 2 * MAX_LOG_GROWTH + 1 }, (_, index) => index - MAX_LOG_GROWTH),
+  ]),
+].sort((a, b) => a - b)
 
 /**
  * Money-weighted return (IRR) between two points, as a cumulative percentage.
@@ -269,12 +277,28 @@ export function moneyWeightedReturn(
   }
   let low = -MAX_LOG_GROWTH
   let high = MAX_LOG_GROWTH
-  const [lowValue] = npv(low)
+  let [lowValue] = npv(low)
   const [highValue] = npv(high)
-  if (lowValue === 0) return (Math.exp(low) - 1) * 100
-  if (lowValue > 0 === highValue > 0) return null
-  const lowPositive = lowValue > 0
   x = 0
+  if (lowValue > 0 === highValue > 0 && lowValue !== 0) {
+    // Both ends agree, yet the cash can still balance between them at two
+    // rates the ends do not separate: the server's grid, nearest to 0%.
+    const values = SEARCH_GRID.map((point) => [point, npv(point)[0]] as const)
+    let bracket: [number, number] | null = null
+    for (let index = 0; index + 1 < values.length; index += 1) {
+      const [a, aValue] = values[index]
+      const [b, bValue] = values[index + 1]
+      if (aValue > 0 !== bValue > 0 && (!bracket || Math.abs(a + b) < Math.abs(bracket[0] + bracket[1]))) {
+        bracket = [a, b]
+      }
+    }
+    if (!bracket) return null
+    ;[low, high] = bracket
+    ;[lowValue] = npv(low)
+    x = (low + high) / 2
+  }
+  if (lowValue === 0) return (Math.exp(low) - 1) * 100
+  const lowPositive = lowValue > 0
   for (let iteration = 0; iteration < 200; iteration += 1) {
     const [value, slope] = npv(x)
     if (Math.abs(value) <= tolerance) break

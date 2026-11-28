@@ -120,7 +120,9 @@ point; when that does not converge it searches a bracket, falling back to
 bisection. Cash that changes sign more than once over time (money taken out
 and put in again) can balance at more than one rate; for such cash the
 solver always starts from 0, as the client does, so the line and a range
-over the same cash pick the same rate.
+over the same cash pick the same rate. When the two ends of the search
+agree in sign but the cash still balances between them, both scan the same
+grid on `ln g` and take the sign change nearest to 0%.
 
 The line is solved on the chart's own dates, from the same per-point values
 and money moved the response sends for dragging (below), and a dragged range
@@ -161,8 +163,9 @@ invested?".
 - Money the portfolio bought at a previous snapshot's price (a trade only a
   later snapshot reflects) is bought by the shadow at the index's price as of
   that snapshot too, so the move in between counts for both.
-- When the portfolio is closed out (everything sold, also for nothing, as a
-  write-off), the shadow sells everything on the same day, so neither keeps
+- When the portfolio is left with nothing on a day money moved (everything
+  sold, also for nothing as a write-off, or bought and sold again the same
+  day), the shadow sells everything that day too, so neither keeps
   compounding after the other has stopped.
 - A withdrawal larger than the shadow holds (the portfolio did much better)
   only takes out what is there. The shadow is then empty first and its span

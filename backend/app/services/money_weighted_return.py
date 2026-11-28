@@ -10,7 +10,7 @@ the start of the chart to a point reads exactly the line's value there.
 from __future__ import annotations
 
 import math
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from datetime import date
 from typing import NamedTuple, Optional
 
@@ -20,6 +20,14 @@ from app.schemas.asset import MoneyWeightedSeriesRead, PortfolioPerformancePoint
 # Bounds on the log of the period's growth: from about -100% to +2e19%.
 _MAX_LOG_GROWTH = 45.0
 _CASH_EPSILON = 1e-9
+
+# Where to look for a rate on ln(growth) when the two ends of the search
+# agree in sign: every 0.05 from -5 to 5 (about -99% to +14,700%), then
+# every 1 out to the bounds. The client scans the same points.
+_GRID = sorted(
+    {k * 0.05 for k in range(-100, 101)}
+    | {float(k) for k in range(-int(_MAX_LOG_GROWTH), int(_MAX_LOG_GROWTH) + 1)}
+)
 
 # Money put in and money taken out on one date, both positive and kept
 # apart: a buy and a sale on the same day are two amounts, not their net.
@@ -128,12 +136,20 @@ def money_weighted_return(
     low, high = -_MAX_LOG_GROWTH, _MAX_LOG_GROWTH
     low_value, _ = npv(low)
     high_value, _ = npv(high)
+    x = start
+    if (low_value > 0) == (high_value > 0) and low_value != 0:
+        # Both ends agree, yet the cash can still balance between them at
+        # two rates the ends do not separate (money out and back in again).
+        # Take the sign change on the grid nearest to 0%.
+        bracket = _nearest_bracket(npv)
+        if bracket is None:
+            return None
+        low, high = bracket
+        low_value, _ = npv(low)
+        x = (low + high) / 2.0
     if low_value == 0:
         return (math.exp(low) - 1.0) * 100.0
-    if (low_value > 0) == (high_value > 0):
-        return None
     low_positive = low_value > 0
-    x = start
     for _ in range(200):
         value, slope = npv(x)
         if abs(value) <= tolerance:
@@ -150,6 +166,19 @@ def money_weighted_return(
             break
         x = next_x
     return (math.exp(x) - 1.0) * 100.0
+
+
+def _nearest_bracket(npv: Callable[[float], tuple[float, float]]) -> Optional[tuple[float, float]]:
+    """The two neighbouring grid points nearest to 0 between which the cash
+    changes sign, or None when it never does."""
+    values = [(x, npv(x)[0]) for x in _GRID]
+    best: Optional[tuple[float, float]] = None
+    for (low, low_value), (high, high_value) in zip(values, values[1:]):
+        if (low_value > 0) != (high_value > 0) and (
+            best is None or abs(low + high) < abs(best[0] + best[1])
+        ):
+            best = (low, high)
+    return best
 
 
 def money_weighted_returns(

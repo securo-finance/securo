@@ -214,6 +214,16 @@ describe('moneyWeightedReturn', () => {
     expect(moneyWeightedReturn(dates, [100, 0, 0], legs(0, -230, 132), 0, 2)).toBeCloseTo(21, 6)
   })
 
+  it('finds a rate the ends of the search do not separate, like the server', () => {
+    // 100 in, 240 out, 120 back in: -49.6% and +185% both balance it.
+    const dates = [day(0), day(10), day(20)]
+    const expected = (1 / (1 + Math.sqrt(1 / 6)) ** 2 - 1) * 100
+    expect(moneyWeightedReturn(dates, [100, 0, 0], legs(0, -240, 120), 0, 2)).toBeCloseTo(
+      expected,
+      6,
+    )
+  })
+
   it('handles nothing invested, a total loss and money that was never put in', () => {
     const dates = [day(0), day(1), day(10)]
     expect(moneyWeightedReturn(dates, [0, 0, 0], legs(0, 0, 0), 0, 2)).toBe(0)

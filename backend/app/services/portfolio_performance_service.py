@@ -1289,11 +1289,12 @@ async def get_portfolio_performance_multi(
     portfolio_values = [(d, snapshot(d)) for d in sorted_dates]
     money_flows = flows.legs()
     # A total exit: money moved and nothing is left, whatever the sale
-    # brought in (a write-off sells for nothing).
+    # brought in (a write-off sells for nothing) and whatever was held
+    # before (a same-day round trip from an empty portfolio).
     exits = {
         point_date
-        for (_, before), (point_date, value) in zip(portfolio_values, portfolio_values[1:])
-        if abs(value) < _EMPTY_VALUE <= before and point_date in flows.dates
+        for point_date, value in portfolio_values[1:]
+        if abs(value) < _EMPTY_VALUE and point_date in flows.dates
     }
     if method == "mwr":
         # Solved on the chart's own dates once they are known, below.

@@ -96,6 +96,21 @@ def test_money_weighted_return_edges():
     assert money_weighted_return(day(0), 0, [(day(1), -500)], day(10), 0) is None
 
 
+def test_money_weighted_return_finds_a_rate_the_search_ends_do_not_separate():
+    # 100 in, 240 out, 120 back in: from 0% the slope is flat and both ends
+    # of the search are negative, yet -49.6% and +185% both balance the cash.
+    # The one nearer 0% is taken, by the line and by a range alike.
+    expected = (1 / (1 + math.sqrt(1 / 6)) ** 2 - 1) * 100
+    cash = [(day(10), -240.0), (day(20), 120.0)]
+    assert money_weighted_return(day(0), 100.0, cash, day(20), 0.0) == pytest.approx(expected)
+    dates = [day(0), day(10), day(20)]
+    values = [100.0, 0.0, 0.0]
+    flows = [(0.0, 0.0), (0.0, 240.0), (120.0, 0.0)]
+    line = money_weighted_returns(list(zip(dates, values)), dict(zip(dates, flows)))
+    assert line[-1][1] == pytest.approx(expected)
+    assert range_return(dates, values, flows, 0, 2) == pytest.approx(expected)
+
+
 def test_money_weighted_series_stays_flat_after_selling_everything():
     values = [(day(0), 100.0), (day(10), 110.0), (day(20), 0.0), (day(40), 0.0)]
     series = money_weighted_returns(values, {day(20): (0.0, 110.0)})
@@ -539,6 +554,77 @@ async def test_money_weighted_write_off_closes_the_shadow_too(
     assert mwr.portfolio_return == pytest.approx(-100.0, abs=1e-5)
     (up,) = mwr.benchmarks
     assert up.benchmark_return == pytest.approx(20.0, abs=1e-5)
+
+
+@pytest.mark.asyncio
+async def test_money_weighted_round_trip_from_empty_closes_the_shadow(
+    session: AsyncSession, test_user: User, test_workspace
+):
+    """Nothing held, bought for 1000 and sold for 900 on one day: the shadow
+    must not keep the 100 the sale left it and grow it afterwards."""
+    end = date.today()
+    start = end - timedelta(days=60)
+    traded_on = start + timedelta(days=20)
+    asset = Asset(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        name="Day trade",
+        type="stock",
+        currency="BRL",
+        valuation_method="market_price",
+    )
+    session.add(asset)
+    await session.flush()
+    session.add_all(
+        AssetTransaction(
+            asset_id=asset.id,
+            workspace_id=test_workspace.id,
+            kind=kind,
+            quantity=Decimal("10"),
+            price=Decimal(price),
+            date=traded_on,
+        )
+        for kind, price in (("buy", "100"), ("sell", "90"))
+    )
+    session.add_all(
+        AssetValue(
+            asset_id=asset.id,
+            workspace_id=test_workspace.id,
+            amount=Decimal("0"),
+            price=Decimal("90"),
+            date=when,
+            source="market",
+        )
+        for when in (traded_on, end)
+    )
+    await session.commit()
+    provider = MultiHistoryProvider(
+        {
+            "^UP": [
+                BenchmarkHistoryPoint(start, 100.0),
+                BenchmarkHistoryPoint(traded_on, 100.0),
+                BenchmarkHistoryPoint(end, 200.0),
+            ]
+        }
+    )
+
+    mwr = await get_portfolio_performance_multi(
+        session,
+        test_workspace.id,
+        test_user.id,
+        "BRL",
+        [("yahoo", "^UP")],
+        "3m",
+        end_date=end,
+        provider=provider,  # type: ignore[arg-type]
+        method="mwr",
+    )
+
+    assert mwr.portfolio_return == pytest.approx(-10.0, abs=1e-5)
+    (up,) = mwr.benchmarks
+    # In and out the same day at one price: nothing gained, nothing left.
+    assert up.benchmark_return == pytest.approx(0.0, abs=1e-5)
 
 
 @pytest.mark.asyncio
