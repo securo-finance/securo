@@ -226,13 +226,16 @@ def _make_toggleable_runner(monkeypatch, *, down: bool = False) -> dict[str, Any
 @pytest.mark.asyncio
 async def test_reachable_returns_false_without_io_when_unconfigured(monkeypatch):
     _configure_settings(monkeypatch, url="", token="")
+    constructions = 0
 
-    class ShouldNotBeCalled:
+    class RecordingClient:
         def __init__(self, *args, **kwargs):
-            raise AssertionError("RunnerClient must not be constructed when unconfigured")
+            nonlocal constructions
+            constructions += 1
 
-    monkeypatch.setattr(runner, "RunnerClient", ShouldNotBeCalled)
+    monkeypatch.setattr(runner, "RunnerClient", RecordingClient)
     assert await runner.reachable() is False
+    assert constructions == 0
 
 
 @pytest.mark.asyncio
