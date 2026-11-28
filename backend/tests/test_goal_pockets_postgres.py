@@ -1032,12 +1032,12 @@ async def test_deleting_a_member_keeps_their_deposit_that_funds_a_pocket(
 
 
 def _migrate(connection, direction):
-    path = Path(__file__).resolve().parent.parent / "alembic/versions/136_goal_pockets.py"
+    path = Path(__file__).resolve().parent.parent / "alembic/versions/137_goal_pockets.py"
     spec = importlib.util.spec_from_file_location("goal_pockets_migration", path)
     assert spec is not None and spec.loader is not None
     migration = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(migration)
-    assert (migration.revision, migration.down_revision) == ("136", "135")
+    assert (migration.revision, migration.down_revision) == ("137", "136")
     with Operations.context(MigrationContext.configure(connection)):
         getattr(migration, direction)()
 
