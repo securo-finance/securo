@@ -4171,10 +4171,14 @@ async def _settle_replaced_pending(
     )
     if currency_changed and incoming_currency is not None:
         pending_tx.currency = incoming_currency
-        # A typed conversion or stored account charge for the old currency no
-        # longer describes the posted currency.
+        # Conversions or stored account charges for the old currency no longer
+        # describe the posted currency. Clearing them avoids keeping stale
+        # old-currency stamps when no FX rate exists for the new currency.
+        pending_tx.amount_primary = None
+        pending_tx.fx_rate_used = None
         pending_tx.amount_primary_typed = None
         pending_tx.amount_primary_typed_currency = None
+        pending_tx.amount_account = None
         pending_tx.amount_account_source = None
     date_changed = pending_tx.date != txn_data.date
     if date_changed:

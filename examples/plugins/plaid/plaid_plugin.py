@@ -895,6 +895,9 @@ class PlaidPlugin:
                 auto_invested[acc_id] = auto_invested.get(acc_id, Decimal(0)) + current_value
 
         if incomplete:
+            # Omit holdings so Securo retains stored positions; sync() reports
+            # each investment account's gross balance as auto_invested_balance
+            # so Securo deducts those retained holdings without double-counting.
             return None, {}
         return holdings, auto_invested
 
@@ -1229,6 +1232,13 @@ class PlaidPlugin:
                 auto_inv = auto_invested_by_account.get(acc_id)
                 if auto_inv is not None and auto_inv > 0:
                     entry["auto_invested_balance"] = _money_str(auto_inv)
+                elif holdings_payload is None and balance > 0:
+                    # Plaid investment account balances include securities. When the
+                    # holdings snapshot is omitted (incomplete valuation, cap, or
+                    # product unavailable), cap auto_invested_balance at the gross
+                    # balance so Securo deducts retained live holdings without
+                    # double-counting net worth or pushing cash negative.
+                    entry["auto_invested_balance"] = _money_str(balance)
 
             liability = liabilities_by_account.get(acc_id)
             if liability is not None:

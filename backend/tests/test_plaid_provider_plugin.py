@@ -1527,7 +1527,8 @@ def test_plaid_incomplete_holdings_snapshot_omits_holdings_instead_of_archiving(
 
         return req
 
-    # 1. Null institution_value -> omit holdings so existing positions aren't archived.
+    # 1. Null institution_value -> omit holdings so existing positions aren't archived,
+    #    and report gross balance as auto_invested_balance upper bound for retained holdings.
     res_null = mod.PlaidPlugin(
         requester=_make_requester(
             [
@@ -1537,6 +1538,7 @@ def test_plaid_incomplete_holdings_snapshot_omits_holdings_instead_of_archiving(
         )
     ).sync({"state": {}}, ctx)
     assert "holdings" not in res_null["data"]
+    assert res_null["data"]["accounts"][0]["auto_invested_balance"] == "5000.00"
 
     # 2. Exceeding MAX_SYNC_HOLDINGS -> omit holdings rather than publishing a truncated list.
     monkeypatch.setattr(mod, "MAX_SYNC_HOLDINGS", 2)
@@ -1549,7 +1551,147 @@ def test_plaid_incomplete_holdings_snapshot_omits_holdings_instead_of_archiving(
         )
     ).sync({"state": {}}, ctx)
     assert "holdings" not in res_cap["data"]
+    assert res_cap["data"]["accounts"][0]["auto_invested_balance"] == "5000.00"
 
-    # 3. Confirmed empty portfolio -> still sends holdings: [].
+    # 3. Confirmed empty portfolio -> still sends holdings: [] with no auto_invested_balance.
     res_empty = mod.PlaidPlugin(requester=_make_requester([])).sync({"state": {}}, ctx)
     assert res_empty["data"]["holdings"] == []
+    assert "auto_invested_balance" not in res_empty["data"]["accounts"][0]
+
+
+@pytest.mark.asyncio
+async def test_plaid_omitted_incomplete_holdings_retains_assets_and_cash_balance(
+    session: AsyncSession, ids, plaid_catalog, plugin_runner, states, monkeypatch
+):
+    """End-to-end Plaid regression: after an initial complete sync (2750 gross,
+    2500 VTI -> 250 cash), a follow-up sync where Plaid returns a position with
+    `institution_value: null` omits `holdings` and reports gross balance as the
+    `auto_invested_balance` cap, so Securo retains VTI and keeps cash at 250
+    (and clamps cleanly to 0 if gross balance drops below stored VTI value). An
+    explicit empty portfolio (`holdings: []`) later archives VTI and restores 2750."""
+    mod = _module()
+
+    class _IncompleteHoldingsPlaid(FakePlaidServer):
+        def __init__(self, plugin_mod: ModuleType) -> None:
+            super().__init__(plugin_mod)
+            self.holdings_mode = "complete"
+            self.gross_override: float | None = None
+
+        def __call__(self, url: str, payload: dict[str, Any]) -> dict[str, Any]:
+            if url.endswith("/accounts/get") and self.gross_override is not None:
+                resp = super().__call__(url, payload)
+                accounts = [
+                    {**a, "balances": {**a["balances"], "current": self.gross_override}}
+                    if a["account_id"] == "acc-m1"
+                    else a
+                    for a in resp["accounts"]
+                ]
+                return {**resp, "accounts": accounts}
+            if url.endswith("/investments/holdings/get"):
+                if self.holdings_mode == "incomplete":
+                    return {
+                        "securities": [
+                            {
+                                "security_id": "sec-vti",
+                                "name": "Vanguard Total Stock Market ETF",
+                                "ticker_symbol": "VTI",
+                                "type": "etf",
+                                "iso_currency_code": "USD",
+                                "is_cash_equivalent": False,
+                            },
+                            {
+                                "security_id": "sec-unpriced",
+                                "name": "Unpriced Fund",
+                                "ticker_symbol": "UNPR",
+                                "type": "mutual fund",
+                                "iso_currency_code": "USD",
+                                "is_cash_equivalent": False,
+                            },
+                        ],
+                        "holdings": [
+                            {
+                                "account_id": "acc-m1",
+                                "security_id": "sec-vti",
+                                "quantity": 10,
+                                "institution_price": 250.00,
+                                "institution_value": 2500.00,
+                                "iso_currency_code": "USD",
+                            },
+                            {
+                                "account_id": "acc-m1",
+                                "security_id": "sec-unpriced",
+                                "quantity": 5,
+                                "institution_price": None,
+                                "institution_value": None,
+                                "iso_currency_code": "USD",
+                            },
+                        ],
+                    }
+                if self.holdings_mode == "empty":
+                    return {"securities": [], "holdings": []}
+            return super().__call__(url, payload)
+
+    fake = _IncompleteHoldingsPlaid(mod)
+    _wire_fake_plaid(monkeypatch, fake)
+
+    workspace_id, user_id = ids
+    await _apply(session, workspace_id, user_id)
+
+    connection, _, state = await connections.create_with_oauth(
+        session,
+        workspace_id=workspace_id,
+        user_id=user_id,
+        can_write=True,
+        plugin_id=PLUGIN,
+        integration_key="plaid",
+        name="Plaid M1",
+        values={"client_id": "cid-1", "secret": "sec-secret-99", "environment": "sandbox"},
+        lang="en",
+    )
+    assert state is not None
+    await connections.finish_oauth(
+        session,
+        workspace_id=workspace_id,
+        user_id=user_id,
+        code=None,
+        state=state,
+        params={"status": "success", "link_session_id": "ls-init-1"},
+    )
+
+    # 1. Initial complete sync: 2750 gross - 2500 VTI = 250 cash.
+    await connections.sync(session, connection)
+    bank = await _bank(session, connection)
+    bank_id = bank.id
+    accounts = {a.external_id: a for a in await _rows(session, Account, connection_id=bank_id)}
+    assert accounts["acc-m1"].balance == Decimal("250.00")
+    assert accounts["acc-chk"].balance == Decimal("2500.00")
+    (vti,) = await _rows(session, Asset, connection_id=bank_id)
+    vti_id = vti.id
+    assert vti.ticker == "VTI" and vti.is_archived is False
+
+    # 2. Incomplete holdings snapshot (null institution_value): holdings omitted,
+    #    VTI stays live AND acc-m1 cash balance stays 250.00 (not inflated to 2750.00).
+    fake.holdings_mode = "incomplete"
+    await connections.sync(session, connection)
+    assert connection.status == "active"
+    accounts_incomplete = {a.external_id: a for a in await _rows(session, Account, connection_id=bank_id)}
+    assert accounts_incomplete["acc-m1"].balance == Decimal("250.00")
+    assert accounts_incomplete["acc-chk"].balance == Decimal("2500.00")
+    (vti_retained,) = await _rows(session, Asset, connection_id=bank_id)
+    assert vti_retained.id == vti_id and vti_retained.is_archived is False
+
+    # 2b. If gross balance drops below stored VTI value (2200 < 2500) during an
+    #     incomplete snapshot, deduction caps at gross balance so cash clamps at 0.00.
+    fake.gross_override = 2200.00
+    await connections.sync(session, connection)
+    accounts_dropped = {a.external_id: a for a in await _rows(session, Account, connection_id=bank_id)}
+    assert accounts_dropped["acc-m1"].balance == Decimal("0.00")
+    fake.gross_override = None
+
+    # 3. Authoritative empty holdings snapshot: VTI is archived and cash becomes 2750.00.
+    fake.holdings_mode = "empty"
+    await connections.sync(session, connection)
+    accounts_empty = {a.external_id: a for a in await _rows(session, Account, connection_id=bank_id)}
+    assert accounts_empty["acc-m1"].balance == Decimal("2750.00")
+    (vti_archived,) = await _rows(session, Asset, connection_id=bank_id)
+    assert vti_archived.is_archived is True
