@@ -119,7 +119,8 @@ async def effective_limits(session: AsyncSession, user_id: uuid.UUID) -> tuple[L
     holds for the ones created after it.
     """
     quota = await get_quota(session, user_id)
-    if quota is not None:
+    # A row only the excess date created (ADR 0055) holds no numbers of its own.
+    if quota is not None and quota.has_limits:
         return {c: getattr(quota, c) for c in COUNTERS}, OWN
     defaults = await get_defaults(session)
     if defaults is not None:
@@ -439,6 +440,7 @@ async def set_quota(session: AsyncSession, user_id: uuid.UUID, values: Mapping[s
     update the row.
     """
     row: dict[str, object] = {counter: values.get(counter) for counter in COUNTERS}
+    row["has_limits"] = True
     row["updated_at"] = datetime.now(timezone.utc)
     insert = pg_insert if session.get_bind().dialect.name == "postgresql" else sqlite_insert
     statement = insert(UserQuota).values(user_id=user_id, **row)
@@ -494,11 +496,15 @@ async def check_sync(
     if owner is None:
         return
     quota = await get_quota(session, owner)
-    if quota is None or quota.max_bank_connections is None or not in_effect(quota, now):
+    if not in_effect(quota, now):
+        return
+    limits, _ = await effective_limits(session, owner)
+    maximum = limits[BANK_CONNECTIONS]
+    if maximum is None:
         return
     current = await count_bank_connections(session, owner)
-    if current > quota.max_bank_connections:
-        raise SyncPausedError(current, quota.max_bank_connections)
+    if current > maximum:
+        raise SyncPausedError(current, maximum)
 
 
 async def set_excess_date(
@@ -506,15 +512,16 @@ async def set_excess_date(
 ) -> UserQuota:
     """Write the date after which an excess has an effect (None: never), in one upsert.
 
-    Leaves the four numbers as they are. An account with no row gets one with
-    every number unbounded, so the date alone changes nothing until a number is set.
+    Leaves the four numbers as they are. An account with no row gets one that
+    holds only the date (`has_limits` false), so it keeps following the
+    operator defaults (ADR 0056), or stays unbounded without them.
     """
     row: dict[str, object] = {
         "excess_effective_at": _aware(moment) if moment is not None else None,
         "updated_at": datetime.now(timezone.utc),
     }
     insert = pg_insert if session.get_bind().dialect.name == "postgresql" else sqlite_insert
-    statement = insert(UserQuota).values(user_id=user_id, **row)
+    statement = insert(UserQuota).values(user_id=user_id, has_limits=False, **row)
     await session.execute(statement.on_conflict_do_update(index_elements=[UserQuota.user_id], set_=row))
     quota = await session.get(UserQuota, user_id, populate_existing=True)
     assert quota is not None
@@ -523,7 +530,7 @@ async def set_excess_date(
 
 @dataclass(frozen=True)
 class Standing:
-    """Where an account stands against its own numbers, as the person sees it."""
+    """Where an account stands against the limits that hold for it, as the person sees it."""
 
     effective_at: Optional[datetime]
     in_effect: bool
@@ -534,11 +541,12 @@ class Standing:
 async def standing(
     session: AsyncSession, user_id: uuid.UUID, now: Optional[datetime] = None
 ) -> Optional[Standing]:
-    """None when the account has no numbers: nothing to be above."""
+    """None when the account has no row: no date, so an excess has no effect."""
     quota = await get_quota(session, user_id)
     if quota is None:
         return None
-    fit = await check_fit(session, user_id, {c: getattr(quota, c) for c in COUNTERS})
+    limits, _ = await effective_limits(session, user_id)
+    fit = await check_fit(session, user_id, limits)
     effective = in_effect(quota, now)
     connections = next(f for f in fit.counters if f.counter == BANK_CONNECTIONS)
     return Standing(

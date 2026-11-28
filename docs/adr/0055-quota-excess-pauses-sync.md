@@ -13,7 +13,7 @@ Two lines frame the answer. ADR 0049 says the code never deletes, archives or ch
 
 ## Decision
 
-**A date per account, set by the operator.** `user_quotas` gains `excess_effective_at`, a nullable timestamp in UTC. It is written by `PUT /api/operator/quotas/{user_id}/excess-date` (`quota_service.set_excess_date`), behind the operator token like the rest of ADR 0049. With no date nothing changes, exactly as before. Before the date nothing changes either. Setting a date on an account with no row creates one with every number unbounded, so the date alone has no effect.
+**A date per account, set by the operator.** `user_quotas` gains `excess_effective_at`, a nullable timestamp in UTC. It is written by `PUT /api/operator/quotas/{user_id}/excess-date` (`quota_service.set_excess_date`), behind the operator token like the rest of ADR 0049. With no date nothing changes, exactly as before. Before the date nothing changes either. Setting a date on an account with no row creates one that holds only the date (`has_limits` false): the account keeps following the operator defaults of ADR 0056, or stays unbounded without them, so the date alone changes no number. Writing the account's numbers sets `has_limits`, and from then on its own row wins as ADR 0056 says. The excess is measured against the limits that hold for the account, its own or the defaults.
 
 **After the date, the effect touches only what is above a number:**
 
