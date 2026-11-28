@@ -10,7 +10,10 @@ const api = vi.hoisted(() => ({
   toastSuccess: vi.fn(),
   toastError: vi.fn(),
 }))
-vi.mock('@/lib/api', () => ({ connections: { list: api.list, handleCallback: api.handleCallback } }))
+vi.mock('@/lib/api', () => ({
+  connections: { list: api.list, handleCallback: api.handleCallback },
+  quotas: { mine: () => Promise.resolve({ enforced: true, info_url: null, counters: [] }) },
+}))
 vi.mock('@/lib/await-new-connection', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/await-new-connection')>()),
   waitForNewConnection: api.waitForNewConnection,
@@ -71,4 +74,20 @@ it('does not wait on an error the backend itself returned', async () => {
 
   await waitFor(() => expect(api.toastError).toHaveBeenCalledWith('Invalid token'))
   expect(api.waitForNewConnection).not.toHaveBeenCalled()
+})
+
+it('says the connection limit filled and what frees a place (#1972)', async () => {
+  const config = { headers: new AxiosHeaders() }
+  api.handleCallback.mockRejectedValue(new AxiosError('limit', undefined, config, undefined, {
+    status: 403, statusText: '', headers: {}, config,
+    data: { detail: { code: 'quota_exceeded', counter: 'max_bank_connections', current: 2, maximum: 2, message: 'x' } },
+  }))
+
+  const onClose = submit()
+
+  await waitFor(() =>
+    expect(api.toastError).toHaveBeenCalledWith(t('quota.reached.max_bank_connections', { maximum: 2 }), undefined),
+  )
+  expect(api.toastError).toHaveBeenCalledTimes(1)
+  expect(onClose).not.toHaveBeenCalled()
 })

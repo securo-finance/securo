@@ -61,6 +61,10 @@ class Settings(BaseSettings):
     # instance (ADR 0049), sent as a bearer token to /api/operator/quotas.
     # Unset, that route does not exist (404).
     operator_token: SecretStr = SecretStr("")
+    # Optional page the operator keeps about the limits above (#1972). When
+    # set, the app links to it from a limit message and shows nothing else
+    # about why the limit exists.
+    quota_info_url: str = ""
 
     # Database
     database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/securo"

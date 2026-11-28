@@ -4458,5 +4458,33 @@
     "failed": "Ihre Entscheidung konnte nicht gespeichert werden",
     "replaced": "Der Administrator hat eine neue Anfrage gesendet. Prüfe die neue Adresse, bevor du annimmst",
     "withdrawn": "Die Anfrage wurde zurückgezogen. Dein Konto behält seine aktuelle Adresse"
+  },
+  "quota": {
+    "title": "Nutzungslimits",
+    "menu": "Nutzungslimits",
+    "description": "Was dieses Konto auf dieser Instanz anlegen kann. Zähler ohne Limit werden nicht aufgeführt.",
+    "loadError": "Die Nutzungslimits konnten nicht geladen werden",
+    "usage": "{{current}} von {{maximum}}",
+    "membersHint": "In deinem vollsten Arbeitsbereich, ohne dich",
+    "learnMore": "Mehr erfahren",
+    "counters": {
+      "max_personal_workspaces": "Private Arbeitsbereiche",
+      "max_business_workspaces": "Geschäftliche Arbeitsbereiche",
+      "max_bank_connections": "Bankverbindungen",
+      "max_members_per_workspace": "Mitglieder pro Arbeitsbereich"
+    },
+    "reached": {
+      "max_personal_workspaces": "Dieses Konto hat sein Limit von {{maximum}} privaten Arbeitsbereichen erreicht. Archiviere Arbeitsbereiche, bis weniger als {{maximum}} übrig sind, und lege dann einen neuen an.",
+      "max_business_workspaces": "Dieses Konto hat sein Limit von {{maximum}} geschäftlichen Arbeitsbereichen erreicht. Archiviere Arbeitsbereiche, bis weniger als {{maximum}} übrig sind, und lege dann einen neuen an.",
+      "max_bank_connections": "Dieses Konto hat sein Limit von {{maximum}} Bankverbindungen in den von ihm erstellten Arbeitsbereichen erreicht. Entferne Verbindungen, bis weniger als {{maximum}} übrig sind, und füge dann eine neue hinzu.",
+      "max_members_per_workspace": "Dieser Arbeitsbereich hat sein Limit von {{maximum}} Mitgliedern erreicht. Entferne Mitglieder, bis weniger als {{maximum}} übrig sind, und füge dann ein neues hinzu."
+    },
+    "ownerReached": {
+      "max_bank_connections": "Der Inhaber dieses Arbeitsbereichs hat sein Limit von {{maximum}} Bankverbindungen erreicht. Wer diesen Arbeitsbereich bearbeiten kann, kann seine Verbindungen entfernen; eine neue passt, sobald der Inhaber weniger als {{maximum}} hat.",
+      "max_members_per_workspace": "Dieser Arbeitsbereich hat das Limit seines Inhabers von {{maximum}} Mitgliedern erreicht. Um ein neues hinzuzufügen, müssen Mitglieder entfernt werden, bis weniger als {{maximum}} übrig sind."
+    },
+    "none": "{{label}}: Das Limit dieses Kontos auf dieser Instanz ist 0, daher kann nichts hinzugefügt werden.",
+    "ownerNone": "{{label}}: Der Inhaber dieses Arbeitsbereichs hat auf dieser Instanz ein Limit von 0, daher kann nichts hinzugefügt werden.",
+    "reachedGeneric": "Dieses Konto hat eines seiner Nutzungslimits erreicht."
   }
 }

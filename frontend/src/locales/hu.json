@@ -4457,5 +4457,33 @@
     "failed": "A döntését nem sikerült rögzíteni",
     "replaced": "Az adminisztrátor új kérést küldött. Elfogadás előtt ellenőrizze az új címet",
     "withdrawn": "A kérést visszavonták. A fiókja megtartja a jelenlegi címét"
+  },
+  "quota": {
+    "title": "Használati korlátok",
+    "menu": "Használati korlátok",
+    "description": "Mit hozhat létre ez a fiók ezen a példányon. A korlát nélküli számlálók nem jelennek meg.",
+    "loadError": "Nem sikerült betölteni a használati korlátokat",
+    "usage": "{{current}} / {{maximum}}",
+    "membersHint": "A legtelítettebb munkaterületén, önt nem számítva",
+    "learnMore": "További információ",
+    "counters": {
+      "max_personal_workspaces": "Személyes munkaterületek",
+      "max_business_workspaces": "Üzleti munkaterületek",
+      "max_bank_connections": "Banki kapcsolatok",
+      "max_members_per_workspace": "Tagok munkaterületenként"
+    },
+    "reached": {
+      "max_personal_workspaces": "Ez a fiók elérte a személyes munkaterületek korlátját ({{maximum}}). Archiváljon munkaterületeket, amíg kevesebb nem marad, mint {{maximum}}, majd hozzon létre újat.",
+      "max_business_workspaces": "Ez a fiók elérte az üzleti munkaterületek korlátját ({{maximum}}). Archiváljon munkaterületeket, amíg kevesebb nem marad, mint {{maximum}}, majd hozzon létre újat.",
+      "max_bank_connections": "Ez a fiók elérte a banki kapcsolatok korlátját ({{maximum}}) az általa létrehozott munkaterületeken. Távolítson el kapcsolatokat, amíg kevesebb nem marad, mint {{maximum}}, majd adjon hozzá újat.",
+      "max_members_per_workspace": "Ez a munkaterület elérte a tagok korlátját ({{maximum}}). Távolítson el tagokat, amíg kevesebb nem marad, mint {{maximum}}, majd adjon hozzá újat."
+    },
+    "ownerReached": {
+      "max_bank_connections": "A munkaterület tulajdonosa elérte a banki kapcsolatok korlátját ({{maximum}}). Bárki, aki szerkesztheti ezt a munkaterületet, eltávolíthatja a kapcsolatait; új akkor fér el, ha a tulajdonosnak kevesebb van, mint {{maximum}}.",
+      "max_members_per_workspace": "Ez a munkaterület elérte a tulajdonosa tagkorlátját ({{maximum}}). Új tag hozzáadásához tagokat kell eltávolítani, amíg kevesebb nem marad, mint {{maximum}}."
+    },
+    "none": "{{label}}: ennek a fióknak a korlátja ezen a példányon 0, ezért semmi sem adható hozzá.",
+    "ownerNone": "{{label}}: a munkaterület tulajdonosának korlátja ezen a példányon 0, ezért semmi sem adható hozzá.",
+    "reachedGeneric": "Ez a fiók elérte az egyik használati korlátját."
   }
 }

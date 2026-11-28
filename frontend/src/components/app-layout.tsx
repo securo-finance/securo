@@ -57,6 +57,7 @@ import {
   ShieldCheck,
   Fingerprint,
   History,
+  Gauge,
   Palette,
   AlertCircle,
 } from 'lucide-react'
@@ -65,6 +66,8 @@ import { usePrivacyMode } from '@/hooks/use-privacy-mode'
 import { ChangePasswordDialog } from '@/components/change-password-dialog'
 import { BackupDialog } from '@/components/backup-dialog'
 import { AccessLogDialog } from '@/components/access-log-dialog'
+import { UsageLimitsDialog } from '@/components/usage-limits-dialog'
+import { useMyQuotas } from '@/hooks/use-quota'
 import { TwoFactorSetup } from '@/components/two-factor-setup'
 import { PasskeyManagementDialog } from '@/components/passkey-management-dialog'
 import { CommandPalette } from '@/components/command-palette'
@@ -122,6 +125,7 @@ export function AppLayout() {
   const [passkeysOpen, setPasskeysOpen] = useState(false)
   const [backupOpen, setBackupOpen] = useState(false)
   const [accessLogOpen, setAccessLogOpen] = useState(false)
+  const [usageLimitsOpen, setUsageLimitsOpen] = useState(false)
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [chatOpen, setChatOpen] = useState(false)
   // A message the assistant widget sent, waiting for the chat to pick it up.
@@ -316,6 +320,7 @@ export function AppLayout() {
             agentsEnabled={agentsEnabled}
             onBackup={() => setBackupOpen(true)}
             onAccessLog={() => setAccessLogOpen(true)}
+            onUsageLimits={() => setUsageLimitsOpen(true)}
             dark
             isAdmin={user?.is_superuser}
           />
@@ -629,6 +634,7 @@ export function AppLayout() {
               localAuthEnabled={localAuthEnabled}
               onBackup={() => setBackupOpen(true)}
               onAccessLog={() => setAccessLogOpen(true)}
+              onUsageLimits={() => setUsageLimitsOpen(true)}
               onUpdateAvailable={() => setUpdateDialogOpen(true)}
               agentsEnabled={agentsEnabled}
               collapsed={desktopSidebarCollapsed}
@@ -703,6 +709,7 @@ export function AppLayout() {
       />
       <BackupDialog open={backupOpen} onClose={() => setBackupOpen(false)} />
       <AccessLogDialog open={accessLogOpen} onClose={() => setAccessLogOpen(false)} />
+      <UsageLimitsDialog open={usageLimitsOpen} onClose={() => setUsageLimitsOpen(false)} />
       {/* A change of address an administrator asked for, waiting for this
           person's decision (#556). */}
       <EmailChangeDialog />
@@ -742,6 +749,7 @@ function UserMenu({
   localAuthEnabled,
   onBackup,
   onAccessLog,
+  onUsageLimits,
   dark,
   isAdmin,
   agentsEnabled,
@@ -754,6 +762,7 @@ function UserMenu({
   localAuthEnabled: boolean
   onBackup: () => void
   onAccessLog: () => void
+  onUsageLimits: () => void
   dark?: boolean
   isAdmin?: boolean
   agentsEnabled?: boolean
@@ -764,6 +773,8 @@ function UserMenu({
   const { openLibrary } = useLibrary()
   const { pluginsEnabled } = useFeatureFlags()
   const currentLang = resolveSupportedLang(i18n.resolvedLanguage ?? i18n.language)
+  const { data: quotas } = useMyQuotas()
+  const hasUsageLimits = (quotas?.counters.length ?? 0) > 0
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -836,6 +847,15 @@ function UserMenu({
           <History size={14} />
           {t('accessLog.title')}
         </DropdownMenuItem>
+        {hasUsageLimits && (
+          <DropdownMenuItem
+            onClick={onUsageLimits}
+            className="flex items-center gap-2"
+          >
+            <Gauge size={14} />
+            {t('quota.menu')}
+          </DropdownMenuItem>
+        )}
         {agentsEnabled && (
           <DropdownMenuItem
             onClick={() => nav('/agents')}

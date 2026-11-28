@@ -66,3 +66,4 @@ Each file here records one decision about how Securo is built: what we chose, wh
 | [0050](0050-instance-settings-leave-a-record.md) | Instance settings an administrator changes leave a record, with no account as its target |
 | [0051](0051-the-operator-opens-accounts.md) | The operator of a managed instance opens an account in one call, with no password |
 | [0056](0056-operator-quota-defaults.md) | An account with no limits of its own follows the operator's defaults |
+| [0057](0057-account-reads-its-usage-limits.md) | An account can read its own usage limits |

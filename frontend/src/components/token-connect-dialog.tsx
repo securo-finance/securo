@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { useQueryClient } from '@tanstack/react-query'
 import axios from 'axios'
 import { useAuth } from '@/contexts/auth-context'
+import { useQuotaNotice } from '@/hooks/use-quota'
 import { connections } from '@/lib/api'
 import { isGatewayTimeout, waitForNewConnection } from '@/lib/await-new-connection'
 import { invalidateSyncedRecords } from '@/lib/invalidate-queries'
@@ -38,6 +39,7 @@ export function TokenConnectDialog({
 }: TokenConnectDialogProps) {
   const { t } = useTranslation()
   const { user } = useAuth()
+  const quotaNotice = useQuotaNotice()
   const queryClient = useQueryClient()
   const [token, setToken] = useState('')
   const [submitting, setSubmitting] = useState(false)
@@ -86,6 +88,7 @@ export function TokenConnectDialog({
         onConnected()
         return
       }
+      if (quotaNotice.handle(err)) return
       const detail =
         axios.isAxiosError(err) && err.response?.data?.detail
           ? typeof err.response.data.detail === 'string'
