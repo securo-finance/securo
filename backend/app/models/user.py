@@ -44,6 +44,26 @@ class User(SQLAlchemyBaseUserTableUUID, Base):
         DateTime(timezone=True), nullable=True, default=None
     )
 
+    # The reference a managed instance's operator gave the account when it
+    # opened it (#1965). The code attaches no meaning to it; it is unique so a
+    # retried call finds the account instead of opening a second one.
+    external_reference: Mapped[Optional[str]] = mapped_column(
+        String(255), nullable=True, unique=True, index=True, default=None
+    )
+
+    # When the person last set a password they know (#1965, #1966). The
+    # password column is never empty, so it cannot answer that: an account
+    # the operator opened, one created through an identity provider and a
+    # removed account's shell all hold the hash of a secret nobody has. The
+    # sign-ups that take a typed password (register, setup, admin, invite) go
+    # through the user manager's adapter, which stamps the insert, and the CLI
+    # stamps its own; `UserManager._update` stamps a password changed or reset
+    # later. No column default: SQLAlchemy would apply it over an explicit
+    # None, and every row born without a password must stay null.
+    password_set_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True, default=None
+    )
+
     preferences: Mapped[Optional[dict]] = mapped_column(
         JSON,
         default=lambda: {
