@@ -49,7 +49,11 @@ async def create_default_categories(
     user_id: uuid.UUID,
     lang: str = "pt-BR",
     workspace_id: Optional[uuid.UUID] = None,
+    *,
+    commit: bool = True,
 ) -> list[Category]:
+    """Seed the starter categories. ``commit=False`` leaves them in the
+    caller's transaction, flushed."""
     # Guard against double-creation. Scope the check to the workspace
     # when one is provided so a user creating a SECOND workspace still
     # gets the defaults seeded there — the prior guard checked
@@ -97,7 +101,10 @@ async def create_default_categories(
         )
         session.add(category)
         categories.append(category)
-    await session.commit()
+    if commit:
+        await session.commit()
+    else:
+        await session.flush()
     return categories
 
 

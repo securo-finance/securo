@@ -1,7 +1,8 @@
 import logging
 import uuid
+from datetime import datetime, timezone
 from decimal import Decimal
-from typing import Optional, cast
+from typing import Any, Optional, cast
 
 import jwt
 from sqlalchemy import case, func, select
@@ -58,6 +59,16 @@ class _AccountLookupUserDatabase(SQLAlchemyUserDatabase):
             .limit(1)
         )
         return await self._get_user(statement)
+
+    async def create(self, create_dict: dict[str, Any]) -> User:
+        """Insert the account, stamped as having a password set.
+
+        The manager's `create` hashes the password it was given, which on
+        every sign-up but one is the password the person typed. The exception,
+        the identity provider's throwaway, says `password_set_at=None` itself.
+        """
+        create_dict = {"password_set_at": datetime.now(timezone.utc), **create_dict}
+        return await super().create(create_dict)
 
 
 class _FlushingUserDatabase(_AccountLookupUserDatabase):
@@ -188,6 +199,17 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
             self.user_db = committing_db
         await session.refresh(updated)
         return updated
+
+    async def _update(self, user: User, update_dict: dict[str, Any]) -> User:
+        """Stamp `password_set_at` when the update writes a password.
+
+        Changing it from the account screen and resetting it through a link
+        both land here; an account born without a password (the operator's,
+        #1965) has one from then on.
+        """
+        if update_dict.get("password") is not None:
+            update_dict = {**update_dict, "password_set_at": datetime.now(timezone.utc)}
+        return await super()._update(user, update_dict)
 
     def spend_password_hash(self) -> None:
         """Pay the hashing cost a live account pays before its link is built.

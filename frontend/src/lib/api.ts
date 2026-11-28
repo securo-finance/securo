@@ -94,6 +94,7 @@ import type {
   WorkspaceKind,
   WorkspaceMember,
   WorkspaceRole,
+  ArchivedAssetCounts,
   Asset,
   AssetGroup,
   AssetImportPreview,
@@ -1675,11 +1676,18 @@ export const dashboard = {
 export const assets = {
   // workspaceId pins the read to one workspace, for a caller whose cache
   // belongs to it while another tab may have switched the shared default.
+  reorder: async (assetIds: string[]): Promise<void> => {
+    await api.put('/assets/order', { asset_ids: assetIds })
+  },
   list: async (includeArchived = false, workspaceId?: string | null): Promise<Asset[]> => {
     const { data } = await api.get('/assets', {
       params: { include_archived: includeArchived },
       ...workspaceHeader(workspaceId),
     })
+    return data
+  },
+  archivedCount: async (): Promise<ArchivedAssetCounts> => {
+    const { data } = await api.get('/assets/archived-count')
     return data
   },
   get: async (id: string): Promise<Asset> => {

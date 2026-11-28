@@ -9,6 +9,7 @@ import type { Asset } from '@/types'
 const api = vi.hoisted(() => ({
   assets: {
     list: vi.fn(),
+    archivedCount: vi.fn(),
     portfolioTrend: vi.fn(),
     refreshPrices: vi.fn(),
   },
@@ -68,6 +69,7 @@ beforeEach(() => {
   workspace.canWrite = true
   workspace.id = 'ws-1'
   api.assets.list.mockResolvedValue([asset()])
+  api.assets.archivedCount.mockResolvedValue({ count: 0, by_wallet: {}, ungrouped: 0 })
   api.assets.portfolioTrend.mockResolvedValue({ assets: [], trend: [], total: 0 })
   api.assetGroups.list.mockResolvedValue([])
   api.currencies.list.mockResolvedValue([])
